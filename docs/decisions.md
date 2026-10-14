@@ -10,3 +10,4 @@ Answers from the product owner to questions the spec leaves open. These are bind
 | 2026-10-14 | Hosting | Web app on Cloudflare Pages, files on Cloudflare R2, API on Azure App Service (free tier), database on Azure SQL Database (free offer). Stay on SQL Server and EF Core SqlServer; no switch to Postgres. |
 | 2026-10-14 | Default currency | Asked at sign-up. The register form includes a currency picker. |
 | 2026-10-14 | Where odometer history lives | On a per-car page (`/cars/:id`) that will later also hold the car's tasks and service history. |
+| 2026-10-14 | Odometer reading dates (delegated: owner asked the team to decide; review on return) | Reject readings dated in the future. A reading must fit date order: at least the reading before its date and at most the reading after it, unless the user confirms a correction. The vehicle's current odometer is the latest-dated reading. |
