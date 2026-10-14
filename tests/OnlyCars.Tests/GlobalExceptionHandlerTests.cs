@@ -69,6 +69,15 @@ public class GlobalExceptionHandlerTests
     }
 
     [Fact]
+    public async Task BodyTooLarge_Returns413_WithFallbackCode()
+    {
+        var (status, body) = await HandleAsync(new BadHttpRequestException("Request body too large.", 413));
+
+        Assert.Equal(413, status);
+        Assert.Equal("http.413", body.GetProperty("code").GetString());
+    }
+
+    [Fact]
     public async Task TooManyRequests_Returns429_WithCodeAndRetryAfter()
     {
         var context = new DefaultHttpContext { Response = { Body = new MemoryStream() } };

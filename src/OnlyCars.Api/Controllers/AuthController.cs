@@ -9,6 +9,7 @@ namespace OnlyCars.Api.Controllers;
 [ApiController]
 [Route("api/auth")]
 [EnableRateLimiting(RequestLimits.AuthPolicy)]
+[RequestSizeLimit(8_192)]
 public class AuthController(AuthService authService) : ControllerBase
 {
     [HttpPost("register")]

@@ -84,7 +84,9 @@ public class AuthService(
         // the normalized string doesn't, and they must share one counter (decisions.md, SEC-1 F2).
         // shortcut: failed-login counters live in this process's memory (reset on restart, not shared between instances),
         // fine for one App Service instance; move them to Redis or SQL if the API scales out.
-        var (counter, attempt) = TakeAttempt(user is null ? "login-failures:email:" + email : "login-failures:user:" + user.Id);
+        var (counter, attempt) = user is null
+            ? TakeAttempt("login-failures:email:" + email, CacheItemPriority.Normal)
+            : TakeAttempt("login-failures:user:" + user.Id, CacheItemPriority.NeverRemove);
         if (attempt > limits.Value.FailedLoginLimit)
         {
             Interlocked.Decrement(ref counter.Count);
@@ -109,10 +111,13 @@ public class AuthService(
     /// <summary>
     /// Counts this attempt before the password is verified, so parallel requests can't all pass the limit check
     /// during the slow hash (SEC-1 F3). The lock makes get-or-create atomic; IMemoryCache.GetOrCreate isn't.
+    /// Account counters are NeverRemove so a flood of unknown-email counters can't evict them, and they fail closed
+    /// when the size-capped cache is too full to store them (SEC-1 N1); unknown-email counters just go uncounted then.
     /// </summary>
-    private (FailedLogins Counter, int Attempt) TakeAttempt(string key)
+    private (FailedLogins Counter, int Attempt) TakeAttempt(string key, CacheItemPriority priority)
     {
         FailedLogins counter;
+        bool stored;
         lock (CounterLock)
         {
             counter = cache.GetOrCreate(key, entry =>
@@ -120,8 +125,15 @@ public class AuthService(
                 var window = TimeSpan.FromSeconds(limits.Value.FailedLoginWindowSeconds);
                 entry.AbsoluteExpirationRelativeToNow = window;
                 entry.Size = 1;
+                entry.Priority = priority;
                 return new FailedLogins(DateTimeOffset.UtcNow + window);
             })!;
+            // GetOrCreate returns a counter it didn't store when the cache is full.
+            stored = cache.TryGetValue(key, out FailedLogins? cached) && ReferenceEquals(cached, counter);
+        }
+        if (!stored && priority == CacheItemPriority.NeverRemove)
+        {
+            return (counter, int.MaxValue);
         }
         return (counter, Interlocked.Increment(ref counter.Count));
     }

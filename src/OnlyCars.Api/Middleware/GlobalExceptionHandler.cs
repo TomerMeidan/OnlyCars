@@ -17,6 +17,7 @@ public class GlobalExceptionHandler(ILogger<GlobalExceptionHandler> logger) : IE
             ValidationFailedException => (StatusCodes.Status400BadRequest, "Validation failed"),
             UnauthorizedException or UnauthorizedAccessException => (StatusCodes.Status401Unauthorized, "Unauthorized"),
             TooManyRequestsException => (StatusCodes.Status429TooManyRequests, "Too many requests"),
+            BadHttpRequestException bad => (bad.StatusCode, "Bad request"), // e.g. 413 from [RequestSizeLimit]
             _ => (StatusCodes.Status500InternalServerError, "Unexpected error")
         };
 

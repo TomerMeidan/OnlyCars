@@ -11,11 +11,49 @@ namespace OnlyCars.Tests;
 public class AuthServiceTests
 {
     private static AuthService CreateService(out Infrastructure.Persistence.AppDbContext db,
-        RateLimitOptions? limits = null, IPasswordHasher<User>? hasher = null)
+        RateLimitOptions? limits = null, IPasswordHasher<User>? hasher = null, IMemoryCache? cache = null)
     {
         db = TestDbContextFactory.Create();
         return new AuthService(db, hasher ?? new PasswordHasher<User>(), new FakeJwtTokenService(),
-            new MemoryCache(new MemoryCacheOptions()), Options.Create(limits ?? new RateLimitOptions()));
+            cache ?? new MemoryCache(new MemoryCacheOptions()), Options.Create(limits ?? new RateLimitOptions()));
+    }
+
+    [Fact]
+    public async Task Login_CacheFull_KnownUserFailsClosed()
+    {
+        var cache = new MemoryCache(new MemoryCacheOptions { SizeLimit = 5 });
+        var service = CreateService(out _, cache: cache);
+        await service.RegisterAsync(new RegisterRequest("victim@example.com", "Passw0rd!"));
+        for (var i = 0; i < 5; i++)
+        {
+            cache.Set("filler" + i, i, new MemoryCacheEntryOptions { Size = 1, Priority = CacheItemPriority.NeverRemove });
+        }
+
+        for (var i = 0; i < 10; i++)
+        {
+            await Assert.ThrowsAsync<TooManyRequestsException>(() => service.LoginAsync(new LoginRequest("victim@example.com", "wrong")));
+        }
+        await Assert.ThrowsAsync<TooManyRequestsException>(() => service.LoginAsync(new LoginRequest("victim@example.com", "Passw0rd!")));
+    }
+
+    [Fact]
+    public async Task Login_UnknownEmailFlood_CannotEvictKnownUserCounter()
+    {
+        var cache = new MemoryCache(new MemoryCacheOptions { SizeLimit = 20 });
+        var service = CreateService(out _, cache: cache);
+        await service.RegisterAsync(new RegisterRequest("victim@example.com", "Passw0rd!"));
+
+        for (var i = 0; i < 10; i++)
+        {
+            await Assert.ThrowsAsync<UnauthorizedException>(() => service.LoginAsync(new LoginRequest("victim@example.com", "wrong")));
+        }
+        for (var i = 0; i < 30; i++)
+        {
+            await Assert.ThrowsAsync<UnauthorizedException>(() => service.LoginAsync(new LoginRequest($"flood{i}@example.com", "x")));
+        }
+        cache.Compact(1.0); // evicts everything evictable
+
+        await Assert.ThrowsAsync<TooManyRequestsException>(() => service.LoginAsync(new LoginRequest("victim@example.com", "Passw0rd!")));
     }
 
     private sealed class CountingHasher : PasswordHasher<User>
