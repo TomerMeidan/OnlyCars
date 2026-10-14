@@ -44,10 +44,10 @@ public class TaskStatusCalculatorTests
     [Fact]
     public void Both_Ok_ProgressIsTheLargerShare()
     {
-        var r = TaskStatusCalculator.Compute(Task(10_000, 365, lastKm: 50_000, daysAgo: 73), 52_000, Today);
+        var r = TaskStatusCalculator.Compute(Task(10_000, 365, lastKm: 50_000, daysAgo: 73), 53_000, Today);
 
-        Assert.Equal((DueStatus.Ok, (decimal?)8_000, (int?)292), (r.Status!.Value, r.RemainingKm, r.RemainingDays));
-        Assert.Equal(0.2, r.Progress!.Value, 10);
+        Assert.Equal((DueStatus.Ok, (decimal?)7_000, (int?)292), (r.Status!.Value, r.RemainingKm, r.RemainingDays));
+        Assert.Equal(0.3, r.Progress!.Value, 10); // km share 0.3 beats days share 0.2
     }
 
     [Fact]

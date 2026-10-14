@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from 'react'
 import { Trans, useTranslation } from 'react-i18next'
-import { api, ApiError, localToday, taskCategories, type MaintenanceTask, type TaskCategory, type TaskTemplate, type Vehicle } from '../api'
+import { api, ApiError, localToday, taskCategories, type MaintenanceTask, type TaskCategory, type TaskStatus, type TaskTemplate, type Vehicle } from '../api'
 import { errorMessage } from '../i18n'
 
 type Unit = 'days' | 'months' | 'years'
@@ -8,10 +8,12 @@ const unitDays: Record<Unit, number> = { days: 1, months: 30, years: 365 }
 // Shown in the largest unit that divides evenly: 365 is 1 year, 180 is 6 months, 45 is 45 days.
 const splitDays = (d: number): [number, Unit] => (d % 365 === 0 ? [d / 365, 'years'] : d % 30 === 0 ? [d / 30, 'months'] : [d, 'days'])
 
-type TaskBody = Pick<MaintenanceTask, 'name' | 'category' | 'intervalKm' | 'intervalDays' | 'lastDoneOdometerKm' | 'lastDoneDate'>
+type TaskBody = Pick<MaintenanceTask, 'name' | 'category' | 'intervalKm' | 'intervalDays' | 'dueSoonPercent' | 'lastDoneOdometerKm' | 'lastDoneDate'>
 // PUT is a full replace, so every save sends all of these.
-const bodyOf = ({ name, category, intervalKm, intervalDays, lastDoneOdometerKm, lastDoneDate }: TaskBody): TaskBody =>
-  ({ name, category, intervalKm, intervalDays, lastDoneOdometerKm, lastDoneDate })
+const bodyOf = ({ name, category, intervalKm, intervalDays, dueSoonPercent, lastDoneOdometerKm, lastDoneDate }: TaskBody): TaskBody =>
+  ({ name, category, intervalKm, intervalDays, dueSoonPercent, lastDoneOdometerKm, lastDoneDate })
+// Urgency order; disabled tasks (no status) go last.
+const rank = (s: TaskStatus | null) => (s ? ['Overdue', 'DueSoon', 'Ok'].indexOf(s) : 3)
 
 // "Every 10,000 km or 1 year", "Every 2 years", "Every 60,000 km".
 function Interval({ km, days }: { km: number | null; days: number | null }) {
@@ -25,12 +27,31 @@ function Interval({ km, days }: { km: number | null; days: number | null }) {
   return <>{t('every')} {parts[0]}{parts[1] && <> {t('or')} {parts[1]}</>}</>
 }
 
+// "1,200 km or 40 days left", "about 4 months left", "Overdue by 300 km and 12 days". Once overdue, only the overdue parts show.
+function Remaining({ km, days }: { km: number | null; days: number | null }) {
+  const { t, i18n } = useTranslation()
+  const late = (km ?? 0) < 0 || (days ?? 0) < 0
+  const parts: ReactNode[] = []
+  if (km != null && km < 0 === late) parts.push(<><bdi>{Math.ceil(Math.abs(km)).toLocaleString(i18n.resolvedLanguage)}</bdi> {t('km')}</>)
+  if (days != null && days < 0 === late) {
+    const d = Math.abs(days)
+    parts.push(d < 60
+      ? <Trans i18nKey="duration.days" count={d} components={{ n: <bdi /> }} />
+      : <Trans i18nKey="aboutMonths" count={Math.floor(d / 30)} components={{ n: <bdi /> }} />)
+  }
+  const list = <>{parts[0]}{parts[1] && <>{late ? t('and') : <> {t('or')} </>}{parts[1]}</>}</>
+  return <Trans i18nKey={late ? 'overdueBy' : 'left'} components={{ x: <span>{list}</span> }} />
+}
+
 // The Maintenance section of the car page. It loads on its own, so a failure here leaves the rest of the page usable.
 export function TasksSection({ car }: { car: Vehicle }) {
   const { t, i18n } = useTranslation()
   const [tasks, setTasks] = useState<MaintenanceTask[] | null>(null)
   const [templates, setTemplates] = useState<TaskTemplate[]>([])
   const [error, setError] = useState<unknown>(null)
+  const [templatesError, setTemplatesError] = useState<unknown>(null)
+  // Bumped by every local save or delete, so a reload that was already in flight refetches instead of overwriting it.
+  const edits = useRef(0)
   // 'pick' is the template picker; an object is the add form (template null for a custom task).
   const [adding, setAdding] = useState<null | 'pick' | { template: TaskTemplate | null }>(null)
   const sectionRef = useRef<HTMLElement>(null)
@@ -39,15 +60,22 @@ export function TasksSection({ car }: { car: Vehicle }) {
   const path = `/vehicles/${encodeURIComponent(car.id)}/tasks`
   const readOnly = car.isArchived
 
+  // Reloads whenever the car does (after any odometer change), since status follows the odometer. Old rows stay up meanwhile.
   useEffect(() => {
-    Promise.all([api<MaintenanceTask[]>(path), readOnly ? [] : api<TaskTemplate[]>('/task-templates')]).then(
-      ([ts, tp]) => {
-        setTasks(ts)
-        setTemplates(tp)
-      },
-      setError,
-    )
-  }, [path, readOnly])
+    let live = true
+    const load = () => {
+      const at = edits.current
+      api<MaintenanceTask[]>(path).then(
+        (ts) => live && (at !== edits.current ? load() : (setTasks(ts), setError(null))),
+        (err) => live && setError(err),
+      )
+    }
+    load()
+    return () => { live = false }
+  }, [path, car])
+  useEffect(() => {
+    if (!readOnly) api<TaskTemplate[]>('/task-templates').then(setTemplates, setTemplatesError)
+  }, [readOnly])
 
   useEffect(() => {
     const sel = focusNext.current
@@ -57,10 +85,12 @@ export function TasksSection({ car }: { car: Vehicle }) {
     ;(section.querySelector<HTMLElement>(sel) ?? section.querySelector<HTMLElement>('h2'))?.focus()
   }, [tasks, adding])
 
-  const sorted = tasks && [...tasks].sort((a, b) => Number(b.isEnabled) - Number(a.isEnabled) || a.name.localeCompare(b.name, i18n.resolvedLanguage))
+  const sorted = tasks && [...tasks].sort((a, b) =>
+    rank(a.status) - rank(b.status) || (b.progress ?? 0) - (a.progress ?? 0) || a.name.localeCompare(b.name, i18n.resolvedLanguage, { numeric: true }))
 
   const saved = (task: MaintenanceTask, focus = 'button.edit') => {
     focusNext.current = `li[data-id="${task.id}"] ${focus}`
+    edits.current++
     setTasks((ts) => [...(ts ?? []).filter((x) => x.id !== task.id), task])
   }
   const closeAdd = () => {
@@ -77,6 +107,7 @@ export function TasksSection({ car }: { car: Vehicle }) {
       category: tp?.category ?? 'Other',
       intervalKm: tp?.defaultIntervalKm ?? null,
       intervalDays: tp?.defaultIntervalDays ?? null,
+      dueSoonPercent: 10,
       lastDoneOdometerKm: car.currentOdometerKm,
       lastDoneDate: localToday(),
     }
@@ -103,6 +134,7 @@ export function TasksSection({ car }: { car: Vehicle }) {
       {adding === 'pick' && (
         <div className="picker" role="group" aria-labelledby="choose-task" onKeyDown={onEscape}>
           <p id="choose-task">{t('chooseTask')}</p>
+          {templatesError != null && <p className="error" role="alert">{errorMessage(templatesError)}</p>}
           <ul>
             {templates.map((tp, i) => (
               <li key={tp.id}>
@@ -141,6 +173,7 @@ export function TasksSection({ car }: { car: Vehicle }) {
               onDeleted={() => {
                 // The row that takes this one's place, or the h2 if it was the last.
                 focusNext.current = `.tasks > li:nth-child(${i + 1}) button.edit`
+                edits.current++
                 setTasks((ts) => ts && ts.filter((x) => x.id !== task.id))
               }}
             />
@@ -171,6 +204,7 @@ function TaskForm({ initial, onSubmit, onCancel }: {
       category: f.get('category') as TaskCategory,
       intervalKm: num('intervalKm'),
       intervalDays: time == null ? null : time * unitDays[f.get('intervalUnit') as Unit],
+      dueSoonPercent: Number(f.get('dueSoonPercent')),
       lastDoneOdometerKm: Number(f.get('lastDoneOdometerKm')),
       lastDoneDate: String(f.get('lastDoneDate')),
     }
@@ -186,9 +220,20 @@ function TaskForm({ initial, onSubmit, onCancel }: {
     }
   }
 
-  // Intervals are whole numbers (step 1): a fraction would fail the API's model binding.
+  // Each limited field gets its own translated message from the browser, so nothing out of range is sent.
+  function checkLimits(form: HTMLFormElement) {
+    const field = (name: string) => form.elements.namedItem(name) as HTMLInputElement
+    const days = Number(field('intervalTime').value) * unitDays[(form.elements.namedItem('intervalUnit') as HTMLSelectElement).value as Unit]
+    for (const [name, ok] of [['intervalKm', true], ['intervalTime', days <= 7300], ['dueSoonPercent', true]] as const) {
+      const el = field(name)
+      el.setCustomValidity('')
+      el.setCustomValidity(el.validity.valid && ok ? '' : t(`limits.${name}`))
+    }
+  }
+
+  // Intervals and the percent are whole numbers (step 1): a fraction would fail the API's model binding.
   return (
-    <form className="inline-form" onSubmit={submit} onKeyDown={(e) => !busy && e.key === 'Escape' && onCancel()}>
+    <form className="inline-form" onSubmit={submit} onInput={(e) => checkLimits(e.currentTarget)} onKeyDown={(e) => !busy && e.key === 'Escape' && onCancel()}>
       <label className="wide">
         {t('taskName')}
         <input name="name" required maxLength={100} defaultValue={initial.name} autoFocus />
@@ -212,6 +257,13 @@ function TaskForm({ initial, onSubmit, onCancel }: {
           {(Object.keys(unitDays) as Unit[]).map((u) => <option key={u} value={u}>{t(`units.${u}`)}</option>)}
         </select>
       </div>
+      <label>
+        {t('dueSoonPercent')}
+        <span className="pct">
+          <input name="dueSoonPercent" type="number" inputMode="numeric" min={1} max={50} step={1} required defaultValue={initial.dueSoonPercent} />
+          %
+        </span>
+      </label>
       <label>
         {t('lastDoneKm')}
         <input name="lastDoneOdometerKm" type="number" inputMode="decimal" min={0} step="any" required defaultValue={initial.lastDoneOdometerKm} />
@@ -251,6 +303,7 @@ function TaskRow({ task, url, readOnly, onSaved, onDeleted }: {
   const [error, setError] = useState<unknown>(null)
   const lng = i18n.resolvedLanguage
   const name = task.name
+  const percent = Math.round(Math.min(task.progress ?? 0, 1) * 100)
 
   function open(next: typeof mode) {
     returnTo.current = mode
@@ -273,12 +326,29 @@ function TaskRow({ task, url, readOnly, onSaved, onDeleted }: {
   const errorText = error != null && <p className="error" role="alert">{errorMessage(error)}</p>
 
   return (
-    <li data-id={task.id}>
+    <li data-id={task.id} className={task.status ? `status-${task.status}` : undefined}>
       <div className="task-head">
         <span className="name">{name}</span>
+        {task.status && <span className="badge status">{t(`status.${task.status}`)}</span>}
         <span className="badge">{t(`categories.${task.category}`)}</span>
         {!task.isEnabled && <span className="badge">{t('disabled')}</span>}
       </div>
+      {task.status && (
+        <>
+          <div
+            className="bar"
+            role="progressbar"
+            aria-label={t('used', { name, percent: Math.round(task.progress! * 100) })}
+            aria-valuenow={percent}
+            aria-valuetext={`${Math.round(task.progress! * 100)}%`}
+            aria-valuemin={0}
+            aria-valuemax={100}
+          >
+            <div style={{ inlineSize: `${percent}%` }} />
+          </div>
+          <p><Remaining km={task.remainingKm} days={task.remainingDays} /></p>
+        </>
+      )}
       <p className="muted"><Interval km={task.intervalKm} days={task.intervalDays} /></p>
       <p className="muted">
         {/* LastDoneDate is a calendar date; format it in UTC so the viewer's time zone can't shift the day. */}

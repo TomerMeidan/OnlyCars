@@ -13,7 +13,7 @@ Legend:
 
 ## MVP progress
 - [x] **Step 1: Accounts, cars, odometer.** Done (MVP1-A, B and C signed off), apart from the gaps marked below.
-- [~] **Step 2: Maintenance tasks, templates, Reset** 🔨 MVP2-A (tasks and templates) signed off. Now: MVP2-B (status, remaining km and days, due-soon threshold): backend built, frontend in progress. Then MVP2-C (Reset and Undo).
+- [~] **Step 2: Maintenance tasks, templates, Reset** 🔨 MVP2-A (tasks and templates) signed off. Now: MVP2-B (status, remaining km and days, due-soon threshold): built and reviewed, in QA. Then MVP2-C (Reset and Undo).
 - [ ] **Step 3: Service history with costs**
 - [ ] **Step 4: Dashboard with due and overdue status**
 - [ ] **Step 5: Checklists, then tires, then reports and notifications**

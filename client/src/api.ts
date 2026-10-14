@@ -73,7 +73,14 @@ export interface MaintenanceTask {
   isEnabled: boolean
   lastDoneOdometerKm: number
   lastDoneDate: string
+  // Computed on every read; all four are null for a disabled task.
+  status: TaskStatus | null
+  remainingKm: number | null
+  remainingDays: number | null
+  progress: number | null
 }
+
+export type TaskStatus = 'Ok' | 'DueSoon' | 'Overdue'
 
 // ProblemDetails from the API; `code` is translated by errorMessage() in i18n.ts.
 export interface Problem {

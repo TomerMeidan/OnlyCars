@@ -330,8 +330,11 @@ public class MaintenanceTaskServiceTests
 
         var ex = await Assert.ThrowsAsync<ValidationFailedException>(() =>
             tasks.CreateAsync(userId, car, Custom(lastKm: -1) with { DueSoonPercent = 0 }));
-
         Assert.Equal("task.invalidDueSoonPercent", ex.Code);
+
+        ex = await Assert.ThrowsAsync<ValidationFailedException>(() =>
+            tasks.CreateAsync(userId, car, Custom(km: 0) with { DueSoonPercent = 0 }));
+        Assert.Equal("task.invalidInterval", ex.Code);
     }
 
     [Fact]

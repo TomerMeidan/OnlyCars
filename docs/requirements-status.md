@@ -255,7 +255,7 @@ How this was checked (fourth audit):
 *Every screen*
 
 12. [FE] Hebrew and RTL: every new string exists in `en` and `he`; the bar fills from the right in Hebrew; numbers stay left-to-right in `<bdi>`; badge and bar lay out correctly in RTL.
-13. [FE] Mobile: at 390px wide there is no horizontal overflow with badges, bars and the longest remaining line ("Overdue by 1,000,000 km and 7,300 days") in either language. Tap targets stay at least 44px tall.
+13. [FE] Mobile: at 390px wide there is no horizontal overflow with badges, bars and the longest remaining line ("Overdue by 1,000,000 km and about 243 months", since 60 days and up show in months) in either language. Tap targets stay at least 44px tall.
 14. [FE] Colours: badge text is at least 4.5:1 and the bar fill at least 3:1 in light and dark mode. Status is never shown by colour alone. Take screenshots of all three statuses in both themes.
 15. [FE] Loading and error: while tasks reload after an odometer change, the existing rows stay visible (no flash of the empty state). A failed reload shows the existing translated load error, and the rest of the page stays usable. The Save button stays disabled while a request is in flight.
 16. [FE] Accessibility: the progress bar has an accessible name and value as in Scope. Focus rules from MVP2-A are unchanged.

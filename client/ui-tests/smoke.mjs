@@ -387,7 +387,8 @@ for (const s of setups) {
     await focusIs(`li[data-id] input[aria-label="${TK.on}${TK.belt}"]`, 'after toggling')
     await toggle.check()
     await taskRow(TK.belt).locator('.badge', { hasText: TK.off }).waitFor({ state: 'detached' })
-    if ((await taskNames()).join() !== [TK.belt, TK.wash2].join()) throw new Error(`re-enabled order: ${await taskNames()}`)
+    // Both OK: the one with more of its interval used comes first (Wash and wax 20%, Timing belt 0%).
+    if ((await taskNames()).join() !== [TK.wash2, TK.belt].join()) throw new Error(`re-enabled order: ${await taskNames()}`)
     await toggle.uncheck() // leave it disabled for the screenshot and the archived check
     await taskRow(TK.belt).locator('.badge', { hasText: TK.off }).waitFor()
   })
@@ -403,6 +404,11 @@ for (const s of setups) {
     await focusIs(`li[data-id] input[aria-label="${TK.on}${TK.belt}"]`, 'after a failed toggle')
     run.badResponses = run.badResponses.filter((r) => !r.startsWith('500 PUT')) // the forced failure
     run.consoleErrors = run.consoleErrors.filter((e) => !e.includes('500'))
+    // MVP2-B Low c: the next action on the row clears the old error.
+    await taskBtn(TK.edit, TK.belt).click()
+    await page.keyboard.press('Escape')
+    await focusIs(`button[aria-label="${TK.edit}${TK.belt}"]`, 'after Escape')
+    if (await taskRow(TK.belt).locator('[role=alert]').count()) throw new Error('toggle error still shown after Edit')
   })
   await step('delete-task-confirm', async () => {
     await taskBtn(TK.del, TK.wash2).click()
@@ -422,9 +428,11 @@ for (const s of setups) {
     await focusIs(`button[aria-label="${TK.edit}${TK.belt}"]`, 'after Delete (the next row)')
   })
   await step('tasks-load-error', async () => {
-    await page.route('**/api/vehicles/*/tasks', (r) => r.fulfill({ status: 500, contentType: 'application/json', body: '{}' }), { times: 1 })
+    // Every load fails until unrouted: dev StrictMode mounts twice and only the second request's answer counts.
+    await page.route('**/api/vehicles/*/tasks', (r) => r.fulfill({ status: 500, contentType: 'application/json', body: '{}' }))
     await page.reload()
     const alert = await tasks.locator('[role=alert]').textContent()
+    await page.unroute('**/api/vehicles/*/tasks')
     if (alert !== (he ? 'משהו השתבש. נסו שוב.' : 'Something went wrong. Please try again.')) throw new Error(`alert "${alert}"`)
     await page.locator('.quick input[type=number]').waitFor()
     await page.locator('.history li').first().waitFor()
@@ -433,6 +441,156 @@ for (const s of setups) {
     await page.reload()
     await taskRow(TK.belt).waitFor()
     await page.setViewportSize(s.viewport)
+  })
+  await step('templates-load-error', async () => {
+    // The tasks load succeeds, so it must not clear the templates error.
+    await page.route('**/api/task-templates', (r) => r.fulfill({ status: 500, contentType: 'application/json', body: '{}' }))
+    await page.reload()
+    await taskRow(TK.belt).waitFor()
+    await tasks.getByRole('button', { name: TK.add }).click()
+    const alert = await tasks.locator('.picker [role=alert]').textContent()
+    await page.unroute('**/api/task-templates')
+    if (alert !== (he ? 'משהו השתבש. נסו שוב.' : 'Something went wrong. Please try again.')) throw new Error(`picker alert "${alert}"`)
+    if (plain((await tasks.locator('.picker li button').allTextContents()).join()) !== TK.custom) throw new Error('picker options with no templates')
+    await tasks.screenshot({ path: `${OUT}/${s.name}-templates-error.png` })
+    await tasks.locator('.picker button.link').click()
+    run.badResponses = run.badResponses.filter((r) => !r.startsWith('500 GET'))
+    run.consoleErrors = run.consoleErrors.filter((e) => !e.includes('500'))
+    await page.reload()
+    await taskRow(TK.belt).waitFor()
+  })
+  // MVP2-B: status, remaining and the due-soon threshold. The odometer is at 59,000; the Timing belt is disabled.
+  const ST = he ? { Ok: 'תקין', DueSoon: 'בקרוב', Overdue: 'באיחור' } : { Ok: 'OK', DueSoon: 'Due soon', Overdue: 'Overdue' }
+  const badge = (name) => taskRow(name).locator('.badge.status').textContent()
+  const badgeIs = (name, want) => page.waitForFunction(([n, w]) => [...document.querySelectorAll('.tasks > li')]
+    .find((li) => li.querySelector('.name').textContent === n)?.querySelector('.badge.status')?.textContent === w, [name, want], { timeout: 5000 })
+    .catch(async () => { throw new Error(`${name} badge "${await badge(name)}", want "${want}"`) })
+  const ratio = (fg, bg) => {
+    const lum = (c) => {
+      const [r, g, b] = c.match(/\d+/g).slice(0, 3).map((v) => v / 255).map((v) => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4))
+      return 0.2126 * r + 0.7152 * g + 0.0722 * b
+    }
+    const [a, b] = [lum(fg), lum(bg)].sort((x, y) => y - x)
+    return (a + 0.05) / (b + 0.05)
+  }
+  await step('task-status-order', async () => {
+    const token = await page.evaluate(() => localStorage.getItem('token'))
+    const url = `${BASE}/api/vehicles/${new URL(page.url()).pathname.split('/').pop()}/tasks`
+    const today = await page.evaluate(() => new Date().toISOString().slice(0, 10))
+    const add = async (name, intervalKm, lastDoneOdometerKm, intervalDays = null) => {
+      const r = await page.request.post(url, { headers: { Authorization: `Bearer ${token}` }, data: { name, category: 'Other', intervalKm, intervalDays, lastDoneOdometerKm, lastDoneDate: today } })
+      if (r.status() !== 201) throw new Error(`POST ${name}: ${r.status()}`)
+    }
+    await add('10k service', 20000, 59000, 365) // OK, 0% used
+    await add('9k service', 20000, 59000) // OK, 0% used: sorts before "10k service" (Low a)
+    await add('Brakes', 10000, 50500) // OK, 15% left
+    await add('Coolant', 10000, 50000) // Due soon, 10% left
+    await add('Oil', 10000, 48000) // Overdue by 1,000 km
+    await page.reload()
+    await taskRow('Oil').waitFor()
+    const want = ['Oil', 'Coolant', 'Brakes', '9k service', '10k service', TK.belt]
+    if ((await taskNames()).join() !== want.join()) throw new Error(`order ${await taskNames()}`)
+    for (const [n, st] of [['Oil', 'Overdue'], ['Coolant', 'DueSoon'], ['Brakes', 'Ok'], ['9k service', 'Ok']]) await badgeIs(n, ST[st])
+    if (await taskRow(TK.belt).locator('.badge.status, [role=progressbar]').count()) throw new Error('disabled task has a badge or bar')
+    const lines = {
+      Oil: he ? 'באיחור של 1,000 ק״מ' : 'Overdue by 1,000 km',
+      Coolant: he ? 'עוד 1,000 ק״מ' : '1,000 km left',
+      '10k service': he ? 'עוד 20,000 ק״מ או כ־12 חודשים' : '20,000 km or about 12 months left',
+    }
+    for (const [n, line] of Object.entries(lines)) {
+      const text = plain(await taskRow(n).textContent())
+      if (!text.includes(line)) throw new Error(`${n}: "${text}" lacks "${line}"`)
+    }
+    const bar = taskRow('Oil').getByRole('progressbar', { name: he ? 'Oil: נוצלו 110%' : 'Oil: 110% used' })
+    const vals = [await bar.getAttribute('aria-valuenow'), await bar.getAttribute('aria-valuetext')].join()
+    if (vals !== '100,110%') throw new Error(`Oil valuenow,valuetext ${vals}`)
+    // The fill starts at the inline start: the right edge in Hebrew.
+    const edges = await taskRow('Coolant').locator('.bar').evaluate((b) => {
+      const [t, f] = [b, b.firstElementChild].map((el) => el.getBoundingClientRect())
+      return { start: Math.round(getComputedStyle(b).direction === 'rtl' ? t.right - f.right : f.left - t.left), width: Math.round((f.width / t.width) * 100) }
+    })
+    if (edges.start !== 0 || edges.width !== 90) throw new Error(`Coolant fill ${JSON.stringify(edges)}`)
+    // Contrast: badge text 4.5:1 on the card, bar fill 3:1 on its track.
+    for (const n of ['Oil', 'Coolant', 'Brakes']) {
+      const c = await taskRow(n).evaluate((li) => {
+        const css = (el, k) => getComputedStyle(el)[k]
+        const bar = li.querySelector('.bar')
+        return [css(li.querySelector('.badge.status'), 'color'), css(li.closest('.card'), 'backgroundColor'), css(bar.firstElementChild, 'backgroundColor'), css(bar, 'backgroundColor')]
+      })
+      if (ratio(c[0], c[1]) < 4.5 || ratio(c[2], c[3]) < 3) throw new Error(`${n} contrast text ${ratio(c[0], c[1]).toFixed(2)}, bar ${ratio(c[2], c[3]).toFixed(2)}`)
+    }
+    // 390px wide with the longest remaining line (a mocked row), in either language.
+    await page.setViewportSize({ width: 390, height: 844 })
+    await page.route('**/api/vehicles/*/tasks', async (r) => {
+      const res = await r.fetch()
+      const ts = await res.json()
+      ts.push({ ...ts[0], id: '00000000-0000-0000-0000-0000000000ff', name: 'Longest', status: 'Overdue', intervalKm: 1, intervalDays: 1, remainingKm: -1000000, remainingDays: -7300, progress: 2 })
+      await r.fulfill({ response: res, json: ts })
+    })
+    await page.reload()
+    await taskRow('Longest').waitFor()
+    await page.unroute('**/api/vehicles/*/tasks')
+    const longest = plain(await taskRow('Longest').textContent())
+    if (!longest.includes(he ? 'באיחור של 1,000,000 ק״מ וגם כ־243 חודשים' : 'Overdue by 1,000,000 km and about 243 months')) throw new Error(`longest "${longest}"`)
+    await noOverflow('status rows and the longest remaining line')
+    await sweep('car page with status rows')
+  })
+  await step('task-status-after-odometer', async () => {
+    await page.setViewportSize(s.viewport)
+    await page.evaluate(() => { window.noReload = true })
+    // Hold the task reload so the in-between state is visible: the old rows stay.
+    await page.route('**/api/vehicles/*/tasks', async (r) => { await page.waitForTimeout(700); await r.continue() }, { times: 1 })
+    await page.fill('.quick input[type=number]', '61001')
+    await page.click('.quick button')
+    await page.waitForFunction(() => document.querySelector('.odometer')?.getAttribute('aria-label')?.replace(/\D/g, '') === '61001')
+    if (!(await taskRow('Coolant').isVisible())) throw new Error('rows hidden while the tasks reload')
+    await badgeIs('Coolant', ST.Overdue) // 1,001 km past its 10,000 km interval
+    const row = page.locator('.history li').first()
+    await row.locator(deleteSel('61,001')).click()
+    await row.locator('button.danger').click()
+    await badgeIs('Coolant', ST.DueSoon)
+    if (!(await page.evaluate(() => window.noReload))) throw new Error('the page reloaded')
+  })
+  await step('task-due-soon-percent', async () => {
+    const msg = he
+      ? { pct: 'הזינו מספר שלם בין 1 ל־50.', km: 'הזינו מרווח של 1 עד 1,000,000 ק״מ.', time: 'הזינו מרווח זמן של עד 20 שנה (243 חודשים או 7,300 ימים).' }
+      : { pct: 'Enter a whole number from 1 to 50.', km: 'Enter a km interval from 1 to 1,000,000.', time: 'Enter a time interval of up to 20 years (243 months or 7,300 days).' }
+    // The add form starts at 10.
+    await tasks.getByRole('button', { name: TK.add }).click()
+    await tasks.locator('.picker button', { hasText: TK.custom }).click()
+    if ((await tasks.locator('form input[name=dueSoonPercent]').inputValue()) !== '10') throw new Error('add form not at 10')
+    await page.keyboard.press('Escape')
+    // Brakes has 15% of its km left: OK at 10, Due soon at 20.
+    await taskBtn(TK.edit, 'Brakes').click()
+    const form = taskRow('Brakes').locator('form')
+    if ((await form.locator('input[name=dueSoonPercent]').inputValue()) !== '10') throw new Error('edit form not at the stored 10')
+    let sent = 0
+    const count = (r) => r.method() === 'PUT' && sent++
+    page.on('request', count)
+    // Criteria 9 and 10: each blocked on the client with its own message on its own field.
+    const cases = [['dueSoonPercent', '0', msg.pct], ['dueSoonPercent', '51', msg.pct], ['dueSoonPercent', '2.5', msg.pct], ['intervalKm', '1000001', msg.km],
+      ['intervalTime', '21', msg.time, 'years'], ['intervalTime', '244', msg.time, 'months'], ['intervalTime', '7301', msg.time, 'days']]
+    for (const [name, value, text, unit] of cases) {
+      if (unit) await form.locator('select[name=intervalUnit]').selectOption(unit)
+      const input = form.locator(`input[name=${name}]`)
+      await input.fill(value)
+      await form.locator('button:not(.link)').click()
+      const shown = await input.evaluate((el) => el.validationMessage)
+      if (plain(shown) !== text) throw new Error(`${name} ${value}: "${shown}"`)
+      await input.fill({ dueSoonPercent: '10', intervalKm: '10000', intervalTime: '' }[name])
+    }
+    await page.waitForTimeout(300)
+    page.off('request', count)
+    if (sent) throw new Error(`${sent} PUT sent for blocked values`)
+    await form.locator('input[name=dueSoonPercent]').fill('20')
+    const res = page.waitForResponse((r) => r.request().method() === 'PUT')
+    await form.locator('button:not(.link)').click()
+    const body = (await res).request().postDataJSON()
+    if (body.dueSoonPercent !== 20) throw new Error(`PUT body ${JSON.stringify(body)}`)
+    await badgeIs('Brakes', ST.DueSoon)
+    await taskBtn(TK.edit, 'Brakes').click()
+    if ((await form.locator('input[name=dueSoonPercent]').inputValue()) !== '20') throw new Error('edit form not at the stored 20')
+    await page.keyboard.press('Escape')
   })
   await step('other-users-car-not-found', async () => {
     // A second user's car, created through the API, must not be visible to this user.

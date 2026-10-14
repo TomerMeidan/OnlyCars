@@ -10,6 +10,10 @@
   --drum: #141b26;
   --drum-digit: #f2f4f7;
   --drum-lead: #5b6678;
+  /* Task status: text on --surface 5.3:1 or more, bar fill on --line 3.5:1 or more */
+  --status-ok: #1e7a46;
+  --status-soon: #94580a;
+  --status-overdue: #b3311d;
 
   --sans: 'IBM Plex Sans', 'IBM Plex Sans Hebrew', system-ui, 'Segoe UI', Arial, sans-serif;
   --gauge: 'Barlow Condensed', 'Arial Narrow', sans-serif;
@@ -32,6 +36,10 @@
     --danger: #d92d20; /* white text 4.8:1 */
     --drum: #080b10;
     --drum-lead: #4a5466;
+    /* text on --surface 6.4:1 or more, bar fill on --line 4.8:1 or more */
+    --status-ok: #5cc98d;
+    --status-soon: #f5b53a;
+    --status-overdue: #ff7a66;
   }
 }
 
@@ -201,6 +209,14 @@ button.danger { background: var(--danger); border-color: var(--danger); color: #
 .tasks bdi, .picker bdi { direction: ltr; }
 .tasks time { white-space: nowrap; }
 .tasks .actions { flex-wrap: wrap; }
+.status-Ok { --status: var(--status-ok); }
+.status-DueSoon { --status: var(--status-soon); }
+.status-Overdue { --status: var(--status-overdue); }
+.badge.status { color: var(--status); border-color: currentColor; font-weight: 600; }
+/* A block child starts at the inline start, so the fill grows from the right in Hebrew. */
+.bar { block-size: 0.5rem; border-radius: 999px; background: var(--line); overflow: hidden; margin-block: 0.25rem; }
+.bar > div { block-size: 100%; background: var(--status); }
+.pct { display: flex; align-items: center; gap: 0.4rem; color: var(--ink); }
 .actions label.inline { min-height: 2.75rem; } /* the Enabled toggle: the whole label is the 44px tap target */
 .picker { display: grid; gap: 0.75rem; }
 .picker ul { display: grid; gap: 0.5rem; }
