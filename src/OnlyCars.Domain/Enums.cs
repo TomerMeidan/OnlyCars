@@ -1,0 +1,38 @@
+namespace OnlyCars.Domain;
+
+public enum DistanceUnit
+{
+    Km,
+    Mi
+}
+
+public enum Locale
+{
+    En,
+    He
+}
+
+public enum Theme
+{
+    Light,
+    Dark,
+    System
+}
+
+public enum FuelType
+{
+    Petrol,
+    Diesel,
+    Hybrid,
+    Electric,
+    Lpg,
+    Other
+}
+
+public enum OdometerSource
+{
+    Manual,
+    Service,
+    Checklist,
+    Fuel
+}

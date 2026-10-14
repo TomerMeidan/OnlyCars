@@ -1,0 +1,170 @@
+:root {
+  --bg: #e6e9ee;
+  --surface: #ffffff;
+  --ink: #1b2433;
+  --muted: #5a6475;
+  --line: #cdd3dc;
+  --amber: #f0a81c;
+  --fault: #c2321f;
+  --drum: #141b26;
+  --drum-digit: #f2f4f7;
+  --drum-lead: #5b6678;
+
+  --sans: 'IBM Plex Sans', 'IBM Plex Sans Hebrew', system-ui, 'Segoe UI', Arial, sans-serif;
+  --gauge: 'Barlow Condensed', 'Arial Narrow', sans-serif;
+
+  color-scheme: light dark;
+  font: 1rem/1.55 var(--sans);
+  color: var(--ink);
+  background: var(--bg);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #11151c;
+    --surface: #1a2029;
+    --ink: #e8ebf0;
+    --muted: #97a1b0;
+    --line: #2d3541;
+    --amber: #f5b53a;
+    --fault: #ff7a66;
+    --drum: #080b10;
+    --drum-lead: #4a5466;
+  }
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; }
+h1, h2, p { margin: 0; }
+h1 { font-size: 1.75rem; line-height: 1.2; font-weight: 600; }
+h2 { font-size: 1.25rem; line-height: 1.3; font-weight: 600; }
+a { color: inherit; text-underline-offset: 0.2em; }
+
+:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+
+/* Header */
+header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem 1rem;
+  background: var(--drum);
+  color: var(--drum-digit);
+}
+header :focus-visible { outline-color: var(--amber); }
+.brand {
+  font: 600 1.5rem/1 var(--gauge);
+  letter-spacing: 0.02em;
+  text-decoration: none;
+}
+nav { display: flex; gap: 1.25rem; }
+header button.link { color: inherit; }
+
+main {
+  max-width: 40rem;
+  margin-inline: auto;
+  padding: 1.5rem 1rem 3rem;
+  display: grid;
+  gap: 1.25rem;
+}
+
+/* Blocks */
+.card {
+  background: var(--surface);
+  border-radius: 14px;
+  padding: 1.25rem;
+  display: grid;
+  gap: 1rem;
+}
+.narrow { max-width: 26rem; width: 100%; margin-inline: auto; }
+.intro { color: var(--muted); }
+.archived { opacity: 0.6; }
+
+.row { display: flex; justify-content: space-between; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
+.actions { display: flex; gap: 1.25rem; align-items: center; }
+.cars { list-style: none; padding: 0; margin: 0; display: grid; gap: 1rem; }
+.muted { color: var(--muted); }
+.badge {
+  font-size: 0.85rem;
+  padding: 0.1rem 0.6rem;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  color: var(--muted);
+}
+.error { color: var(--fault); }
+
+/* Odometer drum: the one loud element */
+.reading { display: flex; align-items: flex-end; gap: 0.75rem; flex-wrap: wrap; }
+.odometer {
+  direction: ltr;
+  display: inline-flex;
+  gap: 2px;
+  padding: 4px;
+  border-radius: 6px;
+  background: var(--drum);
+  font: 600 2.25rem/1 var(--gauge);
+  font-variant-numeric: tabular-nums;
+}
+.odometer > span {
+  width: 0.78em;
+  height: 1.15em;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border-radius: 2px;
+  color: var(--drum-digit);
+  background: linear-gradient(#0c1118, #2b3445 42%, #2b3445 58%, #0c1118);
+}
+.odometer > span.lead { color: var(--drum-lead); }
+.odometer b { font-weight: inherit; }
+.odometer b.roll { animation: roll 0.45s cubic-bezier(0.2, 0.8, 0.3, 1.2); }
+@keyframes roll {
+  from { transform: translateY(-110%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .odometer b.roll { animation: none; }
+}
+.unit { font: 500 1.25rem/1 var(--gauge); color: var(--muted); padding-block-end: 0.35rem; }
+
+/* Forms */
+label { display: grid; gap: 0.3rem; font-size: 0.95rem; color: var(--muted); }
+label.inline { display: flex; align-items: center; gap: 0.5rem; color: var(--ink); }
+
+input, select, button, .button {
+  font: inherit;
+  min-height: 2.75rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink);
+}
+input:focus-visible, select:focus-visible { border-color: var(--ink); }
+label.inline input { min-height: auto; accent-color: var(--ink); }
+
+button, .button {
+  background: var(--amber);
+  border-color: var(--amber);
+  color: #1b2433;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+button:disabled { opacity: 0.6; cursor: default; }
+button.link {
+  background: none;
+  border: none;
+  padding: 0;
+  min-height: auto;
+  font-weight: 400;
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+
+.quick { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.quick input[type='number'] { flex: 1; min-width: 9rem; }
+.quick .error, .quick label { flex-basis: 100%; }

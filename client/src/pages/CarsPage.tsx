@@ -1,0 +1,134 @@
+import { useEffect, useState, type FormEvent } from 'react'
+import { useTranslation } from 'react-i18next'
+import { Link } from 'react-router-dom'
+import { api, ApiError, type Vehicle } from '../api'
+
+export default function CarsPage() {
+  const { t } = useTranslation()
+  const [cars, setCars] = useState<Vehicle[] | null>(null)
+  const [showArchived, setShowArchived] = useState(false)
+  const [error, setError] = useState('')
+
+  const load = () =>
+    api<Vehicle[]>(`/vehicles?includeArchived=${showArchived}`).then(setCars, (e) => setError(e.message))
+
+  useEffect(() => {
+    load()
+  }, [showArchived]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function toggleArchive(car: Vehicle) {
+    await api(`/vehicles/${car.id}/${car.isArchived ? 'unarchive' : 'archive'}`, 'POST')
+    load()
+  }
+
+  return (
+    <>
+      <div className="row">
+        <h1>{t('myCars')}</h1>
+        <Link to="/cars/new" className="button">{t('addCar')}</Link>
+      </div>
+      <label className="inline">
+        <input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} />
+        {t('showArchived')}
+      </label>
+      {error && <p className="error" role="alert">{error}</p>}
+      {cars?.length === 0 && <p>{t('noCars')}</p>}
+      <ul className="cars">
+        {cars?.map((car) => (
+          <li key={car.id} className={`card${car.isArchived ? ' archived' : ''}`}>
+            <div className="row">
+              <h2>{car.nickname}</h2>
+              {car.isArchived && <span className="badge">{t('archived')}</span>}
+            </div>
+            <div>
+              <p>{[car.year, car.make, car.model].filter(Boolean).join(' ')}</p>
+              {car.plate && <p className="muted">{t('plateValue', { plate: car.plate })}</p>}
+            </div>
+            <div className="reading">
+              <Odometer km={car.currentOdometerKm} />
+              <span className="unit">{t('km')}</span>
+              {car.avgKmPerDay != null && (
+                <span className="muted">{t('kmPerDay', { value: Math.round(car.avgKmPerDay) })}</span>
+              )}
+            </div>
+            {!car.isArchived && <OdometerQuickEntry car={car} onSaved={load} />}
+            <div className="actions">
+              <Link to={`/cars/${car.id}/edit`}>{t('edit')}</Link>
+              <button className="link" onClick={() => toggleArchive(car)}>
+                {t(car.isArchived ? 'unarchive' : 'archive')}
+              </button>
+            </div>
+          </li>
+        ))}
+      </ul>
+    </>
+  )
+}
+
+function OdometerQuickEntry({ car, onSaved }: { car: Vehicle; onSaved: () => void }) {
+  const { t } = useTranslation()
+  const [value, setValue] = useState('')
+  const [error, setError] = useState('')
+  const [needsConfirm, setNeedsConfirm] = useState(false)
+  const [confirmCorrection, setConfirmCorrection] = useState(false)
+
+  async function submit(e: FormEvent) {
+    e.preventDefault()
+    setError('')
+    try {
+      await api(`/vehicles/${car.id}/odometer`, 'POST', { valueKm: Number(value), confirmCorrection })
+      setValue('')
+      setNeedsConfirm(false)
+      setConfirmCorrection(false)
+      onSaved()
+    } catch (err) {
+      setError((err as Error).message)
+      // 400 here means the reading is lower than the latest; the API accepts it once confirmed.
+      setNeedsConfirm(err instanceof ApiError && err.status === 400)
+    }
+  }
+
+  return (
+    <form className="quick" onSubmit={submit}>
+      <input
+        type="number"
+        inputMode="numeric"
+        min={0}
+        step="any"
+        required
+        placeholder={t('newReading')}
+        aria-label={t('newReading')}
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+      />
+      <button>{t('updateOdometer')}</button>
+      {error && <p className="error" role="alert">{error}</p>}
+      {needsConfirm && (
+        <label className="inline">
+          <input type="checkbox" checked={confirmCorrection} onChange={(e) => setConfirmCorrection(e.target.checked)} />
+          {t('confirmCorrection')}
+        </label>
+      )}
+    </form>
+  )
+}
+
+// Drum counter; only digits that changed since the last render roll in.
+function Odometer({ km }: { km: number }) {
+  const value = String(Math.round(km))
+  const digits = value.padStart(6, '0')
+  const [seen, setSeen] = useState({ digits, before: digits })
+  if (seen.digits !== digits) setSeen({ digits, before: seen.digits })
+  const lead = digits.length - value.length
+  const { before } = seen
+
+  return (
+    <span className="odometer" role="img" aria-label={Math.round(km).toLocaleString()}>
+      {[...digits].map((d, i) => (
+        <span key={digits.length - i} className={i < lead ? 'lead' : undefined} aria-hidden>
+          <b key={d} className={before.length === digits.length && before[i] !== d ? 'roll' : undefined}>{d}</b>
+        </span>
+      ))}
+    </span>
+  )
+}
