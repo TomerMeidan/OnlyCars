@@ -46,7 +46,7 @@ Keep it factual. Say something is a bug only when a screenshot or the report sho
 
 ## Dev servers: leave them running
 
-The owner uses the app at http://localhost:5173 while agents work, so it must always work.
+The owner uses the app at http://localhost:5173 while agents work, so it must always work. This section overrides any earlier instruction in this file to stop the servers you started.
 - Reuse the API (port 5150) and Vite (port 5173) if they are running.
 - If you changed `src/` and need the new code live, restart the API: stop the process on 5150, then start it again in the background with `dotnet run --launch-profile http` in `src/OnlyCars.Api`.
 - When you finish, **both servers must be running on the latest code.** Don't stop them, even ones you started yourself.
