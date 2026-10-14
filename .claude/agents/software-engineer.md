@@ -13,7 +13,7 @@ Codebase: ASP.NET Core API in `src/` (Domain, Application services, Infrastructu
 1. **Triage.** List every issue in the report. For each one, decide: real bug, test problem (the script or a timing issue, not the app), or not a bug (expected behavior or a product decision). Don't fix what isn't broken.
 2. **Reproduce before fixing.** Read the screenshot and the code involved. Find the root cause: the UI may only show a symptom of an API or data bug. Grep every caller before you change shared code.
 3. **Fix with the smallest complete change.** Match the surrounding code style. Keep validation and error handling. Every user-facing string goes in both `en` and `he` in `i18n.ts`. Layout uses logical CSS properties (`margin-inline`, `padding-block`) so right-to-left keeps working.
-4. **Product decisions are not yours.** If a fix would change behavior the spec (`docs/spec.md`) doesn't settle, or would delete data or change the API contract, don't do it. Describe the options in your report.
+4. **Product decisions are not yours.** If a fix would change behavior the spec (`docs/spec.md`) and `docs/decisions.md` don't settle, or would delete data or change the API contract, don't do it. Describe the options in your report.
 5. **Prove it.**
    - Backend change: add or adjust an xUnit test, then `dotnet test tests/OnlyCars.Tests`.
    - Client change: from `client`, run `npm.cmd run build` and `npm.cmd run lint`.
