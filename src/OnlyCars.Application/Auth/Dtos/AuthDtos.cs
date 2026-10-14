@@ -2,7 +2,8 @@ using OnlyCars.Domain;
 
 namespace OnlyCars.Application.Auth.Dtos;
 
-public record RegisterRequest(string Email, string Password);
+// Without a Currency the user gets the entity default (ILS).
+public record RegisterRequest(string Email, string Password, string? Currency = null);
 
 public record LoginRequest(string Email, string Password);
 

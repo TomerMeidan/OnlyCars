@@ -64,6 +64,44 @@ public class AuthServiceTests
         Assert.Single(db.Users);
     }
 
+    [Fact]
+    public async Task Register_WithCurrency_SavesIt_AndLoginReturnsIt()
+    {
+        var service = CreateService(out var db);
+
+        var registered = await service.RegisterAsync(new RegisterRequest("eur@example.com", "Passw0rd!", "EUR"));
+        var loggedIn = await service.LoginAsync(new LoginRequest("eur@example.com", "Passw0rd!"));
+
+        Assert.Equal("EUR", registered.User.Currency);
+        Assert.Equal("EUR", db.Users.Single().Currency);
+        Assert.Equal("EUR", loggedIn.User.Currency);
+    }
+
+    [Fact]
+    public async Task Register_WithoutCurrency_SavesIls()
+    {
+        var service = CreateService(out var db);
+
+        var response = await service.RegisterAsync(new RegisterRequest("ils@example.com", "Passw0rd!"));
+
+        Assert.Equal("ILS", response.User.Currency);
+        Assert.Equal("ILS", db.Users.Single().Currency);
+    }
+
+    [Theory]
+    [InlineData("XYZ")]
+    [InlineData("ils ")]
+    public async Task Register_UnknownCurrency_ThrowsInvalidCurrency_AndCreatesNoUser(string currency)
+    {
+        var service = CreateService(out var db);
+
+        var ex = await Assert.ThrowsAsync<ValidationFailedException>(() =>
+            service.RegisterAsync(new RegisterRequest("bad@example.com", "Passw0rd!", currency)));
+
+        Assert.Equal("auth.invalidCurrency", ex.Code);
+        Assert.Empty(db.Users);
+    }
+
     [Theory]
     [InlineData("", "Passw0rd!")]
     [InlineData("login@example.com", "")]

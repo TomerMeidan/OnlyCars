@@ -1,6 +1,8 @@
 export type FuelType = 'Petrol' | 'Diesel' | 'Hybrid' | 'Electric' | 'Lpg' | 'Other'
 export const fuelTypes: FuelType[] = ['Petrol', 'Diesel', 'Hybrid', 'Electric', 'Lpg', 'Other']
 
+export const currencies = ['ILS', 'USD', 'EUR', 'GBP']
+
 export interface User {
   id: string
   email: string
@@ -52,7 +54,8 @@ export interface Problem {
   title?: string
   detail?: string
   code?: string
-  currentKm?: number
+  previousKm?: number
+  nextKm?: number
 }
 
 export class ApiError extends Error {
@@ -90,3 +93,12 @@ export async function api<T>(path: string, method = 'GET', body?: unknown): Prom
   }
   return res.status === 204 ? (undefined as T) : res.json()
 }
+
+// The API accepts an out-of-order reading once the user confirms it is a correction.
+export const isOrderError = (err: unknown) =>
+  err instanceof ApiError && ['odometer.lowerThanPrevious', 'odometer.higherThanNext'].includes(err.problem.code ?? '')
+
+export const isGuid = (s: string | undefined) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s ?? '')
+
+// The API's answer for a car that doesn't exist, used without a request when the route id can't be one.
+export const carNotFound = () => new ApiError(404, { code: 'vehicle.notFound' }, 'Not Found')

@@ -2,7 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { errorMessage } from '../i18n'
 import { useNavigate, useParams } from 'react-router-dom'
-import { api, fuelTypes, type FuelType, type Vehicle, type VehicleInput } from '../api'
+import { api, carNotFound, fuelTypes, isGuid, type FuelType, type Vehicle, type VehicleInput } from '../api'
 
 const maxYear = new Date().getFullYear() + 1
 
@@ -11,11 +11,14 @@ export default function CarFormPage() {
   const { id } = useParams()
   const navigate = useNavigate()
   const [car, setCar] = useState<Vehicle | null>(null)
-  const [error, setError] = useState<unknown>(null)
+  const [fetchError, setError] = useState<unknown>(null)
+  // An id that can't be a car never reaches the API.
+  const badId = id != null && !isGuid(id)
+  const error = badId ? carNotFound() : fetchError
 
   useEffect(() => {
-    if (id) api<Vehicle>(`/vehicles/${id}`).then(setCar, setError)
-  }, [id])
+    if (id && !badId) api<Vehicle>(`/vehicles/${encodeURIComponent(id)}`).then(setCar, setError)
+  }, [id, badId])
 
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault()
@@ -36,7 +39,7 @@ export default function CarFormPage() {
       ...(!id && { initialOdometerKm: num('initialOdometerKm') }),
     }
     try {
-      await api(id ? `/vehicles/${id}` : '/vehicles', id ? 'PUT' : 'POST', body)
+      await api(id ? `/vehicles/${encodeURIComponent(id)}` : '/vehicles', id ? 'PUT' : 'POST', body)
       navigate('/')
     } catch (err) {
       setError(err)

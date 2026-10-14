@@ -14,6 +14,7 @@ public class AuthService(
     IJwtTokenService jwtTokenService)
 {
     public const int MinPasswordLength = 8;
+    public static readonly string[] Currencies = ["ILS", "USD", "EUR", "GBP"];
 
     public async Task<AuthResponse> RegisterAsync(RegisterRequest request, CancellationToken ct = default)
     {
@@ -32,12 +33,21 @@ public class AuthService(
                 $"Password must be at least {MinPasswordLength} characters.");
         }
 
+        if (request.Currency is not null && !Currencies.Contains(request.Currency))
+        {
+            throw new ValidationFailedException("auth.invalidCurrency", $"Currency must be one of {string.Join(", ", Currencies)}.");
+        }
+
         if (await db.Users.AnyAsync(u => u.Email == email, ct))
         {
             throw new ConflictException("auth.emailTaken", "An account with this email already exists.");
         }
 
         var user = new User { Email = email, PasswordHash = string.Empty };
+        if (request.Currency is not null)
+        {
+            user.Currency = request.Currency;
+        }
         user.PasswordHash = passwordHasher.HashPassword(user, request.Password);
 
         db.Users.Add(user);

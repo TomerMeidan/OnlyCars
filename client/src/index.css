@@ -182,3 +182,7 @@ button.link {
 .history li:last-child { border-block-end: none; }
 .history .value { font: 600 1.35rem/1.2 var(--gauge); font-variant-numeric: tabular-nums; margin-inline-end: auto; }
 .history bdi { direction: ltr; }
+.inline-form { flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: end; gap: 0.5rem 0.75rem; }
+.inline-form > label:not(.inline) { flex: 1 1 9rem; }
+.inline-form input:not([type='checkbox']) { width: 100%; }
+.inline-form > p, .inline-form > label.inline { flex-basis: 100%; }

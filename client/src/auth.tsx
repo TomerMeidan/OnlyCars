@@ -3,7 +3,7 @@ import { api, setToken, getToken, type AuthResponse, type User } from './api'
 
 interface AuthState {
   user: User | null
-  authenticate: (mode: 'login' | 'register', email: string, password: string) => Promise<void>
+  authenticate: (mode: 'login' | 'register', email: string, password: string, currency?: string) => Promise<void>
   logout: () => void
 }
 
@@ -15,8 +15,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     getToken() ? JSON.parse(localStorage.getItem(USER_KEY) ?? 'null') : null,
   )
 
-  const authenticate: AuthState['authenticate'] = async (mode, email, password) => {
-    const res = await api<AuthResponse>(`/auth/${mode}`, 'POST', { email, password })
+  const authenticate: AuthState['authenticate'] = async (mode, email, password, currency) => {
+    const res = await api<AuthResponse>(`/auth/${mode}`, 'POST', { email, password, currency })
     setToken(res.token)
     localStorage.setItem(USER_KEY, JSON.stringify(res.user))
     setUser(res.user)

@@ -3,10 +3,15 @@ import { useTranslation } from 'react-i18next'
 import { errorMessage } from '../i18n'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../auth'
+import { currencies } from '../api'
 
 export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const { authenticate } = useAuth()
+  // Follows the UI language until the user picks one.
+  const [pickedCurrency, setPickedCurrency] = useState<string | null>(null)
+  const currency = pickedCurrency ?? (i18n.resolvedLanguage === 'he' ? 'ILS' : 'USD')
+  const currencyNames = new Intl.DisplayNames([i18n.resolvedLanguage ?? 'en'], { type: 'currency' })
   const [error, setError] = useState<unknown>(null)
   const [busy, setBusy] = useState(false)
 
@@ -16,7 +21,7 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
     setBusy(true)
     setError(null)
     try {
-      await authenticate(mode, String(form.get('email')), String(form.get('password')))
+      await authenticate(mode, String(form.get('email')), String(form.get('password')), mode === 'register' ? currency : undefined)
     } catch (err) {
       setError(err)
       setBusy(false)
@@ -41,6 +46,14 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
           required
         />
       </label>
+      {mode === 'register' && (
+        <label>
+          {t('currency')}
+          <select name="currency" value={currency} onChange={(e) => setPickedCurrency(e.target.value)}>
+            {currencies.map((c) => <option key={c} value={c}>{`${c} – ${currencyNames.of(c)}`}</option>)}
+          </select>
+        </label>
+      )}
       {error != null && <p className="error" role="alert">{errorMessage(error)}</p>}
       <button disabled={busy}>{t(mode)}</button>
       <p>

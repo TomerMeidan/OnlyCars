@@ -19,14 +19,15 @@ const auth = await (await api.post(`${BASE}/api/auth/register`, {
 const headers = { Authorization: `Bearer ${auth.token}` }
 const car = await (await api.post(`${BASE}/api/vehicles`, {
   headers,
-  data: { nickname: 'A very long nickname for the family station wagon that we drive', make: 'Skoda', model: 'Octavia', year: 2015, initialOdometerKm: 98000 },
+  // MVP1-B: the initial reading is dated today and backdated readings must stay below it, so it carries the big value.
+  data: { nickname: 'A very long nickname for the family station wagon that we drive', make: 'Skoda', model: 'Octavia', year: 2015, initialOdometerKm: 1234567 },
 })).json()
 const posts = [
+  { valueKm: 98000, readingDate: '2026-01-02' },
   { valueKm: 101500, readingDate: '2026-01-15' },
   { valueKm: 104320.5, readingDate: '2026-03-02' },
   { valueKm: 110000, readingDate: '2026-06-30' },
   { valueKm: 109000, readingDate: '2026-07-01', confirmCorrection: true },
-  { valueKm: 1234567, readingDate: '2026-09-10' },
 ]
 const postResults = []
 for (const p of posts) {

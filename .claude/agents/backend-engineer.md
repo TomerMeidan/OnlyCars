@@ -28,7 +28,7 @@ For engineering practice, use Addy Osmani's skills `api-and-interface-design`, `
    - Add the indexes and check constraints listed in the spec's "Indexes and Constraints".
 3. **Keep data private and errors coded.**
    - Every query on user data is scoped to the caller. Another user's data returns 404 through `NotFoundException`.
-   - Every expected error throws an `AppException` subclass with a stable `code`, plus extensions for any values the UI needs, such as `currentKm`.
+   - Every expected error throws an `AppException` subclass with a stable `code`, plus extensions for any values the UI needs, such as `previousKm`.
 4. **Make the smallest complete change.**
    - Match the existing style: primary-constructor services and records for DTOs.
    - Grep every caller before you change shared code.

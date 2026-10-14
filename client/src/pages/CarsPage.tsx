@@ -2,7 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { errorMessage } from '../i18n'
 import { Link } from 'react-router-dom'
-import { api, ApiError, type Vehicle } from '../api'
+import { api, isOrderError, type Vehicle } from '../api'
 
 export default function CarsPage() {
   const { t } = useTranslation()
@@ -66,26 +66,30 @@ export default function CarsPage() {
   )
 }
 
-function OdometerQuickEntry({ car, onSaved }: { car: Vehicle; onSaved: () => void }) {
+export function OdometerQuickEntry({ car, onSaved }: { car: Vehicle; onSaved: () => void }) {
   const { t } = useTranslation()
   const [value, setValue] = useState('')
   const [error, setError] = useState<unknown>(null)
   const [needsConfirm, setNeedsConfirm] = useState(false)
   const [confirmCorrection, setConfirmCorrection] = useState(false)
+  const [busy, setBusy] = useState(false)
 
   async function submit(e: FormEvent) {
     e.preventDefault()
+    setBusy(true)
     setError(null)
     try {
-      await api(`/vehicles/${car.id}/odometer`, 'POST', { valueKm: Number(value), confirmCorrection })
+      // A ticked box that is hidden again must not confirm a later reading.
+      await api(`/vehicles/${car.id}/odometer`, 'POST', { valueKm: Number(value), confirmCorrection: needsConfirm && confirmCorrection })
       setValue('')
       setNeedsConfirm(false)
       setConfirmCorrection(false)
       onSaved()
     } catch (err) {
       setError(err)
-      // The API accepts a lower reading once the user confirms it is a correction.
-      setNeedsConfirm(err instanceof ApiError && err.problem.code === 'odometer.lowerThanCurrent')
+      setNeedsConfirm(isOrderError(err))
+    } finally {
+      setBusy(false)
     }
   }
 
@@ -102,7 +106,7 @@ function OdometerQuickEntry({ car, onSaved }: { car: Vehicle; onSaved: () => voi
         value={value}
         onChange={(e) => setValue(e.target.value)}
       />
-      <button>{t('updateOdometer')}</button>
+      <button disabled={busy}>{t('updateOdometer')}</button>
       {error != null && <p className="error" role="alert">{errorMessage(error)}</p>}
       {needsConfirm && (
         <label className="inline">
@@ -116,6 +120,7 @@ function OdometerQuickEntry({ car, onSaved }: { car: Vehicle; onSaved: () => voi
 
 // Drum counter; only digits that changed since the last render roll in.
 export function Odometer({ km }: { km: number }) {
+  const { t } = useTranslation()
   const value = String(Math.round(km))
   const digits = value.padStart(6, '0')
   const [seen, setSeen] = useState({ digits, before: digits })
@@ -124,7 +129,7 @@ export function Odometer({ km }: { km: number }) {
   const { before } = seen
 
   return (
-    <span className="odometer" role="img" aria-label={Math.round(km).toLocaleString()}>
+    <span className="odometer" role="img" aria-label={`${Math.round(km).toLocaleString()} ${t('km')}`}>
       {[...digits].map((d, i) => (
         <span key={digits.length - i} className={i < lead ? 'lead' : undefined} aria-hidden>
           <b key={d} className={before.length === digits.length && before[i] !== d ? 'roll' : undefined}>{d}</b>

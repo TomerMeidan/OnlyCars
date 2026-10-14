@@ -24,4 +24,18 @@ public class OdometerController(OdometerService odometerService) : ControllerBas
         var reading = await odometerService.AddAsync(User.GetUserId(), vehicleId, request, ct);
         return Ok(reading);
     }
+
+    [HttpPut("{readingId:guid}")]
+    public async Task<ActionResult<OdometerReadingDto>> Update(Guid vehicleId, Guid readingId, UpdateOdometerReadingRequest request, CancellationToken ct)
+    {
+        var reading = await odometerService.UpdateAsync(User.GetUserId(), vehicleId, readingId, request, ct);
+        return Ok(reading);
+    }
+
+    [HttpDelete("{readingId:guid}")]
+    public async Task<IActionResult> Delete(Guid vehicleId, Guid readingId, CancellationToken ct)
+    {
+        await odometerService.DeleteAsync(User.GetUserId(), vehicleId, readingId, ct);
+        return NoContent();
+    }
 }

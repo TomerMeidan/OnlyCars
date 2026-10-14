@@ -30,12 +30,12 @@ public class GlobalExceptionHandlerTests
     [Fact]
     public async Task Extensions_AreCopiedToTheBody()
     {
-        var (_, body) = await HandleAsync(new ValidationFailedException("odometer.lowerThanCurrent", "lower")
+        var (_, body) = await HandleAsync(new ValidationFailedException("odometer.lowerThanPrevious", "lower")
         {
-            Extensions = { ["currentKm"] = 61250m }
+            Extensions = { ["previousKm"] = 61250m }
         });
 
-        Assert.Equal(61250m, body.GetProperty("currentKm").GetDecimal());
+        Assert.Equal(61250m, body.GetProperty("previousKm").GetDecimal());
     }
 
     [Theory]

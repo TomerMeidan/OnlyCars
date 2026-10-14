@@ -5,3 +5,6 @@ namespace OnlyCars.Application.Odometer.Dtos;
 public record OdometerReadingDto(Guid Id, Guid VehicleId, decimal ValueKm, DateOnly ReadingDate, OdometerSource Source);
 
 public record AddOdometerReadingRequest(decimal ValueKm, DateOnly? ReadingDate, bool ConfirmCorrection = false);
+
+// A null ReadingDate keeps the reading's current date.
+public record UpdateOdometerReadingRequest(decimal ValueKm, DateOnly? ReadingDate, bool ConfirmCorrection = false);
