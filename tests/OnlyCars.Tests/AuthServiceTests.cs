@@ -1,4 +1,6 @@
 using Microsoft.AspNetCore.Identity;
+using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Options;
 using OnlyCars.Application.Auth;
 using OnlyCars.Application.Auth.Dtos;
 using OnlyCars.Application.Common.Exceptions;
@@ -8,10 +10,111 @@ namespace OnlyCars.Tests;
 
 public class AuthServiceTests
 {
-    private static AuthService CreateService(out Infrastructure.Persistence.AppDbContext db)
+    private static AuthService CreateService(out Infrastructure.Persistence.AppDbContext db,
+        RateLimitOptions? limits = null, IPasswordHasher<User>? hasher = null)
     {
         db = TestDbContextFactory.Create();
-        return new AuthService(db, new PasswordHasher<User>(), new FakeJwtTokenService());
+        return new AuthService(db, hasher ?? new PasswordHasher<User>(), new FakeJwtTokenService(),
+            new MemoryCache(new MemoryCacheOptions()), Options.Create(limits ?? new RateLimitOptions()));
+    }
+
+    private sealed class CountingHasher : PasswordHasher<User>
+    {
+        public int VerifyCalls;
+
+        public override PasswordVerificationResult VerifyHashedPassword(User user, string hashedPassword, string providedPassword)
+        {
+            VerifyCalls++;
+            return base.VerifyHashedPassword(user, hashedPassword, providedPassword);
+        }
+    }
+
+    [Fact]
+    public async Task Login_11thFailureForEmail_Throws429_EvenWithCorrectPassword()
+    {
+        var service = CreateService(out _);
+        await service.RegisterAsync(new RegisterRequest("victim@example.com", "Passw0rd!"));
+
+        for (var i = 0; i < 10; i++)
+        {
+            await Assert.ThrowsAsync<UnauthorizedException>(() =>
+                service.LoginAsync(new LoginRequest(i % 2 == 0 ? "victim@example.com" : " VICTIM@example.com", "wrong")));
+        }
+
+        var ex = await Assert.ThrowsAsync<TooManyRequestsException>(() =>
+            service.LoginAsync(new LoginRequest("victim@example.com", "wrong")));
+        Assert.Equal("auth.tooManyAttempts", ex.Code);
+        Assert.InRange(ex.RetryAfterSeconds, 1, 900);
+
+        await Assert.ThrowsAsync<TooManyRequestsException>(() =>
+            service.LoginAsync(new LoginRequest("victim@example.com", "Passw0rd!")));
+
+        // Other emails are unaffected.
+        await service.RegisterAsync(new RegisterRequest("other@example.com", "Passw0rd!"));
+        await service.LoginAsync(new LoginRequest("other@example.com", "Passw0rd!"));
+    }
+
+    [Fact]
+    public async Task Login_UnknownEmailFailures_AlsoCount()
+    {
+        var service = CreateService(out _, new RateLimitOptions { FailedLoginLimit = 2 });
+
+        for (var i = 0; i < 2; i++)
+        {
+            await Assert.ThrowsAsync<UnauthorizedException>(() => service.LoginAsync(new LoginRequest("ghost@example.com", "x")));
+        }
+
+        await Assert.ThrowsAsync<TooManyRequestsException>(() => service.LoginAsync(new LoginRequest("ghost@example.com", "x")));
+    }
+
+    [Fact]
+    public async Task Login_SuccessesDoNotCount()
+    {
+        var service = CreateService(out _, new RateLimitOptions { FailedLoginLimit = 2 });
+        await service.RegisterAsync(new RegisterRequest("ok@example.com", "Passw0rd!"));
+
+        for (var i = 0; i < 5; i++)
+        {
+            await service.LoginAsync(new LoginRequest("ok@example.com", "Passw0rd!"));
+        }
+
+        await Assert.ThrowsAsync<UnauthorizedException>(() => service.LoginAsync(new LoginRequest("ok@example.com", "wrong")));
+        await service.LoginAsync(new LoginRequest("ok@example.com", "Passw0rd!"));
+    }
+
+    [Fact]
+    public async Task Login_AfterWindowPasses_CorrectPasswordWorksAgain()
+    {
+        var service = CreateService(out _, new RateLimitOptions { FailedLoginLimit = 1, FailedLoginWindowSeconds = 1 });
+        await service.RegisterAsync(new RegisterRequest("later@example.com", "Passw0rd!"));
+
+        await Assert.ThrowsAsync<UnauthorizedException>(() => service.LoginAsync(new LoginRequest("later@example.com", "wrong")));
+        await Assert.ThrowsAsync<TooManyRequestsException>(() => service.LoginAsync(new LoginRequest("later@example.com", "Passw0rd!")));
+
+        await Task.Delay(1200);
+
+        await service.LoginAsync(new LoginRequest("later@example.com", "Passw0rd!"));
+    }
+
+    [Fact]
+    public async Task Login_UnknownEmail_VerifiesOnce_AndFailsLikeAWrongPassword()
+    {
+        var hasher = new CountingHasher();
+        var service = CreateService(out _, hasher: hasher);
+        await service.RegisterAsync(new RegisterRequest("known@example.com", "Passw0rd!"));
+
+        var unknown = await Assert.ThrowsAsync<UnauthorizedException>(() =>
+            service.LoginAsync(new LoginRequest("unknown@example.com", "Passw0rd!")));
+        Assert.Equal(1, hasher.VerifyCalls);
+
+        var wrong = await Assert.ThrowsAsync<UnauthorizedException>(() =>
+            service.LoginAsync(new LoginRequest("known@example.com", "wrong")));
+        Assert.Equal(2, hasher.VerifyCalls);
+
+        Assert.Equal(wrong.Code, unknown.Code);
+        Assert.Equal(wrong.Message, unknown.Message);
+        Assert.Empty(unknown.Extensions);
+        Assert.Empty(wrong.Extensions);
     }
 
     [Fact]

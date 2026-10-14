@@ -2,6 +2,7 @@ using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.IdentityModel.Tokens;
+using OnlyCars.Api.Common;
 using OnlyCars.Api.Middleware;
 using OnlyCars.Application;
 using OnlyCars.Infrastructure;
@@ -12,7 +13,8 @@ var builder = WebApplication.CreateBuilder(args);
 const string ClientCorsPolicy = "ClientCors";
 
 builder.Services.AddControllers()
-    .AddJsonOptions(o => o.JsonSerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter()));
+    .AddJsonOptions(o => o.JsonSerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter()))
+    .ConfigureApiBehaviorOptions(o => o.InvalidModelStateResponseFactory = GlobalExceptionHandler.InvalidModelStateResponse);
 builder.Services.AddOpenApi();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
@@ -48,6 +50,8 @@ builder.Services
 
 builder.Services.AddAuthorization();
 
+builder.Services.AddRequestLimits(builder.Configuration);
+
 builder.Services.AddCors(options =>
 {
     options.AddPolicy(ClientCorsPolicy, policy =>
@@ -62,6 +66,9 @@ var app = builder.Build();
 
 app.UseExceptionHandler(_ => { });
 
+// Forwarded headers, CORS and the rate limiter, in the order they must run. Before HTTPS redirection, which needs X-Forwarded-Proto.
+app.UseRequestLimits(ClientCorsPolicy);
+
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
@@ -70,8 +77,6 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
-
-app.UseCors(ClientCorsPolicy);
 
 app.UseAuthentication();
 app.UseAuthorization();

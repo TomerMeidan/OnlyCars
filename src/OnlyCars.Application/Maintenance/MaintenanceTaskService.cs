@@ -63,7 +63,7 @@ public class MaintenanceTaskService(IAppDbContext db, VehicleService vehicleServ
         var vehicle = await vehicleService.FindOwnedAsync(userId, vehicleId, ct);
         var task = await FindAsync(vehicle.Id, taskId, ct);
         var (name, category) = Validate(vehicle, request.Name, request.Category, request.IntervalKm, request.IntervalDays,
-            request.LastDoneOdometerKm, request.LastDoneDate);
+            request.LastDoneOdometerKm, request.LastDoneDate, task);
 
         task.Name = name;
         task.Category = category;
@@ -90,9 +90,13 @@ public class MaintenanceTaskService(IAppDbContext db, VehicleService vehicleServ
         await db.MaintenanceTasks.FirstOrDefaultAsync(t => t.Id == taskId && t.VehicleId == vehicleId, ct)
         ?? throw new NotFoundException(nameof(MaintenanceTask), taskId);
 
-    /// <summary>Checks every field before anything changes, so a failed check saves nothing. Returns the trimmed name and parsed category.</summary>
+    /// <summary>
+    /// Checks every field before anything changes, so a failed check saves nothing. Returns the trimmed name and parsed category.
+    /// On update (<paramref name="stored"/> set), the last-done range checks only run on values that changed (decisions.md),
+    /// so a task stays editable after the car's odometer is corrected below its last-done km.
+    /// </summary>
     private static (string Name, TaskCategory Category) Validate(Vehicle vehicle, string? name, string? category,
-        int? intervalKm, int? intervalDays, decimal? lastDoneKm, DateOnly? lastDoneDate)
+        int? intervalKm, int? intervalDays, decimal? lastDoneKm, DateOnly? lastDoneDate, MaintenanceTask? stored = null)
     {
         var trimmed = name?.Trim() ?? "";
         if (trimmed.Length is 0 or > MaintenanceTask.MaxNameLength)
@@ -117,7 +121,8 @@ public class MaintenanceTaskService(IAppDbContext db, VehicleService vehicleServ
                 $"The km interval must be 1 to {MaintenanceTask.MaxIntervalKm} and the time interval 1 to {MaintenanceTask.MaxIntervalDays} days.");
         }
 
-        if (lastDoneKm is null || lastDoneKm < 0 || lastDoneKm > vehicle.CurrentOdometerKm || lastDoneDate is null)
+        var kmChanged = lastDoneKm != stored?.LastDoneOdometerKm;
+        if (lastDoneKm is null || lastDoneDate is null || kmChanged && (lastDoneKm < 0 || lastDoneKm > vehicle.CurrentOdometerKm))
         {
             throw new ValidationFailedException("task.invalidLastDone",
                 $"Last done needs a date and a km value from 0 to the car's current odometer ({vehicle.CurrentOdometerKm} km).")
@@ -127,7 +132,7 @@ public class MaintenanceTaskService(IAppDbContext db, VehicleService vehicleServ
         }
 
         // Same one day of slack as odometer readings (Israel is ahead of UTC).
-        if (lastDoneDate > DateOnly.FromDateTime(DateTime.UtcNow).AddDays(1))
+        if (lastDoneDate != stored?.LastDoneDate && lastDoneDate > DateOnly.FromDateTime(DateTime.UtcNow).AddDays(1))
         {
             throw new ValidationFailedException("task.futureDate", "The last done date can't be in the future.");
         }

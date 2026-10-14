@@ -67,4 +67,17 @@ public class GlobalExceptionHandlerTests
         Assert.Equal("http.500", body.GetProperty("code").GetString());
         Assert.DoesNotContain("secret", body.GetProperty("detail").GetString());
     }
+
+    [Fact]
+    public async Task TooManyRequests_Returns429_WithCodeAndRetryAfter()
+    {
+        var context = new DefaultHttpContext { Response = { Body = new MemoryStream() } };
+        await new GlobalExceptionHandler(NullLogger<GlobalExceptionHandler>.Instance)
+            .TryHandleAsync(context, new TooManyRequestsException("auth.tooManyAttempts", "slow down", 42), CancellationToken.None);
+
+        context.Response.Body.Position = 0;
+        Assert.Equal(429, context.Response.StatusCode);
+        Assert.Equal("42", context.Response.Headers.RetryAfter.ToString());
+        Assert.Equal("auth.tooManyAttempts", JsonDocument.Parse(context.Response.Body).RootElement.GetProperty("code").GetString());
+    }
 }

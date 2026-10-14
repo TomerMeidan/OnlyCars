@@ -18,6 +18,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Dev-only settings (relaxed rate limits) must never reach the published app (SEC-1 F5). -->
+    <Content Update="appsettings.Development.json" CopyToPublishDirectory="Never" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\OnlyCars.Domain\OnlyCars.Domain.csproj" />
     <ProjectReference Include="..\OnlyCars.Application\OnlyCars.Application.csproj" />
     <ProjectReference Include="..\OnlyCars.Infrastructure\OnlyCars.Infrastructure.csproj" />

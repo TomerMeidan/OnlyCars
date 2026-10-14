@@ -1,4 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
+using OnlyCars.Api.Common;
 using OnlyCars.Application.Auth;
 using OnlyCars.Application.Auth.Dtos;
 
@@ -6,6 +8,7 @@ namespace OnlyCars.Api.Controllers;
 
 [ApiController]
 [Route("api/auth")]
+[EnableRateLimiting(RequestLimits.AuthPolicy)]
 public class AuthController(AuthService authService) : ControllerBase
 {
     [HttpPost("register")]

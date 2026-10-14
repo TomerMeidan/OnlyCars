@@ -124,6 +124,8 @@ public class MaintenanceTaskServiceTests
         { "task.invalidLastDone", Custom(lastKm: -1) },
         { "task.invalidLastDone", Custom(lastKm: 50_000.01m) },
         { "task.invalidLastDone", Custom(lastKm: null) },
+        // Custom() substitutes a default for a null date, so build this one directly.
+        { "task.invalidLastDone", new CreateMaintenanceTaskRequest(null, "Wash", "Other", 5_000, 90, 40_000, null) },
         { "task.futureDate", Custom(lastDate: Today.AddDays(2)) },
         { "task.invalidTemplate", Custom(templateId: Guid.NewGuid()) },
     };
@@ -206,6 +208,24 @@ public class MaintenanceTaskServiceTests
 
         Assert.Equal("task.intervalRequired", ex.Code);
         Assert.Equal("Wash", db.MaintenanceTasks.Single().Name);
+    }
+
+    [Fact]
+    public async Task Update_AfterOdometerCorrectedBelowLastDone_UnchangedLastDoneIsAccepted_ChangedIsChecked()
+    {
+        var car = await CreateCarAsync(80_000);
+        var task = await tasks.CreateAsync(userId, car, Custom(lastKm: 70_000));
+        db.Vehicles.Single(v => v.Id == car).CurrentOdometerKm = 59_000;
+        await db.SaveChangesAsync();
+
+        var toggled = await tasks.UpdateAsync(userId, car, task.Id,
+            new UpdateMaintenanceTaskRequest("Wash", "Other", 5_000, 90, 70_000, task.LastDoneDate, false));
+        Assert.False(toggled.IsEnabled);
+
+        var ex = await Assert.ThrowsAsync<ValidationFailedException>(() => tasks.UpdateAsync(userId, car, task.Id,
+            new UpdateMaintenanceTaskRequest("Wash", "Other", 5_000, 90, 75_000, task.LastDoneDate, true)));
+        Assert.Equal("task.invalidLastDone", ex.Code);
+        Assert.Equal(70_000m, db.MaintenanceTasks.Single().LastDoneOdometerKm);
     }
 
     // --- Delete (criteria 8, 10) ---

@@ -1,6 +1,8 @@
 using System.Net.Mail;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Options;
 using OnlyCars.Application.Auth.Dtos;
 using OnlyCars.Application.Common;
 using OnlyCars.Application.Common.Exceptions;
@@ -11,9 +13,16 @@ namespace OnlyCars.Application.Auth;
 public class AuthService(
     IAppDbContext db,
     IPasswordHasher<User> passwordHasher,
-    IJwtTokenService jwtTokenService)
+    IJwtTokenService jwtTokenService,
+    IMemoryCache cache,
+    IOptions<RateLimitOptions> limits)
 {
     public const int MinPasswordLength = 8;
+    public const int MaxEmailLength = 256; // the Email column length
+
+    // Verified against when the email is unknown, so both failure paths cost one hash verification.
+    private static readonly User DummyUser = new() { Email = string.Empty, PasswordHash = string.Empty };
+    private static readonly string DummyHash = new PasswordHasher<User>().HashPassword(DummyUser, Guid.NewGuid().ToString());
     public static readonly string[] Currencies = ["ILS", "USD", "EUR", "GBP"];
 
     public async Task<AuthResponse> RegisterAsync(RegisterRequest request, CancellationToken ct = default)
@@ -21,8 +30,7 @@ public class AuthService(
         var email = request.Email.Trim().ToLowerInvariant();
 
         // MailAddress also parses display-name forms like "a <b@c.d>", so require the address to round-trip unchanged.
-        // 256 matches the Email column length.
-        if (email.Length > 256 || !MailAddress.TryCreate(email, out var address) || address.Address != email)
+        if (email.Length > MaxEmailLength || !MailAddress.TryCreate(email, out var address) || address.Address != email)
         {
             throw new ValidationFailedException("auth.invalidEmail", "Email address is not valid.");
         }
@@ -58,26 +66,72 @@ public class AuthService(
 
     public async Task<AuthResponse> LoginAsync(LoginRequest request, CancellationToken ct = default)
     {
-        var email = request.Email.Trim().ToLowerInvariant();
-        if (email.Length == 0 || string.IsNullOrEmpty(request.Password))
+        if (string.IsNullOrWhiteSpace(request.Email) || string.IsNullOrEmpty(request.Password))
         {
             throw new ValidationFailedException("auth.credentialsRequired", "Email and password are required.");
         }
 
+        // Before normalizing, caching or querying: an unbounded email would be an unbounded cache key (SEC-1 F1).
+        if (request.Email.Length > MaxEmailLength)
+        {
+            throw InvalidCredentials();
+        }
+
+        var email = request.Email.Trim().ToLowerInvariant();
         var user = await db.Users.FirstOrDefaultAsync(u => u.Email == email, ct);
 
-        if (user is null)
+        // Keyed on the account when there is one: the database matches look-alike emails (e.g. fullwidth letters) that
+        // the normalized string doesn't, and they must share one counter (decisions.md, SEC-1 F2).
+        // shortcut: failed-login counters live in this process's memory (reset on restart, not shared between instances),
+        // fine for one App Service instance; move them to Redis or SQL if the API scales out.
+        var (counter, attempt) = TakeAttempt(user is null ? "login-failures:email:" + email : "login-failures:user:" + user.Id);
+        if (attempt > limits.Value.FailedLoginLimit)
         {
-            throw new UnauthorizedException("auth.invalidCredentials", "Invalid email or password.");
+            Interlocked.Decrement(ref counter.Count);
+            var retryAfter = (int)Math.Ceiling((counter.ResetsAt - DateTimeOffset.UtcNow).TotalSeconds);
+            throw new TooManyRequestsException("auth.tooManyAttempts", "Too many failed sign-in attempts. Try again later.",
+                Math.Max(retryAfter, 1));
         }
 
-        var result = passwordHasher.VerifyHashedPassword(user, user.PasswordHash, request.Password);
-        if (result == PasswordVerificationResult.Failed)
+        // Unknown email and wrong password take the same path: one verification, the same exception.
+        var result = passwordHasher.VerifyHashedPassword(user ?? DummyUser, user?.PasswordHash ?? DummyHash, request.Password);
+        if (user is null || result == PasswordVerificationResult.Failed)
         {
-            throw new UnauthorizedException("auth.invalidCredentials", "Invalid email or password.");
+            throw InvalidCredentials(); // the attempt taken above stays counted
         }
 
+        Interlocked.Decrement(ref counter.Count); // a success gives its attempt back
         return BuildResponse(user);
+    }
+
+    private static UnauthorizedException InvalidCredentials() => new("auth.invalidCredentials", "Invalid email or password.");
+
+    /// <summary>
+    /// Counts this attempt before the password is verified, so parallel requests can't all pass the limit check
+    /// during the slow hash (SEC-1 F3). The lock makes get-or-create atomic; IMemoryCache.GetOrCreate isn't.
+    /// </summary>
+    private (FailedLogins Counter, int Attempt) TakeAttempt(string key)
+    {
+        FailedLogins counter;
+        lock (CounterLock)
+        {
+            counter = cache.GetOrCreate(key, entry =>
+            {
+                var window = TimeSpan.FromSeconds(limits.Value.FailedLoginWindowSeconds);
+                entry.AbsoluteExpirationRelativeToNow = window;
+                entry.Size = 1;
+                return new FailedLogins(DateTimeOffset.UtcNow + window);
+            })!;
+        }
+        return (counter, Interlocked.Increment(ref counter.Count));
+    }
+
+    private static readonly object CounterLock = new();
+
+    private sealed class FailedLogins(DateTimeOffset resetsAt)
+    {
+        public int Count;
+        public DateTimeOffset ResetsAt { get; } = resetsAt;
     }
 
     private AuthResponse BuildResponse(User user)
