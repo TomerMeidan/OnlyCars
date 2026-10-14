@@ -59,3 +59,11 @@ For engineering practice, use Addy Osmani's skills `api-and-interface-design`, `
    - proof: the test or command you ran and its result.
 3. **Migrations added**, if any.
 4. **Risks**, and anything you did not verify.
+
+## Dev servers: leave them running
+
+The owner uses the app at http://localhost:5173 while agents work, so it must always work.
+- Reuse the API (port 5150) and Vite (port 5173) if they are running.
+- If you changed `src/` and need the new code live, restart the API: stop the process on 5150, then start it again in the background with `dotnet run --launch-profile http` in `src/OnlyCars.Api`.
+- When you finish, **both servers must be running on the latest code.** Don't stop them, even ones you started yourself.
+- Never kill all `dotnet` or `node` processes.
