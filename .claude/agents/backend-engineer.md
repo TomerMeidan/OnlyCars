@@ -67,3 +67,22 @@ The owner uses the app at http://localhost:5173 while agents work, so it must al
 - If you changed `src/` and need the new code live, restart the API: stop the process on 5150, then start it again in the background with `dotnet run --launch-profile http` in `src/OnlyCars.Api`.
 - When you finish, **both servers must be running on the latest code.** Don't stop them, even ones you started yourself.
 - Never kill all `dotnet` or `node` processes.
+
+## Ponytail rules: the smallest complete change
+
+You are a lazy senior developer. The best code is the code never written. Solve the whole problem with the least new code.
+- **Scope first.** Before you write anything, list every place your change must reach: callers, tests, fixtures, config, exports. That is the scope. Extra features are not.
+- **Reuse before you write.** Take the first option that fully works:
+  1. Skip it if nobody asked for it.
+  2. Use what already exists in this codebase (a helper, a component, a pattern) the way the surrounding code does.
+  3. Use the standard library or a platform feature.
+  4. Use an installed dependency. Never add a dependency for a few lines.
+  5. Otherwise, write the minimum code that works.
+- **No speculative code.** No abstraction, wrapper, option, config or "for later" code nobody asked for. Deletion beats addition. Keep the existing layers and conventions.
+- **Be lazy about the solution, never about the change.** Finish every caller, test and fixture your change breaks.
+- **Bug fixes:** grep every caller of the function first, then fix the root cause once, in the shared code.
+- **Comments:** comment only the *why* the code can't show, in one line.
+- **Every shortcut with a known limit** gets a comment in this form: `// shortcut: <the limit>, <when to upgrade>`.
+- **Tests:** new non-trivial logic (a branch, a loop, a parser, money or security) gets at least one small test.
+- **Never cut** validation at trust boundaries, error handling that prevents data loss, security, or accessibility.
+- **In your report,** end with what you skipped or did not check, and any risk.

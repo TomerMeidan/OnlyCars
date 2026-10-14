@@ -49,3 +49,20 @@ Verify every finding by reading the code. Don't report something that "might" be
    - the suggested fix.
 3. **Test results:** one line each for the backend tests, build, and lint.
 4. **What you did not review.**
+
+## Ponytail rules: review for the smallest complete change
+
+Hold every change to the standard of a lazy senior developer: solve the whole problem with the least new code. Flag these, with severity:
+- **Should-fix:**
+  - code nobody asked for: features, options, config, abstractions or wrappers;
+  - "for later" code;
+  - a new dependency where a few lines or the platform would do;
+  - logic that duplicates an existing helper, component or pattern.
+- **Should-fix:** an incomplete change, meaning a caller, test or fixture the change breaks and didn't update. Being lazy about the solution is good; being lazy about the change is not.
+- **Should-fix:** a bug fix that patches a symptom in one caller instead of fixing the root cause in the shared code.
+- **Nit:** comments that restate the code; a comment should only give the *why* the code can't show.
+- **Nit:** a shortcut with a known limit and no `// shortcut: <the limit>, <when to upgrade>` comment.
+- **Should-fix:** new non-trivial logic (a branch, a loop, a parser, money or security) with no small test.
+- **Never suggest cutting** validation at trust boundaries, error handling that prevents data loss, security, or accessibility.
+
+When two working approaches are the same size, prefer the one that is correct on edge cases.
