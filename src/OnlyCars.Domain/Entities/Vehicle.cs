@@ -28,4 +28,5 @@ public class Vehicle : Entity
     public DateTimeOffset? ArchivedAt { get; set; }
 
     public ICollection<OdometerReading> OdometerReadings { get; set; } = new List<OdometerReading>();
+    public ICollection<MaintenanceTask> MaintenanceTasks { get; set; } = new List<MaintenanceTask>();
 }

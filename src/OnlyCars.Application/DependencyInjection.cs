@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.DependencyInjection;
 using OnlyCars.Application.Auth;
+using OnlyCars.Application.Maintenance;
 using OnlyCars.Application.Odometer;
 using OnlyCars.Application.Vehicles;
 using OnlyCars.Domain.Entities;
@@ -15,6 +16,7 @@ public static class DependencyInjection
         services.AddScoped<AuthService>();
         services.AddScoped<VehicleService>();
         services.AddScoped<OdometerService>();
+        services.AddScoped<MaintenanceTaskService>();
 
         return services;
     }

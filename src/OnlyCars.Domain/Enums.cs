@@ -36,3 +36,16 @@ public enum OdometerSource
     Checklist,
     Fuel
 }
+
+public enum TaskCategory
+{
+    Oil,
+    Filters,
+    Brakes,
+    Tires,
+    Fluids,
+    Battery,
+    Belts,
+    Ignition,
+    Other
+}

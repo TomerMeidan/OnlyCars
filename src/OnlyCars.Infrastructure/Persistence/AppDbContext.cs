@@ -13,6 +13,8 @@ public class AppDbContext : DbContext, IAppDbContext
     public DbSet<User> Users => Set<User>();
     public DbSet<Vehicle> Vehicles => Set<Vehicle>();
     public DbSet<OdometerReading> OdometerReadings => Set<OdometerReading>();
+    public DbSet<TaskTemplate> TaskTemplates => Set<TaskTemplate>();
+    public DbSet<MaintenanceTask> MaintenanceTasks => Set<MaintenanceTask>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

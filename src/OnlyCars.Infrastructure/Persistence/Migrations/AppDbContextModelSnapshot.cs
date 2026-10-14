@@ -22,6 +22,62 @@ namespace OnlyCars.Infrastructure.Persistence.Migrations
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
 
+            modelBuilder.Entity("OnlyCars.Domain.Entities.MaintenanceTask", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("Category")
+                        .HasColumnType("int");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<int>("DueSoonPercent")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("IntervalDays")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("IntervalKm")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("IsEnabled")
+                        .HasColumnType("bit");
+
+                    b.Property<DateOnly>("LastDoneDate")
+                        .HasColumnType("date");
+
+                    b.Property<decimal>("LastDoneOdometerKm")
+                        .HasColumnType("decimal(12,2)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<Guid?>("TemplateId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid>("VehicleId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TemplateId");
+
+                    b.HasIndex("VehicleId", "IsEnabled");
+
+                    b.ToTable("MaintenanceTasks", t =>
+                        {
+                            t.HasCheckConstraint("CK_MaintenanceTasks_Interval", "[IntervalKm] IS NOT NULL OR [IntervalDays] IS NOT NULL");
+                        });
+                });
+
             modelBuilder.Entity("OnlyCars.Domain.Entities.OdometerReading", b =>
                 {
                     b.Property<Guid>("Id")
@@ -52,6 +108,176 @@ namespace OnlyCars.Infrastructure.Persistence.Migrations
                         .IsDescending(false, true);
 
                     b.ToTable("OdometerReadings");
+                });
+
+            modelBuilder.Entity("OnlyCars.Domain.Entities.TaskTemplate", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("Category")
+                        .HasColumnType("int");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<int?>("DefaultIntervalDays")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("DefaultIntervalKm")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Key")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Key")
+                        .IsUnique();
+
+                    b.ToTable("TaskTemplates", t =>
+                        {
+                            t.HasCheckConstraint("CK_TaskTemplates_Interval", "[DefaultIntervalKm] IS NOT NULL OR [DefaultIntervalDays] IS NOT NULL");
+                        });
+
+                    b.HasData(
+                        new
+                        {
+                            Id = new Guid("7a5c0000-0000-4000-8000-000000000001"),
+                            Category = 0,
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 14, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            DefaultIntervalDays = 365,
+                            DefaultIntervalKm = 10000,
+                            Key = "oilChange",
+                            Name = "Engine oil and filter",
+                            UpdatedAt = new DateTimeOffset(new DateTime(2026, 10, 14, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0))
+                        },
+                        new
+                        {
+                            Id = new Guid("7a5c0000-0000-4000-8000-000000000002"),
+                            Category = 1,
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 14, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            DefaultIntervalDays = 730,
+                            DefaultIntervalKm = 20000,
+                            Key = "airFilter",
+                            Name = "Air filter",
+                            UpdatedAt = new DateTimeOffset(new DateTime(2026, 10, 14, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0))
+                        },
+                        new
+                        {
+                            Id = new Guid("7a5c0000-0000-4000-8000-000000000003"),
+                            Category = 1,
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 14, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            DefaultIntervalDays = 365,
+                            DefaultIntervalKm = 15000,
+                            Key = "cabinFilter",
+                            Name = "Cabin filter",
+                            UpdatedAt = new DateTimeOffset(new DateTime(2026, 10, 14, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0))
+                        },
+                        new
+                        {
+                            Id = new Guid("7a5c0000-0000-4000-8000-000000000004"),
+                            Category = 2,
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 14, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            DefaultIntervalDays = 365,
+                            DefaultIntervalKm = 20000,
+                            Key = "brakePads",
+                            Name = "Brake pads check",
+                            UpdatedAt = new DateTimeOffset(new DateTime(2026, 10, 14, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0))
+                        },
+                        new
+                        {
+                            Id = new Guid("7a5c0000-0000-4000-8000-000000000005"),
+                            Category = 4,
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 14, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            DefaultIntervalDays = 730,
+                            Key = "brakeFluid",
+                            Name = "Brake fluid",
+                            UpdatedAt = new DateTimeOffset(new DateTime(2026, 10, 14, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0))
+                        },
+                        new
+                        {
+                            Id = new Guid("7a5c0000-0000-4000-8000-000000000006"),
+                            Category = 4,
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 14, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            DefaultIntervalDays = 1825,
+                            DefaultIntervalKm = 60000,
+                            Key = "coolant",
+                            Name = "Coolant",
+                            UpdatedAt = new DateTimeOffset(new DateTime(2026, 10, 14, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0))
+                        },
+                        new
+                        {
+                            Id = new Guid("7a5c0000-0000-4000-8000-000000000007"),
+                            Category = 4,
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 14, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            DefaultIntervalKm = 60000,
+                            Key = "transmissionFluid",
+                            Name = "Transmission fluid",
+                            UpdatedAt = new DateTimeOffset(new DateTime(2026, 10, 14, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0))
+                        },
+                        new
+                        {
+                            Id = new Guid("7a5c0000-0000-4000-8000-000000000008"),
+                            Category = 7,
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 14, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            DefaultIntervalKm = 60000,
+                            Key = "sparkPlugs",
+                            Name = "Spark plugs",
+                            UpdatedAt = new DateTimeOffset(new DateTime(2026, 10, 14, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0))
+                        },
+                        new
+                        {
+                            Id = new Guid("7a5c0000-0000-4000-8000-000000000009"),
+                            Category = 6,
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 14, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            DefaultIntervalDays = 1825,
+                            DefaultIntervalKm = 100000,
+                            Key = "timingBelt",
+                            Name = "Timing belt",
+                            UpdatedAt = new DateTimeOffset(new DateTime(2026, 10, 14, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0))
+                        },
+                        new
+                        {
+                            Id = new Guid("7a5c0000-0000-4000-8000-000000000010"),
+                            Category = 3,
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 14, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            DefaultIntervalKm = 10000,
+                            Key = "tireRotation",
+                            Name = "Tire rotation",
+                            UpdatedAt = new DateTimeOffset(new DateTime(2026, 10, 14, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0))
+                        },
+                        new
+                        {
+                            Id = new Guid("7a5c0000-0000-4000-8000-000000000011"),
+                            Category = 5,
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 14, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            DefaultIntervalDays = 365,
+                            Key = "battery",
+                            Name = "Battery check",
+                            UpdatedAt = new DateTimeOffset(new DateTime(2026, 10, 14, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0))
+                        },
+                        new
+                        {
+                            Id = new Guid("7a5c0000-0000-4000-8000-000000000012"),
+                            Category = 8,
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 14, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            DefaultIntervalDays = 365,
+                            Key = "wiperBlades",
+                            Name = "Wiper blades",
+                            UpdatedAt = new DateTimeOffset(new DateTime(2026, 10, 14, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0))
+                        });
                 });
 
             modelBuilder.Entity("OnlyCars.Domain.Entities.User", b =>
@@ -169,6 +395,24 @@ namespace OnlyCars.Infrastructure.Persistence.Migrations
                     b.ToTable("Vehicles");
                 });
 
+            modelBuilder.Entity("OnlyCars.Domain.Entities.MaintenanceTask", b =>
+                {
+                    b.HasOne("OnlyCars.Domain.Entities.TaskTemplate", "Template")
+                        .WithMany()
+                        .HasForeignKey("TemplateId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("OnlyCars.Domain.Entities.Vehicle", "Vehicle")
+                        .WithMany("MaintenanceTasks")
+                        .HasForeignKey("VehicleId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Template");
+
+                    b.Navigation("Vehicle");
+                });
+
             modelBuilder.Entity("OnlyCars.Domain.Entities.OdometerReading", b =>
                 {
                     b.HasOne("OnlyCars.Domain.Entities.Vehicle", "Vehicle")
@@ -198,6 +442,8 @@ namespace OnlyCars.Infrastructure.Persistence.Migrations
 
             modelBuilder.Entity("OnlyCars.Domain.Entities.Vehicle", b =>
                 {
+                    b.Navigation("MaintenanceTasks");
+
                     b.Navigation("OdometerReadings");
                 });
 #pragma warning restore 612, 618
