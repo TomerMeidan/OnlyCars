@@ -15,7 +15,7 @@ Published by backend-engineer, verified with curl against the live API.
 1. **`GET /api/task-templates`** returns 200 with `TaskTemplateDto[]`, ordered by category (enum order), then by key.
    - Shape: `{ id, key, name, category, defaultIntervalKm: number|null, defaultIntervalDays: number|null }`
 2. **`GET /api/vehicles/{vehicleId}/tasks`** returns 200 with `MaintenanceTaskDto[]`.
-   - Order: enabled tasks first, then by name (ordinal). The UI should re-sort by name with a culture-aware compare.
+   - Order: enabled tasks first, then by name in the database collation (not ordinal). The UI re-sorts by name with a culture-aware compare.
    - Shape: `{ id, vehicleId, templateId: string|null, name, category, intervalKm: number|null, intervalDays: number|null, dueSoonPercent, isEnabled, lastDoneOdometerKm, lastDoneDate }`
 3. **`POST /api/vehicles/{vehicleId}/tasks`** returns 201 with `MaintenanceTaskDto`.
    - Body: `{ templateId?: string|null, name, category, intervalKm?: int|null, intervalDays?: int|null, lastDoneOdometerKm: number, lastDoneDate: "YYYY-MM-DD" }`
