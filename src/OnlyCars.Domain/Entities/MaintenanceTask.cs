@@ -7,6 +7,8 @@ public class MaintenanceTask : Entity
     public const int MaxNameLength = 100;
     public const int MaxIntervalKm = 1_000_000;
     public const int MaxIntervalDays = 7_300;
+    public const int DefaultDueSoonPercent = 10;
+    public const int MaxDueSoonPercent = 50;
 
     public Guid VehicleId { get; set; }
     public Vehicle? Vehicle { get; set; }
@@ -19,7 +21,7 @@ public class MaintenanceTask : Entity
     public TaskCategory Category { get; set; }
     public int? IntervalKm { get; set; }
     public int? IntervalDays { get; set; }
-    public int DueSoonPercent { get; set; } = 10;
+    public int DueSoonPercent { get; set; } = DefaultDueSoonPercent;
     public bool IsEnabled { get; set; } = true;
     public decimal LastDoneOdometerKm { get; set; }
     public DateOnly LastDoneDate { get; set; }

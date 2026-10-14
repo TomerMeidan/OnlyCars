@@ -18,23 +18,24 @@ public class MaintenanceTaskService(IAppDbContext db, VehicleService vehicleServ
 
     public async Task<List<MaintenanceTaskDto>> ListAsync(Guid userId, Guid vehicleId, CancellationToken ct = default)
     {
-        await vehicleService.FindOwnedAsync(userId, vehicleId, ct);
+        var vehicle = await vehicleService.FindOwnedAsync(userId, vehicleId, ct);
 
-        // The client re-sorts names with a culture-aware compare in the UI language.
+        // The client sorts by urgency, then by name with a culture-aware compare in the UI language.
         var tasks = await db.MaintenanceTasks
             .Where(t => t.VehicleId == vehicleId)
             .OrderByDescending(t => t.IsEnabled)
             .ThenBy(t => t.Name)
             .ToListAsync(ct);
 
-        return tasks.Select(ToDto).ToList();
+        var today = TodayUtc();
+        return tasks.Select(t => ToDto(t, vehicle, today)).ToList();
     }
 
     public async Task<MaintenanceTaskDto> CreateAsync(Guid userId, Guid vehicleId, CreateMaintenanceTaskRequest request, CancellationToken ct = default)
     {
         var vehicle = await vehicleService.FindOwnedAsync(userId, vehicleId, ct);
         var (name, category) = Validate(vehicle, request.Name, request.Category, request.IntervalKm, request.IntervalDays,
-            request.LastDoneOdometerKm, request.LastDoneDate);
+            request.DueSoonPercent, request.LastDoneOdometerKm, request.LastDoneDate);
 
         if (request.TemplateId is { } templateId && !await db.TaskTemplates.AnyAsync(t => t.Id == templateId, ct))
         {
@@ -49,13 +50,14 @@ public class MaintenanceTaskService(IAppDbContext db, VehicleService vehicleServ
             Category = category,
             IntervalKm = request.IntervalKm,
             IntervalDays = request.IntervalDays,
+            DueSoonPercent = request.DueSoonPercent ?? MaintenanceTask.DefaultDueSoonPercent,
             LastDoneOdometerKm = request.LastDoneOdometerKm!.Value,
             LastDoneDate = request.LastDoneDate!.Value
         };
         db.MaintenanceTasks.Add(task);
 
         await db.SaveChangesAsync(ct);
-        return ToDto(task);
+        return ToDto(task, vehicle, TodayUtc());
     }
 
     public async Task<MaintenanceTaskDto> UpdateAsync(Guid userId, Guid vehicleId, Guid taskId, UpdateMaintenanceTaskRequest request, CancellationToken ct = default)
@@ -63,7 +65,7 @@ public class MaintenanceTaskService(IAppDbContext db, VehicleService vehicleServ
         var vehicle = await vehicleService.FindOwnedAsync(userId, vehicleId, ct);
         var task = await FindAsync(vehicle.Id, taskId, ct);
         var (name, category) = Validate(vehicle, request.Name, request.Category, request.IntervalKm, request.IntervalDays,
-            request.LastDoneOdometerKm, request.LastDoneDate, task);
+            request.DueSoonPercent, request.LastDoneOdometerKm, request.LastDoneDate, task);
 
         task.Name = name;
         task.Category = category;
@@ -72,10 +74,11 @@ public class MaintenanceTaskService(IAppDbContext db, VehicleService vehicleServ
         task.LastDoneOdometerKm = request.LastDoneOdometerKm!.Value;
         task.LastDoneDate = request.LastDoneDate!.Value;
         task.IsEnabled = request.IsEnabled ?? task.IsEnabled;
+        task.DueSoonPercent = request.DueSoonPercent ?? task.DueSoonPercent;
         task.UpdatedAt = DateTimeOffset.UtcNow;
 
         await db.SaveChangesAsync(ct);
-        return ToDto(task);
+        return ToDto(task, vehicle, TodayUtc());
     }
 
     public async Task DeleteAsync(Guid userId, Guid vehicleId, Guid taskId, CancellationToken ct = default)
@@ -96,7 +99,7 @@ public class MaintenanceTaskService(IAppDbContext db, VehicleService vehicleServ
     /// so a task stays editable after the car's odometer is corrected below its last-done km.
     /// </summary>
     private static (string Name, TaskCategory Category) Validate(Vehicle vehicle, string? name, string? category,
-        int? intervalKm, int? intervalDays, decimal? lastDoneKm, DateOnly? lastDoneDate, MaintenanceTask? stored = null)
+        int? intervalKm, int? intervalDays, int? dueSoonPercent, decimal? lastDoneKm, DateOnly? lastDoneDate, MaintenanceTask? stored = null)
     {
         var trimmed = name?.Trim() ?? "";
         if (trimmed.Length is 0 or > MaintenanceTask.MaxNameLength)
@@ -121,6 +124,12 @@ public class MaintenanceTaskService(IAppDbContext db, VehicleService vehicleServ
                 $"The km interval must be 1 to {MaintenanceTask.MaxIntervalKm} and the time interval 1 to {MaintenanceTask.MaxIntervalDays} days.");
         }
 
+        if (dueSoonPercent is < 1 or > MaintenanceTask.MaxDueSoonPercent)
+        {
+            throw new ValidationFailedException("task.invalidDueSoonPercent",
+                $"Due soon must start at 1 to {MaintenanceTask.MaxDueSoonPercent} percent of the interval.");
+        }
+
         var kmChanged = lastDoneKm != stored?.LastDoneOdometerKm;
         if (lastDoneKm is null || lastDoneDate is null || kmChanged && (lastDoneKm < 0 || lastDoneKm > vehicle.CurrentOdometerKm))
         {
@@ -132,7 +141,7 @@ public class MaintenanceTaskService(IAppDbContext db, VehicleService vehicleServ
         }
 
         // Same one day of slack as odometer readings (Israel is ahead of UTC).
-        if (lastDoneDate != stored?.LastDoneDate && lastDoneDate > DateOnly.FromDateTime(DateTime.UtcNow).AddDays(1))
+        if (lastDoneDate != stored?.LastDoneDate && lastDoneDate > TodayUtc().AddDays(1))
         {
             throw new ValidationFailedException("task.futureDate", "The last done date can't be in the future.");
         }
@@ -140,6 +149,12 @@ public class MaintenanceTaskService(IAppDbContext db, VehicleService vehicleServ
         return (trimmed, Enum.Parse<TaskCategory>(category));
     }
 
-    private static MaintenanceTaskDto ToDto(MaintenanceTask t) => new(t.Id, t.VehicleId, t.TemplateId, t.Name, t.Category,
-        t.IntervalKm, t.IntervalDays, t.DueSoonPercent, t.IsEnabled, t.LastDoneOdometerKm, t.LastDoneDate);
+    private static DateOnly TodayUtc() => DateOnly.FromDateTime(DateTime.UtcNow);
+
+    private static MaintenanceTaskDto ToDto(MaintenanceTask t, Vehicle vehicle, DateOnly today)
+    {
+        var s = TaskStatusCalculator.Compute(t, vehicle.CurrentOdometerKm, today);
+        return new(t.Id, t.VehicleId, t.TemplateId, t.Name, t.Category, t.IntervalKm, t.IntervalDays, t.DueSoonPercent,
+            t.IsEnabled, t.LastDoneOdometerKm, t.LastDoneDate, s.Status, s.RemainingKm, s.RemainingDays, s.Progress);
+    }
 }

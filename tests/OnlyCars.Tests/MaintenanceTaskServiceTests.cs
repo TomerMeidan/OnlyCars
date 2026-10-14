@@ -271,4 +271,94 @@ public class MaintenanceTaskServiceTests
         Assert.Equal("Wash", db.MaintenanceTasks.Single().Name);
         Assert.Empty(await tasks.ListAsync(userId, car2));
     }
+
+    // --- MVP2-B: status and due-soon threshold ---
+
+    [Fact]
+    public async Task List_ReturnsStatus_ForEnabledTask_AndNullsForDisabled()
+    {
+        var car = await CreateCarAsync(50_000);
+        await tasks.CreateAsync(userId, car, Custom(name: "On", km: 10_000, days: null, lastKm: 41_000));
+        var off = await tasks.CreateAsync(userId, car, Custom(name: "Off", km: 10_000, days: 90, lastKm: 41_000));
+        await tasks.UpdateAsync(userId, car, off.Id, Update(name: "Off", km: 10_000, days: 90, lastKm: 41_000, enabled: false));
+
+        var list = await tasks.ListAsync(userId, car);
+
+        var on = list.Single(t => t.Name == "On");
+        Assert.Equal((DueStatus.DueSoon, (decimal?)1_000, (int?)null), (on.Status!.Value, on.RemainingKm, on.RemainingDays));
+        Assert.Equal(0.9, on.Progress!.Value, 10);
+        var disabled = list.Single(t => t.Name == "Off");
+        Assert.Equal((null, null, null, null), (disabled.Status, disabled.RemainingKm, disabled.RemainingDays, disabled.Progress));
+    }
+
+    [Fact]
+    public async Task CreateAndUpdate_ReturnStatus()
+    {
+        var car = await CreateCarAsync(50_000);
+
+        var created = await tasks.CreateAsync(userId, car, Custom(km: 5_000, days: null, lastKm: 40_000));
+        Assert.Equal((DueStatus.Overdue, (decimal?)-5_000), (created.Status!.Value, created.RemainingKm));
+
+        var updated = await tasks.UpdateAsync(userId, car, created.Id, Update(km: 20_000, days: null, lastKm: 40_000));
+        Assert.Equal((DueStatus.Ok, (decimal?)10_000), (updated.Status!.Value, updated.RemainingKm));
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(51)]
+    [InlineData(-5)]
+    public async Task DueSoonPercent_OutOfRange_ThrowsCode_AndSavesNothing(int percent)
+    {
+        var car = await CreateCarAsync();
+
+        var ex = await Assert.ThrowsAsync<ValidationFailedException>(() =>
+            tasks.CreateAsync(userId, car, Custom() with { DueSoonPercent = percent }));
+        Assert.Equal("task.invalidDueSoonPercent", ex.Code);
+        Assert.Empty(db.MaintenanceTasks);
+
+        var task = await tasks.CreateAsync(userId, car, Custom());
+        ex = await Assert.ThrowsAsync<ValidationFailedException>(() =>
+            tasks.UpdateAsync(userId, car, task.Id, Update(name: "New") with { DueSoonPercent = percent }));
+        Assert.Equal("task.invalidDueSoonPercent", ex.Code);
+        Assert.Equal(("Wash", 10), (db.MaintenanceTasks.Single().Name, db.MaintenanceTasks.Single().DueSoonPercent));
+    }
+
+    [Fact]
+    public async Task DueSoonPercent_IsCheckedRightAfterInterval()
+    {
+        var car = await CreateCarAsync();
+
+        var ex = await Assert.ThrowsAsync<ValidationFailedException>(() =>
+            tasks.CreateAsync(userId, car, Custom(lastKm: -1) with { DueSoonPercent = 0 }));
+
+        Assert.Equal("task.invalidDueSoonPercent", ex.Code);
+    }
+
+    [Fact]
+    public async Task DueSoonPercent_DefaultsTo10_AndPutWithoutItKeepsStoredValue()
+    {
+        var car = await CreateCarAsync();
+        var task = await tasks.CreateAsync(userId, car, Custom());
+        Assert.Equal(10, task.DueSoonPercent);
+
+        await tasks.UpdateAsync(userId, car, task.Id, Update() with { DueSoonPercent = 25 });
+        var toggled = await tasks.UpdateAsync(userId, car, task.Id, Update(enabled: false)); // old body shape
+
+        Assert.Equal(25, toggled.DueSoonPercent);
+        Assert.Equal(25, db.MaintenanceTasks.Single().DueSoonPercent);
+    }
+
+    [Fact]
+    public async Task ChangingDueSoonPercent_ChangesStatus()
+    {
+        var car = await CreateCarAsync(50_000);
+        var task = await tasks.CreateAsync(userId, car, Custom(km: 10_000, days: null, lastKm: 41_500)); // 15% left
+
+        Assert.Equal(DueStatus.Ok, task.Status);
+
+        var updated = await tasks.UpdateAsync(userId, car, task.Id, Update(km: 10_000, days: null, lastKm: 41_500) with { DueSoonPercent = 20 });
+
+        Assert.Equal(DueStatus.DueSoon, updated.Status);
+        Assert.Equal(DueStatus.DueSoon, (await tasks.ListAsync(userId, car)).Single().Status);
+    }
 }

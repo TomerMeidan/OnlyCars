@@ -49,3 +49,11 @@ public enum TaskCategory
     Ignition,
     Other
 }
+
+// Computed on read, never stored. Ordered by severity so the worse of two is the larger value.
+public enum DueStatus
+{
+    Ok,
+    DueSoon,
+    Overdue
+}
