@@ -2,7 +2,7 @@
 
 One line per requirement in `docs/spec.md`. Updated after every ticket is signed off. Evidence and details are in `docs/requirements-status.md`.
 
-**Last updated:** 2026-10-14, after the MVP2-A backend
+**Last updated:** 2026-10-14, after the SEC-1 backend
 **Progress:** 5 of 50 required items done, 7 partly done, 38 not started. The 7 optional items are not counted.
 
 Legend:
