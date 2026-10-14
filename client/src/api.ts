@@ -49,6 +49,32 @@ export interface OdometerReading {
   source: OdometerSource
 }
 
+export type TaskCategory = 'Oil' | 'Filters' | 'Brakes' | 'Tires' | 'Fluids' | 'Battery' | 'Belts' | 'Ignition' | 'Other'
+export const taskCategories: TaskCategory[] = ['Oil', 'Filters', 'Brakes', 'Tires', 'Fluids', 'Battery', 'Belts', 'Ignition', 'Other']
+
+export interface TaskTemplate {
+  id: string
+  key: string
+  name: string
+  category: TaskCategory
+  defaultIntervalKm: number | null
+  defaultIntervalDays: number | null
+}
+
+export interface MaintenanceTask {
+  id: string
+  vehicleId: string
+  templateId: string | null
+  name: string
+  category: TaskCategory
+  intervalKm: number | null
+  intervalDays: number | null
+  dueSoonPercent: number
+  isEnabled: boolean
+  lastDoneOdometerKm: number
+  lastDoneDate: string
+}
+
 // ProblemDetails from the API; `code` is translated by errorMessage() in i18n.ts.
 export interface Problem {
   title?: string
@@ -56,6 +82,7 @@ export interface Problem {
   code?: string
   previousKm?: number
   nextKm?: number
+  currentKm?: number
 }
 
 export class ApiError extends Error {
@@ -102,3 +129,9 @@ export const isGuid = (s: string | undefined) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a
 
 // The API's answer for a car that doesn't exist, used without a request when the route id can't be one.
 export const carNotFound = () => new ApiError(404, { code: 'vehicle.notFound' }, 'Not Found')
+
+// The user's calendar date, for date fields' max and defaults.
+export function localToday() {
+  const d = new Date()
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60_000).toISOString().slice(0, 10)
+}

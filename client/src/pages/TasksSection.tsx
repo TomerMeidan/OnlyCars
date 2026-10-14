@@ -1,0 +1,338 @@
+import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from 'react'
+import { Trans, useTranslation } from 'react-i18next'
+import { api, ApiError, localToday, taskCategories, type MaintenanceTask, type TaskCategory, type TaskTemplate, type Vehicle } from '../api'
+import { errorMessage } from '../i18n'
+
+type Unit = 'days' | 'months' | 'years'
+const unitDays: Record<Unit, number> = { days: 1, months: 30, years: 365 }
+// Shown in the largest unit that divides evenly: 365 is 1 year, 180 is 6 months, 45 is 45 days.
+const splitDays = (d: number): [number, Unit] => (d % 365 === 0 ? [d / 365, 'years'] : d % 30 === 0 ? [d / 30, 'months'] : [d, 'days'])
+
+type TaskBody = Pick<MaintenanceTask, 'name' | 'category' | 'intervalKm' | 'intervalDays' | 'lastDoneOdometerKm' | 'lastDoneDate'>
+// PUT is a full replace, so every save sends all of these.
+const bodyOf = ({ name, category, intervalKm, intervalDays, lastDoneOdometerKm, lastDoneDate }: TaskBody): TaskBody =>
+  ({ name, category, intervalKm, intervalDays, lastDoneOdometerKm, lastDoneDate })
+
+// "Every 10,000 km or 1 year", "Every 2 years", "Every 60,000 km".
+function Interval({ km, days }: { km: number | null; days: number | null }) {
+  const { t, i18n } = useTranslation()
+  const parts: ReactNode[] = []
+  if (km != null) parts.push(<><bdi>{km.toLocaleString(i18n.resolvedLanguage)}</bdi> {t('km')}</>)
+  if (days != null) {
+    const [n, unit] = splitDays(days)
+    parts.push(<Trans i18nKey={`duration.${unit}`} count={n} components={{ n: <bdi /> }} />)
+  }
+  return <>{t('every')} {parts[0]}{parts[1] && <> {t('or')} {parts[1]}</>}</>
+}
+
+// The Maintenance section of the car page. It loads on its own, so a failure here leaves the rest of the page usable.
+export function TasksSection({ car }: { car: Vehicle }) {
+  const { t, i18n } = useTranslation()
+  const [tasks, setTasks] = useState<MaintenanceTask[] | null>(null)
+  const [templates, setTemplates] = useState<TaskTemplate[]>([])
+  const [error, setError] = useState<unknown>(null)
+  // 'pick' is the template picker; an object is the add form (template null for a custom task).
+  const [adding, setAdding] = useState<null | 'pick' | { template: TaskTemplate | null }>(null)
+  const sectionRef = useRef<HTMLElement>(null)
+  // A selector inside the section to focus after the next render; the h2 if it matches nothing.
+  const focusNext = useRef<string | null>(null)
+  const path = `/vehicles/${encodeURIComponent(car.id)}/tasks`
+  const readOnly = car.isArchived
+
+  useEffect(() => {
+    Promise.all([api<MaintenanceTask[]>(path), readOnly ? [] : api<TaskTemplate[]>('/task-templates')]).then(
+      ([ts, tp]) => {
+        setTasks(ts)
+        setTemplates(tp)
+      },
+      setError,
+    )
+  }, [path, readOnly])
+
+  useEffect(() => {
+    const sel = focusNext.current
+    const section = sectionRef.current
+    if (!sel || !section) return
+    focusNext.current = null
+    ;(section.querySelector<HTMLElement>(sel) ?? section.querySelector<HTMLElement>('h2'))?.focus()
+  }, [tasks, adding])
+
+  const sorted = tasks && [...tasks].sort((a, b) => Number(b.isEnabled) - Number(a.isEnabled) || a.name.localeCompare(b.name, i18n.resolvedLanguage))
+
+  const saved = (task: MaintenanceTask, focus = 'button.edit') => {
+    focusNext.current = `li[data-id="${task.id}"] ${focus}`
+    setTasks((ts) => [...(ts ?? []).filter((x) => x.id !== task.id), task])
+  }
+  const closeAdd = () => {
+    focusNext.current = 'button.add'
+    setAdding(null)
+  }
+  const onEscape = (e: KeyboardEvent) => e.key === 'Escape' && closeAdd()
+
+  let addForm: ReactNode = null
+  if (adding && adding !== 'pick') {
+    const tp = adding.template
+    const initial: TaskBody = {
+      name: tp ? t(`templates.${tp.key}`, { defaultValue: tp.name }) : '',
+      category: tp?.category ?? 'Other',
+      intervalKm: tp?.defaultIntervalKm ?? null,
+      intervalDays: tp?.defaultIntervalDays ?? null,
+      lastDoneOdometerKm: car.currentOdometerKm,
+      lastDoneDate: localToday(),
+    }
+    addForm = (
+      <TaskForm
+        initial={initial}
+        onCancel={closeAdd}
+        onSubmit={async (body) => {
+          const task = await api<MaintenanceTask>(path, 'POST', { ...body, templateId: tp?.id ?? null })
+          setAdding(null)
+          saved(task)
+        }}
+      />
+    )
+  }
+
+  return (
+    <section className="card" aria-labelledby="maintenance" ref={sectionRef}>
+      <div className="row">
+        <h2 id="maintenance" tabIndex={-1}>{t('maintenance')}</h2>
+        {!readOnly && tasks && !adding && <button className="add" onClick={() => setAdding('pick')}>{t('addTask')}</button>}
+      </div>
+
+      {adding === 'pick' && (
+        <div className="picker" role="group" aria-labelledby="choose-task" onKeyDown={onEscape}>
+          <p id="choose-task">{t('chooseTask')}</p>
+          <ul>
+            {templates.map((tp, i) => (
+              <li key={tp.id}>
+                <button type="button" autoFocus={i === 0} onClick={() => setAdding({ template: tp })}>
+                  <span>{t(`templates.${tp.key}`, { defaultValue: tp.name })}</span>
+                  <span className="muted"><Interval km={tp.defaultIntervalKm} days={tp.defaultIntervalDays} /></span>
+                </button>
+              </li>
+            ))}
+            <li>
+              <button type="button" onClick={() => setAdding({ template: null })}>{t('customTask')}</button>
+            </li>
+          </ul>
+          <div className="actions">
+            <button type="button" className="link" onClick={closeAdd}>{t('cancel')}</button>
+          </div>
+        </div>
+      )}
+      {addForm}
+
+      {error != null ? (
+        <p className="error" role="alert">{errorMessage(error)}</p>
+      ) : !sorted ? (
+        <p className="muted" role="status">{t('loading')}</p>
+      ) : sorted.length === 0 ? (
+        <p className="muted">{t('noTasks')}</p>
+      ) : (
+        <ul className="tasks">
+          {sorted.map((task, i) => (
+            <TaskRow
+              key={task.id}
+              task={task}
+              url={`${path}/${encodeURIComponent(task.id)}`}
+              readOnly={readOnly}
+              onSaved={saved}
+              onDeleted={() => {
+                // The row that takes this one's place, or the h2 if it was the last.
+                focusNext.current = `.tasks > li:nth-child(${i + 1}) button.edit`
+                setTasks((ts) => ts && ts.filter((x) => x.id !== task.id))
+              }}
+            />
+          ))}
+        </ul>
+      )}
+    </section>
+  )
+}
+
+function TaskForm({ initial, onSubmit, onCancel }: {
+  initial: TaskBody
+  onSubmit: (body: TaskBody) => Promise<void>
+  onCancel: () => void
+}) {
+  const { t } = useTranslation()
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<unknown>(null)
+  const [count, unit] = initial.intervalDays == null ? [null, 'months' as Unit] : splitDays(initial.intervalDays)
+
+  async function submit(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault()
+    const f = new FormData(e.currentTarget)
+    const num = (k: string) => (f.get(k) === '' ? null : Number(f.get(k)))
+    const time = num('intervalTime')
+    const body: TaskBody = {
+      name: String(f.get('name')),
+      category: f.get('category') as TaskCategory,
+      intervalKm: num('intervalKm'),
+      intervalDays: time == null ? null : time * unitDays[f.get('intervalUnit') as Unit],
+      lastDoneOdometerKm: Number(f.get('lastDoneOdometerKm')),
+      lastDoneDate: String(f.get('lastDoneDate')),
+    }
+    if (body.intervalKm == null && body.intervalDays == null) return setError(new ApiError(400, { code: 'task.intervalRequired' }, ''))
+    setBusy(true)
+    setError(null)
+    try {
+      await onSubmit(body)
+    } catch (err) {
+      setError(err)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  // Intervals are whole numbers (step 1): a fraction would fail the API's model binding.
+  return (
+    <form className="inline-form" onSubmit={submit} onKeyDown={(e) => !busy && e.key === 'Escape' && onCancel()}>
+      <label className="wide">
+        {t('taskName')}
+        <input name="name" required maxLength={100} defaultValue={initial.name} autoFocus />
+      </label>
+      <label>
+        {t('category')}
+        <select name="category" defaultValue={initial.category}>
+          {taskCategories.map((c) => <option key={c} value={c}>{t(`categories.${c}`)}</option>)}
+        </select>
+      </label>
+      <label>
+        {t('intervalKm')}
+        <input name="intervalKm" type="number" inputMode="numeric" min={1} max={1_000_000} step={1} defaultValue={initial.intervalKm ?? ''} />
+      </label>
+      <div className="pair">
+        <label>
+          {t('intervalTime')}
+          <input name="intervalTime" type="number" inputMode="numeric" min={1} step={1} defaultValue={count ?? ''} />
+        </label>
+        <select name="intervalUnit" aria-label={t('intervalUnit')} defaultValue={unit}>
+          {(Object.keys(unitDays) as Unit[]).map((u) => <option key={u} value={u}>{t(`units.${u}`)}</option>)}
+        </select>
+      </div>
+      <label>
+        {t('lastDoneKm')}
+        <input name="lastDoneOdometerKm" type="number" inputMode="decimal" min={0} step="any" required defaultValue={initial.lastDoneOdometerKm} />
+      </label>
+      <label>
+        {t('lastDoneDate')}
+        <input name="lastDoneDate" type="date" required max={localToday()} defaultValue={initial.lastDoneDate} />
+      </label>
+      {error != null && <p className="error" role="alert">{errorMessage(error)}</p>}
+      <div className="actions">
+        <button disabled={busy}>{t('save')}</button>
+        <button type="button" className="link" disabled={busy} onClick={onCancel}>{t('cancel')}</button>
+      </div>
+    </form>
+  )
+}
+
+function TaskRow({ task, url, readOnly, onSaved, onDeleted }: {
+  task: MaintenanceTask
+  url: string
+  readOnly: boolean
+  onSaved: (task: MaintenanceTask, focus?: string) => void
+  onDeleted: () => void
+}) {
+  const { t, i18n } = useTranslation()
+  const [mode, setMode] = useState<'view' | 'edit' | 'delete'>('view')
+  // The opener, refocused when Cancel or Escape returns the row to view. After Save or Delete the section refocuses instead.
+  const returnTo = useRef<typeof mode>('view')
+  const editRef = useRef<HTMLButtonElement>(null)
+  const deleteRef = useRef<HTMLButtonElement>(null)
+  useEffect(() => {
+    if (mode !== 'view') return
+    ;(returnTo.current === 'edit' ? editRef : returnTo.current === 'delete' ? deleteRef : null)?.current?.focus()
+    returnTo.current = 'view'
+  }, [mode])
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<unknown>(null)
+  const lng = i18n.resolvedLanguage
+  const name = task.name
+
+  function open(next: typeof mode) {
+    returnTo.current = mode
+    setMode(next)
+    setError(null)
+  }
+
+  async function run(request: () => Promise<void>) {
+    setBusy(true)
+    setError(null)
+    try {
+      await request()
+    } catch (err) {
+      setError(err)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const errorText = error != null && <p className="error" role="alert">{errorMessage(error)}</p>
+
+  return (
+    <li data-id={task.id}>
+      <div className="task-head">
+        <span className="name">{name}</span>
+        <span className="badge">{t(`categories.${task.category}`)}</span>
+        {!task.isEnabled && <span className="badge">{t('disabled')}</span>}
+      </div>
+      <p className="muted"><Interval km={task.intervalKm} days={task.intervalDays} /></p>
+      <p className="muted">
+        {/* LastDoneDate is a calendar date; format it in UTC so the viewer's time zone can't shift the day. */}
+        <Trans
+          i18nKey="lastDone"
+          values={{
+            km: task.lastDoneOdometerKm.toLocaleString(lng),
+            date: new Date(task.lastDoneDate).toLocaleDateString(lng, { dateStyle: 'medium', timeZone: 'UTC' }),
+          }}
+          components={{ n: <bdi />, d: <time dateTime={task.lastDoneDate} /> }}
+        />
+      </p>
+
+      {!readOnly && mode === 'view' && (
+        <div className="actions">
+          <button className="link edit" aria-label={t('editTask', { name })} ref={editRef} onClick={() => open('edit')}>{t('edit')}</button>
+          <label className="inline">
+            <input
+              type="checkbox"
+              // Shows the new state while it saves; a failed save puts it back. Not disabled while busy, so it keeps focus.
+              checked={busy ? !task.isEnabled : task.isEnabled}
+              aria-label={t('enabledTask', { name })}
+              onChange={() => !busy && run(async () => onSaved(await api<MaintenanceTask>(url, 'PUT', { ...bodyOf(task), isEnabled: !task.isEnabled }), 'input[type=checkbox]'))}
+            />
+            {t('enabled')}
+          </label>
+          <button className="link" aria-label={t('deleteTask', { name })} ref={deleteRef} onClick={() => open('delete')}>{t('delete')}</button>
+        </div>
+      )}
+      {mode === 'view' && errorText}
+
+      {mode === 'edit' && (
+        <TaskForm
+          initial={task}
+          onCancel={() => open('view')}
+          onSubmit={async (body) => {
+            const saved = await api<MaintenanceTask>(url, 'PUT', body)
+            returnTo.current = 'view'
+            setMode('view')
+            onSaved(saved)
+          }}
+        />
+      )}
+
+      {mode === 'delete' && (
+        <div className="inline-form" onKeyDown={(e) => !busy && e.key === 'Escape' && open('view')}>
+          <p>{t('confirmDeleteTask')}</p>
+          {errorText}
+          <div className="actions">
+            <button className="danger" disabled={busy} onClick={() => run(async () => { await api(url, 'DELETE'); onDeleted() })}>{t('delete')}</button>
+            <button type="button" className="link" disabled={busy} onClick={() => open('view')} autoFocus>{t('cancel')}</button>
+          </div>
+        </div>
+      )}
+    </li>
+  )
+}

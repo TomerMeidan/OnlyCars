@@ -54,10 +54,64 @@ const en = {
   confirmDeleteReading: 'Delete this reading?',
   currency: 'Currency',
   source: { Manual: 'Manual', Service: 'Service', Checklist: 'Checklist', Fuel: 'Fuel' },
+  maintenance: 'Maintenance',
+  addTask: 'Add task',
+  noTasks: 'No maintenance tasks yet.',
+  chooseTask: 'Choose a task',
+  customTask: 'Custom task',
+  taskName: 'Name',
+  category: 'Category',
+  intervalKm: 'Interval in km',
+  intervalTime: 'Time interval',
+  intervalUnit: 'Time unit',
+  units: { days: 'Days', months: 'Months', years: 'Years' },
+  lastDoneKm: 'Last done at km',
+  lastDoneDate: 'Last done on',
+  enabled: 'Enabled',
+  disabled: 'Disabled',
+  editTask: 'Edit {{name}}',
+  deleteTask: 'Delete {{name}}',
+  enabledTask: 'Enabled: {{name}}',
+  confirmDeleteTask: 'Delete this task?',
+  every: 'Every',
+  or: 'or',
+  // <n> wraps numbers in <bdi>. The _two forms exist for Hebrew; English never uses them.
+  duration: {
+    days_one: '<n>{{count, number}}</n> day',
+    days_two: '<n>{{count, number}}</n> days',
+    days_other: '<n>{{count, number}}</n> days',
+    months_one: '<n>{{count, number}}</n> month',
+    months_two: '<n>{{count, number}}</n> months',
+    months_other: '<n>{{count, number}}</n> months',
+    years_one: '<n>{{count, number}}</n> year',
+    years_two: '<n>{{count, number}}</n> years',
+    years_other: '<n>{{count, number}}</n> years',
+  },
+  lastDone: 'Last done at <n>{{km}}</n> km on <d>{{date}}</d>',
+  categories: {
+    Oil: 'Oil', Filters: 'Filters', Brakes: 'Brakes', Tires: 'Tires', Fluids: 'Fluids',
+    Battery: 'Battery', Belts: 'Belts', Ignition: 'Ignition', Other: 'Other',
+  },
+  // Keyed by TaskTemplate.key from the API.
+  templates: {
+    oilChange: 'Engine oil and filter',
+    airFilter: 'Air filter',
+    cabinFilter: 'Cabin filter',
+    brakePads: 'Brake pads check',
+    brakeFluid: 'Brake fluid',
+    coolant: 'Coolant',
+    transmissionFluid: 'Transmission fluid',
+    sparkPlugs: 'Spark plugs',
+    timingBelt: 'Timing belt',
+    tireRotation: 'Tire rotation',
+    battery: 'Battery check',
+    wiperBlades: 'Wiper blades',
+  },
   // Keyed by the API's ProblemDetails `code`; unknown codes fall back to `generic`.
   errors: {
     generic: 'Something went wrong. Please try again.',
     auth: {
+      tooManyAttempts: 'Too many attempts. Try again in a few minutes.',
       invalidCredentials: 'Wrong email or password.',
       emailTaken: 'An account with this email already exists.',
       invalidEmail: 'Enter a valid email address.',
@@ -81,6 +135,18 @@ const en = {
     },
     odometerReading: {
       notFound: 'This reading was not found.',
+    },
+    task: {
+      nameRequired: 'Enter a name of up to 100 characters.',
+      invalidCategory: 'Choose one of the listed categories.',
+      intervalRequired: 'Enter a km interval, a time interval, or both.',
+      invalidInterval: 'Enter a km interval from 1 to 1,000,000 and a time interval of up to 20 years.',
+      invalidLastDone: 'Enter when it was last done: a date, and a km from 0 to the current {{currentKm, number}} km.',
+      futureDate: "The date can't be in the future.",
+      invalidTemplate: 'This template was not found.',
+    },
+    maintenanceTask: {
+      notFound: 'This task was not found.',
     },
   },
 }
@@ -136,10 +202,63 @@ const he: typeof en = {
   confirmDeleteReading: 'למחוק את הקריאה הזו?',
   currency: 'מטבע',
   source: { Manual: 'ידני', Service: 'טיפול', Checklist: 'רשימת בדיקה', Fuel: 'תדלוק' },
+  maintenance: 'תחזוקה',
+  addTask: 'הוספת משימה',
+  noTasks: 'עדיין אין משימות תחזוקה.',
+  chooseTask: 'בחירת משימה',
+  customTask: 'משימה מותאמת אישית',
+  taskName: 'שם',
+  category: 'קטגוריה',
+  intervalKm: 'מרווח בק״מ',
+  intervalTime: 'מרווח זמן',
+  intervalUnit: 'יחידת זמן',
+  units: { days: 'ימים', months: 'חודשים', years: 'שנים' },
+  lastDoneKm: 'ק״מ בביצוע האחרון',
+  lastDoneDate: 'תאריך הביצוע האחרון',
+  enabled: 'פעילה',
+  disabled: 'לא פעילה',
+  editTask: 'עריכה של {{name}}',
+  deleteTask: 'מחיקה של {{name}}',
+  enabledTask: 'פעילה: {{name}}',
+  confirmDeleteTask: 'למחוק את המשימה הזו?',
+  every: 'כל',
+  or: 'או',
+  duration: {
+    days_one: 'יום',
+    days_two: 'יומיים',
+    days_other: '<n>{{count, number}}</n> ימים',
+    months_one: 'חודש',
+    months_two: 'חודשיים',
+    months_other: '<n>{{count, number}}</n> חודשים',
+    years_one: 'שנה',
+    years_two: 'שנתיים',
+    years_other: '<n>{{count, number}}</n> שנים',
+  },
+  lastDone: 'בוצע לאחרונה ב־<n>{{km}}</n> ק״מ, ב־<d>{{date}}</d>',
+  categories: {
+    Oil: 'שמן', Filters: 'פילטרים', Brakes: 'בלמים', Tires: 'צמיגים', Fluids: 'נוזלים',
+    Battery: 'מצבר', Belts: 'רצועות', Ignition: 'הצתה', Other: 'אחר',
+  },
+  // The terms an Israeli garage uses (פילטר, not מסנן).
+  templates: {
+    oilChange: 'שמן מנוע ופילטר שמן',
+    airFilter: 'פילטר אוויר',
+    cabinFilter: 'פילטר מזגן',
+    brakePads: 'בדיקת רפידות בלמים',
+    brakeFluid: 'נוזל בלמים',
+    coolant: 'נוזל קירור',
+    transmissionFluid: 'שמן גיר',
+    sparkPlugs: 'מצתים',
+    timingBelt: 'רצועת טיימינג',
+    tireRotation: 'רוטציית צמיגים',
+    battery: 'בדיקת מצבר',
+    wiperBlades: 'מגבים',
+  },
   // ⁦…⁩ isolate numbers so they stay left-to-right inside RTL text.
   errors: {
     generic: 'משהו השתבש. נסו שוב.',
     auth: {
+      tooManyAttempts: 'יותר מדי ניסיונות. נסו שוב בעוד כמה דקות.',
       invalidCredentials: 'האימייל או הסיסמה שגויים.',
       emailTaken: 'כבר קיים חשבון עם האימייל הזה.',
       invalidEmail: 'הזינו כתובת אימייל תקינה.',
@@ -163,6 +282,18 @@ const he: typeof en = {
     },
     odometerReading: {
       notFound: 'הקריאה לא נמצאה.',
+    },
+    task: {
+      nameRequired: 'הזינו שם של עד ⁦100⁩ תווים.',
+      invalidCategory: 'בחרו אחת מהקטגוריות ברשימה.',
+      intervalRequired: 'הזינו מרווח בק״מ, מרווח זמן או את שניהם.',
+      invalidInterval: 'הזינו מרווח של ⁦1⁩ עד ⁦1,000,000⁩ ק״מ ומרווח זמן של עד ⁦20⁩ שנה.',
+      invalidLastDone: 'הזינו מתי בוצעה המשימה לאחרונה: תאריך, וק״מ בין ⁦0⁩ לקילומטראז׳ הנוכחי (⁦{{currentKm, number}}⁩ ק״מ).',
+      futureDate: 'התאריך לא יכול להיות בעתיד.',
+      invalidTemplate: 'התבנית לא נמצאה.',
+    },
+    maintenanceTask: {
+      notFound: 'המשימה לא נמצאה.',
     },
   },
 }
@@ -188,7 +319,7 @@ i18n.on('languageChanged', applyDir)
 // Translated text for any thrown error: known API codes get their own message, everything else the generic one.
 export function errorMessage(err: unknown) {
   const problem = err instanceof ApiError ? err.problem : {}
-  return i18n.t(`errors.${problem.code}`, { previousKm: problem.previousKm, nextKm: problem.nextKm, defaultValue: i18n.t('errors.generic') })
+  return i18n.t(`errors.${problem.code}`, { previousKm: problem.previousKm, nextKm: problem.nextKm, currentKm: problem.currentKm, defaultValue: i18n.t('errors.generic') })
 }
 
 export default i18n

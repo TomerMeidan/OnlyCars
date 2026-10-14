@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link, useParams } from 'react-router-dom'
-import { api, carNotFound, isGuid, isOrderError, type OdometerReading, type Vehicle } from '../api'
+import { api, carNotFound, isGuid, isOrderError, localToday, type OdometerReading, type Vehicle } from '../api'
 import { errorMessage } from '../i18n'
 import { usePage } from '../usePage'
 import { Odometer, OdometerQuickEntry } from './CarsPage'
+import { TasksSection } from './TasksSection'
 
-// Car detail page. Sections stack here as features land (tasks, service history); for now only odometer history.
+// Car detail page: maintenance tasks above the odometer history. Service history lands here later.
 export default function CarPage() {
   const { t } = useTranslation()
   const { id = '' } = useParams()
@@ -72,6 +73,8 @@ export default function CarPage() {
         {!car.isArchived && <OdometerQuickEntry car={car} onSaved={load} />}
       </div>
 
+      <TasksSection car={car} />
+
       <section className="card" aria-labelledby="odometer-history" ref={historyRef}>
         <h2 id="odometer-history" tabIndex={-1}>{t('odometerHistory')}</h2>
         {readings.length === 0 ? (
@@ -111,12 +114,6 @@ export function CarError({ error }: { error: unknown }) {
       <div role="alert"><h1 className="error" tabIndex={-1}>{message}</h1></div>
     </>
   )
-}
-
-// The user's calendar date, for the date field's max.
-function localToday() {
-  const d = new Date()
-  return new Date(d.getTime() - d.getTimezoneOffset() * 60_000).toISOString().slice(0, 10)
 }
 
 function ReadingRow({ reading: r, url, editable, deletable, onSaved }: {
