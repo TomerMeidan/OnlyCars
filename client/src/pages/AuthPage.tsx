@@ -1,23 +1,24 @@
 import { useState, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
+import { errorMessage } from '../i18n'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../auth'
 
 export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
   const { t } = useTranslation()
   const { authenticate } = useAuth()
-  const [error, setError] = useState('')
+  const [error, setError] = useState<unknown>(null)
   const [busy, setBusy] = useState(false)
 
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault()
     const form = new FormData(e.currentTarget)
     setBusy(true)
-    setError('')
+    setError(null)
     try {
       await authenticate(mode, String(form.get('email')), String(form.get('password')))
     } catch (err) {
-      setError((err as Error).message)
+      setError(err)
       setBusy(false)
     }
   }
@@ -40,7 +41,7 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
           required
         />
       </label>
-      {error && <p className="error" role="alert">{error}</p>}
+      {error != null && <p className="error" role="alert">{errorMessage(error)}</p>}
       <button disabled={busy}>{t(mode)}</button>
       <p>
         {mode === 'login' ? t('noAccount') : t('haveAccount')}{' '}

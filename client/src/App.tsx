@@ -2,6 +2,7 @@ import { useTranslation } from 'react-i18next'
 import { Link, Navigate, Route, Routes } from 'react-router-dom'
 import { useAuth } from './auth'
 import AuthPage from './pages/AuthPage'
+import CarPage from './pages/CarPage'
 import CarFormPage from './pages/CarFormPage'
 import CarsPage from './pages/CarsPage'
 
@@ -26,6 +27,7 @@ export default function App() {
           <Routes>
             <Route path="/" element={<CarsPage />} />
             <Route path="/cars/new" element={<CarFormPage />} />
+            <Route path="/cars/:id" element={<CarPage />} />
             <Route path="/cars/:id/edit" element={<CarFormPage />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>

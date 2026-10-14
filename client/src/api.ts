@@ -37,11 +37,31 @@ export type VehicleInput = Omit<Vehicle, 'id' | 'currentOdometerKm' | 'avgKmPerD
   initialOdometerKm?: number | null
 }
 
+export type OdometerSource = 'Manual' | 'Service' | 'Checklist' | 'Fuel'
+
+export interface OdometerReading {
+  id: string
+  vehicleId: string
+  valueKm: number
+  readingDate: string
+  source: OdometerSource
+}
+
+// ProblemDetails from the API; `code` is translated by errorMessage() in i18n.ts.
+export interface Problem {
+  title?: string
+  detail?: string
+  code?: string
+  currentKm?: number
+}
+
 export class ApiError extends Error {
   status: number
-  constructor(status: number, message: string) {
-    super(message)
+  problem: Problem
+  constructor(status: number, problem: Problem | null, fallback: string) {
+    super(problem?.detail ?? problem?.title ?? fallback)
     this.status = status
+    this.problem = problem ?? {}
   }
 }
 
@@ -66,7 +86,7 @@ export async function api<T>(path: string, method = 'GET', body?: unknown): Prom
   }
   if (!res.ok) {
     const problem = await res.json().catch(() => null)
-    throw new ApiError(res.status, problem?.detail ?? problem?.title ?? res.statusText)
+    throw new ApiError(res.status, problem, res.statusText)
   }
   return res.status === 204 ? (undefined as T) : res.json()
 }

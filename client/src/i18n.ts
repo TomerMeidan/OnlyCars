@@ -1,6 +1,7 @@
 import i18n from 'i18next'
 import LanguageDetector from 'i18next-browser-languagedetector'
 import { initReactI18next } from 'react-i18next'
+import { ApiError } from './api'
 
 const en = {
   appName: 'OnlyCars',
@@ -41,6 +42,30 @@ const en = {
   updateOdometer: 'Update',
   confirmCorrection: 'This is a correction, save anyway',
   fuel: { Petrol: 'Petrol', Diesel: 'Diesel', Hybrid: 'Hybrid', Electric: 'Electric', Lpg: 'LPG', Other: 'Other' },
+  loading: 'Loading…',
+  backToCars: 'All cars',
+  odometerHistory: 'Odometer history',
+  noReadings: 'No readings yet.',
+  source: { Manual: 'Manual', Service: 'Service', Checklist: 'Checklist', Fuel: 'Fuel' },
+  // Keyed by the API's ProblemDetails `code`; unknown codes fall back to `generic`.
+  errors: {
+    generic: 'Something went wrong. Please try again.',
+    auth: {
+      invalidCredentials: 'Wrong email or password.',
+      emailTaken: 'An account with this email already exists.',
+      invalidEmail: 'Enter a valid email address.',
+      passwordTooShort: 'The password must be at least 8 characters.',
+      credentialsRequired: 'Enter your email and password.',
+    },
+    vehicle: {
+      vinTaken: 'Another car on your account already has this VIN.',
+      notFound: 'This car was not found.',
+    },
+    odometer: {
+      lowerThanCurrent:
+        'This reading is lower than the current odometer ({{currentKm, number}} km). If it is a correction, tick the box and save again.',
+    },
+  },
 }
 
 const he: typeof en = {
@@ -82,6 +107,29 @@ const he: typeof en = {
   updateOdometer: 'עדכון',
   confirmCorrection: 'זה תיקון, שמור בכל זאת',
   fuel: { Petrol: 'בנזין', Diesel: 'דיזל', Hybrid: 'היברידי', Electric: 'חשמלי', Lpg: 'גפ״מ', Other: 'אחר' },
+  loading: 'טוען…',
+  backToCars: 'כל הרכבים',
+  odometerHistory: 'היסטוריית קילומטראז׳',
+  noReadings: 'עדיין אין קריאות.',
+  source: { Manual: 'ידני', Service: 'טיפול', Checklist: 'רשימת בדיקה', Fuel: 'תדלוק' },
+  errors: {
+    generic: 'משהו השתבש. נסו שוב.',
+    auth: {
+      invalidCredentials: 'האימייל או הסיסמה שגויים.',
+      emailTaken: 'כבר קיים חשבון עם האימייל הזה.',
+      invalidEmail: 'הזינו כתובת אימייל תקינה.',
+      passwordTooShort: 'הסיסמה חייבת להכיל לפחות 8 תווים.',
+      credentialsRequired: 'הזינו אימייל וסיסמה.',
+    },
+    vehicle: {
+      vinTaken: 'בחשבון שלך כבר יש רכב עם מספר השלדה הזה.',
+      notFound: 'הרכב לא נמצא.',
+    },
+    odometer: {
+      lowerThanCurrent:
+        'הקריאה נמוכה מהקילומטראז׳ הנוכחי ({{currentKm, number}} ק״מ). אם זה תיקון, סמנו את התיבה ושמרו שוב.',
+    },
+  },
 }
 
 i18n
@@ -101,5 +149,11 @@ const applyDir = (lng: string) => {
 }
 applyDir(i18n.resolvedLanguage ?? 'en')
 i18n.on('languageChanged', applyDir)
+
+// Translated text for any thrown error: known API codes get their own message, everything else the generic one.
+export function errorMessage(err: unknown) {
+  const problem = err instanceof ApiError ? err.problem : {}
+  return i18n.t(`errors.${problem.code}`, { currentKm: problem.currentKm, defaultValue: i18n.t('errors.generic') })
+}
 
 export default i18n

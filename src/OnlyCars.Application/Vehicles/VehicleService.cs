@@ -34,7 +34,7 @@ public class VehicleService(IAppDbContext db)
             var vinTaken = await db.Vehicles.AnyAsync(v => v.UserId == userId && v.Vin == request.Vin, ct);
             if (vinTaken)
             {
-                throw new ConflictException("A vehicle with this VIN already exists on your account.");
+                throw new ConflictException("vehicle.vinTaken", "A vehicle with this VIN already exists on your account.");
             }
         }
 
@@ -81,7 +81,7 @@ public class VehicleService(IAppDbContext db)
             var vinTaken = await db.Vehicles.AnyAsync(v => v.UserId == userId && v.Vin == request.Vin && v.Id != vehicleId, ct);
             if (vinTaken)
             {
-                throw new ConflictException("A vehicle with this VIN already exists on your account.");
+                throw new ConflictException("vehicle.vinTaken", "A vehicle with this VIN already exists on your account.");
             }
         }
 

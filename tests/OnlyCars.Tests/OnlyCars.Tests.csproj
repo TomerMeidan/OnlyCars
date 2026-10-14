@@ -23,6 +23,7 @@
     <ProjectReference Include="..\..\src\OnlyCars.Domain\OnlyCars.Domain.csproj" />
     <ProjectReference Include="..\..\src\OnlyCars.Application\OnlyCars.Application.csproj" />
     <ProjectReference Include="..\..\src\OnlyCars.Infrastructure\OnlyCars.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\src\OnlyCars.Api\OnlyCars.Api.csproj" />
   </ItemGroup>
 
   <ItemGroup>

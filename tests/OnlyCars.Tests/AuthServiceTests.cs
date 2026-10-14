@@ -32,8 +32,49 @@ public class AuthServiceTests
         var service = CreateService(out _);
         await service.RegisterAsync(new RegisterRequest("dup@example.com", "Passw0rd!"));
 
-        await Assert.ThrowsAsync<ConflictException>(() =>
+        var ex = await Assert.ThrowsAsync<ConflictException>(() =>
             service.RegisterAsync(new RegisterRequest("dup@example.com", "Different1!")));
+        Assert.Equal("auth.emailTaken", ex.Code);
+    }
+
+    [Theory]
+    [InlineData("", "", "auth.invalidEmail")]
+    [InlineData("x", "1", "auth.invalidEmail")]
+    [InlineData("   ", "Passw0rd!", "auth.invalidEmail")]
+    [InlineData("Name <a@b.com>", "Passw0rd!", "auth.invalidEmail")]
+    [InlineData("valid@example.com", "1234567", "auth.passwordTooShort")]
+    public async Task Register_InvalidInput_ThrowsValidationFailed_AndCreatesNoUser(string email, string password, string code)
+    {
+        var service = CreateService(out var db);
+
+        var ex = await Assert.ThrowsAsync<ValidationFailedException>(() =>
+            service.RegisterAsync(new RegisterRequest(email, password)));
+
+        Assert.Equal(code, ex.Code);
+        Assert.Empty(db.Users);
+    }
+
+    [Fact]
+    public async Task Register_EightCharacterPassword_Succeeds()
+    {
+        var service = CreateService(out var db);
+
+        await service.RegisterAsync(new RegisterRequest("eight@example.com", "12345678"));
+
+        Assert.Single(db.Users);
+    }
+
+    [Theory]
+    [InlineData("", "Passw0rd!")]
+    [InlineData("login@example.com", "")]
+    public async Task Login_EmptyInput_ThrowsValidationFailed(string email, string password)
+    {
+        var service = CreateService(out _);
+
+        var ex = await Assert.ThrowsAsync<ValidationFailedException>(() =>
+            service.LoginAsync(new LoginRequest(email, password)));
+
+        Assert.Equal("auth.credentialsRequired", ex.Code);
     }
 
     [Fact]
@@ -53,7 +94,7 @@ public class AuthServiceTests
         var service = CreateService(out _);
         await service.RegisterAsync(new RegisterRequest("wrongpw@example.com", "Passw0rd!"));
 
-        await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
+        await Assert.ThrowsAsync<UnauthorizedException>(() =>
             service.LoginAsync(new LoginRequest("wrongpw@example.com", "NotIt!")));
     }
 
@@ -62,7 +103,7 @@ public class AuthServiceTests
     {
         var service = CreateService(out _);
 
-        await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
+        await Assert.ThrowsAsync<UnauthorizedException>(() =>
             service.LoginAsync(new LoginRequest("nouser@example.com", "whatever")));
     }
 }

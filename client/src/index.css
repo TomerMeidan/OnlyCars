@@ -168,3 +168,17 @@ button.link {
 .quick { display: flex; flex-wrap: wrap; gap: 0.5rem; }
 .quick input[type='number'] { flex: 1; min-width: 9rem; }
 .quick .error, .quick label { flex-basis: 100%; }
+
+/* Car detail: odometer history, newest first */
+.history { list-style: none; padding: 0; margin: 0; }
+.history li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.25rem 1rem;
+  padding-block: 0.6rem;
+  border-block-end: 1px solid var(--line);
+}
+.history li:last-child { border-block-end: none; }
+.history .value { font: 600 1.35rem/1.2 var(--gauge); font-variant-numeric: tabular-nums; margin-inline-end: auto; }
+.history bdi { direction: ltr; }

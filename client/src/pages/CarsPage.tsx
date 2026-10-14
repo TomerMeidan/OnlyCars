@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
+import { errorMessage } from '../i18n'
 import { Link } from 'react-router-dom'
 import { api, ApiError, type Vehicle } from '../api'
 
@@ -7,10 +8,10 @@ export default function CarsPage() {
   const { t } = useTranslation()
   const [cars, setCars] = useState<Vehicle[] | null>(null)
   const [showArchived, setShowArchived] = useState(false)
-  const [error, setError] = useState('')
+  const [error, setError] = useState<unknown>(null)
 
   const load = () =>
-    api<Vehicle[]>(`/vehicles?includeArchived=${showArchived}`).then(setCars, (e) => setError(e.message))
+    api<Vehicle[]>(`/vehicles?includeArchived=${showArchived}`).then(setCars, setError)
 
   useEffect(() => {
     load()
@@ -31,13 +32,13 @@ export default function CarsPage() {
         <input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} />
         {t('showArchived')}
       </label>
-      {error && <p className="error" role="alert">{error}</p>}
+      {error != null && <p className="error" role="alert">{errorMessage(error)}</p>}
       {cars?.length === 0 && <p>{t('noCars')}</p>}
       <ul className="cars">
         {cars?.map((car) => (
           <li key={car.id} className={`card${car.isArchived ? ' archived' : ''}`}>
             <div className="row">
-              <h2>{car.nickname}</h2>
+              <h2><Link to={`/cars/${car.id}`}>{car.nickname}</Link></h2>
               {car.isArchived && <span className="badge">{t('archived')}</span>}
             </div>
             <div>
@@ -68,13 +69,13 @@ export default function CarsPage() {
 function OdometerQuickEntry({ car, onSaved }: { car: Vehicle; onSaved: () => void }) {
   const { t } = useTranslation()
   const [value, setValue] = useState('')
-  const [error, setError] = useState('')
+  const [error, setError] = useState<unknown>(null)
   const [needsConfirm, setNeedsConfirm] = useState(false)
   const [confirmCorrection, setConfirmCorrection] = useState(false)
 
   async function submit(e: FormEvent) {
     e.preventDefault()
-    setError('')
+    setError(null)
     try {
       await api(`/vehicles/${car.id}/odometer`, 'POST', { valueKm: Number(value), confirmCorrection })
       setValue('')
@@ -82,9 +83,9 @@ function OdometerQuickEntry({ car, onSaved }: { car: Vehicle; onSaved: () => voi
       setConfirmCorrection(false)
       onSaved()
     } catch (err) {
-      setError((err as Error).message)
-      // 400 here means the reading is lower than the latest; the API accepts it once confirmed.
-      setNeedsConfirm(err instanceof ApiError && err.status === 400)
+      setError(err)
+      // The API accepts a lower reading once the user confirms it is a correction.
+      setNeedsConfirm(err instanceof ApiError && err.problem.code === 'odometer.lowerThanCurrent')
     }
   }
 
@@ -102,7 +103,7 @@ function OdometerQuickEntry({ car, onSaved }: { car: Vehicle; onSaved: () => voi
         onChange={(e) => setValue(e.target.value)}
       />
       <button>{t('updateOdometer')}</button>
-      {error && <p className="error" role="alert">{error}</p>}
+      {error != null && <p className="error" role="alert">{errorMessage(error)}</p>}
       {needsConfirm && (
         <label className="inline">
           <input type="checkbox" checked={confirmCorrection} onChange={(e) => setConfirmCorrection(e.target.checked)} />
@@ -114,7 +115,7 @@ function OdometerQuickEntry({ car, onSaved }: { car: Vehicle; onSaved: () => voi
 }
 
 // Drum counter; only digits that changed since the last render roll in.
-function Odometer({ km }: { km: number }) {
+export function Odometer({ km }: { km: number }) {
   const value = String(Math.round(km))
   const digits = value.padStart(6, '0')
   const [seen, setSeen] = useState({ digits, before: digits })

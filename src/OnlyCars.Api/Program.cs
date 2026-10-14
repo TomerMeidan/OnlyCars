@@ -21,7 +21,9 @@ builder.Services.AddApplication();
 builder.Services.AddInfrastructure(builder.Configuration);
 
 builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
-builder.Services.AddProblemDetails();
+// Framework-generated ProblemDetails (e.g. [ApiController] model validation) get a code too.
+builder.Services.AddProblemDetails(o => o.CustomizeProblemDetails = c =>
+    c.ProblemDetails.Extensions.TryAdd("code", GlobalExceptionHandler.FallbackCode(c.ProblemDetails.Status)));
 
 var jwtSection = builder.Configuration.GetSection(JwtOptions.SectionName);
 var jwtSigningKey = jwtSection["SigningKey"]

@@ -33,9 +33,12 @@ public class OdometerService(IAppDbContext db, VehicleService vehicleService)
 
         if (request.ValueKm < vehicle.CurrentOdometerKm && !request.ConfirmCorrection)
         {
-            throw new ValidationFailedException(
+            throw new ValidationFailedException("odometer.lowerThanCurrent",
                 $"New reading ({request.ValueKm} km) is lower than the current odometer ({vehicle.CurrentOdometerKm} km). " +
-                "Resubmit with confirmCorrection=true if this is an intentional correction.");
+                "Resubmit with confirmCorrection=true if this is an intentional correction.")
+            {
+                Extensions = { ["currentKm"] = vehicle.CurrentOdometerKm }
+            };
         }
 
         var today = DateOnly.FromDateTime(DateTime.UtcNow);

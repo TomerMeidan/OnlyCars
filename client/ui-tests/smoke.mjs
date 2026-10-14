@@ -75,15 +75,49 @@ for (const s of setups) {
   await step('odometer-lower-rejected', async () => {
     await page.fill('.quick input[type=number]', '60000')
     await page.click('.quick button')
-    await page.locator('.quick .error').waitFor()
+    const text = await page.locator('.quick .error').textContent()
     await page.locator('.quick input[type=checkbox]').waitFor()
+    if (!digitsOnly(text).includes('61250')) throw new Error(`error lacks the current reading: "${text}"`)
+    if (s.lng === 'he' && /[A-Za-z]/.test(text)) throw new Error(`Hebrew error has Latin letters: "${text}"`)
   })
   await step('odometer-correction-confirmed', async () => {
     await page.check('.quick input[type=checkbox]')
     await page.click('.quick button')
     await page.waitForFunction(() => document.querySelector('.odometer')?.getAttribute('aria-label')?.replace(/\D/g, '') === '60000')
   })
+  await step('odometer-history', async () => {
+    await page.click('.cars li h2 a')
+    await page.locator('.history li').first().waitFor()
+    const rows = await page.locator('.history li').allTextContents()
+    // Newest first: the correction, the update, then the initial reading from add-car.
+    const values = await page.locator('.history .value bdi').allTextContents()
+    if (values.map(digitsOnly).join() !== '60000,61250,61000') throw new Error(`history values: ${values}`)
+    if (s.lng === 'he' && rows.some((r) => /[A-Za-z]/.test(r))) throw new Error(`Hebrew history has Latin letters: ${rows}`)
+    const dir = await page.locator('.history').evaluate((el) => getComputedStyle(el).direction)
+    if (dir !== (s.lng === 'he' ? 'rtl' : 'ltr')) throw new Error(`history direction is ${dir}`)
+  })
+  await step('other-users-car-not-found', async () => {
+    // A second user's car, created through the API, must not be visible to this user.
+    const auth = await page.request.post(`${BASE}/api/auth/register`, {
+      data: { email: `other-${s.name}-${Date.now()}@onlycars.test`, password: 'Passw0rd!' },
+    })
+    const headers = { Authorization: `Bearer ${(await auth.json()).token}` }
+    const car = await (await page.request.post(`${BASE}/api/vehicles`, { headers, data: { nickname: 'Not yours' } })).json()
+    await page.goto(`${BASE}/cars/${car.id}`)
+    const text = await page.locator('main .error').textContent()
+    const expected = s.lng === 'he' ? 'הרכב לא נמצא.' : 'This car was not found.'
+    if (text !== expected) throw new Error(`not-found text: "${text}"`)
+  })
+  await step('api-register-short-password', async () => {
+    const res = await page.request.post(`${BASE}/api/auth/register`, {
+      data: { email: `short-${s.name}-${Date.now()}@onlycars.test`, password: '1234567' },
+    })
+    const body = await res.json()
+    if (res.status() !== 400 || body.code !== 'auth.passwordTooShort') throw new Error(`got ${res.status()} ${JSON.stringify(body)}`)
+  })
   await step('edit-car', async () => {
+    await page.click('main > a[href="/"]') // back from the not-found page via the detail page's link
+    await page.locator('.cars li').first().waitFor()
     await page.click('a[href$="/edit"]')
     await page.fill('input[name=nickname]', 'Renamed Corolla')
     await page.click('form button:not(.link)')

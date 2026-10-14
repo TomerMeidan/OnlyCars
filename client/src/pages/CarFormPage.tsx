@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
+import { errorMessage } from '../i18n'
 import { useNavigate, useParams } from 'react-router-dom'
 import { api, fuelTypes, type FuelType, type Vehicle, type VehicleInput } from '../api'
 
@@ -10,10 +11,10 @@ export default function CarFormPage() {
   const { id } = useParams()
   const navigate = useNavigate()
   const [car, setCar] = useState<Vehicle | null>(null)
-  const [error, setError] = useState('')
+  const [error, setError] = useState<unknown>(null)
 
   useEffect(() => {
-    if (id) api<Vehicle>(`/vehicles/${id}`).then(setCar, (e) => setError(e.message))
+    if (id) api<Vehicle>(`/vehicles/${id}`).then(setCar, setError)
   }, [id])
 
   async function submit(e: FormEvent<HTMLFormElement>) {
@@ -38,11 +39,11 @@ export default function CarFormPage() {
       await api(id ? `/vehicles/${id}` : '/vehicles', id ? 'PUT' : 'POST', body)
       navigate('/')
     } catch (err) {
-      setError((err as Error).message)
+      setError(err)
     }
   }
 
-  if (id && !car) return error ? <p className="error">{error}</p> : null
+  if (id && !car) return error != null ? <p className="error" role="alert">{errorMessage(error)}</p> : null
 
   const field = (name: keyof Vehicle | 'initialOdometerKm', type = 'text', extra = {}) => (
     <label>
@@ -70,7 +71,7 @@ export default function CarFormPage() {
       {field('purchaseDate', 'date')}
       {field('purchasePrice', 'number', { min: 0, step: '0.01' })}
       {!id && field('initialOdometerKm', 'number', { min: 0, step: 'any' })}
-      {error && <p className="error" role="alert">{error}</p>}
+      {error != null && <p className="error" role="alert">{errorMessage(error)}</p>}
       <div className="actions">
         <button>{t('save')}</button>
         <button type="button" className="link" onClick={() => navigate('/')}>{t('cancel')}</button>

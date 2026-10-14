@@ -38,8 +38,10 @@ public class OdometerServiceTests
         var vehicle = await vehicles.CreateAsync(userId, new CreateVehicleRequest(
             "Car", null, null, null, null, null, null, null, null, null, 10000));
 
-        await Assert.ThrowsAsync<ValidationFailedException>(() =>
+        var ex = await Assert.ThrowsAsync<ValidationFailedException>(() =>
             odometer.AddAsync(userId, vehicle.Id, new AddOdometerReadingRequest(9000, null)));
+        Assert.Equal("odometer.lowerThanCurrent", ex.Code);
+        Assert.Equal(10000m, ex.Extensions["currentKm"]);
     }
 
     [Fact]

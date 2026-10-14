@@ -1,3 +1,4 @@
+using System.Net.Mail;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using OnlyCars.Application.Auth.Dtos;
@@ -12,13 +13,28 @@ public class AuthService(
     IPasswordHasher<User> passwordHasher,
     IJwtTokenService jwtTokenService)
 {
+    public const int MinPasswordLength = 8;
+
     public async Task<AuthResponse> RegisterAsync(RegisterRequest request, CancellationToken ct = default)
     {
         var email = request.Email.Trim().ToLowerInvariant();
 
+        // MailAddress also parses display-name forms like "a <b@c.d>", so require the address to round-trip unchanged.
+        // 256 matches the Email column length.
+        if (email.Length > 256 || !MailAddress.TryCreate(email, out var address) || address.Address != email)
+        {
+            throw new ValidationFailedException("auth.invalidEmail", "Email address is not valid.");
+        }
+
+        if (request.Password.Length < MinPasswordLength)
+        {
+            throw new ValidationFailedException("auth.passwordTooShort",
+                $"Password must be at least {MinPasswordLength} characters.");
+        }
+
         if (await db.Users.AnyAsync(u => u.Email == email, ct))
         {
-            throw new ConflictException("An account with this email already exists.");
+            throw new ConflictException("auth.emailTaken", "An account with this email already exists.");
         }
 
         var user = new User { Email = email, PasswordHash = string.Empty };
@@ -33,17 +49,22 @@ public class AuthService(
     public async Task<AuthResponse> LoginAsync(LoginRequest request, CancellationToken ct = default)
     {
         var email = request.Email.Trim().ToLowerInvariant();
+        if (email.Length == 0 || string.IsNullOrEmpty(request.Password))
+        {
+            throw new ValidationFailedException("auth.credentialsRequired", "Email and password are required.");
+        }
+
         var user = await db.Users.FirstOrDefaultAsync(u => u.Email == email, ct);
 
         if (user is null)
         {
-            throw new UnauthorizedAccessException("Invalid email or password.");
+            throw new UnauthorizedException("auth.invalidCredentials", "Invalid email or password.");
         }
 
         var result = passwordHasher.VerifyHashedPassword(user, user.PasswordHash, request.Password);
         if (result == PasswordVerificationResult.Failed)
         {
-            throw new UnauthorizedAccessException("Invalid email or password.");
+            throw new UnauthorizedException("auth.invalidCredentials", "Invalid email or password.");
         }
 
         return BuildResponse(user);
