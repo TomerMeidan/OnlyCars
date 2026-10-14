@@ -2,7 +2,7 @@
 
 One line per requirement in `docs/spec.md`. Updated after every ticket is signed off. Evidence and details are in `docs/requirements-status.md`.
 
-**Last updated:** 2026-10-14, after the SEC-1 backend
+**Last updated:** 2026-10-14, after the MVP2-A screens were built
 **Progress:** 5 of 50 required items done, 7 partly done, 38 not started. The 7 optional items are not counted.
 
 Legend:
@@ -13,7 +13,7 @@ Legend:
 
 ## MVP progress
 - [x] **Step 1: Accounts, cars, odometer.** Done, apart from the gaps marked below.
-- [ ] **Step 2: Maintenance tasks, templates, Reset** 🔨 MVP2-A: backend done (API, database, 12 templates); screens being built. Then MVP2-B (status) and MVP2-C (Reset and Undo).
+- [ ] **Step 2: Maintenance tasks, templates, Reset** 🔨 MVP2-A: backend and screens built; now in review and QA. Then MVP2-B (status) and MVP2-C (Reset and Undo).
 - [ ] **Step 3: Service history with costs**
 - [ ] **Step 4: Dashboard with due and overdue status**
 - [ ] **Step 5: Checklists, then tires, then reports and notifications**
