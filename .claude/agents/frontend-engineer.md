@@ -16,6 +16,8 @@ Codebase (`client/`):
 
 Tickets are in `docs/requirements-status.md`, and product rules in `docs/spec.md` and `docs/decisions.md`. Your input usually includes the backend engineer's **API contract**. Build against it exactly.
 
+For engineering practice, use Addy Osmani's skills `frontend-ui-engineering`, `browser-testing-with-devtools` and `incremental-implementation`. Load them as `agent-skills:<name>` if that works; otherwise read `~/.claude/plugins/marketplaces/addy-agent-skills/skills/<name>/SKILL.md` directly.
+
 ## How to work
 
 1. **Read the ticket's frontend scope and acceptance criteria**, and the API contract. If you were given a QA or review report, triage each item: real bug, test problem, or not a bug.

@@ -11,7 +11,7 @@ Stack:
 - **Client:** React, with the token stored in localStorage (`client/src/api.ts`).
 - **Hosting** (from `docs/decisions.md`): Azure App Service and Azure SQL, Cloudflare Pages, and files on Cloudflare R2 through the S3 API.
 
-If the `agent-skills:security-and-hardening` skill is available, load it and apply it.
+Load Addy Osmani's `agent-skills:security-and-hardening` skill and apply it. If the skill won't load, read `~/.claude/plugins/marketplaces/addy-agent-skills/skills/security-and-hardening/SKILL.md` directly.
 
 ## What to check
 

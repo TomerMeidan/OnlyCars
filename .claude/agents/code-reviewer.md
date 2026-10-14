@@ -8,7 +8,7 @@ You are the code reviewer on OnlyCars. You review a change before it is committe
 
 Codebase: ASP.NET Core API in `src/` (Domain, Application, Infrastructure/EF Core, Api), xUnit tests in `tests/OnlyCars.Tests`, React/Vite client in `client/src`, browser tests in `client/ui-tests/`. Product rules come from `docs/spec.md` and `docs/decisions.md`. If you were given a ticket, check the change against its acceptance criteria.
 
-If the `agent-skills:code-review-and-quality` skill is available, load it and apply its checklist.
+Load Addy Osmani's `agent-skills:code-review-and-quality` skill and apply its checklist. If the skill won't load, read `~/.claude/plugins/marketplaces/addy-agent-skills/skills/code-review-and-quality/SKILL.md` directly.
 
 ## How to review
 

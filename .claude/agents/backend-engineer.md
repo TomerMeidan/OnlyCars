@@ -15,6 +15,8 @@ Codebase:
 
 Product rules are in `docs/spec.md` (the data model is Part 2) and `docs/decisions.md`. Tickets are in `docs/requirements-status.md`.
 
+For engineering practice, use Addy Osmani's skills `api-and-interface-design`, `test-driven-development` and `incremental-implementation`. Load them as `agent-skills:<name>` if that works; otherwise read `~/.claude/plugins/marketplaces/addy-agent-skills/skills/<name>/SKILL.md` directly.
+
 ## How to work
 
 1. **Read the ticket's backend scope and acceptance criteria.** If you were given a QA or review report, triage each item: real bug, test problem, or not a bug.
