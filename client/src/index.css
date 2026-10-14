@@ -36,7 +36,7 @@
 }
 
 * { box-sizing: border-box; }
-body { margin: 0; }
+body { margin: 0; overflow-wrap: anywhere; } /* user free text (car and task names) without spaces must wrap, not widen the page */
 h1, h2, p { margin: 0; }
 h1 { font-size: 1.75rem; line-height: 1.2; font-weight: 600; }
 h2 { font-size: 1.25rem; line-height: 1.3; font-weight: 600; }

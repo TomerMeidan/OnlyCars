@@ -110,6 +110,7 @@ const en = {
   // Keyed by the API's ProblemDetails `code`; unknown codes fall back to `generic`.
   errors: {
     generic: 'Something went wrong. Please try again.',
+    http: { 429: 'Too many attempts. Try again in a few minutes.' }, // the global rate limiter
     auth: {
       tooManyAttempts: 'Too many attempts. Try again in a few minutes.',
       invalidCredentials: 'Wrong email or password.',
@@ -257,6 +258,7 @@ const he: typeof en = {
   // ⁦…⁩ isolate numbers so they stay left-to-right inside RTL text.
   errors: {
     generic: 'משהו השתבש. נסו שוב.',
+    http: { 429: 'יותר מדי ניסיונות. נסו שוב בעוד כמה דקות.' },
     auth: {
       tooManyAttempts: 'יותר מדי ניסיונות. נסו שוב בעוד כמה דקות.',
       invalidCredentials: 'האימייל או הסיסמה שגויים.',
