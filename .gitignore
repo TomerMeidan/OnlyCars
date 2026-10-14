@@ -487,3 +487,4 @@ client/dist/
 client/dev-dist/
 client/ui-tests/out/
 .claude/settings.local.json
+.claude/scheduled_tasks.lock
