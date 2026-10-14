@@ -15,8 +15,6 @@ namespace OnlyCars.Application.Odometer;
 /// </summary>
 public class OdometerService(IAppDbContext db, VehicleService vehicleService)
 {
-    private const decimal MaxValueKm = 10_000_000;
-
     public async Task<List<OdometerReadingDto>> HistoryAsync(Guid userId, Guid vehicleId, CancellationToken ct = default)
     {
         await vehicleService.FindOwnedAsync(userId, vehicleId, ct);
@@ -118,9 +116,9 @@ public class OdometerService(IAppDbContext db, VehicleService vehicleService)
         }
 
         // No real car gets near this; it also keeps the value inside the decimal(12,2) column.
-        if (valueKm > MaxValueKm)
+        if (valueKm > OdometerReading.MaxValueKm)
         {
-            throw new ValidationFailedException("odometer.invalidValue", $"The reading can't be above {MaxValueKm} km.");
+            throw new ValidationFailedException("odometer.invalidValue", $"The reading can't be above {OdometerReading.MaxValueKm} km.");
         }
 
         // One day of slack: just after midnight in Israel, the user's today is still tomorrow in UTC.

@@ -6,6 +6,7 @@
   --line: #cdd3dc;
   --amber: #f0a81c;
   --fault: #c2321f;
+  --danger: #b42318; /* white text 6.6:1 */
   --drum: #141b26;
   --drum-digit: #f2f4f7;
   --drum-lead: #5b6678;
@@ -28,6 +29,7 @@
     --line: #2d3541;
     --amber: #f5b53a;
     --fault: #ff7a66;
+    --danger: #d92d20; /* white text 4.8:1 */
     --drum: #080b10;
     --drum-lead: #4a5466;
   }
@@ -47,7 +49,7 @@ header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 0.75rem 1rem;
+  padding: 0.125rem 1rem; /* thin: the 44px links set the height */
   background: var(--drum);
   color: var(--drum-digit);
 }
@@ -158,7 +160,6 @@ button.link {
   background: none;
   border: none;
   padding: 0;
-  min-height: auto;
   font-weight: 400;
   color: inherit;
   text-decoration: underline;
@@ -186,3 +187,13 @@ button.link {
 .inline-form > label:not(.inline) { flex: 1 1 9rem; }
 .inline-form input:not([type='checkbox']) { width: 100%; }
 .inline-form > p, .inline-form > label.inline { flex-basis: 100%; }
+button.danger { background: var(--danger); border-color: var(--danger); color: #fff; }
+
+/* Text links: a 44px tap target (link-style buttons get theirs from the button rule); the car name keeps its line height */
+.brand, h2 a, .actions a, .switch a { display: inline-flex; align-items: center; min-height: 2.75rem; }
+h2 a { margin-block: -0.5625rem; }
+
+/* "All cars": a 44px tap target from padding, with the focus ring on the text only */
+.back { justify-self: start; padding-block: 0.625rem; }
+.back:focus-visible { outline: none; }
+.back:focus-visible span { outline: 2px solid var(--ink); outline-offset: 2px; }

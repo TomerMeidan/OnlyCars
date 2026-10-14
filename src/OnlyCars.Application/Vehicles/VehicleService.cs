@@ -29,6 +29,11 @@ public class VehicleService(IAppDbContext db)
 
     public async Task<VehicleDto> CreateAsync(Guid userId, CreateVehicleRequest request, CancellationToken ct = default)
     {
+        if (request.InitialOdometerKm is < 0 or > OdometerReading.MaxValueKm)
+        {
+            throw new ValidationFailedException("odometer.invalidValue", $"The starting odometer must be between 0 and {OdometerReading.MaxValueKm} km.");
+        }
+
         if (!string.IsNullOrWhiteSpace(request.Vin))
         {
             var vinTaken = await db.Vehicles.AnyAsync(v => v.UserId == userId && v.Vin == request.Vin, ct);

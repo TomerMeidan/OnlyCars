@@ -20,6 +20,38 @@ public class VehicleServiceTests
         Assert.Equal(12000, vehicle.CurrentOdometerKm);
     }
 
+    [Theory]
+    [InlineData("-1")]
+    [InlineData("10000001")]
+    [InlineData("99999999999999")]
+    public async Task Create_InitialOdometerOutOfRange_ThrowsInvalidValue_AndSavesNothing(string km)
+    {
+        var db = TestDbContextFactory.Create();
+        var service = new VehicleService(db);
+
+        var ex = await Assert.ThrowsAsync<ValidationFailedException>(() => service.CreateAsync(Guid.NewGuid(), new CreateVehicleRequest(
+            "Bad Car", null, null, null, null, null, null, null, null, null, InitialOdometerKm: decimal.Parse(km))));
+
+        Assert.Equal("odometer.invalidValue", ex.Code);
+        Assert.Empty(db.Vehicles);
+        Assert.Empty(db.OdometerReadings);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(10_000_000)]
+    public async Task Create_InitialOdometerAtRangeEdges_Succeeds(int km)
+    {
+        var db = TestDbContextFactory.Create();
+        var service = new VehicleService(db);
+
+        var vehicle = await service.CreateAsync(Guid.NewGuid(), new CreateVehicleRequest(
+            "Edge Car", null, null, null, null, null, null, null, null, null, InitialOdometerKm: km));
+
+        Assert.Equal(km, vehicle.CurrentOdometerKm);
+        Assert.Equal(km, Assert.Single(db.OdometerReadings).ValueKm);
+    }
+
     [Fact]
     public async Task Create_DuplicateVinForSameUser_ThrowsConflict()
     {

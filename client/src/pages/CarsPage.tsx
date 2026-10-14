@@ -3,12 +3,14 @@ import { useTranslation } from 'react-i18next'
 import { errorMessage } from '../i18n'
 import { Link } from 'react-router-dom'
 import { api, isOrderError, type Vehicle } from '../api'
+import { usePage } from '../usePage'
 
 export default function CarsPage() {
   const { t } = useTranslation()
   const [cars, setCars] = useState<Vehicle[] | null>(null)
   const [showArchived, setShowArchived] = useState(false)
   const [error, setError] = useState<unknown>(null)
+  usePage(t('myCars'))
 
   const load = () =>
     api<Vehicle[]>(`/vehicles?includeArchived=${showArchived}`).then(setCars, setError)
@@ -25,7 +27,7 @@ export default function CarsPage() {
   return (
     <>
       <div className="row">
-        <h1>{t('myCars')}</h1>
+        <h1 tabIndex={-1}>{t('myCars')}</h1>
         <Link to="/cars/new" className="button">{t('addCar')}</Link>
       </div>
       <label className="inline">

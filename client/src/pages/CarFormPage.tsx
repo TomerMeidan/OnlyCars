@@ -3,6 +3,8 @@ import { useTranslation } from 'react-i18next'
 import { errorMessage } from '../i18n'
 import { useNavigate, useParams } from 'react-router-dom'
 import { api, carNotFound, fuelTypes, isGuid, type FuelType, type Vehicle, type VehicleInput } from '../api'
+import { usePage } from '../usePage'
+import { CarError } from './CarPage'
 
 const maxYear = new Date().getFullYear() + 1
 
@@ -15,6 +17,7 @@ export default function CarFormPage() {
   // An id that can't be a car never reaches the API.
   const badId = id != null && !isGuid(id)
   const error = badId ? carNotFound() : fetchError
+  usePage(!id || car ? t(id ? 'editCar' : 'addCar') : undefined)
 
   useEffect(() => {
     if (id && !badId) api<Vehicle>(`/vehicles/${encodeURIComponent(id)}`).then(setCar, setError)
@@ -46,7 +49,7 @@ export default function CarFormPage() {
     }
   }
 
-  if (id && !car) return error != null ? <p className="error" role="alert">{errorMessage(error)}</p> : null
+  if (id && !car) return error != null ? <CarError error={error} /> : null
 
   const field = (name: keyof Vehicle | 'initialOdometerKm', type = 'text', extra = {}) => (
     <label>
@@ -57,7 +60,7 @@ export default function CarFormPage() {
 
   return (
     <form className="card narrow" onSubmit={submit}>
-      <h1>{t(id ? 'editCar' : 'addCar')}</h1>
+      <h1 tabIndex={-1}>{t(id ? 'editCar' : 'addCar')}</h1>
       {field('nickname', 'text', { required: true, maxLength: 100 })}
       {field('make', 'text', { maxLength: 100 })}
       {field('model', 'text', { maxLength: 100 })}
@@ -73,7 +76,7 @@ export default function CarFormPage() {
       </label>
       {field('purchaseDate', 'date')}
       {field('purchasePrice', 'number', { min: 0, step: '0.01' })}
-      {!id && field('initialOdometerKm', 'number', { min: 0, step: 'any' })}
+      {!id && field('initialOdometerKm', 'number', { min: 0, max: 10_000_000, step: 'any' })}
       {error != null && <p className="error" role="alert">{errorMessage(error)}</p>}
       <div className="actions">
         <button>{t('save')}</button>

@@ -4,6 +4,7 @@ import { errorMessage } from '../i18n'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../auth'
 import { currencies } from '../api'
+import { usePage } from '../usePage'
 
 export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
   const { t, i18n } = useTranslation()
@@ -14,6 +15,7 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
   const currencyNames = new Intl.DisplayNames([i18n.resolvedLanguage ?? 'en'], { type: 'currency' })
   const [error, setError] = useState<unknown>(null)
   const [busy, setBusy] = useState(false)
+  usePage(t(mode))
 
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault()
@@ -30,7 +32,7 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
 
   return (
     <form className="card narrow" onSubmit={submit}>
-      <h1>{t(mode)}</h1>
+      <h1 tabIndex={-1}>{t(mode)}</h1>
       <p className="intro">{t('intro')}</p>
       <label>
         {t('email')}
@@ -56,7 +58,7 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
       )}
       {error != null && <p className="error" role="alert">{errorMessage(error)}</p>}
       <button disabled={busy}>{t(mode)}</button>
-      <p>
+      <p className="switch">
         {mode === 'login' ? t('noAccount') : t('haveAccount')}{' '}
         <Link to={mode === 'login' ? '/register' : '/login'}>{t(mode === 'login' ? 'register' : 'login')}</Link>
       </p>
