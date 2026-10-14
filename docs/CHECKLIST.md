@@ -17,7 +17,7 @@ Legend:
 - [ ] **Step 3: Service history with costs**
 - [ ] **Step 4: Dashboard with due and overdue status**
 - [ ] **Step 5: Checklists, then tires, then reports and notifications**
-- [ ] **Before going online: SEC-1** (limit login attempts, constant-time login) 🔨 being built
+- [ ] **Before going online: SEC-1** (limit login attempts, constant-time login) 🔨 built, now in security and code review
 
 ## 1. Vehicles
 - [x] Add, edit and archive cars, keeping their history
