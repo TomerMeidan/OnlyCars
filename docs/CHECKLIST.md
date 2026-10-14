@@ -2,7 +2,7 @@
 
 One line per requirement in `docs/spec.md`. Updated after every ticket is signed off. Evidence and details are in `docs/requirements-status.md`.
 
-**Last updated:** 2026-10-14, after MVP1-C
+**Last updated:** 2026-10-14, after the MVP2-A backend
 **Progress:** 5 of 50 required items done, 7 partly done, 38 not started. The 7 optional items are not counted.
 
 Legend:
@@ -13,11 +13,11 @@ Legend:
 
 ## MVP progress
 - [x] **Step 1: Accounts, cars, odometer.** Done, apart from the gaps marked below.
-- [ ] **Step 2: Maintenance tasks, templates, Reset** 🔨 MVP2-A (tasks) is in progress, then MVP2-B (status) and MVP2-C (Reset and Undo).
+- [ ] **Step 2: Maintenance tasks, templates, Reset** 🔨 MVP2-A: backend done (API, database, 12 templates); screens being built. Then MVP2-B (status) and MVP2-C (Reset and Undo).
 - [ ] **Step 3: Service history with costs**
 - [ ] **Step 4: Dashboard with due and overdue status**
 - [ ] **Step 5: Checklists, then tires, then reports and notifications**
-- [ ] **Before going online: SEC-1** (limit login attempts, constant-time login)
+- [ ] **Before going online: SEC-1** (limit login attempts, constant-time login) 🔨 being built
 
 ## 1. Vehicles
 - [x] Add, edit and archive cars, keeping their history
@@ -32,6 +32,7 @@ Legend:
 - [~] Km/miles unit, and a currency per user. *Currency is chosen at sign-up. Missing: a km/miles setting and a way to change the currency later.*
 
 ## 3. Maintenance Task Definitions 🔨
+*The backend for all five items below is done and tested. They get ticked once the screens are built and QA has passed.*
 - [ ] Task name and category
 - [ ] Interval by km, by time, or both (whichever comes first)
 - [ ] Starter template library, fully editable
