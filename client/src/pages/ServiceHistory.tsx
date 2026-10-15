@@ -125,7 +125,12 @@ export function ServiceHistory({ car, onChanged }: { car: Vehicle; onChanged: ()
               record={r}
               url={`${path}/${encodeURIComponent(r.id)}`}
               readOnly={readOnly}
-              onEdited={(record) => { setGone(false); setRecords((rs) => rs && rs.map((x) => (x.id === record.id ? record : x))) }}
+              onEdited={(record) => {
+                // A new date, odometer or tasks can move the row, the car's odometer and the tasks: everything reloads, as after Record.
+                focusNext.current = [`li[data-id="${record.id}"] button.edit-service`]
+                setRecords((rs) => rs && rs.map((x) => (x.id === record.id ? record : x)))
+                changed()
+              }}
               onDeleted={() => {
                 // The next older row, then the newest, then the h2.
                 focusNext.current = [`.services > li:nth-child(${i + 1}) button.delete-service`, '.services > li button.delete-service']
@@ -140,7 +145,7 @@ export function ServiceHistory({ car, onChanged }: { car: Vehicle; onChanged: ()
   )
 }
 
-// Record a service (no record) or edit one: shop, cost, notes and items; the date, odometer and tasks only as text.
+// Record a service (no record) or edit one, with the same fields.
 function RecordForm({ car, url, row, record, onSaved, onGone }: {
   car: Vehicle
   url: string // the list's path to record, the record's to edit
@@ -167,12 +172,13 @@ function RecordForm({ car, url, row, record, onSaved, onGone }: {
   // The item row whose description to focus after the next items change; -1 is Add part.
   const focusItem = useRef<number | null>(null)
   const formRef = useRef<HTMLFormElement>(null)
-  const startKm = d.value(car.currentOdometerKm)
+  // The odometer field starts at the record's value when editing, at the car's when recording.
+  const startStored = record?.odometerKm ?? car.currentOdometerKm
+  const startKm = d.value(startStored)
 
   useEffect(() => {
-    if (record) return
     api<MaintenanceTask[]>(`/vehicles/${encodeURIComponent(car.id)}/tasks`).then(setTasks, setTasksError)
-  }, [car.id, record])
+  }, [car.id])
 
   useEffect(() => {
     const i = focusItem.current
@@ -200,18 +206,18 @@ function RecordForm({ car, url, row, record, onSaved, onGone }: {
       })),
     }
     const submitter = (e.nativeEvent as SubmitEvent).submitter
-    const err = record
-      ? await run(async () => onSaved(await api<ServiceRecord>(url, 'PUT', edits)), submitter)
-      : await run(async () => onSaved((await api<{ record: ServiceRecord }>(url, 'POST', {
-        ...edits,
-        date: f.get('date'),
-        // The car's odometer, left as shown, is sent back as its exact km.
-        // So is a neighbour the last error named, typed back as shown.
-        odometerKm: d.toKm(Number(f.get('odometerKm')), car.currentOdometerKm,
-          error instanceof ApiError ? error.problem.previousKm : undefined, error instanceof ApiError ? error.problem.nextKm : undefined),
-        taskIds: f.getAll('taskIds'),
-        confirmCorrection: needsConfirm && confirmCorrection,
-      })).record), submitter)
+    // PUT and POST take the same body and both answer { record, tasks }; the page reloads the tasks itself.
+    const err = await run(async () => onSaved((await api<{ record: ServiceRecord }>(url, record ? 'PUT' : 'POST', {
+      ...edits,
+      date: f.get('date'),
+      // The starting odometer, left as shown, is sent back as its exact km.
+      // So is a neighbour the last error named, typed back as shown.
+      odometerKm: d.toKm(Number(f.get('odometerKm')), startStored,
+        error instanceof ApiError ? error.problem.previousKm : undefined, error instanceof ApiError ? error.problem.nextKm : undefined),
+      // Tasks not loaded: an edit leaves them as they are (null) instead of unlinking them all.
+      taskIds: shown || !record ? f.getAll('taskIds') : null,
+      confirmCorrection: needsConfirm && confirmCorrection,
+    })).record), submitter)
     if (isGoneRecord(err)) onGone?.()
     else if (err) {
       setNeedsConfirm(isOrderError(err))
@@ -233,7 +239,9 @@ function RecordForm({ car, url, row, record, onSaved, onGone }: {
   const errRow = items.findIndex((x) => x.key === errKey)
   const alert = error != null && <p className="error" role="alert" id={errorId}>{errorMessage(error, errRow < 0 ? undefined : errRow + 1)}</p>
   const errorAt = isOrderError(error) ? 'odometer' : problem?.index == null ? 'end' : errKey
-  const enabled = tasks?.filter((task) => task.isEnabled)
+  // A disabled task stays listed while the record is linked to it, so saving doesn't unlink it.
+  const linked = new Set(record?.tasks.map((x) => x.id))
+  const shown = tasks?.filter((task) => task.isEnabled || linked.has(task.id))
   const total = itemsTotal(items.map((i) => ({ quantity: Number(i.quantity) || 0, unitCost: Number(i.unitCost) || 0 })))
   const currency = user?.currency
   const setItem = (i: number, patch: Partial<Item>) => setItems((xs) => xs.map((x, j) => (j === i ? { ...x, ...patch } : x)))
@@ -243,36 +251,24 @@ function RecordForm({ car, url, row, record, onSaved, onGone }: {
 
   return (
     <form className="inline-form" ref={formRef} onSubmit={submit} onKeyDown={(e) => !busy && e.key === 'Escape' && open('view')}>
-      {record ? (
-        <>
-          <p>
-            <time dateTime={record.date}>{fmtDate(record.date, lng)}</time> · <bdi>{d.fmt(record.odometerKm)}</bdi> {d.vars.distUnit}
-            {record.tasks.length > 0 && <> · {taskList(record, lng)}</>}
-          </p>
-          <p className="muted">{t('editServiceHint')}</p>
-        </>
-      ) : (
-        <>
-          <label>
-            {t('readingDate')}
-            <input name="date" type="date" required max={localToday()} defaultValue={localToday()} autoFocus {...tie('date')} />
-          </label>
-          <label>
-            {t('serviceOdometer', d.vars)}
-            <input name="odometerKm" type="number" inputMode="numeric" {...d.readingInput} max={Math.max(d.maxReading, startKm)} required defaultValue={startKm} {...tie('odometerKm')} />
-          </label>
-          {errorAt === 'odometer' && alert}
-          {needsConfirm && (
-            <label className="inline">
-              <input type="checkbox" checked={confirmCorrection} onChange={(e) => setConfirmCorrection(e.target.checked)} aria-describedby={errorAt === 'odometer' ? errorId : undefined} />
-              {t('confirmCorrection')}
-            </label>
-          )}
-        </>
+      <label>
+        {t('readingDate')}
+        <input name="date" type="date" required max={localToday()} defaultValue={record?.date.slice(0, 10) ?? localToday()} autoFocus {...tie('date')} />
+      </label>
+      <label>
+        {t('serviceOdometer', d.vars)}
+        <input name="odometerKm" type="number" inputMode="numeric" {...d.readingInput} max={Math.max(d.maxReading, startKm)} required defaultValue={startKm} {...tie('odometerKm')} />
+      </label>
+      {errorAt === 'odometer' && alert}
+      {needsConfirm && (
+        <label className="inline">
+          <input type="checkbox" checked={confirmCorrection} onChange={(e) => setConfirmCorrection(e.target.checked)} aria-describedby={errorAt === 'odometer' ? errorId : undefined} />
+          {t('confirmCorrection')}
+        </label>
       )}
       <label className="wide">
         {t('shop')}
-        <input name="shopName" maxLength={100} defaultValue={record?.shopName ?? ''} autoFocus={!!record} {...tie('shopName', `${id}shop`)} />
+        <input name="shopName" maxLength={100} defaultValue={record?.shopName ?? ''} {...tie('shopName', `${id}shop`)} />
         {/* Read as the field's description, not as part of its name. */}
         <span id={`${id}shop`} className="muted" aria-hidden="true">{t('shopHint')}</span>
       </label>
@@ -342,21 +338,21 @@ function RecordForm({ car, url, row, record, onSaved, onGone }: {
         {t('notes')}
         <textarea name="notes" maxLength={1000} rows={2} defaultValue={record?.notes ?? ''} {...tie('notes')} />
       </label>
-      {!record && (tasksError != null ? (
+      {tasksError != null ? (
         <p className="error" role="alert">{errorMessage(tasksError)}</p>
-      ) : !enabled ? (
+      ) : !shown ? (
         <p className="muted" role="status">{t('loading')}</p>
-      ) : enabled.length > 0 && (
+      ) : shown.length > 0 && (
         <fieldset>
           <legend>{t('tasksDone')}</legend>
-          {enabled.map((task) => (
+          {shown.map((task) => (
             <label className="inline" key={task.id}>
-              <input type="checkbox" name="taskIds" value={task.id} />
+              <input type="checkbox" name="taskIds" value={task.id} defaultChecked={linked.has(task.id)} />
               {task.name}
             </label>
           ))}
         </fieldset>
-      ))}
+      )}
       {errorAt === 'end' && alert}
       <div className="actions">
         <button disabled={busy}>{t('save')}</button>

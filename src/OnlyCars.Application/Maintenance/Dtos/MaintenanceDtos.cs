@@ -67,7 +67,9 @@ public record ServiceItemDto(Guid Id, string Description, string? Brand, string?
 public record ServiceItemRequest(string? Description, string? Brand, string? PartNumber, decimal? Quantity, decimal? UnitCost, bool IsLabor = false);
 
 // With items, TotalCost is ignored and computed from them; Items replaces the whole list (null or empty clears it).
-public record UpdateServiceRecordRequest(string? ShopName, decimal? TotalCost, string? Notes, List<ServiceItemRequest>? Items);
+// Date, OdometerKm and TaskIds (MVP3-D) keep the record's value when null; TaskIds: [] removes every task.
+public record UpdateServiceRecordRequest(string? ShopName, decimal? TotalCost, string? Notes, List<ServiceItemRequest>? Items,
+    DateOnly? Date = null, decimal? OdometerKm = null, List<Guid>? TaskIds = null, bool ConfirmCorrection = false);
 
 // Date and OdometerKm are nullable only so a missing value gets a coded error (a missing date means UTC today, as for readings).
 public record CreateServiceRecordRequest(
@@ -80,4 +82,5 @@ public record CreateServiceRecordRequest(
     bool ConfirmCorrection = false,
     List<ServiceItemRequest>? Items = null);
 
+// On POST, Tasks are the linked tasks; on PUT, every task of the car (an edit can move removed tasks too).
 public record CreateServiceRecordResponse(ServiceRecordDto Record, List<MaintenanceTaskDto> Tasks);

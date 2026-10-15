@@ -35,8 +35,8 @@ public class ServiceItemTests
         (await tasks.CreateRecordAsync(userId, car, new CreateServiceRecordRequest(
             Today.AddDays(-10), 49_000, "Garage", totalCost, "Notes", null, Items: [.. items]))).Record;
 
-    private Task<ServiceRecordDto> UpdateAsync(Guid car, Guid record, decimal? totalCost, params ServiceItemRequest[] items) =>
-        tasks.UpdateRecordAsync(userId, car, record, new UpdateServiceRecordRequest("New shop", totalCost, "New notes", [.. items]));
+    private async Task<ServiceRecordDto> UpdateAsync(Guid car, Guid record, decimal? totalCost, params ServiceItemRequest[] items) =>
+        (await tasks.UpdateRecordAsync(userId, car, record, new UpdateServiceRecordRequest("New shop", totalCost, "New notes", [.. items]))).Record;
 
     // --- Criterion 1 ---
 
@@ -101,7 +101,7 @@ public class ServiceItemTests
         db.ChangeTracker.Clear();
         Assert.Equal(0, await db.ServiceItems.CountAsync());
 
-        var nulls = await tasks.UpdateRecordAsync(userId, car, created.Id, new UpdateServiceRecordRequest("  ", null, " ", null));
+        var nulls = (await tasks.UpdateRecordAsync(userId, car, created.Id, new UpdateServiceRecordRequest("  ", null, " ", null))).Record;
         Assert.Equal(((string?)null, (decimal?)null, (string?)null), (nulls.ShopName, nulls.TotalCost, nulls.Notes));
     }
 
