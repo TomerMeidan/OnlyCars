@@ -5,10 +5,12 @@ import { api, carNotFound, isGuid, isOrderError, localToday, type OdometerReadin
 import { errorMessage } from '../i18n'
 import { useDistance } from '../auth'
 import { usePage } from '../usePage'
+import { useRow } from '../useRow'
 import { Odometer, OdometerQuickEntry } from './CarsPage'
-import { TasksSection } from './TasksSection'
+import { ServiceHistory } from './ServiceHistory'
+import { TasksSection, type TaskUndo } from './TasksSection'
 
-// Car detail page: maintenance tasks above the odometer history. Service history lands here later.
+// Car detail page: maintenance tasks, then the service history, then the odometer history.
 export default function CarPage() {
   const { t } = useTranslation()
   const d = useDistance()
@@ -23,6 +25,8 @@ export default function CarPage() {
   // Where focus goes once the history reloads after a Save (that row) or a Delete (the row now at its index).
   const focusAfterLoad = useRef<{ id: string } | { index: number } | null>(null)
   const historyRef = useRef<HTMLElement>(null)
+  // Here so a save or Undo in the service history ends it too: it may void the very record.
+  const [undo, setUndo] = useState<TaskUndo>(null)
 
   const load = () =>
     Promise.all([api<Vehicle>(path), api<OdometerReading[]>(`${path}/odometer`)]).then(
@@ -75,7 +79,8 @@ export default function CarPage() {
         {!car.isArchived && <OdometerQuickEntry car={car} onSaved={load} />}
       </div>
 
-      <TasksSection car={car} onOdometerChanged={load} />
+      <TasksSection car={car} undo={undo} setUndo={setUndo} onOdometerChanged={load} />
+      <ServiceHistory car={car} onChanged={() => { setUndo(null); load() }} />
 
       <section className="card" aria-labelledby="odometer-history" ref={historyRef}>
         <h2 id="odometer-history" tabIndex={-1}>{t('odometerHistory')}</h2>
@@ -130,33 +135,15 @@ function ReadingRow({ reading: r, url, editable, deletable, neighbourKm, onSaved
 }) {
   const { t, i18n } = useTranslation()
   const d = useDistance()
-  const [mode, setMode] = useState<'view' | 'edit' | 'delete'>('view')
-  // The opener, refocused when Cancel or Escape returns the row to view. After Save or Delete the page refocuses instead.
-  const returnTo = useRef<typeof mode>('view')
-  const editRef = useRef<HTMLButtonElement>(null)
-  const deleteRef = useRef<HTMLButtonElement>(null)
-  useEffect(() => {
-    if (mode !== 'view') return
-    ;(returnTo.current === 'edit' ? editRef : returnTo.current === 'delete' ? deleteRef : null)?.current?.focus()
-    returnTo.current = 'view'
-  }, [mode])
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<unknown>(null)
+  // After Save or Delete the page refocuses (close()); Cancel and Escape go back to the opener.
+  const row = useRow<'edit' | 'delete'>()
+  const { mode, busy, error, opener } = row
   const [needsConfirm, setNeedsConfirm] = useState(false)
   const [confirmCorrection, setConfirmCorrection] = useState(false)
   const value = d.fmt(r.valueKm)
-  // Save and Delete are disabled while their request runs, which drops focus; after a failure it goes back where it was.
-  const retry = useRef<HTMLElement | null>(null)
-  useEffect(() => {
-    if (busy) return
-    retry.current?.focus()
-    retry.current = null
-  }, [busy])
 
   function open(next: typeof mode) {
-    returnTo.current = mode
-    setMode(next)
-    setError(null)
+    row.open(next)
     setNeedsConfirm(false)
     setConfirmCorrection(false)
   }
@@ -164,21 +151,12 @@ function ReadingRow({ reading: r, url, editable, deletable, neighbourKm, onSaved
   const onEscape = (e: KeyboardEvent) => !busy && e.key === 'Escape' && open('view')
 
   async function send(method: 'PUT' | 'DELETE', body?: unknown) {
-    const from = document.activeElement as HTMLElement | null
-    setBusy(true)
-    setError(null)
-    try {
+    const err = await row.run(async () => {
       await api(url, method, body)
-      returnTo.current = 'view'
-      setMode('view')
+      row.close()
       onSaved(method === 'DELETE')
-    } catch (err) {
-      setError(err)
-      setNeedsConfirm(isOrderError(err))
-      retry.current = from
-    } finally {
-      setBusy(false)
-    }
+    }, document.activeElement as HTMLElement | null)
+    setNeedsConfirm(isOrderError(err))
   }
 
   function save(e: FormEvent<HTMLFormElement>) {
@@ -205,11 +183,11 @@ function ReadingRow({ reading: r, url, editable, deletable, neighbourKm, onSaved
 
       {editable && mode === 'view' && (
         <div className="actions">
-          <button className="link edit" aria-label={t('editReading', { ...d.vars, value })} ref={editRef} onClick={() => open('edit')}>
+          <button className="link edit" aria-label={t('editReading', { ...d.vars, value })} ref={opener('edit')} onClick={() => open('edit')}>
             {t('edit')}
           </button>
           {deletable && (
-            <button className="link" aria-label={t('deleteReading', { ...d.vars, value })} ref={deleteRef} onClick={() => open('delete')}>
+            <button className="link" aria-label={t('deleteReading', { ...d.vars, value })} ref={opener('delete')} onClick={() => open('delete')}>
               {t('delete')}
             </button>
           )}

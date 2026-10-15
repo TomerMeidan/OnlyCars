@@ -241,8 +241,8 @@ public class MaintenanceTaskService(IAppDbContext db, VehicleService vehicleServ
 
     /// <summary>
     /// Undo, in any order: voids the record, and each linked task whose LastDone* still equals this record's date and odometer
-    /// goes to the latest remaining non-voided linked record (by date, odometer, creation time), or with none left to the
-    /// snapshot of its earliest-created linked record. Other tasks (a later record or a manual edit) are left alone. The
+    /// goes to the later, by (date, odometer), of this record's snapshot (followed back through earlier-voided records it
+    /// points at) and the latest remaining non-voided linked record. Other tasks (a later record or a manual edit) are left alone. The
     /// record's reading is removed (kept as a manual reading if it's the car's only one). One SaveChanges.
     /// </summary>
     public async Task<List<MaintenanceTaskDto>> VoidAsync(Guid userId, Guid vehicleId, Guid recordId, CancellationToken ct = default)
@@ -263,17 +263,29 @@ public class MaintenanceTaskService(IAppDbContext db, VehicleService vehicleServ
 
         var taskIds = record.Tasks.Select(j => j.MaintenanceTaskId).ToList();
         var tasks = await db.MaintenanceTasks.Where(t => taskIds.Contains(t.Id)).OrderBy(t => t.Name).ToListAsync(ct);
-        // Every link of these tasks, voided ones included (the earliest snapshot may sit on a voided record).
+        // Every link of these tasks, voided ones included (a snapshot can point at an earlier voided record).
         var links = await db.ServiceRecordTasks.Include(j => j.ServiceRecord)
             .Where(j => taskIds.Contains(j.MaintenanceTaskId)).ToListAsync(ct);
         foreach (var task in tasks.Where(t => t.LastDoneDate == record.Date && t.LastDoneOdometerKm == record.OdometerKm))
         {
             var own = links.Where(j => j.MaintenanceTaskId == task.Id).ToList();
+            var self = own.Single(j => j.ServiceRecordId == record.Id);
+            var baseValue = (self.PreviousLastDoneDate, self.PreviousLastDoneOdometerKm);
+            // Follow the snapshot chain back through records voided earlier; each is used once, so it can't loop.
+            var voided = own.Where(j => j != self && j.ServiceRecord!.IsVoided).OrderByDescending(j => j.ServiceRecord!.CreatedAt).ToList();
+            while (voided.FirstOrDefault(j => (j.ServiceRecord!.Date, j.ServiceRecord.OdometerKm) == baseValue) is { } earlier)
+            {
+                baseValue = (earlier.PreviousLastDoneDate, earlier.PreviousLastDoneOdometerKm);
+                voided.Remove(earlier);
+            }
+
             var latest = own.Select(j => j.ServiceRecord!).Where(r => !r.IsVoided).MaxBy(r => (r.Date, r.OdometerKm, r.CreatedAt));
-            var earliest = own.MinBy(j => j.ServiceRecord!.CreatedAt)!;
-            (task.LastDoneDate, task.LastDoneOdometerKm) = latest is null
-                ? (earliest.PreviousLastDoneDate, earliest.PreviousLastDoneOdometerKm)
-                : (latest.Date, latest.OdometerKm);
+            if (latest is not null && (latest.Date, latest.OdometerKm).CompareTo(baseValue) > 0)
+            {
+                baseValue = (latest.Date, latest.OdometerKm);
+            }
+
+            (task.LastDoneDate, task.LastDoneOdometerKm) = baseValue;
             task.UpdatedAt = now;
         }
 

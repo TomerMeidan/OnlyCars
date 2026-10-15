@@ -175,7 +175,7 @@ button.link {
 }
 .history li:last-child { border-block-end: none; }
 .history .value { font: 600 1.35rem/1.2 var(--gauge); font-variant-numeric: tabular-nums; margin-inline-end: auto; }
-.history bdi { direction: ltr; }
+.history bdi, .services .value bdi { direction: ltr; }
 .inline-form { flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: end; gap: 0.5rem 0.75rem; }
 .inline-form > label:not(.inline) { flex: 1 1 9rem; }
 .inline-form input:not([type='checkbox']), .inline-form textarea { width: 100%; }
@@ -187,14 +187,14 @@ button.link {
 button.danger { background: var(--danger); border-color: var(--danger); color: #fff; }
 
 /* Car detail: maintenance tasks */
-.tasks, .picker ul { list-style: none; padding: 0; margin: 0; }
-.tasks > li { display: grid; gap: 0.25rem; padding-block: 0.75rem; border-block-end: 1px solid var(--line); }
-.tasks > li:last-child { border-block-end: none; }
+.tasks, .services, .picker ul { list-style: none; padding: 0; margin: 0; }
+.tasks > li, .services > li { display: grid; gap: 0.25rem; padding-block: 0.75rem; border-block-end: 1px solid var(--line); }
+.tasks > li:last-child, .services > li:last-child { border-block-end: none; }
 .task-head { display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem 0.5rem; }
 .task-head .name { font-weight: 600; margin-inline-end: auto; }
 .tasks bdi, .picker bdi { direction: ltr; }
-.tasks time { white-space: nowrap; }
-.tasks .actions { flex-wrap: wrap; }
+.tasks time, .services time { white-space: nowrap; }
+.tasks .actions, .services .actions { flex-wrap: wrap; }
 .status-Ok { --status: var(--status-ok); }
 .status-DueSoon { --status: var(--status-soon); }
 .status-Overdue { --status: var(--status-overdue); }
@@ -230,7 +230,12 @@ h2 a { margin-block: -0.5625rem; }
 .undo { display: flex; flex-wrap: wrap; align-items: center; gap: 0 1rem; padding-inline: 0.75rem; border-inline-start: 3px solid var(--amber); }
 
 /* Settings: each radio group is a row of 44px labels */
-.settings fieldset { border: none; margin: 0; padding: 0; min-width: 0; display: flex; flex-wrap: wrap; gap: 0 1.5rem; }
-.settings legend { padding: 0; font-size: 0.95rem; color: var(--muted); }
+.settings fieldset, .inline-form > fieldset { border: none; margin: 0; padding: 0; min-width: 0; display: flex; flex-wrap: wrap; gap: 0 1.5rem; }
+.inline-form > fieldset { flex-basis: 100%; }
+.settings legend, .inline-form legend { padding: 0; font-size: 0.95rem; color: var(--muted); }
 .settings fieldset > p { flex-basis: 100%; }
 .settings .field { display: grid; gap: 0.3rem; }
+
+/* Car detail: service history, newest first */
+.services .value { font: 600 1.35rem/1.2 var(--gauge); font-variant-numeric: tabular-nums; }
+.services .notes { white-space: pre-line; } /* keeps the user's line breaks; long words wrap through body's overflow-wrap */

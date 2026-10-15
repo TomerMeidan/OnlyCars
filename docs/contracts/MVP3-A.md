@@ -62,7 +62,7 @@ Order of checks (the first failure wins; nothing is saved on any error):
 Same response (**200** `MaintenanceTaskDto[]` of all the record's linked tasks, by name) and same side effects on the odometer (its Service reading is deleted, or kept as `Manual` if it is the car's only reading).
 
 - **`serviceRecord.notLatest` is retired.** Any non-voided record can be voided, in any order.
-- New task rule: each linked task whose current `lastDone*` equals the voided record's date and odometer goes to the latest remaining non-voided record linked to it (by date, then odometer, then creation time); with none left, to the value it had before its earliest-created linked record. Tasks whose last done came from somewhere else (a later record or a manual edit) are returned unchanged.
+- New task rule: each linked task whose current `lastDone*` equals the voided record's date and odometer is recomputed (decisions.md "Void recompute, corrected"): start from the value it had before the voided record; while that value equals another voided linked record's date and odometer, replace it with the value that record had before it; then take the later, by date then odometer, of that value and the latest remaining non-voided linked record. So undo never goes back past a manual edit made before the voided record. Tasks whose last done came from somewhere else (a later record or a manual edit) are returned unchanged.
 - Order of checks: `vehicle.notFound`, `serviceRecord.notFound`, `serviceRecord.alreadyVoided` (409).
 
 `POST .../tasks/{taskId}/reset` is unchanged (it always moves last done, and its reading skips the date-order checks).

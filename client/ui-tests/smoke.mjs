@@ -273,12 +273,43 @@ for (const s of setups) {
   const plain = (s) => s.replace(/[⁦-⁩]/g, '').replace(/\s+/g, ' ').trim()
   const noLatin = (text, what) => { if (he && /[A-Za-z]/.test(text)) throw new Error(`Hebrew ${what} has Latin letters: "${text}"`) }
 
+  // MVP3-A: service history.
+  const SV = he
+    ? { empty: 'עדיין לא נרשמו טיפולים.', record: 'רישום טיפול', diy: 'טיפול עצמי', undoOf: 'ביטול הטיפול מ־', legend: 'משימות שבוצעו', hint: 'השאירו ריק לטיפול עצמי.', future: 'תאריך הטיפול לא יכול להיות בעתיד.', km: 'ק״מ', generic: 'משהו השתבש. נסו שוב.', odoLabel: 'קילומטראז׳ במיילים', at59500: 'ב־59,500 ק״מ', at59000: 'ב־59,000 ק״מ' }
+    : { empty: 'No services recorded yet.', record: 'Record a service', diy: 'DIY', undoOf: 'Undo service of ', legend: 'Tasks done', hint: 'Leave empty for DIY.', future: "The service date can't be in the future.", km: 'km', generic: 'Something went wrong. Please try again.', odoLabel: 'Odometer in miles', at59500: 'at 59,500 km', at59000: 'at 59,000 km' }
+  const services = page.locator('section[aria-labelledby=service-history]')
+  const serviceItems = () => services.locator('.services > li')
+  const recordForm = services.locator('form')
+  const recordBtn = services.getByRole('button', { name: SV.record, exact: true })
+  const isRecordPost = (r) => r.method() === 'POST' && r.url().endsWith('/service-records')
+  await step('service-history-empty', async () => {
+    await page.setViewportSize({ width: 390, height: 844 })
+    const empty = services.locator('p.muted', { hasText: SV.empty })
+    await empty.waitFor()
+    noLatin(await services.textContent(), 'service history')
+    // A failed load shows the translated error in the section; the rest of the page stays.
+    await page.route('**/service-records', (r) => r.fulfill({ status: 500, contentType: 'application/json', body: '{}' }))
+    await page.reload()
+    const alert = services.locator('[role=alert]')
+    await alert.waitFor()
+    await page.unroute('**/service-records')
+    if ((await alert.textContent()) !== SV.generic) throw new Error(`load error "${await alert.textContent()}"`)
+    if (!(await page.locator('.history li').count())) throw new Error('odometer history gone with the service history error')
+    run.badResponses = run.badResponses.filter((r) => !r.startsWith('500 '))
+    run.consoleErrors = run.consoleErrors.filter((e) => !e.includes('500'))
+    await page.reload()
+    await empty.waitFor()
+    await tall(recordBtn, 'Record a service')
+    await noOverflow('the empty service history')
+    await page.setViewportSize(s.viewport)
+  })
+
   await step('tasks-empty-and-picker', async () => {
     await page.setViewportSize({ width: 390, height: 844 })
     await tasks.locator('p.muted').filter({ hasText: he ? 'עדיין אין משימות תחזוקה.' : 'No maintenance tasks yet.' }).waitFor()
     // The section sits above the odometer history.
     const order = await page.evaluate(() => [...document.querySelectorAll('main section h2')].map((h) => h.id).join())
-    if (order !== 'maintenance,odometer-history') throw new Error(`sections: ${order}`)
+    if (order !== 'maintenance,service-history,odometer-history') throw new Error(`sections: ${order}`)
     await tasks.getByRole('button', { name: TK.add }).click()
     const options = await tasks.locator('.picker li button').allTextContents()
     if (options.length !== 13) throw new Error(`${options.length} picker options`)
@@ -762,6 +793,184 @@ for (const s of setups) {
     await taskRow('Coolant').waitFor()
     await page.setViewportSize(s.viewport)
   })
+  // MVP3-A at 390px. The odometer is at 59,000; Coolant, 9k service and Brakes (120.50, notes) were marked done today.
+  const odometerIs = (v) => page.waitForFunction((v) => document.querySelector('.odometer')?.getAttribute('aria-label')?.replace(/\D/g, '') === v, v, { timeout: 5000 })
+  const formValues = () => recordForm.evaluate((f) => [...new FormData(f)].map(([k, v]) => [k, String(v)]))
+  let garageId
+  await step('record-service', async () => {
+    await page.setViewportSize({ width: 390, height: 844 })
+    await page.evaluate(() => { window.noReload = true })
+    // The resets are listed newest first; Brakes' shows DIY, its cost and its notes.
+    await serviceItems().nth(2).waitFor()
+    if ((await serviceItems().count()) !== 3) throw new Error(`${await serviceItems().count()} records`)
+    const brakes = plain(await serviceItems().nth(2).textContent())
+    for (const want of [SV.diy, 'Brakes', 'Castrol 5W-30', '120.50']) if (!brakes.includes(want)) throw new Error(`Brakes record lacks "${want}": "${brakes}"`)
+    // A Mark done shows up at the top at once.
+    await taskBtn(RS.done, '10k service').click()
+    await page.waitForFunction(() => document.querySelectorAll('.services > li').length === 4)
+    if (!plain(await serviceItems().first().textContent()).includes('10k service')) throw new Error('Mark done not at the top')
+    // The form: today (and no later), the car's odometer, the currency, and a fieldset of the enabled tasks.
+    await recordBtn.click()
+    await focusIs('form input[name=date]', 'record form open')
+    const today = await localDate()
+    const date = recordForm.locator('input[name=date]')
+    if ((await date.inputValue()) !== today || (await date.getAttribute('max')) !== today) throw new Error(`date ${await date.inputValue()}, max ${await date.getAttribute('max')}`)
+    if ((await recordForm.locator('input[name=odometerKm]').inputValue()) !== '59000') throw new Error('odometer default')
+    if (!plain(await recordForm.locator('label', { has: page.locator('input[name=totalCost]') }).textContent()).includes(registered.user.currency)) throw new Error('cost label')
+    if ((await recordForm.locator('fieldset > legend').textContent()) !== SV.legend) throw new Error('no fieldset legend')
+    const boxes = (await recordForm.locator('fieldset label').allTextContents()).map(plain)
+    if (boxes.length !== 5 || boxes.includes(TK.belt)) throw new Error(`task boxes ${boxes}`)
+    for (const label of await recordForm.locator('fieldset label').all()) await tall(label, `"${await label.textContent()}" checkbox row`)
+    const shop = recordForm.locator('input[name=shopName]')
+    if ((await page.locator(`#${await shop.getAttribute('aria-describedby')}`).textContent()) !== SV.hint) throw new Error('shop hint')
+    noLatin(plain(await recordForm.locator('label:not(.inline)').allTextContents().then((l) => l.join())).replace(registered.user.currency, ''), 'form labels')
+    await noOverflow('the record form open')
+    await sweep('car page with the record form open')
+    // Escape and Cancel close it with focus back on Record a service.
+    await page.keyboard.press('Escape')
+    await recordForm.waitFor({ state: 'detached' })
+    await focusIs('section[aria-labelledby=service-history] button.add', 'after Escape')
+    await recordBtn.click()
+    await recordForm.locator('button.link').click()
+    await focusIs('section[aria-labelledby=service-history] button.add', 'after Cancel')
+    await recordBtn.click()
+    const longShop = 'Garage' + 'X'.repeat(94)
+    const notes = 'Full service. ' + 'n'.repeat(300)
+    await shop.fill(longShop)
+    await recordForm.locator('input[name=odometerKm]').fill('59500')
+    await recordForm.locator('input[name=totalCost]').fill('250.5')
+    await recordForm.locator('textarea[name=notes]').fill(notes)
+    await recordForm.getByRole('checkbox', { name: 'Oil', exact: true }).check()
+    await recordForm.getByRole('checkbox', { name: 'Brakes', exact: true }).check()
+    const typed = JSON.stringify(await formValues())
+    // A failed save keeps the form and every value, with the error, and focus back on Save.
+    await page.route('**/service-records', (r) => r.fulfill({ status: 500, contentType: 'application/json', body: '{}' }), { times: 1 })
+    await recordForm.locator('button:not(.link)').click()
+    const alert = recordForm.locator('[role=alert]')
+    await alert.waitFor()
+    if ((await alert.textContent()) !== SV.generic) throw new Error(`save error "${await alert.textContent()}"`)
+    await focusIs('section[aria-labelledby=service-history] form button:not(.link)', 'after a failed save')
+    if (JSON.stringify(await formValues()) !== typed) throw new Error(`values lost: ${JSON.stringify(await formValues())}`)
+    forget500()
+    const res = page.waitForResponse((r) => isRecordPost(r.request()))
+    await recordForm.locator('button:not(.link)').click()
+    const r = await res
+    const body = r.request().postDataJSON()
+    if (r.status() !== 201 || body.date !== today || body.odometerKm !== 59500 || body.totalCost !== 250.5 || body.taskIds.length !== 2 || body.confirmCorrection !== false) throw new Error(`${r.status()} ${JSON.stringify(body)}`)
+    garageId = (await r.json()).record.id
+    await focusIs(`li[data-id="${garageId}"] button.undo-service`, 'after Save')
+    const top = serviceItems().first()
+    if ((await top.getAttribute('data-id')) !== garageId) throw new Error('new record not at the top')
+    const text = plain(await top.textContent())
+    for (const want of [longShop, '250.50', 'Oil', 'Brakes', '59,500', notes]) if (!text.includes(want)) throw new Error(`record lacks "${want.slice(0, 20)}"`)
+    // Named by date and odometer, so two services on one day differ.
+    const undoName = await top.locator('button.undo-service').getAttribute('aria-label')
+    if (!undoName.startsWith(SV.undoOf) || !undoName.endsWith(` ${SV.at59500}`)) throw new Error(`Undo name "${undoName}"`)
+    // Both tasks done at 59,500, and the odometer and its history follow, without a reload.
+    await odometerIs('59500')
+    await badgeIs('Oil', ST.Ok)
+    for (const n of ['Oil', 'Brakes']) if (!plain(await taskRow(n).textContent()).includes(SV.at59500)) throw new Error(`${n}: ${plain(await taskRow(n).textContent())}`)
+    const reading = plain(await page.locator('.history li').first().textContent())
+    if (!reading.includes(RS.service) || !digitsOnly(reading).startsWith('59500')) throw new Error(`top reading "${reading}"`)
+    await noOverflow('a long shop name and notes')
+    await sweep('car page with service records')
+    if (!(await page.evaluate(() => window.noReload))) throw new Error('the page reloaded')
+  })
+  let backdatedId
+  await step('record-service-backdated', async () => {
+    const day = (offset) => page.evaluate((o) => new Date(Date.now() + o * 86_400_000 - new Date().getTimezoneOffset() * 60_000).toISOString().slice(0, 10), offset)
+    await recordBtn.click()
+    const date = recordForm.locator('input[name=date]')
+    const save = recordForm.locator('button:not(.link)')
+    // A future date is blocked by the field, before any request.
+    let posts = 0
+    const count = (r) => isRecordPost(r) && posts++
+    page.on('request', count)
+    await date.fill(await day(1))
+    await save.click()
+    if (!(await date.evaluate((el) => el.validity.rangeOverflow))) throw new Error('future date not blocked')
+    await page.waitForTimeout(300)
+    page.off('request', count)
+    if (posts) throw new Error(`${posts} POSTs for a future date`)
+    // If the server rejects one anyway (a device clock ahead), the error is translated and tied to the date.
+    await date.fill(await day(0))
+    await page.route('**/service-records', (r) => r.fulfill({ status: 400, contentType: 'application/json', body: JSON.stringify({ code: 'serviceRecord.futureDate' }) }), { times: 1 })
+    await save.click()
+    const alert = recordForm.locator('[role=alert]')
+    await alert.waitFor()
+    if ((await alert.textContent()) !== SV.future) throw new Error(`future error "${await alert.textContent()}"`)
+    if ((await date.getAttribute('aria-describedby')) !== (await alert.getAttribute('id'))) throw new Error('error not tied to the date')
+    // 70,000 a month ago is above the reading after it: the error names it, and the confirm box saves it.
+    await date.fill(await day(-30))
+    const odo = recordForm.locator('input[name=odometerKm]')
+    await odo.fill('70000')
+    await recordForm.getByRole('checkbox', { name: 'Coolant', exact: true }).check()
+    let res = page.waitForResponse((r) => isRecordPost(r.request()))
+    await save.click()
+    const problem = await (await res).json()
+    if (problem.code !== 'odometer.higherThanNext') throw new Error(`got ${JSON.stringify(problem)}`)
+    await alert.filter({ hasText: problem.nextKm.toLocaleString('en') }).waitFor()
+    const msg = plain(await alert.textContent())
+    if (!msg.includes(`${problem.nextKm.toLocaleString('en')} ${SV.km}`)) throw new Error(`order error "${msg}"`)
+    noLatin(msg, 'order error')
+    if ((await odo.getAttribute('aria-invalid')) !== 'true') throw new Error('error not tied to the odometer')
+    await recordForm.locator(':scope > label.inline input[type=checkbox]').check()
+    res = page.waitForResponse((r) => isRecordPost(r.request()))
+    await save.click()
+    const r = await res
+    if (r.status() !== 201 || r.request().postDataJSON().confirmCorrection !== true) throw new Error(`${r.status()} ${r.request().postData()}`)
+    backdatedId = (await r.json()).record.id
+    // Older than the rest, it is listed last; Coolant keeps its later last done.
+    await focusIs(`li[data-id="${backdatedId}"] button.undo-service`, 'after a backdated save')
+    if ((await serviceItems().last().getAttribute('data-id')) !== backdatedId) throw new Error('backdated record not last')
+    if (!plain(await taskRow('Coolant').textContent()).includes(SV.at59000)) throw new Error(`Coolant moved: ${plain(await taskRow('Coolant').textContent())}`)
+    await odometerIs('59500')
+    await noOverflow('the backdated record')
+  })
+  await step('undo-service-from-history', async () => {
+    const row = services.locator(`li[data-id="${garageId}"]`)
+    const undo = `li[data-id="${garageId}"] button.undo-service`
+    // A confirm step, as for Delete: Cancel focused, Escape back to Undo.
+    await row.locator('button.undo-service').click()
+    await focusIs(`li[data-id="${garageId}"] .inline-form button.link`, 'Undo confirm open')
+    const confirm = row.locator('button.danger')
+    await tall(confirm, 'confirm Undo')
+    await noOverflow('the Undo confirm open')
+    await page.keyboard.press('Escape')
+    await focusIs(undo, 'after Escape on the Undo confirm')
+    // A failed undo keeps the row, with the error on it and focus back on the confirm button.
+    await row.locator('button.undo-service').click()
+    await page.route('**/void', (r) => r.fulfill({ status: 500, contentType: 'application/json', body: '{}' }), { times: 1 })
+    await confirm.click()
+    await row.locator('[role=alert]').waitFor()
+    if ((await row.locator('[role=alert]').textContent()) !== SV.generic) throw new Error('undo error')
+    await focusIs(`li[data-id="${garageId}"] button.danger`, 'after a failed undo')
+    forget500()
+    await confirm.click()
+    await row.waitFor({ state: 'detached' })
+    await focusIs('.services > li:first-child button.undo-service', 'after Undo (the next older row)')
+    // Oil and Brakes go back, and so do the odometer and its history, without a reload.
+    await odometerIs('59000')
+    await badgeIs('Oil', ST.Overdue)
+    if (!plain(await taskRow('Brakes').textContent()).includes(SV.at59000)) throw new Error('Brakes not back')
+    if (digitsOnly(await page.locator('.history li .value').first().textContent()).startsWith('59500')) throw new Error('Service reading still shown')
+    // Undoing the oldest row moves focus to the newest.
+    await services.locator(`li[data-id="${backdatedId}"] button.undo-service`).click()
+    await services.locator(`li[data-id="${backdatedId}"] button.danger`).click()
+    await services.locator(`li[data-id="${backdatedId}"]`).waitFor({ state: 'detached' })
+    await focusIs('.services > li:first-child button.undo-service', 'after undoing the oldest row')
+    // Review 1: undoing a Mark done from the history also ends its Undo bar in the tasks (it would answer 409).
+    const reset = page.waitForResponse((r) => r.request().method() === 'POST' && r.url().endsWith('/reset'))
+    await tasks.locator(`button[aria-label="${RS.done}Oil"]`).click()
+    const resetId = (await (await reset).json()).serviceRecordId
+    await taskRow('Oil').locator('.undo').waitFor()
+    await services.locator(`li[data-id="${resetId}"] button.undo-service`).click()
+    await services.locator(`li[data-id="${resetId}"] button.danger`).click()
+    await services.locator(`li[data-id="${resetId}"]`).waitFor({ state: 'detached' })
+    if (await tasks.locator('.undo').count()) throw new Error('tasks Undo bar outlived the history Undo')
+    if (!(await page.evaluate(() => window.noReload))) throw new Error('the page reloaded')
+    await page.setViewportSize(s.viewport)
+  })
   await step('other-users-car-not-found', async () => {
     // A second user's car, created through the API, must not be visible to this user.
     const auth = await page.request.post(`${BASE}/api/auth/register`, {
@@ -1079,7 +1288,25 @@ for (const s of setups) {
     if (!plain(await taskRow('Mile wash').textContent()).includes(UM.left5000)) throw new Error(`new task row: ${await taskRow('Mile wash').textContent()}`)
     await noOverflow('the car page in miles')
     await sweep('the car page in miles')
+    // MVP3-A criterion 10: the record form starts at the odometer in miles, and saved unchanged it stores the exact km.
+    // 80,629 km shows as 50,101 mi, which converts back to 80,630, so only the kept value sends 80,629.
+    const drift = await apiCall('POST', `/vehicles/${mileCarId}/odometer`, { valueKm: 80629, readingDate: utc(0) })
+    await page.click('header a.brand')
+    await mileCar().locator('h2 a').click()
+    await arrivedAt('Mile car')
+    await recordBtn.click()
+    if ((await recordForm.locator('input[name=odometerKm]').inputValue()) !== '50101') throw new Error('record form odometer not in miles')
+    if (!plain(await recordForm.locator('label', { has: page.locator('input[name=odometerKm]') }).textContent()).startsWith(SV.odoLabel)) throw new Error('record odometer label')
+    const recordPost = page.waitForResponse((r) => isRecordPost(r.request()))
+    await recordForm.locator('button:not(.link)').click()
+    if ((await recordPost).request().postDataJSON().odometerKm !== 80629) throw new Error(`record POST ${(await recordPost).request().postData()}`)
+    const mileRecord = (await (await recordPost).json()).record.id
+    const recordValue = services.locator(`li[data-id="${mileRecord}"] .value`)
+    await recordValue.waitFor()
+    if (plain(await recordValue.textContent()) !== `50,101 ${UM.mi}`) throw new Error(`record value "${await recordValue.textContent()}"`)
     await page.screenshot({ path: `${OUT}/${s.name}-unit-miles-car.png`, fullPage: true })
+    await apiCall('POST', `/vehicles/${mileCarId}/service-records/${mileRecord}/void`) // the stored values below are from before it
+    await apiCall('DELETE', `/vehicles/${mileCarId}/odometer/${drift.id}`)
     // Back to km: every value as before, no reload, nothing stored changed.
     const stored = await carState(mileCarId)
     await unitIs('Km')
@@ -1192,6 +1419,9 @@ for (const s of setups) {
     await taskRow(TK.belt).waitFor()
     const controls = await tasks.locator('button, input, select').count()
     if (controls) throw new Error(`${controls} controls on an archived car's tasks`)
+    // MVP3-A criterion 11: the history is shown, without Record or Undo.
+    await serviceItems().first().waitFor()
+    if (await services.locator('button, input').count()) throw new Error('Record or Undo on an archived car')
     await page.click('main > a.back')
     await page.locator('a[href="/cars/new"]').waitFor() // the list hides archived cars again
   })

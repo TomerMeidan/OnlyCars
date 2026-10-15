@@ -82,6 +82,16 @@ export interface MaintenanceTask {
 
 export type TaskStatus = 'Ok' | 'DueSoon' | 'Overdue'
 
+export interface ServiceRecord {
+  id: string
+  date: string
+  odometerKm: number
+  shopName: string | null // null = DIY
+  totalCost: number | null
+  notes: string | null
+  tasks: Pick<MaintenanceTask, 'id' | 'name' | 'category'>[]
+}
+
 // ProblemDetails from the API; `code` is translated by errorMessage() in i18n.ts.
 export interface Problem {
   title?: string

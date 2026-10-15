@@ -339,7 +339,7 @@ public class ServiceHistoryTests
         await tasks.VoidAsync(userId, car, newer.Record.Id);
         Assert.Equal((49_000m, Today.AddDays(-20)), await StoredLastDoneAsync(task.Id));
 
-        // None left: the earliest-created link's snapshot (newer's), not the backdated one's (which held newer's values).
+        // Backdated's snapshot holds newer's values; newer is voided, so the chain follows on to newer's snapshot.
         await tasks.VoidAsync(userId, car, backdated.Record.Id);
         Assert.Equal((40_000m, OriginalDate), await StoredLastDoneAsync(task.Id));
     }
@@ -374,5 +374,62 @@ public class ServiceHistoryTests
         Assert.Equal(["Filter", "Oil"], result.Select(t => t.Name));
         Assert.Equal((40_000m, OriginalDate), await StoredLastDoneAsync(oil.Id));
         Assert.Equal((49_800m, Today.AddDays(-2)), await StoredLastDoneAsync(filter.Id));
+    }
+
+    // --- Void recompute, corrected (decisions.md 2026-10-15) ---
+
+    private async Task<Guid> ResetAsync(Guid car, Guid taskId) => (await tasks.ResetAsync(userId, car, taskId, null)).ServiceRecordId;
+
+    private Task EditLastDoneAsync(Guid car, Guid taskId, decimal km, DateOnly date) =>
+        tasks.UpdateAsync(userId, car, taskId, new UpdateMaintenanceTaskRequest("Oil", "Oil", 5_000, 730, km, date, true));
+
+    [Fact]
+    public async Task Void_ResetAfterAManualEdit_ReturnsToTheEdit_NotPastIt()
+    {
+        var car = await CreateCarAsync();
+        var task = await CreateTaskAsync(car);
+        var a = await ResetAsync(car, task.Id);
+        await tasks.VoidAsync(userId, car, a);
+        await EditLastDoneAsync(car, task.Id, 49_800, Today.AddDays(-5));
+        await odometer.AddAsync(userId, car, new AddOdometerReadingRequest(50_200, Today));
+        var b = await ResetAsync(car, task.Id);
+        Assert.Equal((50_200m, Today), await StoredLastDoneAsync(task.Id));
+
+        await tasks.VoidAsync(userId, car, b);
+
+        Assert.Equal((49_800m, Today.AddDays(-5)), await StoredLastDoneAsync(task.Id));
+    }
+
+    [Fact]
+    public async Task Void_ResetWithAnOlderBackdatedRecord_StopsAtTheResetsSnapshot()
+    {
+        var car = await CreateCarAsync();
+        var task = await CreateTaskAsync(car);
+        await EditLastDoneAsync(car, task.Id, 49_800, Today.AddDays(-5));
+        await RecordAsync(car, Today.AddDays(-20), 49_000, task.Id); // older than last done: linked, doesn't move it
+        var r = await ResetAsync(car, task.Id);
+
+        await tasks.VoidAsync(userId, car, r);
+
+        // The later of R's snapshot (the edit) and the latest remaining record (the backdated one).
+        Assert.Equal((49_800m, Today.AddDays(-5)), await StoredLastDoneAsync(task.Id));
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Void_TwoResetsInEitherOrder_EndsAtTheOriginalSnapshot(bool newerFirst)
+    {
+        var car = await CreateCarAsync();
+        var task = await CreateTaskAsync(car);
+        var a = await ResetAsync(car, task.Id);
+        await odometer.AddAsync(userId, car, new AddOdometerReadingRequest(50_200, Today));
+        var b = await ResetAsync(car, task.Id);
+
+        await tasks.VoidAsync(userId, car, newerFirst ? b : a);
+        Assert.Equal(newerFirst ? (50_000m, Today) : (50_200m, Today), await StoredLastDoneAsync(task.Id));
+        await tasks.VoidAsync(userId, car, newerFirst ? a : b);
+
+        Assert.Equal((40_000m, OriginalDate), await StoredLastDoneAsync(task.Id));
     }
 }

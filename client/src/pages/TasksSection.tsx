@@ -3,6 +3,7 @@ import { Trans, useTranslation } from 'react-i18next'
 import { useAuth, useDistance } from '../auth'
 import { api, ApiError, localToday, taskCategories, type MaintenanceTask, type TaskCategory, type TaskStatus, type TaskTemplate, type Vehicle } from '../api'
 import { errorMessage } from '../i18n'
+import { useRow } from '../useRow'
 
 type Unit = 'days' | 'months' | 'years'
 const unitDays: Record<Unit, number> = { days: 1, months: 30, years: 365 }
@@ -47,7 +48,15 @@ function Remaining({ km, days }: { km: number | null; days: number | null }) {
 }
 
 // The Maintenance section of the car page. It loads on its own, so a failure here leaves the rest of the page usable.
-export function TasksSection({ car, onOdometerChanged }: { car: Vehicle; onOdometerChanged: () => void }) {
+// The last reset, undoable from its row until the next action in this section or in the service history.
+export type TaskUndo = { taskId: string; recordId: string } | null
+
+export function TasksSection({ car, undo, setUndo, onOdometerChanged }: {
+  car: Vehicle
+  undo: TaskUndo
+  setUndo: (undo: TaskUndo) => void
+  onOdometerChanged: () => void
+}) {
   const { t, i18n } = useTranslation()
   const [tasks, setTasks] = useState<MaintenanceTask[] | null>(null)
   const [templates, setTemplates] = useState<TaskTemplate[]>([])
@@ -57,8 +66,6 @@ export function TasksSection({ car, onOdometerChanged }: { car: Vehicle; onOdome
   const edits = useRef(0)
   // 'pick' is the template picker; an object is the add form (template null for a custom task).
   const [adding, setAdding] = useState<null | 'pick' | { template: TaskTemplate | null }>(null)
-  // The last reset, undoable from its row until the next action in this section.
-  const [undo, setUndo] = useState<{ taskId: string; recordId: string } | null>(null)
   const sectionRef = useRef<HTMLElement>(null)
   // A selector inside the section to focus after the next render; the h2 if it matches nothing.
   const focusNext = useRef<string | null>(null)
@@ -320,49 +327,11 @@ function TaskRow({ task, url, currentKm, readOnly, onSaved, onDeleted, onReset, 
   const { t, i18n } = useTranslation()
   const { user } = useAuth()
   const d = useDistance()
-  const [mode, setMode] = useState<'view' | 'edit' | 'delete' | 'cost'>('view')
-  // The opener, refocused when Cancel or Escape returns the row to view. After Save or Delete the section refocuses instead.
-  const returnTo = useRef<typeof mode>('view')
-  const editRef = useRef<HTMLButtonElement>(null)
-  const deleteRef = useRef<HTMLButtonElement>(null)
-  const costRef = useRef<HTMLButtonElement>(null)
-  useEffect(() => {
-    if (mode !== 'view') return
-    ;({ edit: editRef, delete: deleteRef, cost: costRef, view: null }[returnTo.current])?.current?.focus()
-    returnTo.current = 'view'
-  }, [mode])
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<unknown>(null)
+  // After Save or Delete the section refocuses (close()); Cancel and Escape go back to the opener.
+  const { mode, open, close, busy, error, run, opener } = useRow<'edit' | 'delete' | 'cost'>()
   const lng = i18n.resolvedLanguage
   const name = task.name
   const percent = Math.round(Math.min(task.progress ?? 0, 1) * 100)
-
-  function open(next: typeof mode) {
-    returnTo.current = mode
-    setMode(next)
-    setError(null)
-  }
-
-  // A button disabled while its request runs loses focus; after a failure it gets it back once enabled again.
-  const retry = useRef<HTMLElement | null>(null)
-  useEffect(() => {
-    if (busy) return
-    retry.current?.focus()
-    retry.current = null
-  }, [busy])
-
-  async function run(request: () => Promise<void>, retryFrom?: HTMLElement | null) {
-    setBusy(true)
-    setError(null)
-    try {
-      await request()
-    } catch (err) {
-      setError(err)
-      retry.current = retryFrom ?? null
-    } finally {
-      setBusy(false)
-    }
-  }
 
   async function submitCost(e: FormEvent<HTMLFormElement>) {
     e.preventDefault()
@@ -370,8 +339,7 @@ function TaskRow({ task, url, currentKm, readOnly, onSaved, onDeleted, onReset, 
     const cost = f.get('cost') === '' ? undefined : Number(f.get('cost'))
     await run(async () => {
       await onReset({ cost, notes: String(f.get('notes')) })
-      returnTo.current = 'view'
-      setMode('view')
+      close()
     }, (e.nativeEvent as SubmitEvent).submitter)
   }
 
@@ -427,10 +395,10 @@ function TaskRow({ task, url, currentKm, readOnly, onSaved, onDeleted, onReset, 
           {task.isEnabled && (
             <>
               <button className="done" aria-label={t('markDoneTask', { name })} disabled={busy} onClick={(e) => run(() => onReset({}), e.currentTarget)}>{t('markDone')}</button>
-              <button className="link" aria-label={t('addCostNotesTask', { name })} ref={costRef} onClick={() => open('cost')}>{t('addCostNotes')}</button>
+              <button className="link" aria-label={t('addCostNotesTask', { name })} ref={opener('cost')} onClick={() => open('cost')}>{t('addCostNotes')}</button>
             </>
           )}
-          <button className="link edit" aria-label={t('editTask', { name })} ref={editRef} onClick={() => open('edit')}>{t('edit')}</button>
+          <button className="link edit" aria-label={t('editTask', { name })} ref={opener('edit')} onClick={() => open('edit')}>{t('edit')}</button>
           <label className="inline">
             <input
               type="checkbox"
@@ -441,7 +409,7 @@ function TaskRow({ task, url, currentKm, readOnly, onSaved, onDeleted, onReset, 
             />
             {t('enabled')}
           </label>
-          <button className="link" aria-label={t('deleteTask', { name })} ref={deleteRef} onClick={() => open('delete')}>{t('delete')}</button>
+          <button className="link" aria-label={t('deleteTask', { name })} ref={opener('delete')} onClick={() => open('delete')}>{t('delete')}</button>
         </div>
       )}
       {mode === 'view' && errorText}
@@ -453,8 +421,7 @@ function TaskRow({ task, url, currentKm, readOnly, onSaved, onDeleted, onReset, 
           onCancel={() => open('view')}
           onSubmit={async (body) => {
             const saved = await api<MaintenanceTask>(url, 'PUT', body)
-            returnTo.current = 'view'
-            setMode('view')
+            close()
             onSaved(saved)
           }}
         />
