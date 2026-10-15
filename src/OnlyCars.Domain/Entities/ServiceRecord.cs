@@ -23,4 +23,5 @@ public class ServiceRecord : Entity
     public bool IsVoided { get; set; }
 
     public ICollection<ServiceRecordTask> Tasks { get; set; } = new List<ServiceRecordTask>();
+    public ICollection<ServiceItem> Items { get; set; } = new List<ServiceItem>();
 }

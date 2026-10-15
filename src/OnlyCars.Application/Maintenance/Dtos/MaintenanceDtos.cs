@@ -55,7 +55,16 @@ public record ServiceRecordTaskDto(Guid Id, string Name, TaskCategory Category);
 
 // A null ShopName is DIY; a null TotalCost was skipped. Tasks are the linked tasks that still exist.
 public record ServiceRecordDto(Guid Id, DateOnly Date, decimal OdometerKm, string? ShopName, decimal? TotalCost, string? Notes,
-    List<ServiceRecordTaskDto> Tasks);
+    List<ServiceRecordTaskDto> Tasks, List<ServiceItemDto> Items);
+
+// In the user's order. On a labour row Quantity is hours.
+public record ServiceItemDto(Guid Id, string Description, string? Brand, string? PartNumber, decimal Quantity, decimal UnitCost, bool IsLabor);
+
+// Quantity and UnitCost are nullable only so a missing value gets a coded error.
+public record ServiceItemRequest(string? Description, string? Brand, string? PartNumber, decimal? Quantity, decimal? UnitCost, bool IsLabor = false);
+
+// With items, TotalCost is ignored and computed from them; Items replaces the whole list (null or empty clears it).
+public record UpdateServiceRecordRequest(string? ShopName, decimal? TotalCost, string? Notes, List<ServiceItemRequest>? Items);
 
 // Date and OdometerKm are nullable only so a missing value gets a coded error (a missing date means UTC today, as for readings).
 public record CreateServiceRecordRequest(
@@ -65,6 +74,7 @@ public record CreateServiceRecordRequest(
     decimal? TotalCost,
     string? Notes,
     List<Guid>? TaskIds,
-    bool ConfirmCorrection = false);
+    bool ConfirmCorrection = false,
+    List<ServiceItemRequest>? Items = null);
 
 public record CreateServiceRecordResponse(ServiceRecordDto Record, List<MaintenanceTaskDto> Tasks);

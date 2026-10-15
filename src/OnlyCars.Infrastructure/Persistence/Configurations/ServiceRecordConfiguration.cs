@@ -46,3 +46,26 @@ public class ServiceRecordTaskConfiguration : IEntityTypeConfiguration<ServiceRe
         builder.HasIndex(j => j.MaintenanceTaskId);
     }
 }
+
+public class ServiceItemConfiguration : IEntityTypeConfiguration<ServiceItem>
+{
+    public void Configure(EntityTypeBuilder<ServiceItem> builder)
+    {
+        builder.Property(i => i.Description).HasMaxLength(ServiceItem.MaxDescriptionLength);
+        builder.Property(i => i.Brand).HasMaxLength(ServiceItem.MaxBrandLength);
+        builder.Property(i => i.PartNumber).HasMaxLength(ServiceItem.MaxPartNumberLength);
+        builder.Property(i => i.Quantity).HasColumnType("decimal(9,2)");
+        builder.Property(i => i.UnitCost).HasColumnType("decimal(12,2)");
+
+        builder.HasOne(i => i.ServiceRecord)
+            .WithMany(r => r.Items)
+            .HasForeignKey(i => i.ServiceRecordId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder.ToTable(t =>
+        {
+            t.HasCheckConstraint("CK_ServiceItems_Quantity", "[Quantity] > 0");
+            t.HasCheckConstraint("CK_ServiceItems_UnitCost", "[UnitCost] >= 0");
+        });
+    }
+}

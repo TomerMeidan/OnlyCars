@@ -115,6 +115,58 @@ namespace OnlyCars.Infrastructure.Persistence.Migrations
                     b.ToTable("OdometerReadings");
                 });
 
+            modelBuilder.Entity("OnlyCars.Domain.Entities.ServiceItem", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Brand")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<bool>("IsLabor")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("PartNumber")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<decimal>("Quantity")
+                        .HasColumnType("decimal(9,2)");
+
+                    b.Property<Guid>("ServiceRecordId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("int");
+
+                    b.Property<decimal>("UnitCost")
+                        .HasColumnType("decimal(12,2)");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ServiceRecordId");
+
+                    b.ToTable("ServiceItems", t =>
+                        {
+                            t.HasCheckConstraint("CK_ServiceItems_Quantity", "[Quantity] > 0");
+
+                            t.HasCheckConstraint("CK_ServiceItems_UnitCost", "[UnitCost] >= 0");
+                        });
+                });
+
             modelBuilder.Entity("OnlyCars.Domain.Entities.ServiceRecord", b =>
                 {
                     b.Property<Guid>("Id")
@@ -513,6 +565,17 @@ namespace OnlyCars.Infrastructure.Persistence.Migrations
                     b.Navigation("Vehicle");
                 });
 
+            modelBuilder.Entity("OnlyCars.Domain.Entities.ServiceItem", b =>
+                {
+                    b.HasOne("OnlyCars.Domain.Entities.ServiceRecord", "ServiceRecord")
+                        .WithMany("Items")
+                        .HasForeignKey("ServiceRecordId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("ServiceRecord");
+                });
+
             modelBuilder.Entity("OnlyCars.Domain.Entities.ServiceRecord", b =>
                 {
                     b.HasOne("OnlyCars.Domain.Entities.Vehicle", "Vehicle")
@@ -556,6 +619,8 @@ namespace OnlyCars.Infrastructure.Persistence.Migrations
 
             modelBuilder.Entity("OnlyCars.Domain.Entities.ServiceRecord", b =>
                 {
+                    b.Navigation("Items");
+
                     b.Navigation("Tasks");
                 });
 

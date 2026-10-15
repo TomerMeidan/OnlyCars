@@ -20,7 +20,7 @@ Legend:
 ## MVP progress
 - [x] **Step 1: Accounts, cars, odometer.** Done (MVP1-A, B and C signed off), apart from the gaps marked below. Settings signed off: language, theme and currency (SET-1), and km or miles (SET-2).
 - [x] **Step 2: Maintenance tasks, templates, Reset.** Done (MVP2-A, B and C signed off).
-- [~] **Step 3: Service history with costs** 🔨 MVP3-A signed off (history list, record a past service, undo from the history). Now: MVP3-B (line items, edit, delete). Then MVP3-C (filter and search) and MVP3-D (edit date, odometer and tasks). *Missing: line items, editing, filter and search, attachments.*
+- [~] **Step 3: Service history with costs** 🔨 MVP3-A signed off (history list, record a past service, undo from the history). Now: MVP3-B (line items, edit, delete), backend done 2026-10-15, frontend next. Then MVP3-C (filter and search) and MVP3-D (edit date, odometer and tasks). *Missing: line items, editing, filter and search, attachments.*
 - [ ] **Step 4: Dashboard with due and overdue status**
 - [ ] **Step 5: Checklists, then tires, then reports and notifications**
 - [x] **Before going online: SEC-1** (limit login attempts, account lockout, constant-time login). Signed off.

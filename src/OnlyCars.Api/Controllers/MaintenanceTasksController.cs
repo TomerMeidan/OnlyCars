@@ -48,6 +48,10 @@ public class MaintenanceTasksController(MaintenanceTaskService taskService) : Co
     public async Task<ActionResult<CreateServiceRecordResponse>> CreateRecord(Guid vehicleId, CreateServiceRecordRequest request, CancellationToken ct) =>
         StatusCode(StatusCodes.Status201Created, await taskService.CreateRecordAsync(User.GetUserId(), vehicleId, request, ct));
 
+    [HttpPut("vehicles/{vehicleId:guid}/service-records/{recordId:guid}")]
+    public async Task<ActionResult<ServiceRecordDto>> UpdateRecord(Guid vehicleId, Guid recordId, UpdateServiceRecordRequest request, CancellationToken ct) =>
+        Ok(await taskService.UpdateRecordAsync(User.GetUserId(), vehicleId, recordId, request, ct));
+
     [HttpPost("vehicles/{vehicleId:guid}/service-records/{recordId:guid}/void")]
     public async Task<ActionResult<List<MaintenanceTaskDto>>> Void(Guid vehicleId, Guid recordId, CancellationToken ct) =>
         Ok(await taskService.VoidAsync(User.GetUserId(), vehicleId, recordId, ct));

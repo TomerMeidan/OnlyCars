@@ -16,6 +16,7 @@ public interface IAppDbContext
     DbSet<MaintenanceTask> MaintenanceTasks { get; }
     DbSet<ServiceRecord> ServiceRecords { get; }
     DbSet<ServiceRecordTask> ServiceRecordTasks { get; }
+    DbSet<ServiceItem> ServiceItems { get; }
 
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 }

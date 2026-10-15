@@ -151,6 +151,7 @@ public class MaintenanceTaskService(IAppDbContext db, VehicleService vehicleServ
 
         var records = await db.ServiceRecords
             .Include(r => r.Tasks).ThenInclude(j => j.MaintenanceTask)
+            .Include(r => r.Items)
             .Where(r => r.VehicleId == vehicleId && !r.IsVoided)
             .OrderByDescending(r => r.Date)
             .ThenByDescending(r => r.CreatedAt)
@@ -182,14 +183,8 @@ public class MaintenanceTaskService(IAppDbContext db, VehicleService vehicleServ
             throw new ValidationFailedException("odometer.invalidValue", "The odometer reading is required.");
         }
 
-        ValidateCost(request.TotalCost);
-
-        var shop = request.ShopName?.Trim();
-        if (shop?.Length > ServiceRecord.MaxShopNameLength)
-        {
-            throw new ValidationFailedException("serviceRecord.shopTooLong", $"The shop name can be up to {ServiceRecord.MaxShopNameLength} characters.");
-        }
-
+        var (items, totalCost) = ValidateItems(request.Items, request.TotalCost);
+        var shop = TrimShop(request.ShopName);
         var notes = TrimNotes(request.Notes);
 
         // Matched in memory against this car's tasks, so another car's (or user's) task id is not found.
@@ -204,9 +199,10 @@ public class MaintenanceTaskService(IAppDbContext db, VehicleService vehicleServ
             VehicleId = vehicle.Id,
             Date = date,
             OdometerKm = odometerKm,
-            ShopName = string.IsNullOrEmpty(shop) ? null : shop,
-            TotalCost = request.TotalCost,
-            Notes = notes
+            ShopName = shop,
+            TotalCost = totalCost,
+            Notes = notes,
+            Items = items
         };
 
         var readings = await db.OdometerReadings.Where(r => r.VehicleId == vehicle.Id).ToListAsync(ct);
@@ -237,6 +233,47 @@ public class MaintenanceTaskService(IAppDbContext db, VehicleService vehicleServ
 
         await db.SaveChangesAsync(ct);
         return new(ToDto(record), linked.Select(t => ToDto(t, vehicle, today)).ToList());
+    }
+
+    /// <summary>
+    /// Edits shop, cost, notes and items (the items list is replaced). Date, odometer, tasks, the Service reading and every
+    /// task's LastDone* stay as they are (MVP3-D). Every check runs before anything changes; one SaveChanges.
+    /// </summary>
+    public async Task<ServiceRecordDto> UpdateRecordAsync(Guid userId, Guid vehicleId, Guid recordId, UpdateServiceRecordRequest request,
+        CancellationToken ct = default)
+    {
+        var vehicle = await vehicleService.FindOwnedAsync(userId, vehicleId, ct);
+        var record = await db.ServiceRecords
+            .Include(r => r.Tasks).ThenInclude(j => j.MaintenanceTask)
+            .Include(r => r.Items)
+            .FirstOrDefaultAsync(r => r.Id == recordId && r.VehicleId == vehicle.Id, ct)
+            ?? throw new NotFoundException(nameof(ServiceRecord), recordId);
+
+        if (record.IsVoided)
+        {
+            throw new ConflictException("serviceRecord.alreadyVoided", "This service record is deleted.");
+        }
+
+        var (items, totalCost) = ValidateItems(request.Items, request.TotalCost);
+        var shop = TrimShop(request.ShopName);
+        var notes = TrimNotes(request.Notes);
+
+        db.ServiceItems.RemoveRange(record.Items);
+        record.Items.Clear();
+        // Added explicitly: Entity sets Id up front, so items added through the tracked record would be treated as existing rows.
+        db.ServiceItems.AddRange(items);
+        foreach (var item in items)
+        {
+            record.Items.Add(item);
+        }
+
+        record.ShopName = shop;
+        record.TotalCost = totalCost;
+        record.Notes = notes;
+        record.UpdatedAt = DateTimeOffset.UtcNow;
+
+        await db.SaveChangesAsync(ct);
+        return ToDto(record);
     }
 
     /// <summary>
@@ -320,6 +357,92 @@ public class MaintenanceTaskService(IAppDbContext db, VehicleService vehicleServ
         }
     }
 
+    // Trimmed; blank is null (DIY).
+    private static string? TrimShop(string? shopName)
+    {
+        var shop = shopName?.Trim();
+        if (shop?.Length > ServiceRecord.MaxShopNameLength)
+        {
+            throw new ValidationFailedException("serviceRecord.shopTooLong", $"The shop name can be up to {ServiceRecord.MaxShopNameLength} characters.");
+        }
+
+        return string.IsNullOrEmpty(shop) ? null : shop;
+    }
+
+    /// <summary>
+    /// Checks the items in order (each error names its 0-based row in an <c>index</c> extension) and returns them with the
+    /// record's total: the sum of quantity times unit cost when there are items (the entered cost is ignored), else the entered cost.
+    /// </summary>
+    private static (List<ServiceItem> Items, decimal? TotalCost) ValidateItems(List<ServiceItemRequest>? requests, decimal? enteredCost)
+    {
+        requests ??= [];
+        if (requests.Count > ServiceItem.MaxItemsPerRecord)
+        {
+            throw new ValidationFailedException("serviceRecord.tooManyItems", $"A service can have up to {ServiceItem.MaxItemsPerRecord} items.");
+        }
+
+        var items = requests.Select(ToItem).ToList();
+        if (items.Count == 0)
+        {
+            ValidateCost(enteredCost);
+            return (items, enteredCost);
+        }
+
+        // Half away from zero, the usual money rounding; the client's live sum must round the same way.
+        var sum = decimal.Round(items.Sum(i => i.Quantity * i.UnitCost), 2, MidpointRounding.AwayFromZero);
+        ValidateCost(sum);
+        return (items, sum);
+    }
+
+    private static ServiceItem ToItem(ServiceItemRequest? request, int index)
+    {
+        var description = request?.Description?.Trim();
+        if (request is null || string.IsNullOrEmpty(description) || description.Length > ServiceItem.MaxDescriptionLength)
+        {
+            throw ItemError("serviceItem.invalidDescription", $"The description must be 1 to {ServiceItem.MaxDescriptionLength} characters.", index);
+        }
+
+        var brand = request.Brand?.Trim() is { Length: > 0 } b ? b : null;
+        if (brand?.Length > ServiceItem.MaxBrandLength)
+        {
+            throw ItemError("serviceItem.brandTooLong", $"The brand can be up to {ServiceItem.MaxBrandLength} characters.", index);
+        }
+
+        var partNumber = request.PartNumber?.Trim() is { Length: > 0 } p ? p : null;
+        if (partNumber?.Length > ServiceItem.MaxPartNumberLength)
+        {
+            throw ItemError("serviceItem.partNumberTooLong", $"The part number can be up to {ServiceItem.MaxPartNumberLength} characters.", index);
+        }
+
+        if (request.Quantity is not { } quantity || quantity <= 0 || quantity > ServiceItem.MaxQuantity || decimal.Round(quantity, 2) != quantity)
+        {
+            throw ItemError("serviceItem.invalidQuantity", $"The quantity must be above 0 and up to {ServiceItem.MaxQuantity} with at most 2 decimals.", index);
+        }
+
+        if (request.UnitCost is not { } unitCost || unitCost < 0 || unitCost > ServiceRecord.MaxCost || decimal.Round(unitCost, 2) != unitCost)
+        {
+            throw ItemError("serviceItem.invalidUnitCost", $"The unit cost must be 0 to {ServiceRecord.MaxCost} with at most 2 decimals.", index);
+        }
+
+        return new ServiceItem
+        {
+            Description = description,
+            Brand = brand,
+            PartNumber = partNumber,
+            Quantity = quantity,
+            UnitCost = unitCost,
+            IsLabor = request.IsLabor,
+            SortOrder = index
+        };
+    }
+
+    private static ValidationFailedException ItemError(string code, string message, int index)
+    {
+        var ex = new ValidationFailedException(code, $"Item {index + 1}: {message}");
+        ex.Extensions["index"] = index;
+        return ex;
+    }
+
     // Trimmed; blank is null.
     private static string? TrimNotes(string? notes)
     {
@@ -350,7 +473,9 @@ public class MaintenanceTaskService(IAppDbContext db, VehicleService vehicleServ
 
     private static ServiceRecordDto ToDto(ServiceRecord r) => new(r.Id, r.Date, r.OdometerKm, r.ShopName, r.TotalCost, r.Notes,
         r.Tasks.Where(j => j.MaintenanceTask is not null).Select(j => j.MaintenanceTask!)
-            .OrderBy(t => t.Name).Select(t => new ServiceRecordTaskDto(t.Id, t.Name, t.Category)).ToList());
+            .OrderBy(t => t.Name).Select(t => new ServiceRecordTaskDto(t.Id, t.Name, t.Category)).ToList(),
+        r.Items.OrderBy(i => i.SortOrder)
+            .Select(i => new ServiceItemDto(i.Id, i.Description, i.Brand, i.PartNumber, i.Quantity, i.UnitCost, i.IsLabor)).ToList());
 
     // Scoped to the owned vehicle, so another car's task id is simply not found.
     private async Task<MaintenanceTask> FindAsync(Guid vehicleId, Guid taskId, CancellationToken ct) =>

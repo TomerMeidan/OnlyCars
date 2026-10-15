@@ -17,6 +17,7 @@ public class AppDbContext : DbContext, IAppDbContext
     public DbSet<MaintenanceTask> MaintenanceTasks => Set<MaintenanceTask>();
     public DbSet<ServiceRecord> ServiceRecords => Set<ServiceRecord>();
     public DbSet<ServiceRecordTask> ServiceRecordTasks => Set<ServiceRecordTask>();
+    public DbSet<ServiceItem> ServiceItems => Set<ServiceItem>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

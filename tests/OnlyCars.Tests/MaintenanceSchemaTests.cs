@@ -93,4 +93,33 @@ public class MaintenanceSchemaTests : IAsyncLifetime
         Assert.Equal(0, await db.ServiceRecordTasks.CountAsync());
         Assert.Equal(0, await db.OdometerReadings.CountAsync());
     }
+
+    [Fact]
+    public async Task ServiceItems_EnforceQuantityAndUnitCostChecks_AndCascadeFromRecordAndVehicle()
+    {
+        // MVP3-B: Quantity > 0 and UnitCost >= 0 in the database; items go with their record, and with the vehicle.
+        var car = await AddCarAsync();
+        var record = new ServiceRecord { VehicleId = car.Id, Date = DateOnly.FromDateTime(DateTime.UtcNow), OdometerKm = 1_000 };
+        db.ServiceRecords.Add(record);
+        await db.SaveChangesAsync();
+
+        db.ServiceItems.Add(new ServiceItem { ServiceRecordId = record.Id, Description = "Zero", Quantity = 0, UnitCost = 1 });
+        await Assert.ThrowsAsync<DbUpdateException>(() => db.SaveChangesAsync());
+        db.ChangeTracker.Clear();
+        db.ServiceItems.Add(new ServiceItem { ServiceRecordId = record.Id, Description = "Negative", Quantity = 1, UnitCost = -1 });
+        await Assert.ThrowsAsync<DbUpdateException>(() => db.SaveChangesAsync());
+        db.ChangeTracker.Clear();
+
+        db.ServiceItems.Add(new ServiceItem { ServiceRecordId = record.Id, Description = "Oil", Quantity = 4.5m, UnitCost = 0 });
+        await db.SaveChangesAsync();
+        await db.ServiceRecords.Where(r => r.Id == record.Id).ExecuteDeleteAsync();
+        Assert.Equal(0, await db.ServiceItems.CountAsync());
+
+        var second = new ServiceRecord { VehicleId = car.Id, Date = record.Date, OdometerKm = 1_000 };
+        second.Items.Add(new ServiceItem { Description = "Labour", Quantity = 1, UnitCost = 100, IsLabor = true });
+        db.ServiceRecords.Add(second);
+        await db.SaveChangesAsync();
+        await db.Vehicles.Where(v => v.Id == car.Id).ExecuteDeleteAsync();
+        Assert.Equal(0, await db.ServiceItems.CountAsync());
+    }
 }
