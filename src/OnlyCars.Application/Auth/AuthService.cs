@@ -6,6 +6,7 @@ using Microsoft.Extensions.Options;
 using OnlyCars.Application.Auth.Dtos;
 using OnlyCars.Application.Common;
 using OnlyCars.Application.Common.Exceptions;
+using OnlyCars.Domain;
 using OnlyCars.Domain.Entities;
 
 namespace OnlyCars.Application.Auth;
@@ -41,10 +42,8 @@ public class AuthService(
                 $"Password must be at least {MinPasswordLength} characters.");
         }
 
-        if (request.Currency is not null && !Currencies.Contains(request.Currency))
-        {
-            throw new ValidationFailedException("auth.invalidCurrency", $"Currency must be one of {string.Join(", ", Currencies)}.");
-        }
+        ValidateCurrency(request.Currency);
+        var locale = ParseEnum<Locale>(request.Locale, "settings.invalidLocale");
 
         if (await db.Users.AnyAsync(u => u.Email == email, ct))
         {
@@ -56,6 +55,7 @@ public class AuthService(
         {
             user.Currency = request.Currency;
         }
+        user.Locale = locale ?? user.Locale;
         user.PasswordHash = passwordHasher.HashPassword(user, request.Password);
 
         db.Users.Add(user);
@@ -106,6 +106,53 @@ public class AuthService(
         return BuildResponse(user);
     }
 
+    public async Task<UserDto> GetMeAsync(Guid userId, CancellationToken ct = default) =>
+        ToDto(await FindUserAsync(userId, ct));
+
+    public async Task<UserDto> UpdateSettingsAsync(Guid userId, UpdateSettingsRequest request, CancellationToken ct = default)
+    {
+        // Validate every field before touching the user, so one bad field saves nothing.
+        var locale = ParseEnum<Locale>(request.Locale, "settings.invalidLocale");
+        var theme = ParseEnum<Theme>(request.Theme, "settings.invalidTheme");
+        ValidateCurrency(request.Currency);
+
+        var user = await FindUserAsync(userId, ct);
+        user.Locale = locale ?? user.Locale;
+        user.Theme = theme ?? user.Theme;
+        user.Currency = request.Currency ?? user.Currency;
+        await db.SaveChangesAsync(ct);
+        return ToDto(user);
+    }
+
+    // Not found only for a still-valid token of a deleted account.
+    private async Task<User> FindUserAsync(Guid userId, CancellationToken ct) =>
+        await db.Users.FirstOrDefaultAsync(u => u.Id == userId, ct) ?? throw new NotFoundException(nameof(User), userId);
+
+    private static void ValidateCurrency(string? currency)
+    {
+        if (currency is not null && !Currencies.Contains(currency))
+        {
+            throw new ValidationFailedException("auth.invalidCurrency", $"Currency must be one of {string.Join(", ", Currencies)}.");
+        }
+    }
+
+    // Exact enum names only, the UserDto JSON casing; Enum.TryParse would also accept "1" or "dark".
+    private static T? ParseEnum<T>(string? value, string code) where T : struct, Enum
+    {
+        if (value is null)
+        {
+            return null;
+        }
+        if (!Enum.GetNames<T>().Contains(value))
+        {
+            throw new ValidationFailedException(code, $"{typeof(T).Name} must be one of {string.Join(", ", Enum.GetNames<T>())}.");
+        }
+        return Enum.Parse<T>(value);
+    }
+
+    private static UserDto ToDto(User user) =>
+        new(user.Id, user.Email, user.DistanceUnit, user.Currency, user.Locale, user.Theme);
+
     private static UnauthorizedException InvalidCredentials() => new("auth.invalidCredentials", "Invalid email or password.");
 
     /// <summary>
@@ -149,7 +196,6 @@ public class AuthService(
     private AuthResponse BuildResponse(User user)
     {
         var (token, expiresAt) = jwtTokenService.CreateToken(user);
-        var userDto = new UserDto(user.Id, user.Email, user.DistanceUnit, user.Currency, user.Locale, user.Theme);
-        return new AuthResponse(token, expiresAt, userDto);
+        return new AuthResponse(token, expiresAt, ToDto(user));
     }
 }

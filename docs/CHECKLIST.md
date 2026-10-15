@@ -2,7 +2,7 @@
 
 One line per requirement in `docs/spec.md`. Updated after every ticket is signed off. Evidence and details are in `docs/requirements-status.md`.
 
-**Last updated:** 2026-10-15, MVP2-C signed off (Reset and Undo); step 2 complete; next: SET-1 (settings: language, theme, currency)
+**Last updated:** 2026-10-15, SET-1 backend done (settings API: language, theme, currency); frontend next
 **Progress:** 14 of 50 required items done, 8 partly done, 28 not started. The 7 optional items are not counted.
 
 Legend:
