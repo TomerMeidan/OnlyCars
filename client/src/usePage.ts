@@ -6,10 +6,11 @@ import { useLocation } from 'react-router-dom'
 let userActed = false
 for (const type of ['pointerdown', 'keydown', 'click']) addEventListener(type, () => (userActed = true), { once: true, capture: true })
 
-// Sets `<title> · OnlyCars` and, after a client-side navigation, moves focus to the page's h1 so screen readers announce it.
+// Sets `<title> · OnlyCars` and, after a client-side navigation to another path, moves focus to the page's h1 so screen readers announce it.
+// A query-string change (the /history filters) is the same page, so focus stays on the control the user changed.
 // Pass undefined while the page is still loading; the h1 is focused once it renders.
 export function usePage(title: string | undefined) {
-  const { key } = useLocation()
+  const { pathname } = useLocation()
   const ready = title != null
 
   useEffect(() => {
@@ -18,5 +19,5 @@ export function usePage(title: string | undefined) {
 
   useEffect(() => {
     if (ready && userActed) document.querySelector<HTMLElement>('main h1')?.focus()
-  }, [key, ready])
+  }, [pathname, ready])
 }

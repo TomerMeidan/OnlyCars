@@ -1,8 +1,9 @@
-import { useEffect, useId, useRef, useState, type FormEvent } from 'react'
+import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
+import { Link } from 'react-router-dom'
 import { api, ApiError, isGoneRecord, isOrderError, itemsTotal, localToday, type MaintenanceTask, type ServiceItem, type ServiceRecord, type Vehicle } from '../api'
 import { useAuth, useDistance } from '../auth'
-import { errorMessage } from '../i18n'
+import { errorMessage, money } from '../i18n'
 import { useRow } from '../useRow'
 
 // The form field each API error is about, so the message is tied to that field (item fields also by the error's row index).
@@ -25,7 +26,6 @@ const MAX_ITEMS = 50
 
 // A record's date is a calendar date; format it in UTC so the viewer's time zone can't shift the day.
 const fmtDate = (date: string, lng: string | undefined) => new Date(date).toLocaleDateString(lng, { dateStyle: 'medium', timeZone: 'UTC' })
-const money = (v: number, lng: string | undefined, currency: string | undefined) => (currency ? v.toLocaleString(lng, { style: 'currency', currency }) : v)
 const taskList = (r: ServiceRecord, lng: string | undefined) => new Intl.ListFormat(lng).format(r.tasks.map((x) => x.name))
 
 // An item row as typed. Keyed by a local counter: the server's item ids change on every save.
@@ -89,9 +89,12 @@ export function ServiceHistory({ car, onChanged }: { car: Vehicle; onChanged: ()
     <section className="card" aria-labelledby="service-history" ref={sectionRef}>
       <div className="row">
         <h2 id="service-history" tabIndex={-1}>{t('serviceHistory')}</h2>
-        {!readOnly && form.mode === 'view' && (
-          <button className="add" ref={form.opener('record')} onClick={() => { setGone(false); form.open('record') }}>{t('recordService')}</button>
-        )}
+        <div className="actions">
+          <Link to={`/history?vehicleId=${encodeURIComponent(car.id)}`}>{t('searchAllHistory')}</Link>
+          {!readOnly && form.mode === 'view' && (
+            <button className="add" ref={form.opener('record')} onClick={() => { setGone(false); form.open('record') }}>{t('recordService')}</button>
+          )}
+        </div>
       </div>
 
       {form.mode === 'record' && (
@@ -363,9 +366,11 @@ function RecordForm({ car, url, row, record, onSaved, onGone }: {
   )
 }
 
-function ServiceRow({ car, record: r, url, readOnly, onEdited, onDeleted, onGone }: {
+// Also the rows of /history, read-only, with the car's name and tag as `head`.
+export function ServiceRow({ car, record: r, url, readOnly, onEdited, onDeleted, onGone, head }: {
   car: Vehicle
   record: ServiceRecord
+  head?: ReactNode
   url: string
   readOnly: boolean
   onEdited: (record: ServiceRecord) => void
@@ -399,6 +404,7 @@ function ServiceRow({ car, record: r, url, readOnly, onEdited, onDeleted, onGone
 
   return (
     <li data-id={r.id}>
+      {head}
       <div className="task-head">
         <time dateTime={r.date} className="name">{date}</time>
         <span className="value"><bdi>{d.fmt(r.odometerKm)}</bdi> {d.vars.distUnit}</span>

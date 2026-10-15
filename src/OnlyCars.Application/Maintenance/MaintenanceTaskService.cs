@@ -144,22 +144,27 @@ public class MaintenanceTaskService(IAppDbContext db, VehicleService vehicleServ
         return new(record.Id, ToDto(task, vehicle, today));
     }
 
-    /// <summary>The car's non-voided service records, newest first (by date, then creation time).</summary>
+    /// <summary>The car's non-voided service records, newest first (same order as the history search).</summary>
     public async Task<List<ServiceRecordDto>> ListRecordsAsync(Guid userId, Guid vehicleId, CancellationToken ct = default)
     {
         await vehicleService.FindOwnedAsync(userId, vehicleId, ct);
 
-        var records = await db.ServiceRecords
+        var records = await NewestFirst(db.ServiceRecords
             .Include(r => r.Tasks).ThenInclude(j => j.MaintenanceTask)
             .Include(r => r.Items)
             .AsSplitQuery()
-            .Where(r => r.VehicleId == vehicleId && !r.IsVoided)
-            .OrderByDescending(r => r.Date)
-            .ThenByDescending(r => r.CreatedAt)
+            .Where(r => r.VehicleId == vehicleId && !r.IsVoided))
             .ToListAsync(ct);
 
         return records.Select(ToDto).ToList();
     }
+
+    // One order for the car page and /history, so same-day records line up on both.
+    private static IOrderedQueryable<ServiceRecord> NewestFirst(IQueryable<ServiceRecord> query) => query
+        .OrderByDescending(r => r.Date)
+        .ThenByDescending(r => r.OdometerKm)
+        .ThenByDescending(r => r.CreatedAt)
+        .ThenBy(r => r.Id); // unique tie-break so pages never overlap or skip a row
 
     public const int MaxSearchLength = 100;
     public const int MaxPageSize = 100;
@@ -205,14 +210,10 @@ public class MaintenanceTaskService(IAppDbContext db, VehicleService vehicleServ
 
         var totalCount = await query.CountAsync(ct);
         var totalCost = await query.SumAsync(r => r.TotalCost ?? 0, ct);
-        var page = await query
+        var page = await NewestFirst(query
             .Include(r => r.Tasks).ThenInclude(j => j.MaintenanceTask)
             .Include(r => r.Items)
-            .AsSplitQuery()
-            .OrderByDescending(r => r.Date)
-            .ThenByDescending(r => r.OdometerKm)
-            .ThenByDescending(r => r.CreatedAt)
-            .ThenBy(r => r.Id) // unique tie-break so pages never overlap or skip a row
+            .AsSplitQuery())
             .Skip(skip).Take(take)
             .ToListAsync(ct);
 

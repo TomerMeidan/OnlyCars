@@ -282,6 +282,20 @@ public class ServiceHistoryTests
     }
 
     [Fact]
+    public async Task List_SameDay_HigherOdometerFirst_EvenIfCreatedEarlier()
+    {
+        var car = await CreateCarAsync();
+        var higher = await RecordAsync(car, Today.AddDays(-5), 49_600);
+        var lower = await tasks.CreateRecordAsync(userId, car, new CreateServiceRecordRequest(
+            Today.AddDays(-5), 49_400, null, null, null, [], ConfirmCorrection: true));
+        db.ChangeTracker.Clear();
+
+        var list = await tasks.ListRecordsAsync(userId, car);
+
+        Assert.Equal([higher.Record.Id, lower.Record.Id], list.Select(r => r.Id));
+    }
+
+    [Fact]
     public async Task List_OtherUsersCar_IsNotFound()
     {
         var theirCar = await CreateCarAsync(Guid.NewGuid());

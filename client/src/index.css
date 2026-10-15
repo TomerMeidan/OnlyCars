@@ -42,6 +42,8 @@ header {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  flex-wrap: wrap; /* at 390px the nav takes its own line rather than breaking words */
+  column-gap: 1rem;
   padding: 0.125rem 1rem; /* thin: the 44px links set the height */
   background: var(--drum);
   color: var(--drum-digit);
@@ -52,7 +54,7 @@ header :focus-visible { outline-color: var(--amber); }
   letter-spacing: 0.02em;
   text-decoration: none;
 }
-nav { display: flex; gap: 1.25rem; }
+nav { display: flex; flex-wrap: wrap; column-gap: 1.25rem; white-space: nowrap; }
 header button.link { color: inherit; }
 
 main {
@@ -218,7 +220,7 @@ button.danger { background: var(--danger); border-color: var(--danger); color: #
 }
 
 /* Text links: a 44px tap target (link-style buttons get theirs from the button rule); the car name keeps its line height */
-.brand, nav a, h2 a, .actions a, .switch a { display: inline-flex; align-items: center; min-height: 2.75rem; }
+.brand, nav a, h2 a, .actions a, .switch a, .services a.car { display: inline-flex; align-items: center; min-height: 2.75rem; }
 h2 a { margin-block: -0.5625rem; }
 
 /* "All cars": a 44px tap target from padding, with the focus ring on the text only */
@@ -249,3 +251,8 @@ h2 a { margin-block: -0.5625rem; }
 .service-items { list-style: none; padding: 0; margin: 0; display: grid; gap: 0.25rem; }
 .service-items li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 0.75rem; }
 .service-items bdi { font-variant-numeric: tabular-nums; }
+
+/* Service history page: the filters stack at 390px; each row starts with its car */
+.filters { align-items: start; } /* the task hint must not push the car select down */
+.filters select { width: 100%; }
+.services a.car { font-weight: 600; }

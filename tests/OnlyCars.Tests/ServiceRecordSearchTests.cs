@@ -1,3 +1,4 @@
+using Microsoft.EntityFrameworkCore;
 using OnlyCars.Application.Common.Exceptions;
 using OnlyCars.Application.Maintenance;
 using OnlyCars.Application.Maintenance.Dtos;
@@ -291,5 +292,19 @@ public class ServiceRecordSearchTests
     {
         await SearchAsync(take: 1);
         await SearchAsync(take: 100);
+    }
+
+    [Fact]
+    public void Search_OnSqlServer_EscapesLikeWildcards()
+    {
+        // Same predicate shape as SearchRecordsAsync; ToQueryString needs no database.
+        using var sql = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>()
+            .UseSqlServer("Server=none;Database=none").Options);
+        var lower = "50%_[x".ToLower();
+
+        var text = sql.ServiceRecords.Where(r => r.Notes != null && r.Notes.ToLower().Contains(lower)).ToQueryString();
+
+        Assert.Contains(@"N'%50\%\_\[x%'", text);
+        Assert.Contains(@"ESCAPE N'\'", text);
     }
 }

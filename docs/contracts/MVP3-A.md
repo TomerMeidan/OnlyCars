@@ -5,7 +5,7 @@ Published by backend-engineer, verified with curl against the live API. Extends 
 ## New endpoints
 
 ### `GET /api/vehicles/{vehicleId}/service-records`
-**200** `ServiceRecordDto[]`: the car's non-voided records, ordered by `date` DESC, then creation time DESC (so a one-tap reset shows up too).
+**200** `ServiceRecordDto[]`: the car's non-voided records, ordered by `date` DESC, then odometer DESC, then creation time DESC, then id (same order as `GET /api/service-records`, since MVP3-C).
 
 ```
 ServiceRecordDto = {

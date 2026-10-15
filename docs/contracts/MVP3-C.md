@@ -76,4 +76,3 @@ GET /api/service-records?take=101
 ### Notes for the frontend
 
 - The archived flag is not on the record; get it from `GET /api/vehicles?includeArchived=true` and match on `vehicleId`.
-- The car page's own list (`GET /api/vehicles/{id}/service-records`) still orders by date then creation time; `/history` adds odometer between them, so two same-day records can appear in a different order on the two pages.

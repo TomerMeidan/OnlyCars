@@ -117,6 +117,43 @@ for (const s of setups) {
     if (currencyOptions.map((o) => o.slice(0, 3)).join() !== 'ILS,USD,EUR,GBP') throw new Error(`options: ${currencyOptions}`)
     if (!currencyOptions[0].includes(s.lng === 'he' ? 'שקל' : 'Shekel')) throw new Error(`ILS label: ${currencyOptions[0]}`)
   })
+  // MVP3-C: /history, every car's services. Before any car exists, it shows the empty state.
+  const HS = he
+    ? { title: 'היסטוריית טיפולים', empty: 'עדיין לא נרשמו טיפולים.', noMatches: 'אין טיפולים שתואמים לסינון.', clear: 'ניקוי הסינון', showMore: 'הצגת עוד', retry: 'נסו שוב',
+        archived: 'בארכיון', searchAll: 'חיפוש בכל ההיסטוריה', labels: ['רכב', 'משימה', 'מתאריך', 'עד תאריך', 'חיפוש'],
+        dates: 'תאריך ההתחלה לא יכול להיות אחרי תאריך הסיום.', tooLong: 'הזינו חיפוש של עד 100 תווים.', generic: 'משהו השתבש. נסו שוב.',
+        summary: (n, total) => `${n === 1 ? 'טיפול אחד' : `${n.toLocaleString('he')} טיפולים`}, סה״כ ${total}` }
+    : { title: 'Service history', empty: 'No services recorded yet.', noMatches: 'No services match these filters.', clear: 'Clear filters', showMore: 'Show more', retry: 'Retry',
+        archived: 'Archived', searchAll: 'Search all history', labels: ['Car', 'Task', 'From date', 'To date', 'Search'],
+        dates: 'The start date must not be after the end date.', tooLong: 'Enter a search of up to 100 characters.', generic: 'Something went wrong. Please try again.',
+        summary: (n, total) => `${n.toLocaleString('en')} service${n === 1 ? '' : 's'}, total ${total}` }
+  const histStatus = page.locator('main .card > p[role=status]')
+  const histRows = page.locator('main .services > li')
+  const filterBar = page.locator('main .filters')
+  const carFilter = filterBar.locator('select').nth(0)
+  const taskFilter = filterBar.locator('select').nth(1)
+  const fromFilter = filterBar.locator('input[type=date]').nth(0)
+  const toFilter = filterBar.locator('input[type=date]').nth(1)
+  const searchBox = filterBar.locator('input[type=search]')
+  const clearBtn = filterBar.getByRole('button', { name: HS.clear, exact: true })
+  await step('history-empty', async () => {
+    await page.setViewportSize({ width: 390, height: 844 })
+    await page.click('header a[href="/history"]')
+    await arrivedAt(HS.title)
+    await histStatus.filter({ hasText: HS.empty }).waitFor()
+    if (await histRows.count()) throw new Error('rows without records')
+    if (await clearBtn.count()) throw new Error('Clear filters shown without filters')
+    // Every filter has a visible label and is 44px tall; the task select waits for a car.
+    const labels = await filterBar.locator('label').evaluateAll((ls) => ls.map((l) => l.firstChild.textContent.trim()))
+    if (labels.join('|') !== HS.labels.join('|')) throw new Error(`labels ${labels}`)
+    for (const c of await filterBar.locator('select, input').all()) await tall(c, 'a filter')
+    if (!(await taskFilter.isDisabled())) throw new Error('task select enabled without a car')
+    await noOverflow('the header and the empty history')
+    await sweep('the empty history')
+    await page.setViewportSize(s.viewport)
+    await page.click('header a.brand')
+    await page.locator('a[href="/cars/new"]').waitFor()
+  })
   await step('add-car', async () => {
     await page.click('a[href="/cars/new"]')
     await arrivedAt(T.addCar)
@@ -1649,6 +1686,214 @@ for (const s of setups) {
     if (await services.locator('button, input').count()) throw new Error('Record, Edit or Delete on an archived car')
     await page.click('main > a.back')
     await page.locator('a[href="/cars/new"]').waitFor() // the list hides archived cars again
+  })
+  // MVP3-C: a third car with a task, three distinct services and 50 older ones, beside the archived Renamed Corolla's.
+  const isHistoryGet = (url) => new URL(url).pathname === '/api/service-records'
+  const histUser = () => page.evaluate(() => JSON.parse(localStorage.getItem('user')))
+  const moneyText = async (v) => { const u = await histUser(); return page.evaluate(([v, lng, c]) => v.toLocaleString(lng, { style: 'currency', currency: c }), [v, s.lng, u.currency]) }
+  const summaryIs = async (n, cost) => {
+    const want = HS.summary(n, await moneyText(cost))
+    await page.waitForFunction((w) => document.querySelector('main .card > p[role=status]')?.textContent.replace(/[⁦-⁩]/g, '') === w, want, { timeout: 5000 })
+      .catch(async () => { throw new Error(`summary "${plain(await histStatus.textContent())}", want "${want}"`) })
+  }
+  const histDay = (offset) => page.evaluate((o) => new Date(Date.now() + o * 86_400_000 - new Date().getTimezoneOffset() * 60_000).toISOString().slice(0, 10), offset)
+  // Counts the list requests while fn runs, plus a pause longer than the search's 300 ms.
+  const historyGets = async (fn) => {
+    let n = 0
+    const count = (r) => isHistoryGet(r.url()) && n++
+    page.on('request', count)
+    await fn()
+    await page.waitForTimeout(600)
+    page.off('request', count)
+    return n
+  }
+  const longGarage = 'Garage' + 'Y'.repeat(90)
+  const longPart = 'P' + '9'.repeat(49)
+  let civicId, civicTaskId, histAll
+  await step('history-page', async () => {
+    civicId = (await apiCall('POST', '/vehicles', { nickname: 'History Civic', initialOdometerKm: 100000 })).id
+    civicTaskId = (await apiCall('POST', `/vehicles/${civicId}/tasks`, { name: 'Civic oil', category: 'Oil', intervalKm: 10000, intervalDays: null, dueSoonPercent: 10, lastDoneOdometerKm: 5000, lastDoneDate: await histDay(-300) })).id
+    const rec = (body) => apiCall('POST', `/vehicles/${civicId}/service-records`, body)
+    for (let i = 0; i < 50; i++) await rec({ date: await histDay(-150 + i), odometerKm: 10000 + i * 100, shopName: `Filler ${i}`, totalCost: 1 })
+    await rec({ date: await histDay(-40), odometerKm: 50000, shopName: 'Speedy Garage', notes: 'Fixed a rattle', taskIds: [civicTaskId],
+      items: [{ description: 'Oil filter', brand: 'Mann', partNumber: 'W 712/75', quantity: 1, unitCost: 45.5 }] })
+    await rec({ date: await histDay(-20), odometerKm: 60000, shopName: longGarage, items: [{ description: 'Brake pads', brand: 'Brembo', partNumber: longPart, quantity: 2, unitCost: 200 }] })
+    await rec({ date: await histDay(-10), odometerKm: 70000, notes: 'Topped up washer fluid' })
+    histAll = await apiCall('GET', '/service-records?take=100')
+    // Criterion 11: a loading line on the first load.
+    await page.route((url) => isHistoryGet(url.href), async (r) => { await page.waitForTimeout(700); await r.continue().catch(() => {}) }, { times: 1 }) // the request may be gone by then
+    await page.click('header a[href="/history"]')
+    await histStatus.filter({ hasText: he ? 'טוען' : 'Loading' }).waitFor()
+    await arrivedAt(HS.title)
+    // Criterion 5: every car's records, newest first, with the count and total of all matches.
+    await summaryIs(histAll.totalCount, histAll.totalCost)
+    if (histAll.totalCount <= 50 || histAll.totalCount > 100) throw new Error(`${histAll.totalCount} records`)
+    await histRows.nth(49).waitFor()
+    if ((await histRows.count()) !== 50) throw new Error(`${await histRows.count()} rows on the first page`)
+    const ids = await histRows.evaluateAll((ls) => ls.map((l) => l.dataset.id))
+    if (ids.join() !== histAll.items.slice(0, 50).map((r) => r.id).join()) throw new Error('rows not in the API order')
+    const dates = await histRows.locator('time').evaluateAll((ts) => ts.map((t) => t.dateTime))
+    if (dates.some((d, i) => i && d > dates[i - 1])) throw new Error(`not newest first: ${dates}`)
+    // Criterion 12: each row names its car, linking to it; archived cars carry the tag; no Edit, Delete or Record anywhere.
+    const archivedRow = histRows.filter({ has: page.getByRole('link', { name: 'Renamed Corolla', exact: true }) }).first()
+    if ((await archivedRow.locator('.row .badge').textContent()) !== HS.archived) throw new Error('no Archived tag')
+    const civicRow = histRows.filter({ hasText: 'Speedy Garage' })
+    if (await civicRow.locator('.row .badge').count()) throw new Error('Archived tag on an active car')
+    if ((await civicRow.locator('a.car').getAttribute('href')) !== `/cars/${civicId}`) throw new Error('car link')
+    if (await page.locator('main .services button, main .services input').count()) throw new Error('a row has a button')
+    // Criterion 13: km and the user's currency, as on the car page.
+    const civicText = plain(await civicRow.textContent())
+    for (const want of ['50,000', SV.km, plain(await moneyText(45.5)), 'Civic oil', 'Fixed a rattle', 'W 712/75', 'Mann']) if (!civicText.includes(want)) throw new Error(`row lacks "${want}": ${civicText}`)
+    // Criteria 10 and 11: a failed Show more keeps the rows, with the error and Retry; Retry appends the next page and focuses its first row.
+    const more = page.getByRole('button', { name: HS.showMore, exact: true })
+    await page.route((url) => isHistoryGet(url.href), (r) => r.fulfill({ status: 500, contentType: 'application/json', body: '{}' }), { times: 1 })
+    await more.click()
+    const alert = page.locator('main [role=alert]')
+    await alert.waitFor()
+    if ((await alert.textContent()) !== HS.generic) throw new Error(`error "${await alert.textContent()}"`)
+    if ((await histRows.count()) !== 50) throw new Error('rows lost on a failed Show more')
+    // The error and Retry take Show more's place below the rows, with focus on Retry.
+    if (!(await page.locator('main .services ~ .row [role=alert]').count())) throw new Error('Show more error not below the rows')
+    await focusIs('main .services ~ .row button', 'after a failed Show more')
+    forgetExpected(500)
+    await page.getByRole('button', { name: HS.retry, exact: true }).click()
+    await focusIs('main .services > li:nth-child(51) a.car', 'after Show more')
+    if ((await histRows.count()) !== histAll.totalCount) throw new Error(`${await histRows.count()} rows after Show more`)
+    if (await more.count()) throw new Error('Show more still shown with every match listed')
+    if (await alert.count()) throw new Error('error still shown')
+    // Criterion 13: miles follow the setting.
+    await unitIs('Mi')
+    await page.goto(`${BASE}/history?q=Speedy`)
+    await summaryIs(1, 45.5)
+    if (!plain(await histRows.first().textContent()).includes(`31,069 ${UM.mi}`)) throw new Error(`miles: ${plain(await histRows.first().textContent())}`)
+    await unitIs('Km')
+  })
+  await step('history-filter', async () => {
+    await page.setViewportSize({ width: 390, height: 844 })
+    await page.goto(`${BASE}/history`)
+    await summaryIs(histAll.totalCount, histAll.totalCost)
+    const civicAll = await apiCall('GET', `/service-records?vehicleId=${civicId}`)
+    const params = () => Object.fromEntries(new URL(page.url()).searchParams)
+    const same = (a, b) => JSON.stringify(a) === JSON.stringify(b)
+    // Criterion 6: a car narrows the list and offers its tasks; a task narrows it further; another car resets the task.
+    await carFilter.selectOption(civicId)
+    await summaryIs(53, civicAll.totalCost)
+    if (!same(params(), { vehicleId: civicId })) throw new Error(`URL ${page.url()}`)
+    await taskFilter.locator('option', { hasText: 'Civic oil' }).waitFor({ state: 'attached' })
+    await taskFilter.selectOption(civicTaskId)
+    await summaryIs(1, 45.5)
+    if (!same(params(), { vehicleId: civicId, taskId: civicTaskId })) throw new Error(`URL ${page.url()}`)
+    const corollaOption = carFilter.locator('option', { hasText: 'Renamed Corolla' })
+    if (!(await corollaOption.textContent()).includes(HS.archived.toLowerCase())) throw new Error('archived car not marked in the select')
+    const corolla = await corollaOption.getAttribute('value')
+    await carFilter.selectOption(corolla)
+    await page.waitForURL((u) => u.searchParams.get('vehicleId') === corolla)
+    await page.waitForFunction(() => !document.querySelectorAll('main .filters select')[1]?.value, null, { timeout: 2000 }).catch(() => {}) // the URL changes before React renders
+    if (params().taskId || (await taskFilter.inputValue()) !== '') throw new Error('task not reset with the car')
+    // Criterion 9: Back restores the car, the task and their results.
+    await page.goBack()
+    await summaryIs(1, 45.5)
+    if ((await carFilter.inputValue()) !== civicId || (await taskFilter.inputValue()) !== civicTaskId) throw new Error('Back did not restore the filters')
+    await taskFilter.selectOption('')
+    // Criterion 7: the dates are inclusive at both ends; from after to is blocked on the dates, without a request.
+    await fromFilter.fill(await histDay(-40))
+    await toFilter.fill(await histDay(-10))
+    await summaryIs(3, 445.5)
+    const fiveAgo = await histDay(-5)
+    const sent = await historyGets(() => fromFilter.fill(fiveAgo))
+    const dateAlert = filterBar.locator('[role=alert]')
+    if (plain(await dateAlert.textContent()) !== HS.dates) throw new Error(`dates message "${await dateAlert.textContent()}"`)
+    for (const d of [fromFilter, toFilter]) if ((await d.getAttribute('aria-invalid')) !== 'true' || (await d.getAttribute('aria-describedby')) !== (await dateAlert.getAttribute('id'))) throw new Error('message not tied to the dates')
+    if (sent) throw new Error(`${sent} requests with from after to`)
+    await fromFilter.fill(await histDay(-40))
+    await summaryIs(3, 445.5)
+    // Criterion 8: the search applies after a pause, replacing the URL entry; it finds the shop, notes and parts in any case.
+    const entries = await page.evaluate(() => history.length)
+    for (const [word, n, cost] of [['mann', 1, 45.5], ['RATTLE', 1, 45.5], ['w 712', 1, 45.5], ['brembo', 1, 400], ['speedy', 1, 45.5]]) {
+      await searchBox.fill(word)
+      await summaryIs(n, cost)
+    }
+    if ((await page.evaluate(() => history.length)) !== entries) throw new Error('typing pushed history entries')
+    // Enter applies at once.
+    await searchBox.fill('washer')
+    await searchBox.press('Enter')
+    await page.waitForURL((u) => u.searchParams.get('q') === 'washer', { timeout: 250 })
+    await summaryIs(1, 0)
+    // Over 100 characters is blocked on the field, without a request.
+    const tooLong = await historyGets(() => searchBox.fill('x'.repeat(101)))
+    const searchAlert = filterBar.locator('[role=alert]')
+    if (plain(await searchAlert.textContent()) !== HS.tooLong) throw new Error(`search message "${await searchAlert.textContent()}"`)
+    if (!(await searchBox.getAttribute('aria-describedby')).split(' ').includes(await searchAlert.getAttribute('id'))) throw new Error('message not tied to the search')
+    if (tooLong) throw new Error(`${tooLong} requests for a long search`)
+    // A server 400 shows next to its filter.
+    await page.route((url) => isHistoryGet(url.href), (r) => r.fulfill({ status: 400, contentType: 'application/json', body: JSON.stringify({ code: 'serviceRecord.searchTooLong' }) }), { times: 1 })
+    const r400 = page.waitForResponse((r) => isHistoryGet(r.url()))
+    await searchBox.fill('brembo')
+    await r400
+    await searchAlert.waitFor()
+    if (plain(await searchAlert.textContent()) !== HS.tooLong) throw new Error(`400 message "${await searchAlert.textContent()}"`)
+    // Only this 400: forgetExpected would take an earlier, intended one.
+    run.badResponses = run.badResponses.filter((r) => !r.startsWith('400 GET') || !isHistoryGet(r.split(' ')[2]))
+    const logged = run.consoleErrors.findLastIndex((e) => e.includes('status of 400'))
+    if (logged >= 0) run.consoleErrors.splice(logged, 1)
+    await searchBox.fill('Brembo') // a new query; the same one again sends nothing
+    await summaryIs(1, 400)
+    if (await searchAlert.count()) throw new Error('400 message outlived a good search')
+    // Criteria 14 and 15: a long shop name and part number at 390px, in both languages, without overflow.
+    const row = histRows.first()
+    for (const want of [longGarage, longPart]) if (!plain(await row.textContent()).includes(want)) throw new Error(`row lacks ${want.slice(0, 10)}`)
+    await noOverflow('a long shop name and part number')
+    for (const c of await filterBar.locator('select, input, button').all()) await tall(c, `filter "${await c.evaluate((e) => e.closest('label')?.firstChild.textContent ?? e.textContent)}"`)
+    await sweep('the filtered history')
+    // Criterion 9: reload keeps every filter and its results.
+    const url = page.url()
+    await page.reload()
+    await summaryIs(1, 400)
+    if (page.url() !== url || (await carFilter.inputValue()) !== civicId || (await fromFilter.inputValue()) !== (await histDay(-40)) || (await toFilter.inputValue()) !== (await histDay(-10)) || (await searchBox.inputValue()) !== 'Brembo') throw new Error('reload lost the filters')
+    await page.screenshot({ path: `${OUT}/${s.name}-history-filtered.png`, fullPage: true })
+    // Criterion 11: a failed reload keeps the rows, with the error and Retry.
+    await page.route((url) => isHistoryGet(url.href), (r) => r.fulfill({ status: 500, contentType: 'application/json', body: '{}' }), { times: 1 })
+    await searchBox.fill('')
+    const loadAlert = page.locator('main .card [role=alert]')
+    await loadAlert.waitFor()
+    if ((await loadAlert.textContent()) !== HS.generic || (await histRows.count()) !== 1) throw new Error('a failed reload lost the rows or the error')
+    forgetExpected(500)
+    await page.getByRole('button', { name: HS.retry, exact: true }).click()
+    await summaryIs(3, 445.5)
+    // Review: the URL holds the search trimmed, and Enter on the same search after a failure retries it.
+    await page.route((url) => isHistoryGet(url.href), (r) => r.fulfill({ status: 500, contentType: 'application/json', body: '{}' }), { times: 1 })
+    await searchBox.fill('  washer  ')
+    await loadAlert.waitFor()
+    if (params().q !== 'washer') throw new Error(`URL ${page.url()}`)
+    forgetExpected(500)
+    await searchBox.press('Enter')
+    await summaryIs(1, 0)
+    if (await loadAlert.count()) throw new Error('error outlived Enter')
+    // Criterion 11: no matches, then Clear filters resets every filter and the URL, with focus on the car select.
+    await searchBox.fill('nothing-matches-this')
+    await histStatus.filter({ hasText: HS.noMatches }).waitFor()
+    await clearBtn.click()
+    await summaryIs(histAll.totalCount, histAll.totalCost)
+    if (new URL(page.url()).search || (await carFilter.inputValue()) || (await fromFilter.inputValue()) || (await toFilter.inputValue()) || (await searchBox.inputValue())) throw new Error('Clear filters left a filter')
+    await focusIs('main .filters select', 'after Clear filters')
+    // Criterion 9: "Search all history" on a car page opens /history with that car.
+    await page.goto(`${BASE}/cars/${civicId}`)
+    await services.getByRole('link', { name: HS.searchAll, exact: true }).click()
+    await arrivedAt(HS.title)
+    await summaryIs(53, civicAll.totalCost)
+    if ((await carFilter.inputValue()) !== civicId) throw new Error('car not selected')
+    // Review: a car that isn't the user's drops from the URL, with its task, instead of filtering under All cars.
+    // Its tasks request, sent before the cars load, answers 404 (logged once); wait for that to forget it.
+    const tasks404 = page.waitForEvent('console', (m) => m.text().includes('status of 404'))
+    await page.goto(`${BASE}/history?vehicleId=${crypto.randomUUID()}&taskId=${civicTaskId}&q=a`)
+    await page.waitForURL((u) => !u.searchParams.has('vehicleId'))
+    if (!same(params(), { q: 'a' }) || (await carFilter.inputValue()) !== '') throw new Error(`URL ${page.url()}`)
+    await tasks404
+    await page.waitForLoadState('networkidle') // StrictMode may send it twice
+    const before = run.badResponses.length
+    run.badResponses = run.badResponses.filter((r) => !(r.startsWith('404 GET') && r.includes('/tasks')))
+    for (let n = before - run.badResponses.length; n > 0; n--) run.consoleErrors.splice(run.consoleErrors.findLastIndex((e) => e.includes('status of 404')), 1)
+    await page.setViewportSize(s.viewport)
   })
   await step('switch-language', async () => {
     const before = await page.getAttribute('html', 'dir')

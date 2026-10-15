@@ -84,6 +84,7 @@ export type TaskStatus = 'Ok' | 'DueSoon' | 'Overdue'
 
 export interface ServiceRecord {
   id: string
+  vehicleId: string
   date: string
   odometerKm: number
   shopName: string | null // null = DIY
@@ -91,6 +92,13 @@ export interface ServiceRecord {
   notes: string | null
   tasks: Pick<MaintenanceTask, 'id' | 'name' | 'category'>[]
   items: ServiceItem[] // when not empty, totalCost is their sum
+}
+
+// GET /service-records: one page of matches; the count and total cover every match.
+export interface ServiceRecordPage {
+  items: ServiceRecord[]
+  totalCount: number
+  totalCost: number
 }
 
 // The id changes on every save (the list is replaced), so nothing on screen is keyed on it.

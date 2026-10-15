@@ -147,6 +147,24 @@ const en = {
   ratePerHour: 'Rate per hour ({{currency}})',
   labour: 'Labour',
   totalFromItems: 'The sum of the items.',
+  searchAllHistory: 'Search all history',
+  car: 'Car',
+  allCars: 'All cars',
+  carArchived: '{{name}} (archived)',
+  task: 'Task',
+  allTasks: 'All tasks',
+  chooseCarFirst: 'Choose a car to filter by task.',
+  dateFrom: 'From date',
+  dateTo: 'To date',
+  search: 'Search',
+  searchHint: 'Shop, notes, parts or part numbers.',
+  clearFilters: 'Clear filters',
+  historySummary_one: '{{count, number}} service, total {{total}}',
+  historySummary_two: '{{count, number}} services, total {{total}}',
+  historySummary_other: '{{count, number}} services, total {{total}}',
+  noMatches: 'No services match these filters.',
+  showMore: 'Show more',
+  retry: 'Retry',
   // Shown by the browser on the field, before any request.
   limits: {
     intervalKm: 'Enter an interval from 1 to {{maxInterval, number}} {{distUnit}}.',
@@ -226,6 +244,9 @@ const en = {
       shopTooLong: 'Enter a shop name of up to 100 characters.',
       futureDate: "The service date can't be in the future.",
       tooManyItems: 'A service can have up to 50 items.',
+      invalidDateRange: 'The start date must not be after the end date.',
+      searchTooLong: 'Enter a search of up to 100 characters.',
+      invalidPaging: "This page of results couldn't be loaded. Try again.",
     },
     // {{n}} is the row as shown (index + 1).
     serviceItem: {
@@ -387,6 +408,24 @@ const he: typeof en = {
   ratePerHour: 'תעריף לשעה (⁦{{currency}}⁩)',
   labour: 'עבודה',
   totalFromItems: 'סכום הפריטים.',
+  searchAllHistory: 'חיפוש בכל ההיסטוריה',
+  car: 'רכב',
+  allCars: 'כל הרכבים',
+  carArchived: '{{name}} (בארכיון)',
+  task: 'משימה',
+  allTasks: 'כל המשימות',
+  chooseCarFirst: 'כדי לסנן לפי משימה, בחרו רכב.',
+  dateFrom: 'מתאריך',
+  dateTo: 'עד תאריך',
+  search: 'חיפוש',
+  searchHint: 'מוסך, הערות, חלקים או מק״טים.',
+  clearFilters: 'ניקוי הסינון',
+  historySummary_one: 'טיפול אחד, סה״כ ⁦{{total}}⁩',
+  historySummary_two: 'שני טיפולים, סה״כ ⁦{{total}}⁩',
+  historySummary_other: '⁦{{count, number}}⁩ טיפולים, סה״כ ⁦{{total}}⁩',
+  noMatches: 'אין טיפולים שתואמים לסינון.',
+  showMore: 'הצגת עוד',
+  retry: 'נסו שוב',
   limits: {
     intervalKm: 'הזינו מרווח של ⁦1⁩ עד ⁦{{maxInterval, number}}⁩ {{distUnit}}.',
     intervalTime: 'הזינו מרווח זמן של עד ⁦20⁩ שנה (⁦243⁩ חודשים או ⁦7,300⁩ ימים).',
@@ -465,6 +504,9 @@ const he: typeof en = {
       shopTooLong: 'הזינו שם מוסך של עד ⁦100⁩ תווים.',
       futureDate: 'תאריך הטיפול לא יכול להיות בעתיד.',
       tooManyItems: 'אפשר להוסיף לטיפול עד ⁦50⁩ פריטים.',
+      invalidDateRange: 'תאריך ההתחלה לא יכול להיות אחרי תאריך הסיום.',
+      searchTooLong: 'הזינו חיפוש של עד ⁦100⁩ תווים.',
+      invalidPaging: 'לא הצלחנו לטעון את עמוד התוצאות הזה. נסו שוב.',
     },
     serviceItem: {
       invalidDescription: 'פריט ⁦{{n}}⁩: הזינו תיאור של עד ⁦100⁩ תווים.',
@@ -520,6 +562,8 @@ export function errorMessage(err: unknown, n?: number) {
     defaultValue: i18n.t('errors.generic'),
   })
 }
+
+export const money = (v: number, lng: string | undefined, currency: string | undefined) => (currency ? v.toLocaleString(lng, { style: 'currency', currency }) : v)
 
 export const toLocale = (lng: string | undefined): User['locale'] => (lng === 'he' ? 'He' : 'En')
 
