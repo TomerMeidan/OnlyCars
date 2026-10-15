@@ -2,8 +2,8 @@
 
 One line per requirement in `docs/spec.md`. Updated after every ticket is signed off. Evidence and details are in `docs/requirements-status.md`.
 
-**Last updated:** 2026-10-14, after sign-off of MVP1-C, SEC-1 and MVP2-A (maintenance tasks)
-**Progress:** 10 of 50 required items done, 7 partly done, 33 not started. The 7 optional items are not counted.
+**Last updated:** 2026-10-15, after sign-off of MVP2-B (task status and the due-soon threshold)
+**Progress:** 12 of 50 required items done, 7 partly done, 31 not started. The 7 optional items are not counted.
 
 Legend:
 - `[x]` done: works end to end in the UI, in Hebrew and English, and is tested.
@@ -13,7 +13,7 @@ Legend:
 
 ## MVP progress
 - [x] **Step 1: Accounts, cars, odometer.** Done (MVP1-A, B and C signed off), apart from the gaps marked below.
-- [~] **Step 2: Maintenance tasks, templates, Reset** 🔨 MVP2-A (tasks and templates) signed off. Now: MVP2-B (status, remaining km and days, due-soon threshold): built and reviewed, in QA. Then MVP2-C (Reset and Undo).
+- [~] **Step 2: Maintenance tasks, templates, Reset** 🔨 MVP2-A (tasks and templates) and MVP2-B (status, remaining km and days, due-soon threshold) signed off. Now: MVP2-C (Reset and Undo), the last part of step 2.
 - [ ] **Step 3: Service history with costs**
 - [ ] **Step 4: Dashboard with due and overdue status**
 - [ ] **Step 5: Checklists, then tires, then reports and notifications**
@@ -39,10 +39,10 @@ Legend:
 - [x] Turn a task off without deleting it
 
 ## 4. The "Roborock" Reset
-- [ ] Remaining km and days, a progress bar, and status: OK, Due soon, Overdue 🔨 MVP2-B
-- [ ] Reset / Mark as done (records odometer and date, restarts the countdown, creates a history entry)
-- [ ] Undo for accidental resets
-- [ ] Configurable "due soon" threshold (percent, 1 to 50) 🔨 MVP2-B
+- [x] Remaining km and days, a progress bar, and status: OK, Due soon, Overdue
+- [ ] Reset / Mark as done (records odometer and date, restarts the countdown, creates a history entry) 🔨 MVP2-C
+- [ ] Undo for accidental resets 🔨 MVP2-C
+- [x] Configurable "due soon" threshold (percent, 1 to 50)
 
 ## 5. Service Records
 - [ ] Date, odometer, shop or DIY, total cost, notes
@@ -102,5 +102,5 @@ Legend:
 
 ## Waiting on the owner
 - [ ] Create a Cloudflare R2 bucket and access key. This blocks car photos and receipts.
-- [ ] Review the delegated decisions in `docs/decisions.md`, especially the 12 starter task intervals and the new task status rules (when a task counts as "Due soon" or "Overdue").
+- [ ] Review the delegated decisions in `docs/decisions.md`, especially the 12 starter task intervals, the task status rules (when a task counts as "Due soon" or "Overdue"), and the new Reset and Undo rules (a one-tap reset counts as DIY; Undo only for the latest reset of a task).
 - [ ] Create an Azure account, when it's time to deploy.
