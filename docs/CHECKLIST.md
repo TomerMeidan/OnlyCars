@@ -18,7 +18,7 @@ Legend:
 <!-- progress:end -->
 
 ## MVP progress
-- [x] **Step 1: Accounts, cars, odometer.** Done (MVP1-A, B and C signed off), apart from the gaps marked below. 🔨 Next: SET-1, the settings screen (language, theme, currency), then SET-2 (km/miles).
+- [x] **Step 1: Accounts, cars, odometer.** Done (MVP1-A, B and C signed off), apart from the gaps marked below. 🔨 Now: SET-1, the settings screen (language, theme, currency): backend done (181 tests), frontend next. Then SET-2 (km/miles).
 - [x] **Step 2: Maintenance tasks, templates, Reset.** Done (MVP2-A, B and C signed off).
 - [ ] **Step 3: Service history with costs**
 - [ ] **Step 4: Dashboard with due and overdue status**
