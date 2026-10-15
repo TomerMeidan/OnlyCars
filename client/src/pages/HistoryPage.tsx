@@ -56,13 +56,12 @@ export default function HistoryPage() {
     const n = ++request.current
     const latest = () => n === request.current
     return Promise.all([
-      // Names and the archived flag aren't on the records.
-      cars ?? api<Vehicle[]>('/vehicles?includeArchived=true'),
+      // Names and the archived flag aren't on the records. Kept even if the records fail, so the Task select still fills.
+      cars ?? api<Vehicle[]>('/vehicles?includeArchived=true').then((cs) => { if (latest()) setCars(cs); return cs }),
       api<ServiceRecordPage>(`/service-records?skip=${skip}&${query}`),
     ]).then(
-      ([cs, res]) => {
+      ([, res]) => {
         if (!latest()) return
-        setCars(cs)
         setFailed(null)
         focusRow.current = focus ? skip : null
         setPage((p) => (skip && p ? { ...res, items: [...p.items, ...res.items] } : res))

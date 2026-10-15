@@ -2,7 +2,7 @@
 
 One line per requirement in `docs/spec.md`. Updated after every ticket is signed off. Evidence and details are in `docs/requirements-status.md`.
 
-**Last updated:** 2026-10-16, MVP4-A (the dashboard) signed off; LOW-2 (a batch of small fixes) next
+**Last updated:** 2026-10-16, LOW-2 (a batch of small fixes to the dashboard and service history) signed off; next: MVP5-A (checklist templates)
 **Progress:** 24 of 50 required items done, 5 partly done, 21 not started. The 7 optional items are not counted.
 
 Legend:
@@ -21,8 +21,8 @@ Legend:
 - [x] **Step 1: Accounts, cars, odometer.** Done (MVP1-A, B and C signed off), apart from the gaps marked below. Settings signed off: language, theme and currency (SET-1), and km or miles (SET-2).
 - [x] **Step 2: Maintenance tasks, templates, Reset.** Done (MVP2-A, B and C signed off).
 - [~] **Step 3: Service history with costs** MVP3-A, B, C and D signed off (history list, record a past service with parts and labour, edit everything including date, odometer and tasks, delete, filter and search on the Service history page), and LOW-1. *Missing: attachments (waits for Cloudflare R2).*
-- [~] **Step 4: Dashboard with due and overdue status** MVP4-A signed off (the dashboard on `/`: overdue and due-soon counts, this month's spend linking to the history, each car's next 3 tasks with Mark done and Undo, quick odometer entry). 🔨 Now: LOW-2 (a batch of small fixes). *Missing: "Start a checklist", which waits for checklists (step 5).*
-- [ ] **Step 5: Checklists, then tires, then reports and notifications**
+- [~] **Step 4: Dashboard with due and overdue status** MVP4-A signed off (the dashboard on `/`: overdue and due-soon counts, this month's spend linking to the history, each car's next 3 tasks with Mark done and Undo, quick odometer entry). 🔨 Now: LOW-2 (a batch of small fixes) built, in QA. *Missing: "Start a checklist", which waits for checklists (step 5).*
+- [ ] **Step 5: Checklists, then tires, then reports and notifications** 🔨 Next: MVP5-A (checklist templates and their items). Then MVP5-B (run a checklist on a car, with a schedule and history) and MVP5-C (a failed item creates a task).
 - [x] **Before going online: SEC-1** (limit login attempts, account lockout, constant-time login). Signed off.
 
 ## 1. Vehicles
@@ -65,8 +65,8 @@ Legend:
 - [ ] Storage notes for the off-season set
 
 ## 7. Inspection Checklists
-- [ ] Checklist templates
-- [ ] Items: checkbox, number or text
+- [ ] Checklist templates 🔨
+- [ ] Items: checkbox, number or text 🔨
 - [ ] Schedule by km, by time, or manual only
 - [ ] Run a checklist: tick items, add notes or photos, flag issues
 - [ ] Failed items create a to-do or a maintenance task
@@ -108,5 +108,5 @@ Legend:
 
 ## Waiting on the owner
 - [ ] Create a Cloudflare R2 bucket and access key. This blocks car photos and receipts.
-- [ ] Review the delegated decisions in `docs/decisions.md`, especially the 12 starter task intervals, the task status rules (when a task counts as "Due soon" or "Overdue"), the Reset and Undo rules (a one-tap reset counts as DIY; Undo only for the latest reset of a task), the settings rules (changing the currency does not convert old amounts; only ILS, USD, EUR and GBP), the km/miles rules (converted template intervals such as 6,214 mi rather than round mile values; the unit is not asked at sign-up; the Hebrew label "קילומטראז׳" kept in miles), the service history rules (undone records are hidden; an old service never moves a task's last done backwards; Undo works on any record, in any order; a corrected later-dated service at a lower odometer moves last done to that lower reading), the line item rules (the total becomes the sum of the items whenever there are items), the search rules (a separate Service history page for all cars, read-only, with edit and delete staying on the car page; the search doesn't look in task names), and the edit rules for MVP3-D (changing a service's date, odometer or tasks moves the car's odometer and the tasks' last done; a service can't be moved to another car), two readings on the same day ordered by when they were saved (ordering by value was tried and reverted), and the dashboard rules (home page `/`; this month's spend includes archived cars so it matches the Service history page; one-tap Mark done without cost or notes; a task moves down its card after Mark done because cards follow urgency).
+- [ ] Review the delegated decisions in `docs/decisions.md`, especially the 12 starter task intervals, the task status rules (when a task counts as "Due soon" or "Overdue"), the Reset and Undo rules (a one-tap reset counts as DIY; Undo only for the latest reset of a task), the settings rules (changing the currency does not convert old amounts; only ILS, USD, EUR and GBP), the km/miles rules (converted template intervals such as 6,214 mi rather than round mile values; the unit is not asked at sign-up; the Hebrew label "קילומטראז׳" kept in miles), the service history rules (undone records are hidden; an old service never moves a task's last done backwards; Undo works on any record, in any order; a corrected later-dated service at a lower odometer moves last done to that lower reading), the line item rules (the total becomes the sum of the items whenever there are items), the search rules (a separate Service history page for all cars, read-only, with edit and delete staying on the car page; the search doesn't look in task names), and the edit rules for MVP3-D (changing a service's date, odometer or tasks moves the car's odometer and the tasks' last done; a service can't be moved to another car), two readings on the same day ordered by when they were saved (ordering by value was tried and reverted), and the dashboard rules (home page `/`; this month's spend includes archived cars so it matches the Service history page; one-tap Mark done without cost or notes; a task moves down its card after Mark done because cards follow urgency), and the checklist rules (your own checklists only, no ready-made ones for now; a checklist can be "manual only" with no schedule, even though the spec's data rules ask for an interval; units on number items are free text and not converted).
 - [ ] Create an Azure account, when it's time to deploy. You said not yet, so no deployment work is planned until you say so.

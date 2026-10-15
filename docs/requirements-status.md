@@ -1,7 +1,7 @@
 # OnlyCars: Requirements Status
 
-**Audit date:** 2026-10-16 (fourteenth audit, short sign-off of MVP4-A, the dashboard; the frontend is not committed yet)
-**Overall:** MVP steps 1 to 4 are complete apart from the car photo and attachments (both blocked on R2) and the dashboard's "Start a checklist" (waits for step 5). Next: LOW-2 (the Low backlog, L13 to L26), then step 5 with checklists. No deployment tickets until the owner asks.
+**Audit date:** 2026-10-16 (fifteenth audit, short sign-off of LOW-2, the second Low batch; not committed yet)
+**Overall:** MVP steps 1 to 4 are complete apart from the car photo and attachments (both blocked on R2) and the dashboard's "Start a checklist" (waits for step 5). Next: step 5, starting with MVP5-A (checklist templates). No deployment tickets until the owner asks.
 
 | Status | Count |
 |---|---|
@@ -12,11 +12,9 @@
 | Deferred | 7 |
 | **Total** | **57** |
 
-How this was checked (fourteenth audit, short sign-off per decisions.md "Faster pipeline (owner)"; I re-ran no test suites and no browser scripts):
-- Reported by other agents, not re-run by me: backend committed in `05f17c0`, `dotnet test` 312 of 312 (`tests/OnlyCars.Tests/DashboardTests.cs`); frontend build and lint clean; smoke 62 of 62 in all 4 setups with a UTC browser timezone, with the new steps `dashboard-summary`, `dashboard-mark-done` and `dashboard-quick-odometer` (`client/ui-tests/smoke.mjs:2116,2194,2224`); the Hebrew reviewer approved every string unchanged; UI QA passed with Lows only; code review's one Medium (a failed Retry moved focus to the `h1`) is fixed with a smoke check.
-- I read the code for the evidence: `GET /api/dashboard` (`src/OnlyCars.Api/Controllers/MaintenanceTasksController.cs:52`), the summary (`client/src/pages/CarsPage.tsx:99-105`) and the car cards (`CarsPage.tsx:116-165`).
-- AC1 (B0, same-date readings by value) was built and reverted; signed off as changed (decisions.md, "Same-date odometer readings, revised" and "MVP4-A sign-off").
-- Changed status: spec 2.1 quick entry (Partial to Done; its only gap was the dashboard), spec 10 "All cars at a glance" and "Overdue count and monthly spend" (Missing to Done), spec 10 "Quick actions" (Missing to Partial; "Start a checklist" waits for step 5).
+How this was checked (fifteenth audit, short sign-off of LOW-2 per decisions.md "Faster pipeline (owner)"; I re-ran no test suites and no browser scripts):
+- Reported by other agents, not re-run by me: LOW-2 is frontend and smoke only; build and lint clean; smoke 64 of 64 in all 4 setups under both `UI_TZ=UTC` and `UI_TZ=Pacific/Kiritimati`; QA verified every item (L13 to L26) in 4 setups; the Hebrew reviewer approved `taskGone`. Fix round: code review's Medium (a stale Undo bar when Show archived is toggled during an in-flight Undo) is fixed with a smoke check, and `taskGone` now ends with "Check your selection and save again." (`client/src/i18n.ts:132,409`); QA confirmed saving again works.
+- No status changes: LOW-2 polished Done bullets in spec 5 and 10.
 - The notes from earlier audits are in git history.
 
 ## 1. Vehicles
@@ -80,8 +78,8 @@ How this was checked (fourteenth audit, short sign-off per decisions.md "Faster 
 
 | Requirement | Status | Evidence | What's missing |
 |---|---|---|---|
-| Checklist templates | **Missing** | none | Everything (MVP step 5) |
-| Items: checkbox, numeric or text | **Missing** | none | Everything |
+| Checklist templates | **Missing** | none | Everything. Next: MVP5-A |
+| Items: checkbox, numeric or text | **Missing** | none | Everything. Next: MVP5-A |
 | Per-checklist schedule: by km, by time, or manual only | **Missing** | none | Everything |
 | Run a checklist: tick items, add notes or photos, flag issues | **Missing** | none | Everything |
 | Failed items can create a to-do or a maintenance task | **Missing** | none | Everything |
@@ -161,15 +159,17 @@ How this was checked (fourteenth audit, short sign-off per decisions.md "Faster 
 | 2. Tasks, templates, km/time intervals, Reset | **Complete. MVP2-A, MVP2-B and MVP2-C are signed off.** All of spec sections 3 and 4 is done: tasks and templates, status with remaining km and days and a progress bar, the due-soon threshold, one-tap Mark done with optional cost and notes, and Undo. |
 | Deploy gate | **SEC-1 signed off.** Nothing else blocks a first deploy except the owner's Azure account. The owner said not to deploy yet (decisions.md, 2026-10-15, "When to deploy"), so no deployment tickets are queued. |
 | 3. Service history with costs | **Complete apart from attachments (blocked on R2). MVP3-A, MVP3-B, MVP3-C and MVP3-D are signed off.** Working end to end in EN and HE: the service history on `/cars/:id`, recording a past service (date, odometer, shop or DIY, cost, notes, several tasks, parts and labour) with the date-order rules, editing everything on a record (shop, cost, notes, items, date, odometer and tasks, with the car's odometer and the tasks' last done following), deleting any record, and a `/history` page that filters and searches all cars. LOW-1 (the first Low batch) is signed off too. |
-| 4. Dashboard with due/overdue status | **Complete apart from "Start a checklist" (waits for step 5). MVP4-A is signed off.** The dashboard on `/`: overdue and due-soon counts, this month's spend linking to `/history`, and per-car cards with the next 3 tasks, one-tap Mark done with Undo, and quick odometer entry, in EN and HE. |
-| 5. Checklists, tires, reports, notifications | Not started. First: MVP5-A (checklists, spec 7), after LOW-2. |
+| 4. Dashboard with due/overdue status | **Complete apart from "Start a checklist" (waits for step 5). MVP4-A and LOW-2 are signed off.** The dashboard on `/`: overdue and due-soon counts, this month's spend linking to `/history`, and per-car cards with the next 3 tasks, one-tap Mark done with Undo, and quick odometer entry, in EN and HE. |
+| 5. Checklists, tires, reports, notifications | Not started. Checklists are split into MVP5-A (templates and items, next), MVP5-B (attach to a car with a schedule, run, run history, the dashboard's "Start a checklist") and MVP5-C (a flagged item creates a maintenance task) (decisions.md, "Checklists scope and split, step 5"). |
 
 ## Ticket queue
 
 | Order | Ticket | Who | State |
 |---|---|---|---|
-| 1 | LOW-2: the Low issues backlog (L13 to L26) | FE (smoke fixes included) | **Next** (written below) |
-| 2 | MVP5-A: checklist templates and runs (spec 7), plus the dashboard's "Start a checklist" | BE, then FE | After LOW-2 |
+| 1 | MVP5-A: checklist templates and items (spec 7 bullets 1 and 2) | BE, then FE | **Next** (written below) |
+| 2 | MVP5-B: attach to a car with a schedule, run a checklist, run history, the dashboard's "Start a checklist" | BE, then FE | After MVP5-A |
+| 3 | MVP5-C: a flagged item creates a maintenance task | BE, then FE | After MVP5-B |
+| 4 | LOW-3: the Low backlog (L27 onwards) | BE and FE | After MVP5-C |
 
 ## Signed-off tickets
 
@@ -228,74 +228,88 @@ How this was checked (fourteenth audit, short sign-off per decisions.md "Faster 
   - Decided (decisions.md, "MVP4-A sign-off"): a card's tasks re-sort by urgency after Mark done and focus follows (kept); "No tasks yet" links to `/cars/:id` (accepted).
   - The review and QA Lows are L17 to L26 in the backlog.
 
+- **LOW-2 (not committed yet): signed off 2026-10-16.** Short sign-off under "Faster pipeline (owner)"; I re-ran no suites.
+  - Fixed, frontend and smoke only: L13 to L26 (the rows are in this file's git history up to `1de85aa`).
+  - Reported evidence: build and lint clean; smoke 64 of 64 in all 4 setups under `UI_TZ=UTC` and `UI_TZ=Pacific/Kiritimati`; QA verified every item in 4 setups (`client/ui-tests/qa-low2.mjs`, `qa-low2-offline.mjs`); the Hebrew reviewer approved `taskGone`.
+  - Fix round: code review's Medium M1 (a stale Undo bar when Show archived is toggled during an in-flight Undo) is fixed with a smoke check; `taskGone` now tells the user to check the selection and save again, and QA confirmed that works.
+  - Accepted (decisions.md, "LOW-2 sign-off"): L23 reuses the existing translated error strings. The new Lows are L27 to L36.
+
 ## Low issues backlog
 
-Every Low finding from QA and review lands here (decisions.md, "Faster pipeline (owner)"). They are fixed together in a batch ticket LOW-n about every 3 tickets. LOW-1 closed L1 to L12; LOW-2 takes what is below (L13 to L26).
+Every Low finding from QA and review lands here (decisions.md, "Faster pipeline (owner)"). They are fixed together in a batch ticket LOW-n about every 3 tickets. LOW-1 closed L1 to L12; LOW-2 closed L13 to L26 (all fixed). LOW-3 takes what is below.
 
 | # | From | Issue | Area |
 |---|---|---|---|
-| L13 | LOW-1 QA | After a `maintenanceTask.notFound` on Edit, the car page's Maintenance list still shows the deleted task until reload (the Edit form's checkboxes are already reloaded by L8). | FE, `/cars/:id` |
-| L14 | LOW-1 QA | "This task was not found." is vague. Say the task was deleted and the list has been updated, in en and he. | FE, en and he |
-| L15 | LOW-1 QA | If the first `/history` load fails with a valid `vehicleId` in the URL, the Task select stays empty until Retry (an L5 side effect). | FE, `/history` |
-| L16 | LOW-1 review | `ServiceHistory.tsx` ~253-256: the `future` handler sits between a comment and the code the comment describes. | FE, code tidy |
-| L17 | MVP4-A review | Dashboard Undo clears the undo state before the reload, so the row disappears and comes back (flicker) and focus is briefly on `body`. Fix: clear the undo state after the reload (`CarsPage.tsx:68`). | FE, `/` |
-| L18 | MVP4-A review | Dead i18n key `myCars` (`i18n.ts:16` and `:295`). | FE, code tidy |
-| L19 | MVP4-A review | The dashboard's Undo bar markup is copied from `TasksSection.tsx`. Export one `UndoBar` and use it in both. | FE, code tidy |
-| L20 | MVP4-A review | `DashTask` nits: a needless `name` alias, and an inconsistent null guard on status. | FE, code tidy |
-| L21 | MVP4-A review | Smoke's `UI_TZ` and `SMOKE_ALL` options need a one-line comment saying why they exist (QA uses both; keep them). | Smoke |
-| L22 | MVP4-A review | Smoke gaps: the dashboard Undo button is not checked for 44px at 390px, and the Undo focus fallback to the card's `h2` link (when the restored task is no longer in the first 3) is not tested. | Smoke |
-| L23 | MVP4-A review (pre-existing) | `toggleArchive` in `CarsPage.tsx:54` has no error handling: a failed archive or unarchive is silent. Show a translated error on the card. | FE, `/` |
-| L24 | MVP4-A QA (L-a) | A failed Mark done's error stays on a dashboard row after a reload changes that task's status. Clear a row's error when the data reloads. | FE, `/` |
-| L25 | MVP4-A QA (L-b) | When a task name wraps on a dashboard card, the status badge shifts under the name. Keep the badge aligned. | FE, `/`, CSS |
-| L26 | Smoke (pre-existing) | `settings-unit-miles` fails between local midnight and 03:00, because it dates its setup data in UTC (`smoke.mjs:1634`) while the app uses the local date. Use one date source for both. | Smoke |
+| L27 | LOW-2 review | A failed dashboard reload after a successful Undo drops focus to `body`: the error branch still runs the `then` (`client/src/pages/CarsPage.tsx:36`). | FE, `/` |
+| L28 | LOW-2 review | After `taskGone`, a failed car reload replaces the whole page, including the open edit form (`ServiceHistory` `onTaskGone` calls the `CarPage` load). Keep the form, or at least add a `shortcut:` comment. | FE, `/cars/:id` |
+| L29 | LOW-2 review | A dashboard card's archive error is not cleared on reload, unlike the L24 row errors. | FE, `/` |
+| L30 | LOW-2 review | Archive can be sent twice: `onArchived` is not awaited, so the button is enabled again too early. | FE, `/` |
+| L31 | LOW-2 review (pre-existing) | Focus goes to `body` after a successful archive while Show archived is off (the card disappears). | FE, `/` |
+| L32 | LOW-2 review | (a) `CarsPage.tsx:30` needs a one-line comment saying why the `then` exists (N2). (b) Any other load that starts during an in-flight Undo can still bring back a stale Undo bar; only Show archived is handled (M1). Fix once, for every load path. | FE, `/` |
+| L33 | LOW-2 QA | Car page Undo leaves focus on `body` for one frame: `TasksSection.tsx` (~109) moves focus in `useEffect`, the dashboard in `useLayoutEffect`. Use `useLayoutEffect` there too. | FE, `/cars/:id` |
+| L34 | LOW-2 QA | Two simultaneous void requests on one service record give one 500 instead of a 409 `serviceRecord.alreadyVoided` (concurrency; no data damage). | BE |
+| L35 | LOW-2 QA | Stale QA scripts: `qa-mvp3a.mjs` clicks the removed `button.undo-service` (update or retire it); `qa-mvp4a.mjs`'s offline check aborts only one request, but StrictMode sends two (`qa-low2-offline.mjs` shows the app is fine); `qa-low2.mjs` still has a debug log. | QA scripts |
+| L36 | LOW-2 engineer | A new car's first reading is dated with the server's UTC date (`src/OnlyCars.Application/Vehicles/VehicleService.cs:71`), other readings with the client's local date, so avg km/day can be one day off near midnight (smoke works around it). Use the client's local date, as decided for quick-add (2026-10-15). | BE + FE |
 
 ## Next ticket
 
-### LOW-2: Low backlog batch (L13 to L26)
+### MVP5-A: Checklist templates and items
 
-**Goal:** The service history and the dashboard behave cleanly in the small cases (deleted tasks, failed actions, Undo, wrapped names), and the smoke suite passes at any hour.
+**Goal:** As a user, I can create my own inspection checklists (for example "Monthly quick check" or "Pre-road-trip"), each a named, ordered list of items that are a checkbox, a number with an optional unit and range, or a text note, and edit, reorder or delete them, so they are ready to run on my cars.
 
-**Spec:** sections 5 and 10 (polish of Done bullets); section 12 (Hebrew and English, mobile). No status changes expected.
+**Spec:** section 7 bullets 1 ("Checklist templates") and 2 ("Items: checkbox, numeric or text"); Part 2 "Checklists" (`ChecklistTemplate`, `ChecklistTemplateItem`); section 12 (Hebrew and English, mobile).
 
-**Binding decisions:** decisions.md "Faster pipeline (owner)", "LOW-1 leftover Lows", "MVP4-A sign-off", "Ticket after MVP4-A", the MVP1-C focus rules.
+**Binding decisions:** decisions.md "Checklists scope and split, step 5", "Checklist template rules, MVP5-A", "Faster pipeline (owner)", the MVP1-C focus and Escape rules, "Destructive actions and page titles".
 
 **Scope**
 
-*Backend:* none. No API change; if an item turns out to need one, stop and report it rather than changing the API.
+*Backend (backend-engineer, runs first and publishes `docs/contracts/MVP5-A.md`):*
+- Entities `ChecklistTemplate` (`UserId`, `Name`) and `ChecklistTemplateItem` (`TemplateId`, `Label`, `Type` Check/Number/Text, `Unit` nullable, `MinValue` nullable, `MaxValue` nullable, `SortOrder`), each with `Id`, `CreatedAt`, `UpdatedAt`. Items cascade from their template. `MinValue`/`MaxValue` as `decimal(12,2)`. An EF configuration and a migration. No `VehicleChecklist`, runs or seed data yet.
+- Endpoints, all scoped to the signed-in user (another user's template is a 404):
+  - `GET /api/checklist-templates`: the user's templates, ordered by name then creation time, each with its id, name, item count and items.
+  - `GET /api/checklist-templates/{id}`: one template with its items in `SortOrder`.
+  - `POST /api/checklist-templates`: `{ name, items: [{ label, type, unit, minValue, maxValue }] }`; returns the created template (201).
+  - `PUT /api/checklist-templates/{id}`: same body; each item may carry `id`. An item with an `id` of this template is updated in place, one without an `id` is created, and items of the template missing from the list are deleted. `SortOrder` is the array position. An `id` that belongs to another template is a 400.
+  - `DELETE /api/checklist-templates/{id}`: hard delete (204).
+- Validation (translated error codes, the existing error shape): name 1 to 100 after trim (`checklistTemplate.invalidName`); at most 100 templates per user (`checklistTemplate.tooMany`); 0 to 50 items (`checklistTemplate.tooManyItems`); label 1 to 100 after trim (`checklistItem.invalidLabel`); type one of Check, Number, Text (`checklistItem.invalidType`); unit up to 20 after trim, empty becomes null (`checklistItem.invalidUnit`); min and max each -1,000,000 to 1,000,000 with at most 2 decimals, min not above max (`checklistItem.invalidRange`); unit, min and max on a Check or Text item are a 400 (`checklistItem.numberOnly`).
+- Tests in `tests/OnlyCars.Tests`: CRUD, ownership (another user's template is a 404 on every endpoint), each validation code with its boundary, the in-place update keeping item ids, reorder, delete-missing, a foreign item id rejected, and cascade delete.
 
-*Frontend (frontend-engineer), by backlog number (details in the table above):*
-- `/cars/:id` and `/history`: L13 (reload the Maintenance list after `maintenanceTask.notFound` on Edit), L14 (clearer deleted-task message, en and he), L15 (Task select filled after a failed first `/history` load), L16 (move the `future` handler below its comment).
-- Dashboard `/`: L17 (clear Undo after the reload), L23 (translated error on a failed archive or unarchive), L24 (clear a row's Mark done error on reload), L25 (badge stays aligned when a name wraps).
-- Code tidy: L18 (remove `myCars`), L19 (one exported `UndoBar` used by `TasksSection.tsx` and the dashboard), L20 (`DashTask` nits).
-- Smoke (`client/ui-tests/smoke.mjs`): L21 (reason comment on `UI_TZ` and `SMOKE_ALL`), L22 (dashboard Undo 44px at 390px; Undo focus fallback to the card's `h2` link), L26 (one date source in `settings-unit-miles`).
+*Frontend (frontend-engineer, builds against the contract):*
+- A **Checklists** link in the header and a `/checklists` page (page `h1` and `document.title` as on every route) listing the templates by name, each with its item count and **Edit** and **Delete** buttons, plus **New checklist**.
+- A template form (inline or on `/checklists/new` and `/checklists/:id`, the engineer's choice, following the existing car form or edit patterns): the name, and an item list where each row has a label, a type select (Checkbox (OK / Not OK), Number, Text), and for Number only the unit, min and max fields. Rows can be added, removed, and moved up and down with buttons (no drag and drop). Save sends the whole list; Cancel and Escape discard.
+- Delete asks for confirmation with the red `--danger` confirm button, as on other deletes.
+- All new text in `en` and `he` in `client/src/i18n.ts`, with every new error code translated.
+- Smoke steps in `client/ui-tests/smoke.mjs`: `checklists-empty`, `checklist-create` (three items, one of each type, Number with unit and range), `checklist-edit` (reorder, rename an item, remove one, add one), `checklist-delete`.
 
 **Acceptance criteria**
-1. [FE] L13: after `maintenanceTask.notFound` on Edit, the car page's Maintenance list no longer shows the deleted task, without a page reload.
-2. [FE] L14: the message says the task was deleted and the list was updated, in en and he; the Hebrew reviewer approves it.
-3. [FE] L15: when the first `/history` load fails with a valid `vehicleId` in the URL, Retry fills both the Task select and the rows; if the tasks request alone succeeded, the select is filled without Retry.
-4. [FE] L17: dashboard Undo keeps the row on screen until the reloaded data arrives; focus moves straight from Undo to the row's Mark done (or the card's `h2` link if the task left the first 3) and is never on `body` in between.
-5. [FE] L23: a failed archive or unarchive shows a translated error on that card (en and he) and keeps the rest of the page; the card stays as it was.
-6. [FE] L24: a row's Mark done error is cleared when the dashboard data reloads.
-7. [FE] L25: with a long task name that wraps, at 390px and 1280px, in LTR and RTL, the status badge keeps its place next to the name and nothing overflows.
-8. [FE] L16, L18, L19, L20: done as described; `TasksSection.tsx` and the dashboard render the same Undo bar from one component, with no visible change on the car page.
-9. [FE] L21, L22, L26: smoke has the comment and the two new checks, and `settings-unit-miles` passes when the browser's local date differs from the UTC date (run once with `UI_TZ=Pacific/Kiritimati`, where it is already tomorrow, and once with `UI_TZ=UTC`).
-10. [FE] States and layout: the only new strings are L14's message and L23's error, both in `en` and `he`; at 390px there is no horizontal overflow and new or changed buttons are at least 44px; dark mode is unaffected.
-11. [BE+FE] No regressions: build and lint clean; smoke passes in all 4 setups; QA reruns `qa-mvp4a.mjs` and the MVP3 regression scripts. `dotnet test` is not needed (no backend change).
+1. [BE] The five endpoints work as in the contract; another user's template is a 404 on GET, PUT and DELETE; every validation rule returns its code with a 400, and the limits are tested at their boundaries.
+2. [BE] PUT updates items in place: an item kept in the list keeps its `id`, a new one gets a new `id`, a missing one is deleted, and the order follows the array. A foreign item `id` is a 400 and changes nothing.
+3. [BE] Deleting a template deletes its items; `dotnet test` passes in full.
+4. [FE] From the header, a user opens Checklists, creates "Monthly quick check" with a Checkbox item, a Number item "Tire pressure" with unit "bar", min 2.0 and max 2.6, and a Text item; after a reload the template and its items are there in the same order.
+5. [FE] Editing a template can rename it, change an item's label or type, reorder items with the up and down buttons, remove an item and add one; Save keeps the result after a reload. Changing a Number item to Checkbox or Text clears and hides its unit, min and max.
+6. [FE] Unit, min and max are shown only for Number items; min above max, a value out of range and an empty name or label show a translated message next to the field, and nothing is saved.
+7. [FE] Delete asks for confirmation; after it the template is gone from the list and focus follows the MVP1-C rules (next row's Edit, else New checklist).
+8. [FE] Empty state: with no templates the page says so and offers New checklist. Loading shows the existing loading pattern; a failed load shows a translated error with Retry; a failed save keeps the form and what was typed and shows a translated error.
+9. [FE] Hebrew and RTL: every new string is in `he`, the Hebrew reviewer approves them, the layout mirrors, and numbers (2.6) and units read correctly in RTL.
+10. [FE] Mobile: at 390px there is no horizontal overflow, item rows stack cleanly, and every button (including move up and down and remove) is at least 44px; each item's controls have accessible names that include the item number or label. Dark mode works.
+11. [FE] Focus: on open, focus goes to the name field; after adding an item, to its label; after Save, to the template's Edit button in the list; Escape cancels the form like Cancel.
+12. [BE+FE] No regressions: build and lint clean; smoke passes in all 4 setups with the four new steps; QA covers 4 setups.
 
-**Out of scope:** checklists and "Start a checklist" (MVP5-A); the predicted due date (spec 2.3); attachments and the car photo (R2); any API change; deployment.
+**Out of scope:** attaching a template to a car, schedules, `VehicleChecklist`, running a checklist, run history and flags (MVP5-B); creating tasks from flagged items (MVP5-C); photos (R2); starter checklists (decisions.md: none seeded for now); the dashboard's "Start a checklist" (MVP5-B); drag-and-drop reordering; any change to the Low backlog items.
 
-**Open questions:** none. The choices are recorded in decisions.md ("MVP4-A sign-off" and "Ticket after MVP4-A").
+**Open questions:** none. The choices are recorded in decisions.md ("Checklists scope and split, step 5" and "Checklist template rules, MVP5-A"). The owner may want starter checklists later; that is noted in the decision, not asked now.
 
 ---
 
 ### Later
-- **MVP5-A (step 5):** checklist templates, items (checkbox, number, text), runs and run history per car (spec 7), plus the dashboard's "Start a checklist". Then tires, reports and notifications.
-- **Car photo upload and attachments:** blocked until the owner creates the Cloudflare R2 credentials.
+- **MVP5-B:** attach a checklist template to a car with a schedule (km, days or manual only), its due status, run a checklist (tick, values, notes, flags; Number items auto-flag outside Min/Max, Check items flag on Not OK), run history per car, and the dashboard's "Start a checklist". A run's reading uses `OdometerReading.Source = Checklist`.
+- **MVP5-C:** a flagged item creates a maintenance task. Then tires, reports and notifications.
+- **Car photo upload, attachments and run photos:** blocked until the owner creates the Cloudflare R2 credentials.
 - **Predicted due date** from `AvgKmPerDay` (spec 2.3, optional).
 
 ## Changed since last audit
-- **Signed off:** MVP4-A (backend `05f17c0`; frontend not committed yet). AC1 signed off as changed (B0 reverted).
-- **Counts:** Done 21 to 24, Partial 5 (unchanged total: 2.1 left, 10 "Quick actions" joined), Missing 24 to 21. Spec 2.1 quick entry Partial to Done; spec 10 "All cars at a glance" and "Overdue count and monthly spend" Missing to Done; spec 10 "Quick actions" Missing to Partial ("Start a checklist" waits for step 5).
-- **Backlog:** L17 to L26 added from MVP4-A review, QA and the pre-existing smoke flaw. "Add task link not to the task section" is accepted, not logged.
-- **New decisions** (`docs/decisions.md`, 2026-10-16): "MVP4-A sign-off" (AC1 changed; card order after Mark done kept; "No tasks yet" link accepted), "Ticket after MVP4-A" (LOW-2 before step 5).
-- **Next ticket:** LOW-2, written in full. The MVP4-A ticket text is in git history up to `05f17c0`.
+- **Signed off:** LOW-2 (not committed yet). L13 to L26 fixed; L23's reuse of existing error strings accepted.
+- **Counts:** unchanged (Done 24, Partial 5, Missing 21, Deferred 7).
+- **Backlog:** L27 to L36 added (LOW-2 review, QA and engineer). Two touch the backend (L34, L36).
+- **New decisions** (`docs/decisions.md`, 2026-10-16): "LOW-2 sign-off", "Checklists scope and split, step 5", "Checklist template rules, MVP5-A", "'Manual only' checklist schedule vs the spec's check constraint".
+- **Next ticket:** MVP5-A, written in full. The LOW-2 ticket text is in git history up to `1de85aa`.

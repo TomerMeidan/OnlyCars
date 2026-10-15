@@ -11,7 +11,8 @@ const setups = [
   { name: 'desktop-light-en', viewport: { width: 1280, height: 800 }, colorScheme: 'light', lng: 'en' },
   { name: 'mobile-dark-he', viewport: { width: 390, height: 844 }, colorScheme: 'dark', lng: 'he', isMobile: true, hasTouch: true },
 ]
-// SMOKE_ALL=1 adds the other two combinations; UI_TZ (e.g. UTC) sets the browser timezone.
+// SMOKE_ALL=1 adds the other two combinations, so QA can check dark English and light Hebrew too.
+// UI_TZ (e.g. UTC, Pacific/Kiritimati) sets the browser timezone, so QA can run where the local date differs from the server's UTC date.
 if (process.env.SMOKE_ALL) setups.push(
   { name: 'desktop-dark-he', viewport: { width: 1280, height: 800 }, colorScheme: 'dark', lng: 'he' },
   { name: 'mobile-light-en', viewport: { width: 390, height: 844 }, colorScheme: 'light', lng: 'en', isMobile: true, hasTouch: true },
@@ -317,8 +318,8 @@ for (const s of setups) {
 
   // MVP3-A: service history.
   const SV = he
-    ? { items: 'חלקים ועבודה', empty: 'עדיין לא נרשמו טיפולים.', record: 'רישום טיפול', diy: 'טיפול עצמי', editOf: 'עריכת הטיפול מ־', deleteOf: 'מחיקת הטיפול מ־', gone: 'הטיפול הזה כבר נמחק.', editHint: 'כדי לשנות את התאריך, הקילומטראז׳ או המשימות, מחקו את הטיפול ורשמו אותו מחדש.', labour: 'עבודה', item2Qty: 'פריט 2: הזינו כמות בין 0.01 ל־10,000, עם עד 2 ספרות אחרי הנקודה.', taskGone: 'המשימה לא נמצאה.', item2Hours: 'פריט 2, שעות', item1Part: 'פריט 1, מק״ט', legend: 'משימות שבוצעו', hint: 'השאירו ריק לטיפול עצמי.', future: 'תאריך הטיפול לא יכול להיות בעתיד.', km: 'ק״מ', generic: 'משהו השתבש. נסו שוב.', odoLabel: 'קילומטראז׳ במיילים', at59500: 'ב־59,500 ק״מ', at59000: 'ב־59,000 ק״מ' }
-    : { items: 'Parts and labour', empty: 'No services recorded yet.', record: 'Record a service', diy: 'DIY', editOf: 'Edit the service from ', deleteOf: 'Delete the service from ', gone: 'This service was already deleted.', editHint: 'To change the date, odometer or tasks, delete this service and record it again.', labour: 'Labour', item2Qty: 'Item 2: Enter a quantity above 0 and up to 10,000 with up to 2 decimals.', taskGone: 'This task was not found.', item2Hours: 'Item 2, Hours', item1Part: 'Item 1, Part number', legend: 'Tasks done', hint: 'Leave empty for DIY.', future: "The service date can't be in the future.", km: 'km', generic: 'Something went wrong. Please try again.', odoLabel: 'Odometer in miles', at59500: 'at 59,500 km', at59000: 'at 59,000 km' }
+    ? { items: 'חלקים ועבודה', empty: 'עדיין לא נרשמו טיפולים.', record: 'רישום טיפול', diy: 'טיפול עצמי', editOf: 'עריכת הטיפול מ־', deleteOf: 'מחיקת הטיפול מ־', gone: 'הטיפול הזה כבר נמחק.', editHint: 'כדי לשנות את התאריך, הקילומטראז׳ או המשימות, מחקו את הטיפול ורשמו אותו מחדש.', labour: 'עבודה', item2Qty: 'פריט 2: הזינו כמות בין 0.01 ל־10,000, עם עד 2 ספרות אחרי הנקודה.', taskGone: 'אחת המשימות שסימנתם נמחקה, ורשימת המשימות עודכנה. בדקו את הבחירה ושמרו שוב.', item2Hours: 'פריט 2, שעות', item1Part: 'פריט 1, מק״ט', legend: 'משימות שבוצעו', hint: 'השאירו ריק לטיפול עצמי.', future: 'תאריך הטיפול לא יכול להיות בעתיד.', km: 'ק״מ', generic: 'משהו השתבש. נסו שוב.', odoLabel: 'קילומטראז׳ במיילים', at59500: 'ב־59,500 ק״מ', at59000: 'ב־59,000 ק״מ' }
+    : { items: 'Parts and labour', empty: 'No services recorded yet.', record: 'Record a service', diy: 'DIY', editOf: 'Edit the service from ', deleteOf: 'Delete the service from ', gone: 'This service was already deleted.', editHint: 'To change the date, odometer or tasks, delete this service and record it again.', labour: 'Labour', item2Qty: 'Item 2: Enter a quantity above 0 and up to 10,000 with up to 2 decimals.', taskGone: 'A task you ticked was deleted, and the task list has been updated. Check your selection and save again.', item2Hours: 'Item 2, Hours', item1Part: 'Item 1, Part number', legend: 'Tasks done', hint: 'Leave empty for DIY.', future: "The service date can't be in the future.", km: 'km', generic: 'Something went wrong. Please try again.', odoLabel: 'Odometer in miles', at59500: 'at 59,500 km', at59000: 'at 59,000 km' }
   const services = page.locator('section[aria-labelledby=service-history]')
   const serviceItems = () => services.locator('.services > li')
   const recordForm = services.locator('form')
@@ -679,6 +680,7 @@ for (const s of setups) {
     ? { done: 'סימון כבוצע: ', cost: 'הוספת עלות או הערות: ', marked: 'סומן כבוצע.', service: 'טיפול', generic: 'משהו השתבש. נסו שוב.', costMsg: 'הזינו עלות בין 0 ל־1,000,000, עם עד 2 ספרות אחרי הנקודה.', oilLeft: 'עוד 10,000 ק״מ', oilLate: 'באיחור של 1,000 ק״מ', oilAt: 'ב־48,000 ק״מ' }
     : { done: 'Mark done: ', cost: 'Add cost or notes: ', marked: 'Marked as done.', service: 'Service', generic: 'Something went wrong. Please try again.', costMsg: 'Enter a cost from 0 to 1,000,000 with up to 2 decimals.', oilLeft: '10,000 km left', oilLate: 'Overdue by 1,000 km', oilAt: 'at 48,000 km' }
   const localDate = () => page.evaluate(() => new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10))
+  const histDay = (offset) => page.evaluate((o) => new Date(Date.now() + o * 86_400_000 - new Date().getTimezoneOffset() * 60_000).toISOString().slice(0, 10), offset)
   const serviceRows = () => page.locator('.history li').filter({ hasText: RS.service })
   const isReset = (r) => r.method() === 'POST' && r.url().endsWith('/reset')
   const forget500 = () => {
@@ -1364,10 +1366,12 @@ for (const s of setups) {
     await form.locator('input[name=shopName]').fill('Kept shop')
     await page.route('**/service-records/*', (r) => (r.request().method() === 'PUT' ? r.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ code: 'maintenanceTask.notFound' }) }) : r.fallback()), { times: 1 })
     const reload = page.waitForRequest((q) => q.method() === 'GET' && q.url().endsWith(`/vehicles/${carId()}/tasks`))
-    await page.route(`**/vehicles/${carId()}/tasks`, async (r) => { const res = await r.fetch(); await r.fulfill({ response: res, json: (await res.json()).filter((x) => x.name !== 'Oil') }) }, { times: 1 })
+    await page.route(`**/vehicles/${carId()}/tasks`, async (r) => { const res = await r.fetch(); await r.fulfill({ response: res, json: (await res.json()).filter((x) => x.name !== 'Oil') }) }, { times: 2 })
     await form.locator(':scope > .actions button:not(.link)').click()
     await reload
     await form.getByRole('checkbox', { name: 'Oil', exact: true }).waitFor({ state: 'detached' })
+    // LOW-2 L13: the Maintenance list drops it too, without a page reload.
+    await taskRow('Oil').waitFor({ state: 'detached', timeout: 5000 }).catch(() => { throw new Error('the Maintenance list still shows the deleted task') })
     if ((await form.locator('[role=alert]').textContent()) !== SV.taskGone) throw new Error(`notFound error "${await form.locator('[role=alert]').textContent()}"`)
     if ((await form.locator('input[name=shopName]').inputValue()) !== 'Kept shop' || (await form.getByRole('checkbox', { name: 'Brakes', exact: true }).isChecked())) throw new Error('notFound lost the input')
     forgetExpected(404)
@@ -1631,10 +1635,13 @@ for (const s of setups) {
   await step('settings-unit-miles', async () => {
     await page.setViewportSize({ width: 390, height: 844 })
     await page.evaluate(() => { window.noReload = true })
-    const utc = (daysAgo) => new Date(Date.now() - daysAgo * 86_400_000).toISOString().slice(0, 10)
+    // LOW-2 L26: dated with the browser's local date, as the app dates its own readings (quick entry below), so they stay in order when that is already tomorrow in UTC.
+    // The API dates a new car's first reading in UTC, so it is moved to the local date too.
     mileCarId = (await apiCall('POST', '/vehicles', { nickname: 'Mile car', initialOdometerKm: 80467 })).id
-    await apiCall('POST', `/vehicles/${mileCarId}/odometer`, { valueKm: 79967, readingDate: utc(10) })
-    await apiCall('POST', `/vehicles/${mileCarId}/tasks`, { name: 'Mile oil', category: 'Oil', intervalKm: 10000, intervalDays: null, dueSoonPercent: 10, lastDoneOdometerKm: 72000, lastDoneDate: utc(0) })
+    const [first] = await apiCall('GET', `/vehicles/${mileCarId}/odometer`)
+    await apiCall('PUT', `/vehicles/${mileCarId}/odometer/${first.id}`, { valueKm: 80467, readingDate: await localDate() })
+    await apiCall('POST', `/vehicles/${mileCarId}/odometer`, { valueKm: 79967, readingDate: await histDay(-10) })
+    await apiCall('POST', `/vehicles/${mileCarId}/tasks`, { name: 'Mile oil', category: 'Oil', intervalKm: 10000, intervalDays: null, dueSoonPercent: 10, lastDoneOdometerKm: 72000, lastDoneDate: await localDate() })
     if (!(await radio('distanceUnit', 'Km').isChecked())) throw new Error('unit not Km by default')
     // SET-1 QA Low 1: an arrow key while the group saves leaves focus on its checked radio, and sends nothing.
     let puts = 0
@@ -1715,7 +1722,7 @@ for (const s of setups) {
     await sweep('the car page in miles')
     // MVP3-A criterion 10: the record form starts at the odometer in miles, and saved unchanged it stores the exact km.
     // 80,629 km shows as 50,101 mi, which converts back to 80,630, so only the kept value sends 80,629.
-    const drift = await apiCall('POST', `/vehicles/${mileCarId}/odometer`, { valueKm: 80629, readingDate: utc(0) })
+    const drift = await apiCall('POST', `/vehicles/${mileCarId}/odometer`, { valueKm: 80629, readingDate: await localDate() })
     await page.click('header a.brand')
     await mileCar().locator('h2 a').click()
     await arrivedAt('Mile car')
@@ -1870,7 +1877,6 @@ for (const s of setups) {
     await page.waitForFunction((w) => document.querySelector('main .card > p[role=status]')?.textContent.replace(/[⁦-⁩]/g, '') === w, want, { timeout: 5000 })
       .catch(async () => { throw new Error(`summary "${plain(await histStatus.textContent())}", want "${want}"`) })
   }
-  const histDay = (offset) => page.evaluate((o) => new Date(Date.now() + o * 86_400_000 - new Date().getTimezoneOffset() * 60_000).toISOString().slice(0, 10), offset)
   // Counts the list requests while fn runs, plus a pause longer than the search's 300 ms.
   const historyGets = async (fn) => {
     let n = 0
@@ -1943,6 +1949,19 @@ for (const s of setups) {
     await summaryIs(1, 45.5)
     if (!plain(await histRows.first().textContent()).includes(`31,069 ${UM.mi}`)) throw new Error(`miles: ${plain(await histRows.first().textContent())}`)
     await unitIs('Km')
+    // LOW-2 L15: a failed first load with a car in the URL still fills the Task select (the cars loaded); Retry fills the rows.
+    const failList = (r) => r.fulfill({ status: 500, contentType: 'application/json', body: '{}' })
+    const listUrl = (url) => isHistoryGet(url.href)
+    await page.route(listUrl, failList) // every list request: dev StrictMode loads twice
+    await page.goto(`${BASE}/history?vehicleId=${civicId}`)
+    await alert.waitFor()
+    await taskFilter.locator('option', { hasText: 'Civic oil' }).waitFor({ state: 'attached', timeout: 5000 }).catch(() => { throw new Error('Task select empty after a failed first load') })
+    if (await histRows.count()) throw new Error('rows after a failed first load')
+    await page.unroute(listUrl, failList)
+    forgetExpected(500)
+    await page.getByRole('button', { name: HS.retry, exact: true }).click()
+    await histRows.first().waitFor()
+    if ((await carFilter.inputValue()) !== civicId || !(await taskFilter.locator('option', { hasText: 'Civic oil' }).count())) throw new Error('filters lost after Retry')
   })
   await step('history-filter', async () => {
     await page.setViewportSize({ width: 390, height: 844 })
@@ -2191,6 +2210,19 @@ for (const s of setups) {
     await dashCar().waitFor()
     await page.setViewportSize(s.viewport)
   })
+  // Counts the moments, at each DOM change and each frame, when focus is on body or the task's row is missing.
+  const watchUndo = (id) => page.evaluate((id) => {
+    const w = (window.undoWatch = { body: 0, gone: 0, on: true })
+    const check = () => {
+      if (document.activeElement === document.body) w.body++
+      if (!document.querySelector(`.dash-tasks > li[data-id="${id}"]`)) w.gone++
+    }
+    w.mo = new MutationObserver(check)
+    w.mo.observe(document.querySelector('main'), { subtree: true, childList: true, attributes: true })
+    const tick = () => { check(); if (w.on) requestAnimationFrame(tick) }
+    tick()
+  }, id)
+  const watched = () => page.evaluate(() => { const w = window.undoWatch; w.on = false; w.mo.disconnect(); return { body: w.body, gone: w.gone } })
   await step('dashboard-mark-done', async () => {
     const before = await dashApi()
     const sent = page.waitForRequest(isReset)
@@ -2205,12 +2237,51 @@ for (const s of setups) {
     if (after.overdueCount !== before.overdueCount - 1) throw new Error(`overdue ${before.overdueCount} -> ${after.overdueCount}`)
     await summaryShows(after)
     await page.screenshot({ path: `${OUT}/${s.name}-dashboard-undo.png`, fullPage: true })
-    // Undo restores it, with focus back on its Mark done.
+    // Undo restores it, with focus back on its Mark done. LOW-2 L17: straight there, never on body, and the row never leaves the page.
+    await watchUndo(taskIds.Oil)
     await dashRow('Oil').locator('.undo button').click()
     await focusIs(`li[data-id="${taskIds.Oil}"] button.done`, 'Mark done after Undo')
+    let w = await watched()
+    if (w.body || w.gone) throw new Error(`during Undo: focus on body ${w.body} times, Oil row gone ${w.gone} times`)
     if ((await dashNames()).join('|') !== 'Oil|Brakes|Air filter') throw new Error(`tasks after Undo ${await dashNames()}`)
     if (!plain(await dashRow('Oil').textContent()).includes(RS.oilLate)) throw new Error('Oil not overdue again')
     await summaryShows(before)
+    // LOW-2 review M1: ticking Show archived while Undo is in flight ends the Undo bar.
+    await dashRow('Oil').getByRole('button', { name: RS.done + 'Oil', exact: true }).click()
+    await focusIs(`li[data-id="${taskIds.Oil}"] .undo button`, 'Undo after Mark done')
+    let release
+    const held = new Promise((r) => { release = r })
+    await page.route('**/void', async (r) => { await held; await r.continue() }, { times: 1 })
+    await dashRow('Oil').locator('.undo button').click()
+    const archived = page.locator('main > label.inline input')
+    await archived.check()
+    release()
+    await dashRow('Oil').getByRole('button', { name: RS.done + 'Oil', exact: true }).waitFor()
+    await page.waitForLoadState('networkidle')
+    if (await page.locator('.cars .undo').count()) throw new Error('Undo bar outlived the Show archived toggle')
+    const reloaded = page.waitForResponse((r) => isDashGet(new URL(r.url())))
+    await archived.uncheck()
+    await reloaded
+    // LOW-2 L22: Undo is 44px at 390px; when the restored task is no longer among the first 3, focus goes to the car's h2 link.
+    await page.setViewportSize({ width: 390, height: 844 })
+    await dashRow('Oil').getByRole('button', { name: RS.done + 'Oil', exact: true }).click()
+    await focusIs(`li[data-id="${taskIds.Oil}"] .undo button`, 'Undo after Mark done')
+    await tall(dashRow('Oil').locator('.undo button'), 'dashboard Undo')
+    // The reload after Undo ranks Oil last, as if it had been done elsewhere meanwhile.
+    const oilLast = async (r) => {
+      const res = await r.fetch()
+      const json = await res.json()
+      for (const v of json.vehicles) for (const t of v.tasks) if (t.id === taskIds.Oil) Object.assign(t, { status: 'Ok', progress: 0, remainingKm: 10000 })
+      await r.fulfill({ response: res, json })
+    }
+    await page.route(isDashGet, oilLast, { times: 1 })
+    await watchUndo(taskIds.Oil)
+    await dashRow('Oil').locator('.undo button').click()
+    await focusIs(`.cars > li[data-id="${dashCarId}"] h2 a`, 'the car link after Undo')
+    w = await watched()
+    if (w.body) throw new Error(`during Undo: focus on body ${w.body} times`)
+    if (await dashRow('Oil').count()) throw new Error('Oil still shown outside the first 3')
+    await page.setViewportSize(s.viewport)
     // Criterion 8: a failed Mark done shows on that row, keeps the page, and focus returns to Mark done.
     await page.route('**/reset', (r) => r.fulfill({ status: 500, contentType: 'application/json', body: '{}' }), { times: 1 })
     await dashRow('Brakes').getByRole('button', { name: RS.done + 'Brakes', exact: true }).click()
@@ -2233,6 +2304,8 @@ for (const s of setups) {
     if (plain(await alert.textContent()) !== HS.generic) throw new Error(`quick entry error "${await alert.textContent()}"`)
     if (await page.locator('main > .row [role=alert]').count()) throw new Error('a page-level error')
     forget500()
+    const brakesError = dashRow('Brakes').locator('[role=alert]')
+    if (!(await brakesError.count())) throw new Error("the failed Mark done's error went without a reload")
     // Criterion 6: the card's odometer and statuses and the summary follow, without a page reload.
     await dashCar().locator('.quick button').click()
     await page.waitForFunction((id) => document.querySelector(`.cars > li[data-id="${id}"] .odometer`)?.getAttribute('aria-label').startsWith('51,500'), dashCarId, { timeout: 5000 })
@@ -2242,7 +2315,62 @@ for (const s of setups) {
     if (after.overdueCount !== before.overdueCount + 1 || after.dueSoonCount !== before.dueSoonCount - 1) throw new Error('API counts did not follow')
     await summaryShows(after)
     if (await alert.count()) throw new Error('the error stayed after saving')
+    // LOW-2 L24: the reload clears the row's Mark done error.
+    if (await brakesError.count()) throw new Error("the failed Mark done's error stayed after the reload")
     if (!(await page.evaluate(() => window.noReload))) throw new Error('the page reloaded')
+  })
+  await step('dashboard-long-name', async () => {
+    // LOW-2 L25: a long task name wraps beside its status badge, at 390px and 1280px, without overflow.
+    const long = 'Replace the timing belt, the water pump and every tensioner and idler pulley on the engine'
+    const rename = async (r) => {
+      const res = await r.fetch()
+      const json = await res.json()
+      for (const v of json.vehicles) for (const t of v.tasks) if (t.id === taskIds.Brakes) t.name = long
+      await r.fulfill({ response: res, json })
+    }
+    await page.route(isDashGet, rename)
+    for (const width of [390, 1280]) {
+      await page.setViewportSize({ width, height: 844 })
+      await page.reload()
+      const row = dashRow(long)
+      await row.waitFor()
+      const m = await row.evaluate((li) => {
+        const name = li.querySelector('.name'), n = name.getBoundingClientRect(), b = li.querySelector('.badge.status').getBoundingClientRect()
+        return { rtl: getComputedStyle(li).direction === 'rtl', line: parseFloat(getComputedStyle(name).lineHeight), n: n.toJSON(), b: b.toJSON() }
+      })
+      if (m.n.height < 2 * m.line - 1) throw new Error(`the name did not wrap at ${width}px`)
+      if (m.b.top > m.n.top + m.line) throw new Error(`the badge is below the name's first line at ${width}px`)
+      if (m.rtl ? m.b.right > m.n.left + 1 : m.b.left < m.n.right - 1) throw new Error(`the badge is not beside the name at ${width}px`)
+      await noOverflow(`a long task name at ${width}px`)
+      await page.screenshot({ path: `${OUT}/${s.name}-dashboard-long-name-${width}.png`, fullPage: true })
+    }
+    await page.unroute(isDashGet, rename)
+    await page.setViewportSize(s.viewport)
+    await page.reload()
+    await dashCar().waitFor()
+  })
+  await step('dashboard-archive-fails', async () => {
+    // LOW-2 L23: a failed archive shows a translated error on that card, which stays as it was, with focus back on Archive.
+    const bike = page.locator('.cars > li').filter({ has: page.getByRole('link', { name: 'Dash bike', exact: true }) })
+    const bikeId = await bike.getAttribute('data-id')
+    const archive = bike.getByRole('button', { name: he ? 'העברה לארכיון' : 'Archive', exact: true })
+    await page.route('**/archive', (r) => r.fulfill({ status: 500, contentType: 'application/json', body: '{}' }), { times: 1 })
+    await archive.click()
+    const alert = bike.locator('[role=alert]')
+    await alert.waitFor()
+    if (plain(await alert.textContent()) !== HS.generic) throw new Error(`archive error "${await alert.textContent()}"`)
+    await focusIs(`.cars > li[data-id="${bikeId}"] .actions button`, 'Archive after a failed archive')
+    if (await page.locator('main > .row [role=alert]').count()) throw new Error('a page-level error')
+    if ((await bike.getAttribute('class')).includes('archived') || !(await dashCar().count())) throw new Error('the page changed')
+    forget500()
+    await page.setViewportSize({ width: 390, height: 844 })
+    await noOverflow('the archive error')
+    await tall(archive, 'Archive')
+    await page.screenshot({ path: `${OUT}/${s.name}-dashboard-archive-error.png`, fullPage: true })
+    await page.setViewportSize(s.viewport)
+    // Archived for real, the card leaves the dashboard.
+    await archive.click()
+    await bike.waitFor({ state: 'detached' })
   })
   await step('switch-language', async () => {
     const before = await page.getAttribute('html', 'dir')

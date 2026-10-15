@@ -104,6 +104,7 @@ export function ServiceHistory({ car, onChanged }: { car: Vehicle; onChanged: ()
           car={car}
           url={path}
           row={form}
+          onTaskGone={onChanged}
           onSaved={(record) => {
             focusNext.current = [`li[data-id="${record.id}"] button.edit-service`]
             form.close()
@@ -139,6 +140,7 @@ export function ServiceHistory({ car, onChanged }: { car: Vehicle; onChanged: ()
                 changed()
               }}
               onGone={onGone}
+              onTaskGone={onChanged}
               onEditing={(n) => setEditing((x) => x + n)}
             />
           ))}
@@ -149,13 +151,14 @@ export function ServiceHistory({ car, onChanged }: { car: Vehicle; onChanged: ()
 }
 
 // Record a service (no record) or edit one, with the same fields.
-function RecordForm({ car, url, row, record, onSaved, onGone }: {
+function RecordForm({ car, url, row, record, onSaved, onGone, onTaskGone }: {
   car: Vehicle
   url: string // the list's path to record, the record's to edit
   row: { busy: boolean; error: unknown; run: ReturnType<typeof useRow>['run']; open: (m: 'view') => void }
   record?: ServiceRecord
   onSaved: (record: ServiceRecord) => void
   onGone?: () => void
+  onTaskGone?: () => void // a ticked task was deleted: the page's own task list reloads
 }) {
   const { t, i18n } = useTranslation()
   const lng = i18n.resolvedLanguage
@@ -223,7 +226,7 @@ function RecordForm({ car, url, row, record, onSaved, onGone }: {
     if (isGoneRecord(err)) onGone?.()
     else if (err) {
       // A ticked task was deleted meanwhile: reload the list so its checkbox goes; the other ticks stay (keyed by task id).
-      if (err instanceof ApiError && err.problem.code === 'maintenanceTask.notFound') loadTasks()
+      if (err instanceof ApiError && err.problem.code === 'maintenanceTask.notFound') { loadTasks(); onTaskGone?.() }
       setNeedsConfirm(isOrderError(err))
       setErrKey(err instanceof ApiError && err.problem.index != null ? items[err.problem.index]?.key : undefined)
     }
@@ -241,7 +244,9 @@ function RecordForm({ car, url, row, record, onSaved, onGone }: {
   // The date-order error sits under the odometer field, an item error on its row, the rest above Save.
   // An item error names its row by where it is now, not where it was when sent.
   const errRow = items.findIndex((x) => x.key === errKey)
-  const alert = error != null && <p className="error" role="alert" id={errorId}>{errorMessage(error, errRow < 0 ? undefined : errRow + 1)}</p>
+  const alert = error != null && (
+    <p className="error" role="alert" id={errorId}>{problem?.code === 'maintenanceTask.notFound' ? t('taskGone') : errorMessage(error, errRow < 0 ? undefined : errRow + 1)}</p>
+  )
   const errorAt = isOrderError(error) ? 'odometer' : problem?.index == null ? 'end' : errKey
   // A disabled task stays listed while the record is linked to it, so saving doesn't unlink it.
   const linked = new Set(record?.tasks.map((x) => x.id))
@@ -250,9 +255,9 @@ function RecordForm({ car, url, row, record, onSaved, onGone }: {
   const currency = user?.currency
   const setItem = (i: number, patch: Partial<Item>) => setItems((xs) => xs.map((x, j) => (j === i ? { ...x, ...patch } : x)))
   const add = (isLabor: boolean) => { focusItem.current = items.length; setItems([...items, toItem(null, isLabor)]) }
-  // Focus goes to the next row, then the previous one, then Add part.
   // The translated message on a future date instead of the browser's; the server's own check stays.
   const future = (e: FormEvent<HTMLInputElement>) => e.currentTarget.setCustomValidity(e.currentTarget.validity.rangeOverflow ? t('errors.serviceRecord.futureDate') : '')
+  // Focus goes to the next row, then the previous one, then Add part.
   const remove = (i: number) => { focusItem.current = i < items.length - 1 ? i : i - 1; setItems(items.filter((_, j) => j !== i)) }
 
   return (
@@ -369,7 +374,7 @@ function RecordForm({ car, url, row, record, onSaved, onGone }: {
 }
 
 // Also the rows of /history, read-only, with the car's name and tag as `head`.
-export function ServiceRow({ car, record: r, url, readOnly, onEdited, onDeleted, onGone, onEditing, head }: {
+export function ServiceRow({ car, record: r, url, readOnly, onEdited, onDeleted, onGone, onTaskGone, onEditing, head }: {
   car: Vehicle
   record: ServiceRecord
   head?: ReactNode
@@ -378,6 +383,7 @@ export function ServiceRow({ car, record: r, url, readOnly, onEdited, onDeleted,
   onEdited: (record: ServiceRecord) => void
   onDeleted: () => void
   onGone: () => void
+  onTaskGone?: () => void
   onEditing?: (n: 1 | -1) => void
 }) {
   const { t, i18n } = useTranslation()
@@ -405,7 +411,7 @@ export function ServiceRow({ car, record: r, url, readOnly, onEdited, onDeleted,
     return (
       <li data-id={r.id}>
         {/* Closed too, in case the reload still lists the record. */}
-        <RecordForm car={car} url={url} row={row} record={r} onGone={() => { close(); onGone() }}
+        <RecordForm car={car} url={url} row={row} record={r} onGone={() => { close(); onGone() }} onTaskGone={onTaskGone}
           onSaved={(saved) => { onEdited(saved); open('view') }} />
       </li>
     )

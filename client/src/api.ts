@@ -114,8 +114,9 @@ export interface Dashboard {
   month: string // YYYY-MM
   monthTotalCost: number
   monthServiceCount: number
-  vehicles: { id: string; overdueCount: number; dueSoonCount: number; tasks: MaintenanceTask[] }[]
+  vehicles: { id: string; overdueCount: number; dueSoonCount: number; tasks: DashboardTask[] }[]
 }
+export type DashboardTask = MaintenanceTask & { status: TaskStatus }
 
 // The id changes on every save (the list is replaced), so nothing on screen is keyed on it.
 export interface ServiceItem {

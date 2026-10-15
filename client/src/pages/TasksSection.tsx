@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent, type MouseEventHandler, type ReactNode } from 'react'
 import { Trans, useTranslation } from 'react-i18next'
 import { useAuth, useDistance } from '../auth'
 import { api, ApiError, byUrgency, localToday, taskCategories, type MaintenanceTask, type TaskCategory, type TaskStatus, type TaskTemplate, type Vehicle } from '../api'
@@ -49,6 +49,19 @@ export function Remaining({ km, days }: { km: number | null; days: number | null
   }
   const list = <>{parts[0]}{parts[1] && <>{late ? t('and') : <> {t('or')} </>}{parts[1]}</>}</>
   return <Trans i18nKey={late ? 'overdueBy' : 'left'} components={{ x: <span>{list}</span> }} />
+}
+
+// "Marked as done." and Undo on a task's row, on the car page and the dashboard.
+export function UndoBar({ taskId, busy, onClick }: { taskId: string; busy: boolean; onClick: MouseEventHandler<HTMLButtonElement> }) {
+  const { t } = useTranslation()
+  return (
+    <div className="undo" role="status">
+      {/* Focus lands on Undo in the same render as the bar, so Undo also carries the message. */}
+      <span id={`undo-${taskId}`}>{t('markedDone')}</span>
+      {/* aria-disabled, not disabled: a disabled button drops focus to body while Undo runs. */}
+      <button className="link" aria-describedby={`undo-${taskId}`} aria-disabled={busy} onClick={(e) => !busy && onClick(e)}>{t('undo')}</button>
+    </div>
+  )
 }
 
 // The Maintenance section of the car page. It loads on its own, so a failure here leaves the rest of the page usable.
@@ -386,13 +399,7 @@ function TaskRow({ task, url, currentKm, readOnly, onSaved, onDeleted, onReset, 
         />
       </p>
 
-      {onUndo && mode === 'view' && (
-        <div className="undo" role="status">
-          {/* Focus lands on Undo in the same render as the bar, so Undo also carries the message. */}
-          <span id={`undo-${task.id}`}>{t('markedDone')}</span>
-          <button className="link" aria-describedby={`undo-${task.id}`} disabled={busy} onClick={(e) => run(onUndo, e.currentTarget)}>{t('undo')}</button>
-        </div>
-      )}
+      {onUndo && mode === 'view' && <UndoBar taskId={task.id} busy={busy} onClick={(e) => run(onUndo, e.currentTarget)} />}
       {!readOnly && mode === 'view' && (
         <div className="actions">
           {task.isEnabled && (

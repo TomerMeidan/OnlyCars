@@ -1,12 +1,12 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { errorMessage, money } from '../i18n'
 import { Link } from 'react-router-dom'
-import { api, byUrgency, isOrderError, localToday, type Dashboard, type MaintenanceTask, type Vehicle } from '../api'
+import { api, byUrgency, isOrderError, localToday, type Dashboard, type DashboardTask, type Vehicle } from '../api'
 import { useAuth, useDistance } from '../auth'
 import { usePage } from '../usePage'
 import { useRow } from '../useRow'
-import { Remaining, StatusBadge, type TaskUndo } from './TasksSection'
+import { Remaining, StatusBadge, UndoBar, type TaskUndo } from './TasksSection'
 
 // The dashboard on `/`: the summary, then one card per active car in the server's urgency order, then archived cars if shown.
 export default function CarsPage() {
@@ -26,35 +26,31 @@ export default function CarsPage() {
   const focusNext = useRef<(() => HTMLElement | null | undefined) | null>(null)
   usePage(t('dashboard'))
 
-  // Old cards stay up while it reloads.
-  const load = () => {
+  // Old cards stay up while it reloads. `then` runs with the answer's state updates, so they render together.
+  const load = (then?: () => void) => {
     const n = ++request.current
     const today = localToday()
     return Promise.all([api<Dashboard>(`/dashboard?today=${today}`), api<Vehicle[]>(`/vehicles?includeArchived=${showArchived}`)]).then(
-      ([dash, cars]) => { if (n === request.current) { setData({ dash, cars, today }); setError(null) } },
+      ([dash, cars]) => { if (n === request.current) { setData({ dash, cars, today }); setError(null); then?.() } },
       // A failed reload keeps focus where it was (MVP1-C), so drop the pending target.
-      (err) => { if (n === request.current) { focusNext.current = null; setError(err) } },
+      (err) => { if (n === request.current) { focusNext.current = null; setError(err); then?.() } },
     ).finally(() => n === request.current && setRetrying(false))
   }
-  const reloadThenFocus = (target: () => HTMLElement | null | undefined) => {
+  const reloadThenFocus = (target: () => HTMLElement | null | undefined, then?: () => void) => {
     focusNext.current = target
-    return load()
+    return load(then)
   }
 
   useEffect(() => {
     load()
   }, [showArchived]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => {
+  // Before paint, so focus never sits on body between the reloaded cards and their target.
+  useLayoutEffect(() => {
     const target = focusNext.current
     focusNext.current = null
     target?.()?.focus()
   }, [data, error])
-
-  async function toggleArchive(car: Vehicle) {
-    await api(`/vehicles/${car.id}/${car.isArchived ? 'unarchive' : 'archive'}`, 'POST')
-    load()
-  }
 
   const taskPath = (carId: string, taskId: string) => `/vehicles/${encodeURIComponent(carId)}/tasks/${encodeURIComponent(taskId)}`
   const row = (taskId: string) => document.querySelector<HTMLElement>(`.cars li[data-id="${taskId}"]`)
@@ -66,9 +62,8 @@ export default function CarsPage() {
   const undoReset = async (carId: string) => {
     const { taskId, recordId } = undo!
     await api(`/vehicles/${encodeURIComponent(carId)}/service-records/${encodeURIComponent(recordId)}/void`, 'POST')
-    setUndo(null)
-    // The car's card if the restored task is no longer among its first 3.
-    await reloadThenFocus(() => row(taskId)?.querySelector('button.done') ?? document.querySelector(`.cars > li[data-id="${carId}"] h2 a`))
+    // Undo ends with the reloaded data, so the row stays until then; the car's card if the restored task is no longer among its first 3.
+    await reloadThenFocus(() => row(taskId)?.querySelector('button.done') ?? document.querySelector(`.cars > li[data-id="${carId}"] h2 a`), () => setUndo(null))
   }
 
   const byId = new Map(data?.cars.map((c) => [c.id, c]))
@@ -108,7 +103,7 @@ export default function CarsPage() {
         error == null && <div className="card summary"><p className="muted" role="status">{t('loading')}</p></div>
       )}
       <label className="inline">
-        <input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} />
+        <input type="checkbox" checked={showArchived} onChange={(e) => { setUndo(null); setShowArchived(e.target.checked) }} />
         {t('showArchived')}
       </label>
       {cards?.length === 0 && <p>{t('noCars')}</p>}
@@ -164,12 +159,7 @@ export default function CarsPage() {
                 )}
               </>
             )}
-            <div className="actions">
-              <Link to={`/cars/${car.id}/edit`}>{t('edit')}</Link>
-              <button className="link" onClick={() => toggleArchive(car)}>
-                {t(car.isArchived ? 'unarchive' : 'archive')}
-              </button>
-            </div>
+            <CarActions car={car} onArchived={() => load()} />
           </li>
         ))}
       </ul>
@@ -189,26 +179,40 @@ function Counts({ overdue, dueSoon }: { overdue: number; dueSoon: number }) {
 }
 
 // A task on a dashboard card: one-tap Mark done (no cost or notes), then Undo on the row as on the car page.
-function DashTask({ task, onReset, onUndo }: { task: MaintenanceTask; onReset: () => Promise<void>; onUndo?: () => Promise<void> }) {
+function DashTask({ task, onReset, onUndo }: { task: DashboardTask; onReset: () => Promise<void>; onUndo?: () => Promise<void> }) {
   const { t } = useTranslation()
-  const { busy, error, run } = useRow()
-  const name = task.name
+  const { busy, error, run, open } = useRow()
+  // New data (a new task object) clears an old Mark done error; open('view') only clears the error here.
+  useEffect(() => open('view'), [task]) // eslint-disable-line react-hooks/exhaustive-deps
   return (
     <li data-id={task.id} className={`status-${task.status}`}>
       <div className="task-head">
-        <span className="name">{name}</span>
-        {task.status && <StatusBadge status={task.status} />}
+        <span className="name">{task.name}</span>
+        <StatusBadge status={task.status} />
       </div>
       <p><Remaining km={task.remainingKm} days={task.remainingDays} /></p>
-      <button className="done" aria-label={t('markDoneTask', { name })} disabled={busy} onClick={(e) => run(onReset, e.currentTarget)}>{t('markDone')}</button>
-      {onUndo && (
-        <div className="undo" role="status">
-          <span id={`undo-${task.id}`}>{t('markedDone')}</span>
-          <button className="link" aria-describedby={`undo-${task.id}`} disabled={busy} onClick={(e) => run(onUndo, e.currentTarget)}>{t('undo')}</button>
-        </div>
-      )}
+      <button className="done" aria-label={t('markDoneTask', { name: task.name })} disabled={busy} onClick={(e) => run(onReset, e.currentTarget)}>{t('markDone')}</button>
+      {onUndo && <UndoBar taskId={task.id} busy={busy} onClick={(e) => run(onUndo, e.currentTarget)} />}
       {error != null && <p className="error" role="alert">{errorMessage(error)}</p>}
     </li>
+  )
+}
+
+// Edit and Archive or Unarchive; a failed archive shows on its card, which stays as it was.
+function CarActions({ car, onArchived }: { car: Vehicle; onArchived: () => void }) {
+  const { t } = useTranslation()
+  const { busy, error, run } = useRow()
+  return (
+    <>
+      <div className="actions">
+        <Link to={`/cars/${car.id}/edit`}>{t('edit')}</Link>
+        <button className="link" disabled={busy}
+          onClick={(e) => run(async () => { await api(`/vehicles/${car.id}/${car.isArchived ? 'unarchive' : 'archive'}`, 'POST'); onArchived() }, e.currentTarget)}>
+          {t(car.isArchived ? 'unarchive' : 'archive')}
+        </button>
+      </div>
+      {error != null && <p className="error" role="alert">{errorMessage(error)}</p>}
+    </>
   )
 }
 
