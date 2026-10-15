@@ -1,21 +1,22 @@
 # OnlyCars: Requirements Status
 
-**Audit date:** 2026-10-15 (thirteenth audit, short sign-off of LOW-1, the first Low batch; not committed yet)
-**Overall:** MVP steps 1 to 3 are complete apart from the car photo and attachments (both blocked on R2), and the first Low batch (L1 to L12) is closed. Next: MVP4-A (dashboard), which also orders same-date readings by value. No deployment tickets until the owner asks.
+**Audit date:** 2026-10-16 (fourteenth audit, short sign-off of MVP4-A, the dashboard; the frontend is not committed yet)
+**Overall:** MVP steps 1 to 4 are complete apart from the car photo and attachments (both blocked on R2) and the dashboard's "Start a checklist" (waits for step 5). Next: LOW-2 (the Low backlog, L13 to L26), then step 5 with checklists. No deployment tickets until the owner asks.
 
 | Status | Count |
 |---|---|
-| Done | 21 |
+| Done | 24 |
 | API only | 0 |
 | Partial | 5 |
-| Missing | 24 |
+| Missing | 21 |
 | Deferred | 7 |
 | **Total** | **57** |
 
-How this was checked (thirteenth audit, short sign-off per decisions.md "Faster pipeline (owner)"; I re-ran no test suites and no browser scripts):
-- Reported by other agents, not re-run by me: smoke 59 of 59 in both setups (re-run after the last fix); UI QA in 4 setups passed every LOW-1 item plus the regression scripts `qa-mvp3b.mjs`, `qa-mvp3c*.mjs` and `qa-mvp3d.mjs`; the Hebrew reviewer approved L6; code review approved, and its one Medium (Show more still offered while rows are stale after a failed filter change, which would mix two filters) is fixed (`client/src/pages/HistoryPage.tsx:220`, `!stale &&`). No backend code changed, so `dotnet test` was not needed.
-- L10 found that the date-order check orders same-date readings by save time, not by value as the ticket assumed. The contracts now describe the code (`docs/contracts/MVP3-A.md:59`, `docs/contracts/MVP3-D.md:56`). Decided: order by value (decisions.md, "Same-date odometer readings"), built in MVP4-A's backend part B0.
-- No requirement changed status: LOW-1 polishes bullets that were already Done.
+How this was checked (fourteenth audit, short sign-off per decisions.md "Faster pipeline (owner)"; I re-ran no test suites and no browser scripts):
+- Reported by other agents, not re-run by me: backend committed in `05f17c0`, `dotnet test` 312 of 312 (`tests/OnlyCars.Tests/DashboardTests.cs`); frontend build and lint clean; smoke 62 of 62 in all 4 setups with a UTC browser timezone, with the new steps `dashboard-summary`, `dashboard-mark-done` and `dashboard-quick-odometer` (`client/ui-tests/smoke.mjs:2116,2194,2224`); the Hebrew reviewer approved every string unchanged; UI QA passed with Lows only; code review's one Medium (a failed Retry moved focus to the `h1`) is fixed with a smoke check.
+- I read the code for the evidence: `GET /api/dashboard` (`src/OnlyCars.Api/Controllers/MaintenanceTasksController.cs:52`), the summary (`client/src/pages/CarsPage.tsx:99-105`) and the car cards (`CarsPage.tsx:116-165`).
+- AC1 (B0, same-date readings by value) was built and reverted; signed off as changed (decisions.md, "Same-date odometer readings, revised" and "MVP4-A sign-off").
+- Changed status: spec 2.1 quick entry (Partial to Done; its only gap was the dashboard), spec 10 "All cars at a glance" and "Overdue count and monthly spend" (Missing to Done), spec 10 "Quick actions" (Missing to Partial; "Start a checklist" waits for step 5).
 - The notes from earlier audits are in git history.
 
 ## 1. Vehicles
@@ -31,9 +32,9 @@ How this was checked (thirteenth audit, short sign-off per decisions.md "Faster 
 
 | Requirement | Status | Evidence | What's missing |
 |---|---|---|---|
-| Manual odometer updates (quick-entry button on the dashboard) | **Partial** | The quick entry on each car card works, including the lower-reading check and the correction checkbox (`CarsPage.tsx:69-114`, `OdometerService.cs:30-65`). Tests: `OdometerServiceTests.cs`. Smoke steps `odometer-*` pass. The lower-reading error is now translated and shows the current reading (`odometer.lowerThanCurrent`, `i18n.ts:64-67`; Hebrew in `mobile-dark-he-05-odometer-lower-rejected.png`). | Quick entry is now also on the car page (`CarPage.tsx:50`), and the date-order rules apply (`odometer.lowerThanPrevious` / `higherThanNext`). Still missing: (1) there is no dashboard yet (see section 10); (2) quick entry always saves today; backdating goes through Edit, which is acceptable for now. |
+| Manual odometer updates (quick-entry button on the dashboard) | **Done** | Quick entry on the car page (`CarPage.tsx:50`) and on every active dashboard card (`CarsPage.tsx:136-139`), with the date-order rules and the correction checkbox (`OdometerService.cs`, `OdometerServiceTests.cs`). After a save the card's odometer, statuses and the summary counts reload (smoke `dashboard-quick-odometer`). | Nothing. Quick entry always saves today; backdating goes through Edit, accepted. |
 | Auto-log the odometer whenever a service is recorded | **Done** | Every reset logs a `Source = Service` reading linked to its record (`MaintenanceTaskService.cs:99`). A recorded service (MVP3-A, `CreateRecordAsync`, `:167`) logs one at its own date and odometer, with the date-order rules and `confirmCorrection`; voiding removes it (`:248`). Tests: `ServiceRecordTests.cs`, `ServiceHistoryTests.cs` (221 total). Browser: smoke `record-service`, `record-service-backdated` and `undo-service-from-history` in both setups; `qamvp3a-mobile-light-en-mi-10-order-error.png` shows the Service readings in the odometer history. | Nothing. |
-| Optional: estimated average km/day, used to predict when tasks come due | **Partial** | `AvgKmPerDay` is computed (`OdometerService.cs:72-99`, test at `OdometerServiceTests.cs:91`) and shown on the card (`CarsPage.tsx:50-52`). | Nothing uses it for predictions yet. Tasks exist now, but a predicted due date is out of MVP2-B (decisions.md); it goes with the dashboard or later. |
+| Optional: estimated average km/day, used to predict when tasks come due | **Partial** | `AvgKmPerDay` is computed (`OdometerService.cs:72-99`, test at `OdometerServiceTests.cs:91`) and shown on the card (`CarsPage.tsx:50-52`). | Nothing uses it for predictions yet. Tasks exist now, but a predicted due date is out of MVP2-B (decisions.md); it comes later (optional, after MVP4-A). |
 | Unit setting (km/miles), with the currency set per user | **Done** | Currency: chosen at sign-up (`AuthPage.tsx`, `AuthService.cs`) and changeable on `/settings` (SET-1). Distance unit (SET-2): `PUT /api/me/settings` takes `distanceUnit` (`Km`/`Mi`), 400 `settings.invalidDistanceUnit` (`SettingsTests.cs`, contract `docs/contracts/SET-2.md`, verified live with curl). The client converts in one module, `client/src/units.ts` (1 mi = 1.609344 km, whole miles on display, whole km on input, caps rounded down, unchanged values send their stored km back), tested by `client/ui-tests/units.test.mjs` (6 tests). The car list, car form, car page, history, tasks, templates and error messages all use it. Settings has a fourth radio group. Browser: smoke `settings-unit-miles` and `settings-unit-errors` in both setups, `qa-set2.mjs` (`mobile-dark-he-unit-miles-car.png`, `qaset2-mobile-dark-he-02-settings-mi.png`). | Nothing. Remaining miles can be 1 off the shown numbers, and the Hebrew "קילומטראז׳" label stays in miles; both accepted (decisions.md, "SET-2 QA notes"). |
 
 ## 3. Maintenance Task Definitions
@@ -107,9 +108,9 @@ How this was checked (thirteenth audit, short sign-off per decisions.md "Faster 
 
 | Requirement | Status | Evidence | What's missing |
 |---|---|---|---|
-| All cars at a glance, next due items sorted by urgency | **Missing** | The car list (`CarsPage.tsx`) shows every car, but there are no due items. | Everything except the car list. MVP4-A is next. |
-| Overdue count and monthly spend summary | **Missing** | none | Everything |
-| Quick actions: update odometer, reset a task, start a checklist | **Missing** | Odometer quick entry exists on the car list (see 2.1). | A dashboard, plus the reset and checklist actions |
+| All cars at a glance, next due items sorted by urgency | **Done** | The dashboard on `/` shows one card per active car in the server's urgency order, each with its Overdue and Due soon counts and its next 3 enabled tasks with status and remaining km or days (`CarsPage.tsx:116-165`; API `MaintenanceTasksController.cs:52`; `DashboardTests.cs`). Smoke `dashboard-summary` in 4 setups. | Nothing. |
+| Overdue count and monthly spend summary | **Done** | The summary shows the Overdue and Due soon counts and this month's spend with the record count, linking to `/history` for the same dates so the totals match (`CarsPage.tsx:99-105`; `DashboardTests.cs`). Smoke `dashboard-summary`. | Nothing. |
+| Quick actions: update odometer, reset a task, start a checklist | **Partial** | Quick odometer entry and one-tap Mark done with Undo on each card (`CarsPage.tsx:136-160`); smoke `dashboard-quick-odometer` and `dashboard-mark-done`. | "Start a checklist", which needs checklists (spec 7, step 5). |
 
 ## 11. Optional
 
@@ -160,15 +161,15 @@ How this was checked (thirteenth audit, short sign-off per decisions.md "Faster 
 | 2. Tasks, templates, km/time intervals, Reset | **Complete. MVP2-A, MVP2-B and MVP2-C are signed off.** All of spec sections 3 and 4 is done: tasks and templates, status with remaining km and days and a progress bar, the due-soon threshold, one-tap Mark done with optional cost and notes, and Undo. |
 | Deploy gate | **SEC-1 signed off.** Nothing else blocks a first deploy except the owner's Azure account. The owner said not to deploy yet (decisions.md, 2026-10-15, "When to deploy"), so no deployment tickets are queued. |
 | 3. Service history with costs | **Complete apart from attachments (blocked on R2). MVP3-A, MVP3-B, MVP3-C and MVP3-D are signed off.** Working end to end in EN and HE: the service history on `/cars/:id`, recording a past service (date, odometer, shop or DIY, cost, notes, several tasks, parts and labour) with the date-order rules, editing everything on a record (shop, cost, notes, items, date, odometer and tasks, with the car's odometer and the tasks' last done following), deleting any record, and a `/history` page that filters and searches all cars. LOW-1 (the first Low batch) is signed off too. |
-| 4. Dashboard with due/overdue status | Not started. **Next: MVP4-A** (written below): a dashboard on `/` with overdue and due-soon counts, this month's spend, and per-car next tasks with Mark done and quick odometer entry. "Start a checklist" waits for step 5. |
-| 5. Checklists, tires, reports, notifications | Not started |
+| 4. Dashboard with due/overdue status | **Complete apart from "Start a checklist" (waits for step 5). MVP4-A is signed off.** The dashboard on `/`: overdue and due-soon counts, this month's spend linking to `/history`, and per-car cards with the next 3 tasks, one-tap Mark done with Undo, and quick odometer entry, in EN and HE. |
+| 5. Checklists, tires, reports, notifications | Not started. First: MVP5-A (checklists, spec 7), after LOW-2. |
 
 ## Ticket queue
 
 | Order | Ticket | Who | State |
 |---|---|---|---|
-| 1 | MVP4-A: Dashboard (spec 10), plus B0 same-date reading order | BE, then FE | **Next** (written below) |
-| 2 | LOW-2: the Low issues backlog (L13 onward) | FE | About 3 tickets after LOW-1 |
+| 1 | LOW-2: the Low issues backlog (L13 to L26) | FE (smoke fixes included) | **Next** (written below) |
+| 2 | MVP5-A: checklist templates and runs (spec 7), plus the dashboard's "Start a checklist" | BE, then FE | After LOW-2 |
 
 ## Signed-off tickets
 
@@ -219,11 +220,17 @@ How this was checked (thirteenth audit, short sign-off per decisions.md "Faster 
 - **LOW-1 (not committed yet): signed off 2026-10-15.** Short sign-off under "Faster pipeline (owner)"; I re-ran no suites.
   - Fixed, all on the frontend: L1 (stale summary after a failed filter change), L2 ("To date" wrap at 1280px), L3 (Hebrew summary amount format), L4 (archived car name cut at 390px), L5 (tasks request racing the car list), L6 (Hebrew quantity wording, approved by the Hebrew reviewer), L7 (translated future-date message), L8 (task list reloaded after `maintenanceTask.notFound` on Edit), L9 ("Record a service" during Edit), L11 (`qa-mvp3b.mjs` reads `{record, tasks}`). L10 is documented in the MVP3-A and MVP3-D contracts. L12 was decided earlier and is closed.
   - Reported evidence: smoke 59 of 59 in both setups; QA in 4 setups passed every item plus the MVP3-B, C and D regression scripts; code review approved, with its one Medium fixed at `HistoryPage.tsx:220`.
-  - L10's finding (same-date readings ordered by save time) is decided as a change to order by value, built in MVP4-A (B0). The leftover Lows are L13 to L16 in the backlog; one review nit is accepted (decisions.md, "LOW-1 leftover Lows").
+  - L10's finding (same-date readings ordered by save time) was decided as a change to order by value, built in MVP4-A (B0) and later reverted. The leftover Lows are L13 to L16 in the backlog; one review nit is accepted (decisions.md, "LOW-1 leftover Lows").
+
+- **MVP4-A (backend commit `05f17c0`; the frontend is not committed yet): signed off 2026-10-16.** Short sign-off under "Faster pipeline (owner)"; I re-ran no suites.
+  - Reported evidence: 312 of 312 tests; build and lint clean; smoke 62 of 62 in all 4 setups (UTC browser timezone) with the new `dashboard-summary`, `dashboard-mark-done` and `dashboard-quick-odometer` steps; the Hebrew reviewer approved every string unchanged; UI QA passed with Lows only; code review's one Medium (a failed Retry moved focus to the `h1`) is fixed with a smoke check.
+  - AC1 is signed off as changed: B0 (same-date readings by value) was reverted and the save-time order stays (decisions.md, "Same-date odometer readings, revised").
+  - Decided (decisions.md, "MVP4-A sign-off"): a card's tasks re-sort by urgency after Mark done and focus follows (kept); "No tasks yet" links to `/cars/:id` (accepted).
+  - The review and QA Lows are L17 to L26 in the backlog.
 
 ## Low issues backlog
 
-Every Low finding from QA and review lands here (decisions.md, "Faster pipeline (owner)"). They are fixed together in a batch ticket LOW-n about every 3 tickets. LOW-1 closed L1 to L12; LOW-2 takes what is below.
+Every Low finding from QA and review lands here (decisions.md, "Faster pipeline (owner)"). They are fixed together in a batch ticket LOW-n about every 3 tickets. LOW-1 closed L1 to L12; LOW-2 takes what is below (L13 to L26).
 
 | # | From | Issue | Area |
 |---|---|---|---|
@@ -231,64 +238,64 @@ Every Low finding from QA and review lands here (decisions.md, "Faster pipeline 
 | L14 | LOW-1 QA | "This task was not found." is vague. Say the task was deleted and the list has been updated, in en and he. | FE, en and he |
 | L15 | LOW-1 QA | If the first `/history` load fails with a valid `vehicleId` in the URL, the Task select stays empty until Retry (an L5 side effect). | FE, `/history` |
 | L16 | LOW-1 review | `ServiceHistory.tsx` ~253-256: the `future` handler sits between a comment and the code the comment describes. | FE, code tidy |
+| L17 | MVP4-A review | Dashboard Undo clears the undo state before the reload, so the row disappears and comes back (flicker) and focus is briefly on `body`. Fix: clear the undo state after the reload (`CarsPage.tsx:68`). | FE, `/` |
+| L18 | MVP4-A review | Dead i18n key `myCars` (`i18n.ts:16` and `:295`). | FE, code tidy |
+| L19 | MVP4-A review | The dashboard's Undo bar markup is copied from `TasksSection.tsx`. Export one `UndoBar` and use it in both. | FE, code tidy |
+| L20 | MVP4-A review | `DashTask` nits: a needless `name` alias, and an inconsistent null guard on status. | FE, code tidy |
+| L21 | MVP4-A review | Smoke's `UI_TZ` and `SMOKE_ALL` options need a one-line comment saying why they exist (QA uses both; keep them). | Smoke |
+| L22 | MVP4-A review | Smoke gaps: the dashboard Undo button is not checked for 44px at 390px, and the Undo focus fallback to the card's `h2` link (when the restored task is no longer in the first 3) is not tested. | Smoke |
+| L23 | MVP4-A review (pre-existing) | `toggleArchive` in `CarsPage.tsx:54` has no error handling: a failed archive or unarchive is silent. Show a translated error on the card. | FE, `/` |
+| L24 | MVP4-A QA (L-a) | A failed Mark done's error stays on a dashboard row after a reload changes that task's status. Clear a row's error when the data reloads. | FE, `/` |
+| L25 | MVP4-A QA (L-b) | When a task name wraps on a dashboard card, the status badge shifts under the name. Keep the badge aligned. | FE, `/`, CSS |
+| L26 | Smoke (pre-existing) | `settings-unit-miles` fails between local midnight and 03:00, because it dates its setup data in UTC (`smoke.mjs:1634`) while the app uses the local date. Use one date source for both. | Smoke |
 
 ## Next ticket
 
-### MVP4-A: Dashboard with due and overdue status (spec 10), plus same-date reading order
+### LOW-2: Low backlog batch (L13 to L26)
 
-**Goal:** When I open the app I see, for all my cars at once, what is overdue or due soon and what I spent this month, and I can update an odometer or mark a task done right there.
+**Goal:** The service history and the dashboard behave cleanly in the small cases (deleted tasks, failed actions, Undo, wrapped names), and the smoke suite passes at any hour.
 
-**Spec:** section 10 (Dashboard), section 2 ("quick-entry button on the dashboard"), section 4 (status, Reset), Part 2 "How Reset works" and "Status is never stored". MVP step 4.
+**Spec:** sections 5 and 10 (polish of Done bullets); section 12 (Hebrew and English, mobile). No status changes expected.
 
-**Binding decisions:** decisions.md "Dashboard, MVP4-A", "Same-date odometer readings", "Task status rules, MVP2-B", "Reset / Mark as done, MVP2-C", "Quick-add reading date", "Backdated service records, MVP3-A", "Filter and search, MVP3-C", the SET-1 and SET-2 settings rules (currency, km or miles), the MVP1-C focus rules.
+**Binding decisions:** decisions.md "Faster pipeline (owner)", "LOW-1 leftover Lows", "MVP4-A sign-off", "Ticket after MVP4-A", the MVP1-C focus rules.
 
 **Scope**
 
-*Backend (backend-engineer). Runs first and publishes `docs/contracts/MVP4-A.md`.*
-- **B0, same-date reading order:** every date-order check (`POST` and `PUT .../odometer`, service record `POST` and `PUT`) orders readings by (`ReadingDate`, `OdometerKm`, save time) instead of (`ReadingDate`, save time). The vehicle's `CurrentOdometerKm` is the highest reading on the latest date; recompute it (and `AvgKmPerDay`) by the same order wherever it is recomputed today. Update the "Date order on the same date" paragraphs in `docs/contracts/MVP3-A.md:59` and `docs/contracts/MVP3-D.md:56` to the new rule and remove their "Mismatch" notes. No schema change.
-- **B1, `GET /api/dashboard?today=YYYY-MM-DD`:** `today` is the client's local date, optional, accepted within UTC today plus or minus 1 day (as on reset), otherwise 400 `dashboard.invalidDate`; it defaults to UTC today and only sets the spend month. Returns:
-  - `overdueCount`, `dueSoonCount`: enabled tasks of the user's non-archived vehicles, by `TaskStatusCalculator` with the server's UTC date (the same as `GET .../tasks`).
-  - `month` (`"YYYY-MM"`), `monthTotalCost` (sum of `ServiceRecord.TotalCost`, null counts as 0), `monthServiceCount`: non-voided records of all the user's vehicles, archived included, with `Date` from the first of that month to `today`; these must equal `GET /api/service-records?from=<first of month>&to=<today>`'s `totalCount` and `totalCost`.
-  - `vehicles`: the user's non-archived vehicles, each with `id`, `nickname`, `make`, `model`, `year`, `currentOdometerKm`, `overdueCount`, `dueSoonCount`, and `tasks`: its enabled tasks as `MaintenanceTaskDto`, in urgency order (Overdue, Due soon, OK; within a status by `progress` descending; then by name). Vehicles are ordered by their first task's urgency, then by nickname; vehicles with no enabled tasks come last.
-  - Only the caller's data; 401 without a token. A fixed number of queries, not one per vehicle.
-- Tests: B0 (two same-date readings where the higher one was saved first: a reading between them is accepted; a record edited onto that date is checked against the lower and the higher by value; the current odometer is the highest on the latest date) and B1 (counts, order, an archived car left out of counts and `vehicles` but in the spend, voided records left out, month edges, `today` out of range, another user's data never appears).
+*Backend:* none. No API change; if an item turns out to need one, stop and report it rather than changing the API.
 
-*Frontend (frontend-engineer). Builds against the contract.*
-- `/` (today `CarsPage.tsx`) becomes the dashboard, with the page title "Dashboard" in en and he.
-- A summary block: "N overdue", "N due soon" and "This month: X (N services)" using the rows' currency formatter; the month figure links to `/history?from=…&to=…`. Zero states read naturally ("Nothing overdue").
-- One card per active car, in the server's order: nickname (links to `/cars/:id`), current odometer in the user's unit, the existing quick odometer entry (local date, as now), the car's Overdue and Due soon counts, and its first 3 tasks with name, status badge, remaining km (in the user's unit) or days, and a one-tap **Mark done** using the existing `POST .../tasks/{taskId}/reset` (no cost or notes on the dashboard). After it, the row shows Undo, as on the car page. "All tasks (N)" links to the car page. A car with no enabled tasks shows "No tasks yet" with a link to its task section.
-- After a quick odometer entry, a Mark done or an Undo, reload the dashboard data so the counts, order and statuses follow.
-- "Show archived" and the archived car list work as now (no tasks on archived cars). With no cars, the empty state stays "Add your first car".
-- Reuse the car page's status badge, remaining text and urgency sort (`TasksSection.tsx:100`) rather than copying them.
+*Frontend (frontend-engineer), by backlog number (details in the table above):*
+- `/cars/:id` and `/history`: L13 (reload the Maintenance list after `maintenanceTask.notFound` on Edit), L14 (clearer deleted-task message, en and he), L15 (Task select filled after a failed first `/history` load), L16 (move the `future` handler below its comment).
+- Dashboard `/`: L17 (clear Undo after the reload), L23 (translated error on a failed archive or unarchive), L24 (clear a row's Mark done error on reload), L25 (badge stays aligned when a name wraps).
+- Code tidy: L18 (remove `myCars`), L19 (one exported `UndoBar` used by `TasksSection.tsx` and the dashboard), L20 (`DashTask` nits).
+- Smoke (`client/ui-tests/smoke.mjs`): L21 (reason comment on `UI_TZ` and `SMOKE_ALL`), L22 (dashboard Undo 44px at 390px; Undo focus fallback to the card's `h2` link), L26 (one date source in `settings-unit-miles`).
 
 **Acceptance criteria**
-1. [BE] B0: same-date readings are ordered by value, then save time, in every date-order check; the current odometer is the highest reading on the latest date; the two contracts state the new rule with no "Mismatch" note; tests cover it.
-2. [BE] B1: `GET /api/dashboard` returns the fields above; counts and spend match `GET .../tasks` and `GET /api/service-records` for the same data; archived vehicles are left out of counts and `vehicles` but their records are in the spend; voided records and disabled tasks never count; `today` outside UTC plus or minus 1 day returns 400 `dashboard.invalidDate`; another user's data never appears; 401 without a token.
-3. [FE] Opening `/` shows the summary and one card per active car in the server's order, each with up to 3 tasks showing status and remaining value, in en and he.
-4. [FE] The month spend uses the same format as `/history` amounts (including the Hebrew format from L3), and its link opens `/history` with this month's dates showing the same count and total.
-5. [FE] Mark done on a dashboard task resets it (its remaining value restarts and the counts drop); Undo restores it; focus follows MVP1-C (it moves to the row's Undo, then back to Mark done).
-6. [FE] A quick odometer entry on a card updates that card's odometer and statuses and the summary counts without a full page reload.
-7. [FE] With miles selected, odometers and remaining distances show in miles; with km, in km.
-8. [FE] States: loading shows a placeholder without layout jumps; a failed dashboard load shows a translated error with Retry; a failed Mark done or quick entry shows its error on that card and keeps the rest of the page; no cars shows the existing "Add your first car"; a car with no tasks shows "No tasks yet".
-9. [FE] Hebrew and RTL: every new string is in `en` and `he` in `i18n.ts` and approved by the Hebrew reviewer; badges, numbers and links read correctly right to left.
-10. [FE] Mobile: at 390px the summary and cards stack, there is no horizontal overflow, and Mark done, Undo and the quick entry controls are at least 44px tall; it also works in dark mode.
-11. [BE+FE] No regressions: `dotnet test` passes; smoke passes in both setups with the new steps `dashboard-summary`, `dashboard-mark-done` and `dashboard-quick-odometer`; the car page and `/history` behave as before.
+1. [FE] L13: after `maintenanceTask.notFound` on Edit, the car page's Maintenance list no longer shows the deleted task, without a page reload.
+2. [FE] L14: the message says the task was deleted and the list was updated, in en and he; the Hebrew reviewer approves it.
+3. [FE] L15: when the first `/history` load fails with a valid `vehicleId` in the URL, Retry fills both the Task select and the rows; if the tasks request alone succeeded, the select is filled without Retry.
+4. [FE] L17: dashboard Undo keeps the row on screen until the reloaded data arrives; focus moves straight from Undo to the row's Mark done (or the card's `h2` link if the task left the first 3) and is never on `body` in between.
+5. [FE] L23: a failed archive or unarchive shows a translated error on that card (en and he) and keeps the rest of the page; the card stays as it was.
+6. [FE] L24: a row's Mark done error is cleared when the dashboard data reloads.
+7. [FE] L25: with a long task name that wraps, at 390px and 1280px, in LTR and RTL, the status badge keeps its place next to the name and nothing overflows.
+8. [FE] L16, L18, L19, L20: done as described; `TasksSection.tsx` and the dashboard render the same Undo bar from one component, with no visible change on the car page.
+9. [FE] L21, L22, L26: smoke has the comment and the two new checks, and `settings-unit-miles` passes when the browser's local date differs from the UTC date (run once with `UI_TZ=Pacific/Kiritimati`, where it is already tomorrow, and once with `UI_TZ=UTC`).
+10. [FE] States and layout: the only new strings are L14's message and L23's error, both in `en` and `he`; at 390px there is no horizontal overflow and new or changed buttons are at least 44px; dark mode is unaffected.
+11. [BE+FE] No regressions: build and lint clean; smoke passes in all 4 setups; QA reruns `qa-mvp4a.mjs` and the MVP3 regression scripts. `dotnet test` is not needed (no backend change).
 
-**Out of scope:** "Start a checklist" (needs checklists, step 5; the spec 10 quick-actions bullet stays Partial until then); cost or notes on a dashboard Mark done (use the car page); the predicted due date from `AvgKmPerDay` (spec 2.3); charts and reports (spec 8); notifications (spec 9); the LOW-2 backlog; deployment.
+**Out of scope:** checklists and "Start a checklist" (MVP5-A); the predicted due date (spec 2.3); attachments and the car photo (R2); any API change; deployment.
 
-**Open questions:** none. The choices are recorded in decisions.md ("Dashboard, MVP4-A" and "Same-date odometer readings") for the owner to review on return.
+**Open questions:** none. The choices are recorded in decisions.md ("MVP4-A sign-off" and "Ticket after MVP4-A").
 
 ---
 
 ### Later
-- **LOW-2:** the Low backlog (L13 onward), about 3 tickets after LOW-1.
-- **Step 5:** checklists first (spec 7), which also completes the dashboard's "Start a checklist" quick action; then tires, reports and notifications.
+- **MVP5-A (step 5):** checklist templates, items (checkbox, number, text), runs and run history per car (spec 7), plus the dashboard's "Start a checklist". Then tires, reports and notifications.
 - **Car photo upload and attachments:** blocked until the owner creates the Cloudflare R2 credentials.
-- **Predicted due date** from `AvgKmPerDay` (spec 2.3, optional): after MVP4-A.
+- **Predicted due date** from `AvgKmPerDay` (spec 2.3, optional).
 
 ## Changed since last audit
-- **Signed off:** LOW-1 (not committed yet): L1 to L11 fixed or documented, L12 closed.
-- **Counts:** unchanged (Done 21, Partial 5, Missing 24, Deferred 7); LOW-1 polished bullets that were already Done.
-- **Backlog:** L1 to L12 cleared; L13 to L16 added from LOW-1.
-- **New decisions** (`docs/decisions.md`, 2026-10-15): "Same-date odometer readings" (order by value, built in MVP4-A B0), "LOW-1 leftover Lows", "Dashboard, MVP4-A".
-- **Next ticket:** MVP4-A, written in full. The LOW-1 ticket text is in git history up to `ceb41e2`.
+- **Signed off:** MVP4-A (backend `05f17c0`; frontend not committed yet). AC1 signed off as changed (B0 reverted).
+- **Counts:** Done 21 to 24, Partial 5 (unchanged total: 2.1 left, 10 "Quick actions" joined), Missing 24 to 21. Spec 2.1 quick entry Partial to Done; spec 10 "All cars at a glance" and "Overdue count and monthly spend" Missing to Done; spec 10 "Quick actions" Missing to Partial ("Start a checklist" waits for step 5).
+- **Backlog:** L17 to L26 added from MVP4-A review, QA and the pre-existing smoke flaw. "Add task link not to the task section" is accepted, not logged.
+- **New decisions** (`docs/decisions.md`, 2026-10-16): "MVP4-A sign-off" (AC1 changed; card order after Mark done kept; "No tasks yet" link accepted), "Ticket after MVP4-A" (LOW-2 before step 5).
+- **Next ticket:** LOW-2, written in full. The MVP4-A ticket text is in git history up to `05f17c0`.

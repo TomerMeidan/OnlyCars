@@ -258,3 +258,14 @@ h2 a { margin-block: -0.5625rem; }
 /* The selects pair up or stack, and so do the dates, so no field is left alone on a row and a car's name fits at 390px. */
 .filters.inline-form > label:has(select) { flex-basis: 14rem; }
 .services a.car { font-weight: 600; }
+
+/* Dashboard: the summary, each card's counts, and its first tasks with Mark done beside them */
+/* Three stacked lines, so the loading placeholder can be exactly as tall: two count lines, the gap, the 44px link, the padding */
+.summary { min-block-size: calc(2 * 1.55rem + 1rem + 2.75rem + 2.5rem); align-content: start; }
+.summary .counts { flex-direction: column; }
+.summary a { display: inline-flex; align-items: center; min-height: 2.75rem; }
+.counts { display: flex; flex-wrap: wrap; gap: 0 1.25rem; font-weight: 600; }
+.counts > [class^='status-'] { color: var(--status); }
+.dash-tasks > li { grid-template-columns: 1fr auto; column-gap: 0.75rem; align-items: center; }
+.dash-tasks > li > button.done { grid-column: 2; grid-row: 1 / span 2; }
+.dash-tasks > li > .undo, .dash-tasks > li > .error { grid-column: 1 / -1; }

@@ -82,6 +82,12 @@ export interface MaintenanceTask {
 
 export type TaskStatus = 'Ok' | 'DueSoon' | 'Overdue'
 
+// Urgency order; disabled tasks (no status) go last.
+const rank = (s: TaskStatus | null) => (s ? ['Overdue', 'DueSoon', 'Ok'].indexOf(s) : 3)
+// Most urgent first: by status, then most used, then by name. The car page and the dashboard both list a car's tasks this way.
+export const byUrgency = (lng: string | undefined) => (a: MaintenanceTask, b: MaintenanceTask) =>
+  rank(a.status) - rank(b.status) || (b.progress ?? 0) - (a.progress ?? 0) || a.name.localeCompare(b.name, lng, { numeric: true })
+
 export interface ServiceRecord {
   id: string
   vehicleId: string
@@ -99,6 +105,16 @@ export interface ServiceRecordPage {
   items: ServiceRecord[]
   totalCount: number
   totalCost: number
+}
+
+// GET /dashboard: active cars, most urgent first, each with all its enabled tasks; the month figures equal /history's for the same dates.
+export interface Dashboard {
+  overdueCount: number
+  dueSoonCount: number
+  month: string // YYYY-MM
+  monthTotalCost: number
+  monthServiceCount: number
+  vehicles: { id: string; overdueCount: number; dueSoonCount: number; tasks: MaintenanceTask[] }[]
 }
 
 // The id changes on every save (the list is replaced), so nothing on screen is keyed on it.

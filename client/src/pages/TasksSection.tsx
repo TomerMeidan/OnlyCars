@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from 'react'
 import { Trans, useTranslation } from 'react-i18next'
 import { useAuth, useDistance } from '../auth'
-import { api, ApiError, localToday, taskCategories, type MaintenanceTask, type TaskCategory, type TaskStatus, type TaskTemplate, type Vehicle } from '../api'
+import { api, ApiError, byUrgency, localToday, taskCategories, type MaintenanceTask, type TaskCategory, type TaskStatus, type TaskTemplate, type Vehicle } from '../api'
 import { errorMessage } from '../i18n'
 import { useRow } from '../useRow'
 
@@ -14,8 +14,12 @@ type TaskBody = Pick<MaintenanceTask, 'name' | 'category' | 'intervalKm' | 'inte
 // PUT is a full replace, so every save sends all of these.
 const bodyOf = ({ name, category, intervalKm, intervalDays, dueSoonPercent, lastDoneOdometerKm, lastDoneDate }: TaskBody): TaskBody =>
   ({ name, category, intervalKm, intervalDays, dueSoonPercent, lastDoneOdometerKm, lastDoneDate })
-// Urgency order; disabled tasks (no status) go last.
-const rank = (s: TaskStatus | null) => (s ? ['Overdue', 'DueSoon', 'Ok'].indexOf(s) : 3)
+
+// Colored by the status-* class on an ancestor.
+export function StatusBadge({ status }: { status: TaskStatus }) {
+  const { t } = useTranslation()
+  return <span className="badge status">{t(`status.${status}`)}</span>
+}
 
 // "Every 10,000 km or 1 year", "Every 2 years", "Every 60,000 km".
 function Interval({ km, days }: { km: number | null; days: number | null }) {
@@ -31,7 +35,7 @@ function Interval({ km, days }: { km: number | null; days: number | null }) {
 }
 
 // "1,200 km or 40 days left", "about 4 months left", "Overdue by 300 km and 12 days". Once overdue, only the overdue parts show.
-function Remaining({ km, days }: { km: number | null; days: number | null }) {
+export function Remaining({ km, days }: { km: number | null; days: number | null }) {
   const { t } = useTranslation()
   const d = useDistance()
   const late = (km ?? 0) < 0 || (days ?? 0) < 0
@@ -97,8 +101,7 @@ export function TasksSection({ car, undo, setUndo, onOdometerChanged }: {
     ;(section.querySelector<HTMLElement>(sel) ?? section.querySelector<HTMLElement>('h2'))?.focus()
   }, [tasks, adding])
 
-  const sorted = tasks && [...tasks].sort((a, b) =>
-    rank(a.status) - rank(b.status) || (b.progress ?? 0) - (a.progress ?? 0) || a.name.localeCompare(b.name, i18n.resolvedLanguage, { numeric: true }))
+  const sorted = tasks && [...tasks].sort(byUrgency(i18n.resolvedLanguage))
 
   const saved = (task: MaintenanceTask, focus = 'button.edit') => {
     focusNext.current = `li[data-id="${task.id}"] ${focus}`
@@ -349,7 +352,7 @@ function TaskRow({ task, url, currentKm, readOnly, onSaved, onDeleted, onReset, 
     <li data-id={task.id} className={task.status ? `status-${task.status}` : undefined}>
       <div className="task-head">
         <span className="name">{name}</span>
-        {task.status && <span className="badge status">{t(`status.${task.status}`)}</span>}
+        {task.status && <StatusBadge status={task.status} />}
         <span className="badge">{t(`categories.${task.category}`)}</span>
         {!task.isEnabled && <span className="badge">{t('disabled')}</span>}
       </div>

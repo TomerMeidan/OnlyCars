@@ -11,12 +11,17 @@ const setups = [
   { name: 'desktop-light-en', viewport: { width: 1280, height: 800 }, colorScheme: 'light', lng: 'en' },
   { name: 'mobile-dark-he', viewport: { width: 390, height: 844 }, colorScheme: 'dark', lng: 'he', isMobile: true, hasTouch: true },
 ]
+// SMOKE_ALL=1 adds the other two combinations; UI_TZ (e.g. UTC) sets the browser timezone.
+if (process.env.SMOKE_ALL) setups.push(
+  { name: 'desktop-dark-he', viewport: { width: 1280, height: 800 }, colorScheme: 'dark', lng: 'he' },
+  { name: 'mobile-light-en', viewport: { width: 390, height: 844 }, colorScheme: 'light', lng: 'en', isMobile: true, hasTouch: true },
+)
 
 const browser = await chromium.launch({ channel: 'chrome' })
 const report = []
 
 for (const s of setups) {
-  const ctx = await browser.newContext({ viewport: s.viewport, colorScheme: s.colorScheme, isMobile: s.isMobile, hasTouch: s.hasTouch })
+  const ctx = await browser.newContext({ timezoneId: process.env.UI_TZ, viewport: s.viewport, colorScheme: s.colorScheme, isMobile: s.isMobile, hasTouch: s.hasTouch })
   await ctx.addInitScript((lng) => localStorage.getItem('i18nextLng') || localStorage.setItem('i18nextLng', lng), s.lng)
   const page = await ctx.newPage()
   const run = { setup: s.name, steps: [], consoleErrors: [], badResponses: [] }
@@ -46,8 +51,8 @@ for (const s of setups) {
   // MVP1-C: page titles, focus after navigation and actions, history button sizes.
   const he = s.lng === 'he'
   const T = he
-    ? { login: 'התחברות', register: 'יצירת חשבון', myCars: 'הרכבים שלי', addCar: 'הוספת רכב', editCar: 'עריכת רכב' }
-    : { login: 'Log in', register: 'Create account', myCars: 'My cars', addCar: 'Add car', editCar: 'Edit car' }
+    ? { login: 'התחברות', register: 'יצירת חשבון', dashboard: 'לוח בקרה', addCar: 'הוספת רכב', editCar: 'עריכת רכב' }
+    : { login: 'Log in', register: 'Create account', dashboard: 'Dashboard', addCar: 'Add car', editCar: 'Edit car' }
   const editSel = (v) => `button[aria-label="${he ? `עריכה של הקריאה ${v} ק״מ` : `Edit reading ${v} km`}"]`
   const deleteSel = (v) => `button[aria-label="${he ? `מחיקה של הקריאה ${v} ק״מ` : `Delete reading ${v} km`}"]`
   const active = () => page.evaluate(() => document.activeElement?.outerHTML.slice(0, 100))
@@ -106,7 +111,7 @@ for (const s of setups) {
     await page.click('form button:not(.link)')
     registered = await (await response).json()
     await page.locator('a[href="/cars/new"]').waitFor()
-    await arrivedAt(T.myCars)
+    await arrivedAt(T.dashboard)
   })
   await step('register-currency', async () => {
     // The default follows the UI language, and the auth response returns what was saved.
@@ -176,7 +181,7 @@ for (const s of setups) {
     await page.selectOption('select[name=fuelType]', 'Hybrid')
     await page.fill('input[name=initialOdometerKm]', '61000')
     await page.click('form button:not(.link)')
-    await page.locator('.cars li').first().waitFor()
+    await page.locator('.cars > li').first().waitFor()
     if (digitsOnly(await odometer()) !== '61000') throw new Error(`odometer shows ${await odometer()}`)
   })
   await step('odometer-update', async () => {
@@ -208,7 +213,7 @@ for (const s of setups) {
     await page.waitForFunction(() => document.querySelector('.odometer')?.getAttribute('aria-label')?.replace(/\D/g, '') === '60000')
   })
   await step('odometer-history', async () => {
-    await page.click('.cars li h2 a')
+    await page.click('.cars > li h2 a')
     await page.locator('.history li').first().waitFor()
     await arrivedAt('Test Corolla')
     const rows = await page.locator('.history li').allTextContents()
@@ -1417,15 +1422,15 @@ for (const s of setups) {
   })
   await step('edit-car', async () => {
     await page.click('main > a[href="/"]') // back from the not-found page via the detail page's link
-    await page.locator('.cars li').first().waitFor()
-    await arrivedAt(T.myCars)
+    await page.locator('.cars > li').first().waitFor()
+    await arrivedAt(T.dashboard)
     await page.click('a[href$="/edit"]')
     await page.locator('input[name=nickname]').waitFor()
     await arrivedAt(T.editCar)
     await page.fill('input[name=nickname]', 'Renamed Corolla')
     await page.click('form button:not(.link)')
     await page.getByRole('heading', { name: 'Renamed Corolla' }).waitFor()
-    await arrivedAt(T.myCars)
+    await arrivedAt(T.dashboard)
   })
   // SET-1: settings. Each setup forces the theme opposite to its OS one, at 390px wide.
   // The hint comes from i18n.ts (en first, then he), so copy edits don't break the step.
@@ -1519,7 +1524,7 @@ for (const s of setups) {
     await page.click('form button:not(.link)')
     await page.locator('a[href="/cars/new"]').waitFor()
     await dirIs(ownDir)
-    await titleIs(T.myCars)
+    await titleIs(T.dashboard)
     await themeIs(forced, 'after logging in')
   })
   await step('settings-currency', async () => {
@@ -1536,7 +1541,7 @@ for (const s of setups) {
     if (await page.evaluate(() => JSON.parse(localStorage.getItem('user')).currency) !== target) throw new Error('cached user not updated')
     // The cost label follows without a reload.
     await page.click('header a.brand')
-    await page.click('.cars li h2 a')
+    await page.click('.cars > li h2 a')
     await taskBtn(RS.cost, 'Brakes').click()
     const label = plain(await taskRow('Brakes').locator('form label').first().textContent())
     if (!label.includes(target)) throw new Error(`cost label "${label}"`)
@@ -1661,6 +1666,9 @@ for (const s of setups) {
     if ((await post).request().postDataJSON().valueKm !== 80628) throw new Error(`POST ${JSON.stringify((await post).request().postDataJSON())}`)
     await page.waitForFunction(() => [...document.querySelectorAll('.odometer')].some((o) => o.getAttribute('aria-label').startsWith('50,100')))
     if ((await apiCall('GET', `/vehicles/${mileCarId}`)).currentOdometerKm !== 80628) throw new Error('not stored as 80,628 km')
+    // MVP4-A criterion 7: the dashboard's remaining distance is in miles too.
+    const dashRow = plain(await mileCar().locator('.dash-tasks').textContent())
+    if (!dashRow.includes(UM.left853)) throw new Error(`dashboard task "${dashRow}"`)
     await noOverflow('the list in miles')
     // Car page: odometer, history and its edit form, tasks, and the template picker.
     await mileCar().locator('h2 a').click()
@@ -1829,19 +1837,19 @@ for (const s of setups) {
   await step('tap-targets-list', async () => {
     await page.click('header a.brand')
     await page.setViewportSize({ width: 390, height: 844 })
-    await page.locator('.cars li').first().waitFor()
+    await page.locator('.cars > li').first().waitFor()
     await tall(page.locator('main > label.inline'), 'Show archived') // MVP2-C QA note (a)
     await sweep('list page at 390px') // the screenshot is taken at 390px; the next step restores the viewport
   })
   await step('archive-car', async () => {
     await page.setViewportSize(s.viewport)
-    await page.click('.cars li .actions button.link')
-    await page.locator('.cars li').waitFor({ state: 'detached' })
+    await page.click('.cars > li .actions button.link')
+    await page.locator('.cars > li').waitFor({ state: 'detached' })
     await page.check('main > label.inline input')
-    await page.locator('.cars li.archived', { hasText: 'Renamed Corolla' }).waitFor()
+    await page.locator('.cars > li.archived', { hasText: 'Renamed Corolla' }).waitFor()
   })
   await step('archived-tasks-read-only', async () => {
-    await page.locator('.cars li.archived', { hasText: 'Renamed Corolla' }).locator('h2 a').click()
+    await page.locator('.cars > li.archived', { hasText: 'Renamed Corolla' }).locator('h2 a').click()
     await taskRow(TK.belt).waitFor()
     const controls = await tasks.locator('button, input, select').count()
     if (controls) throw new Error(`${controls} controls on an archived car's tasks`)
@@ -2081,6 +2089,160 @@ for (const s of setups) {
     if (taskGets) throw new Error(`${taskGets} tasks requests for an unknown car`)
     if (await filterBar.locator('[role=alert]').count()) throw new Error('an error for an unknown car')
     await page.setViewportSize(s.viewport)
+  })
+  // MVP4-A: the dashboard on `/`. A car with four tasks (overdue, due soon, two OK) and one with none, beside History Civic.
+  const D = he
+    ? { overdue: (n) => ['אין משימות באיחור', 'משימה אחת באיחור', 'שתי משימות באיחור'][n] ?? `${n} משימות באיחור`,
+        soon: (n) => ['אין משימות לביצוע בקרוב', 'משימה אחת לביצוע בקרוב', 'שתי משימות לביצוע בקרוב'][n] ?? `${n} משימות לביצוע בקרוב`,
+        month: (n, total) => (n ? `החודש: ${total} (${['', 'טיפול אחד', 'שני טיפולים'][n] || `${n} טיפולים`})` : 'החודש: אין טיפולים'),
+        all: (n) => `כל המשימות (${n})`, noTasks: 'עדיין אין משימות תחזוקה.', addTask: 'הוספת משימה', status: { Overdue: 'באיחור', DueSoon: 'בקרוב' }, brakesLate: 'באיחור של 500 ק״מ' }
+    : { overdue: (n) => (n ? `${n} overdue` : 'Nothing overdue'), soon: (n) => (n ? `${n} due soon` : 'Nothing due soon'),
+        month: (n, total) => (n ? `This month: ${total} (${n} service${n === 1 ? '' : 's'})` : 'This month: no services'),
+        all: (n) => `All tasks (${n})`, noTasks: 'No maintenance tasks yet.', addTask: 'Add task', status: { Overdue: 'Overdue', DueSoon: 'Due soon' }, brakesLate: 'Overdue by 500 km' }
+  const isDashGet = (u) => u.pathname === '/api/dashboard'
+  const dashCar = () => page.locator('.cars > li').filter({ has: page.getByRole('link', { name: 'Dash car', exact: true }) })
+  const dashRow = (name) => dashCar().locator('.dash-tasks > li').filter({ has: page.locator('.name', { hasText: new RegExp(`^${name}$`) }) })
+  const dashNames = () => dashCar().locator('.dash-tasks .name').allTextContents()
+  const cardCounts = async () => (await dashCar().locator('.counts span').allTextContents()).map(plain).join('|')
+  const summary = page.locator('main .summary')
+  const dashApi = async () => apiCall('GET', `/dashboard?today=${await localDate()}`)
+  // The summary shows the API's figures, once the reload lands.
+  async function summaryShows(dash) {
+    const want = [D.overdue(dash.overdueCount), D.soon(dash.dueSoonCount), D.month(dash.monthServiceCount, await moneyText(dash.monthTotalCost))].join('|')
+    await page.waitForFunction((w) => [...document.querySelectorAll('main .summary .counts span, main .summary a')].map((e) => e.textContent.replace(/[⁦-⁩]/g, '')).join('|') === w, want, { timeout: 5000 })
+      .catch(async () => { throw new Error(`summary "${plain(await summary.textContent())}", want "${want}"`) })
+  }
+  let dashCarId, taskIds
+  await step('dashboard-summary', async () => {
+    dashCarId = (await apiCall('POST', '/vehicles', { nickname: 'Dash car', initialOdometerKm: 50000 })).id
+    await apiCall('POST', '/vehicles', { nickname: 'Dash bike', initialOdometerKm: 1000 })
+    const today = await localDate()
+    const utcToday = new Date().toISOString().slice(0, 10)
+    const task = (name, intervalKm, intervalDays, lastKm) =>
+      apiCall('POST', `/vehicles/${dashCarId}/tasks`, { name, category: 'Other', intervalKm, intervalDays, dueSoonPercent: 10, lastDoneOdometerKm: lastKm, lastDoneDate: utcToday })
+    taskIds = {
+      Oil: (await task('Oil', 10000, null, 39000)).id, // overdue by 1,000 km
+      Brakes: (await task('Brakes', 20000, null, 31000)).id, // due soon, 1,000 km left
+      'Air filter': (await task('Air filter', null, 365, 50000)).id,
+      Coolant: (await task('Coolant', 100000, null, 50000)).id,
+    }
+    // Criterion 8: a slow load shows the placeholder, as tall as the loaded summary.
+    // Every request is held (dev StrictMode loads twice); continue fails harmlessly on one the page dropped.
+    const slow = async (r) => { await page.waitForTimeout(600); await r.continue().catch(() => {}) }
+    await page.route(isDashGet, slow)
+    await page.click('header a.brand')
+    await summary.locator('[role=status]').waitFor()
+    const loadingH = await heightOf(summary)
+    await dashCar().waitFor()
+    await page.unroute(isDashGet, slow)
+    await arrivedAt(T.dashboard)
+    const loadedH = await heightOf(summary)
+    if (Math.abs(loadedH - loadingH) > 1) throw new Error(`summary ${loadingH}px while loading, ${loadedH}px loaded`)
+    // A failed load: a translated error with Retry; Retry loads it and focuses the h1.
+    const fail = (r) => r.fulfill({ status: 500, contentType: 'application/json', body: '{}' })
+    await page.route(isDashGet, fail)
+    await page.reload()
+    const alert = page.locator('main > .row [role=alert]')
+    await alert.waitFor()
+    if (plain(await alert.textContent()) !== HS.generic) throw new Error(`load error "${await alert.textContent()}"`)
+    // A Retry that fails again keeps focus on Retry (MVP1-C).
+    const retry = page.getByRole('button', { name: HS.retry, exact: true })
+    const failed = page.waitForResponse((r) => isDashGet(new URL(r.url())))
+    await retry.click()
+    await failed
+    await page.locator('main > .row button[aria-disabled=false]').waitFor()
+    await focusIs('main > .row button', 'Retry after a failed Retry')
+    await page.unroute(isDashGet, fail)
+    await retry.click()
+    await dashCar().waitFor()
+    await focusIs('main h1', 'h1 after Retry')
+    if (await alert.count()) throw new Error('the error stayed after Retry')
+    forget500()
+    // Criterion 3: one card per active car in the server's order, then the summary's figures.
+    const dash = await dashApi()
+    const cars = await apiCall('GET', '/vehicles')
+    const want = dash.vehicles.map((v) => cars.find((c) => c.id === v.id).nickname)
+    const names = await page.locator('.cars > li:not(.archived) h2').allTextContents()
+    if (names.join('|') !== want.join('|')) throw new Error(`cards ${names}, want ${want}`)
+    await summaryShows(dash)
+    noLatin((await summary.textContent()).replace(/[A-Z]{3}/, ''), 'summary')
+    // The first 3 tasks, most urgent first, with status and remaining; All tasks (4); a car without tasks says so.
+    if ((await dashNames()).join('|') !== 'Oil|Brakes|Air filter') throw new Error(`tasks ${await dashNames()}`)
+    if ((await dashRow('Oil').locator('.badge.status').textContent()) !== D.status.Overdue) throw new Error('Oil badge')
+    if ((await dashRow('Brakes').locator('.badge.status').textContent()) !== D.status.DueSoon) throw new Error('Brakes badge')
+    if (!plain(await dashRow('Oil').textContent()).includes(RS.oilLate)) throw new Error(`Oil row "${plain(await dashRow('Oil').textContent())}"`)
+    if ((await cardCounts()) !== `${D.overdue(1)}|${D.soon(1)}`) throw new Error(`card counts ${await cardCounts()}`)
+    const all = plain(await dashCar().locator(`.actions a[href="/cars/${dashCarId}"]`).textContent())
+    if (all !== D.all(4)) throw new Error(`All tasks link "${all}"`)
+    const bike = page.locator('.cars > li').filter({ has: page.getByRole('link', { name: 'Dash bike', exact: true }) })
+    if (!(await bike.textContent()).includes(D.noTasks) || !(await bike.getByRole('link', { name: D.addTask, exact: true }).count())) throw new Error('no-tasks state')
+    // Criterion 10: at 390px nothing overflows and the controls are 44px tall.
+    await page.setViewportSize({ width: 390, height: 844 })
+    await noOverflow('the dashboard')
+    await sweep('the dashboard')
+    await tall(dashCar().locator('.quick input[type=number]'), 'quick entry')
+    // Criterion 4: the month links to /history for this month, which shows the same count and total.
+    const month = summary.locator('a')
+    if ((await month.getAttribute('href')) !== `/history?from=${dash.month}-01&to=${today}`) throw new Error(`month link ${await month.getAttribute('href')}`)
+    await month.click()
+    await arrivedAt(HS.title)
+    if (dash.monthServiceCount) await summaryIs(dash.monthServiceCount, dash.monthTotalCost)
+    await page.goBack()
+    await dashCar().waitFor()
+    await page.setViewportSize(s.viewport)
+  })
+  await step('dashboard-mark-done', async () => {
+    const before = await dashApi()
+    const sent = page.waitForRequest(isReset)
+    await dashRow('Oil').getByRole('button', { name: RS.done + 'Oil', exact: true }).click()
+    if ((await sent).postDataJSON().date !== (await localDate())) throw new Error('reset not dated with the local date')
+    // Criterion 5: focus on the row's Undo; Oil restarts and stays shown with its Undo though it is now 4th; the counts drop.
+    await focusIs(`li[data-id="${taskIds.Oil}"] .undo button`, 'Undo after Mark done')
+    if ((await dashNames()).join('|') !== 'Brakes|Air filter|Coolant|Oil') throw new Error(`tasks after Mark done ${await dashNames()}`)
+    if (!plain(await dashRow('Oil').textContent()).includes(RS.oilLeft)) throw new Error(`Oil row "${plain(await dashRow('Oil').textContent())}"`)
+    if ((await cardCounts()) !== `${D.overdue(0)}|${D.soon(1)}`) throw new Error(`card counts ${await cardCounts()}`)
+    const after = await dashApi()
+    if (after.overdueCount !== before.overdueCount - 1) throw new Error(`overdue ${before.overdueCount} -> ${after.overdueCount}`)
+    await summaryShows(after)
+    await page.screenshot({ path: `${OUT}/${s.name}-dashboard-undo.png`, fullPage: true })
+    // Undo restores it, with focus back on its Mark done.
+    await dashRow('Oil').locator('.undo button').click()
+    await focusIs(`li[data-id="${taskIds.Oil}"] button.done`, 'Mark done after Undo')
+    if ((await dashNames()).join('|') !== 'Oil|Brakes|Air filter') throw new Error(`tasks after Undo ${await dashNames()}`)
+    if (!plain(await dashRow('Oil').textContent()).includes(RS.oilLate)) throw new Error('Oil not overdue again')
+    await summaryShows(before)
+    // Criterion 8: a failed Mark done shows on that row, keeps the page, and focus returns to Mark done.
+    await page.route('**/reset', (r) => r.fulfill({ status: 500, contentType: 'application/json', body: '{}' }), { times: 1 })
+    await dashRow('Brakes').getByRole('button', { name: RS.done + 'Brakes', exact: true }).click()
+    const alert = dashRow('Brakes').locator('[role=alert]')
+    await alert.waitFor()
+    if (plain(await alert.textContent()) !== RS.generic) throw new Error(`row error "${await alert.textContent()}"`)
+    await focusIs(`li[data-id="${taskIds.Brakes}"] button.done`, 'Mark done after a failure')
+    if (await page.locator('main > .row [role=alert]').count()) throw new Error('a page-level error')
+    forget500()
+  })
+  await step('dashboard-quick-odometer', async () => {
+    await page.evaluate(() => { window.noReload = true })
+    const before = await dashApi()
+    // A failed save shows on that card only.
+    await page.route((u) => u.pathname === `/api/vehicles/${dashCarId}/odometer`, (r) => r.fulfill({ status: 500, contentType: 'application/json', body: '{}' }), { times: 1 })
+    await dashCar().locator('.quick input[type=number]').fill('51500')
+    await dashCar().locator('.quick button').click()
+    const alert = dashCar().locator('.quick [role=alert]')
+    await alert.waitFor()
+    if (plain(await alert.textContent()) !== HS.generic) throw new Error(`quick entry error "${await alert.textContent()}"`)
+    if (await page.locator('main > .row [role=alert]').count()) throw new Error('a page-level error')
+    forget500()
+    // Criterion 6: the card's odometer and statuses and the summary follow, without a page reload.
+    await dashCar().locator('.quick button').click()
+    await page.waitForFunction((id) => document.querySelector(`.cars > li[data-id="${id}"] .odometer`)?.getAttribute('aria-label').startsWith('51,500'), dashCarId, { timeout: 5000 })
+    if (!plain(await dashRow('Brakes').textContent()).includes(D.brakesLate)) throw new Error(`Brakes row "${plain(await dashRow('Brakes').textContent())}"`)
+    if ((await cardCounts()) !== `${D.overdue(2)}|${D.soon(0)}`) throw new Error(`card counts ${await cardCounts()}`)
+    const after = await dashApi()
+    if (after.overdueCount !== before.overdueCount + 1 || after.dueSoonCount !== before.dueSoonCount - 1) throw new Error('API counts did not follow')
+    await summaryShows(after)
+    if (await alert.count()) throw new Error('the error stayed after saving')
+    if (!(await page.evaluate(() => window.noReload))) throw new Error('the page reloaded')
   })
   await step('switch-language', async () => {
     const before = await page.getAttribute('html', 'dir')

@@ -164,6 +164,20 @@ const en = {
   noMatches: 'No services match these filters.',
   showMore: 'Show more',
   retry: 'Retry',
+  dashboard: 'Dashboard',
+  overdueCount_zero: 'Nothing overdue',
+  overdueCount_one: '{{count, number}} overdue',
+  overdueCount_two: '{{count, number}} overdue',
+  overdueCount_other: '{{count, number}} overdue',
+  dueSoonCount_zero: 'Nothing due soon',
+  dueSoonCount_one: '{{count, number}} due soon',
+  dueSoonCount_two: '{{count, number}} due soon',
+  dueSoonCount_other: '{{count, number}} due soon',
+  thisMonth_zero: 'This month: no services',
+  thisMonth_one: 'This month: {{total}} ({{count, number}} service)',
+  thisMonth_two: 'This month: {{total}} ({{count, number}} services)',
+  thisMonth_other: 'This month: {{total}} ({{count, number}} services)',
+  allTasksCount: 'All tasks ({{n, number}})',
   // Shown by the browser on the field, before any request.
   limits: {
     intervalKm: 'Enter an interval from 1 to {{maxInterval, number}} {{distUnit}}.',
@@ -262,6 +276,9 @@ const en = {
     },
     user: {
       notFound: 'Your account was not found. Log out and log in again.',
+    },
+    dashboard: {
+      invalidDate: "The date must be today. Check your device's date and try again.",
     },
   },
 }
@@ -425,6 +442,20 @@ const he: typeof en = {
   noMatches: 'אין טיפולים שתואמים לסינון.',
   showMore: 'הצגת עוד',
   retry: 'נסו שוב',
+  dashboard: 'לוח בקרה',
+  overdueCount_zero: 'אין משימות באיחור',
+  overdueCount_one: 'משימה אחת באיחור',
+  overdueCount_two: 'שתי משימות באיחור',
+  overdueCount_other: '⁦{{count, number}}⁩ משימות באיחור',
+  dueSoonCount_zero: 'אין משימות לביצוע בקרוב',
+  dueSoonCount_one: 'משימה אחת לביצוע בקרוב',
+  dueSoonCount_two: 'שתי משימות לביצוע בקרוב',
+  dueSoonCount_other: '⁦{{count, number}}⁩ משימות לביצוע בקרוב',
+  thisMonth_zero: 'החודש: אין טיפולים',
+  thisMonth_one: 'החודש: ⁨{{total}}⁩ (טיפול אחד)',
+  thisMonth_two: 'החודש: ⁨{{total}}⁩ (שני טיפולים)',
+  thisMonth_other: 'החודש: ⁨{{total}}⁩ (⁦{{count, number}}⁩ טיפולים)',
+  allTasksCount: 'כל המשימות (⁦{{n, number}}⁩)',
   limits: {
     intervalKm: 'הזינו מרווח של ⁦1⁩ עד ⁦{{maxInterval, number}}⁩ {{distUnit}}.',
     intervalTime: 'הזינו מרווח זמן של עד ⁦20⁩ שנה (⁦243⁩ חודשים או ⁦7,300⁩ ימים).',
@@ -521,6 +552,9 @@ const he: typeof en = {
     },
     user: {
       notFound: 'החשבון שלך לא נמצא. התנתקו והתחברו שוב.',
+    },
+    dashboard: {
+      invalidDate: 'התאריך חייב להיות היום. בדקו את התאריך במכשיר ונסו שוב.',
     },
   },
 }
