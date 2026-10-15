@@ -110,17 +110,8 @@ public class MaintenanceTaskService(IAppDbContext db, VehicleService vehicleServ
         }
 
         var cost = request?.Cost;
-        if (cost is { } c && (c < 0 || c > ServiceRecord.MaxCost || decimal.Round(c, 2) != c))
-        {
-            throw new ValidationFailedException("serviceRecord.invalidCost",
-                $"The cost must be 0 to {ServiceRecord.MaxCost} with at most 2 decimals.");
-        }
-
-        var notes = request?.Notes?.Trim();
-        if (notes?.Length > ServiceRecord.MaxNotesLength)
-        {
-            throw new ValidationFailedException("serviceRecord.notesTooLong", $"Notes can be up to {ServiceRecord.MaxNotesLength} characters.");
-        }
+        ValidateCost(cost);
+        var notes = TrimNotes(request?.Notes);
 
         var record = new ServiceRecord
         {
@@ -128,7 +119,7 @@ public class MaintenanceTaskService(IAppDbContext db, VehicleService vehicleServ
             Date = date,
             OdometerKm = vehicle.CurrentOdometerKm,
             TotalCost = cost,
-            Notes = string.IsNullOrEmpty(notes) ? null : notes,
+            Notes = notes,
             Tasks =
             {
                 new ServiceRecordTask
@@ -147,26 +138,112 @@ public class MaintenanceTaskService(IAppDbContext db, VehicleService vehicleServ
 
         // Its value is the current odometer, so it skips the date-order checks (decisions.md).
         var readings = await db.OdometerReadings.Where(r => r.VehicleId == vehicle.Id).ToListAsync(ct);
-        var reading = new OdometerReading
-        {
-            VehicleId = vehicle.Id,
-            ValueKm = vehicle.CurrentOdometerKm,
-            ReadingDate = date,
-            Source = OdometerSource.Service,
-            ServiceRecord = record
-        };
-        db.OdometerReadings.Add(reading);
-        readings.Add(reading);
-        OdometerService.Recompute(vehicle, readings);
+        LogServiceReading(vehicle, readings, ServiceReading(record));
 
         await db.SaveChangesAsync(ct);
         return new(record.Id, ToDto(task, vehicle, today));
     }
 
+    /// <summary>The car's non-voided service records, newest first (by date, then creation time).</summary>
+    public async Task<List<ServiceRecordDto>> ListRecordsAsync(Guid userId, Guid vehicleId, CancellationToken ct = default)
+    {
+        await vehicleService.FindOwnedAsync(userId, vehicleId, ct);
+
+        var records = await db.ServiceRecords
+            .Include(r => r.Tasks).ThenInclude(j => j.MaintenanceTask)
+            .Where(r => r.VehicleId == vehicleId && !r.IsVoided)
+            .OrderByDescending(r => r.Date)
+            .ThenByDescending(r => r.CreatedAt)
+            .ToListAsync(ct);
+
+        return records.Select(ToDto).ToList();
+    }
+
     /// <summary>
-    /// Undo: voids the record, restores each linked task's LastDone* from its snapshot, and removes the reading the reset
-    /// logged (kept as a manual reading if it's the car's only one). Only each task's latest non-voided record can be voided,
-    /// so the snapshot is always the value to go back to. One SaveChanges.
+    /// Records a past (or today's) service: the record, one join row per task with its old LastDone* snapshot, LastDone*
+    /// moved only when the record is at least as recent (decisions.md), and a Service reading under the manual date-order
+    /// rules. Every check runs before anything changes; one SaveChanges.
+    /// </summary>
+    public async Task<CreateServiceRecordResponse> CreateRecordAsync(Guid userId, Guid vehicleId, CreateServiceRecordRequest request,
+        CancellationToken ct = default)
+    {
+        var vehicle = await vehicleService.FindOwnedAsync(userId, vehicleId, ct);
+
+        // Same one day of slack as readings and resets: the client sends its local date.
+        var today = TodayUtc();
+        var date = request.Date ?? today;
+        if (date > today.AddDays(1))
+        {
+            throw new ValidationFailedException("serviceRecord.futureDate", "The service date can't be in the future.");
+        }
+
+        if (request.OdometerKm is not { } odometerKm)
+        {
+            throw new ValidationFailedException("odometer.invalidValue", "The odometer reading is required.");
+        }
+
+        ValidateCost(request.TotalCost);
+
+        var shop = request.ShopName?.Trim();
+        if (shop?.Length > ServiceRecord.MaxShopNameLength)
+        {
+            throw new ValidationFailedException("serviceRecord.shopTooLong", $"The shop name can be up to {ServiceRecord.MaxShopNameLength} characters.");
+        }
+
+        var notes = TrimNotes(request.Notes);
+
+        // Matched in memory against this car's tasks, so another car's (or user's) task id is not found.
+        var carTasks = await db.MaintenanceTasks.Where(t => t.VehicleId == vehicle.Id).ToListAsync(ct);
+        var linked = (request.TaskIds ?? []).Distinct()
+            .Select(id => carTasks.FirstOrDefault(t => t.Id == id) ?? throw new NotFoundException(nameof(MaintenanceTask), id))
+            .OrderBy(t => t.Name)
+            .ToList();
+
+        var record = new ServiceRecord
+        {
+            VehicleId = vehicle.Id,
+            Date = date,
+            OdometerKm = odometerKm,
+            ShopName = string.IsNullOrEmpty(shop) ? null : shop,
+            TotalCost = request.TotalCost,
+            Notes = notes
+        };
+
+        var readings = await db.OdometerReadings.Where(r => r.VehicleId == vehicle.Id).ToListAsync(ct);
+        var reading = ServiceReading(record);
+        OdometerService.Validate(readings, reading, odometerKm, date, request.ConfirmCorrection);
+
+        var now = DateTimeOffset.UtcNow;
+        foreach (var task in linked)
+        {
+            record.Tasks.Add(new ServiceRecordTask
+            {
+                MaintenanceTask = task,
+                PreviousLastDoneOdometerKm = task.LastDoneOdometerKm,
+                PreviousLastDoneDate = task.LastDoneDate
+            });
+
+            // An older service never makes a task look less recently done.
+            if ((date, odometerKm).CompareTo((task.LastDoneDate, task.LastDoneOdometerKm)) >= 0)
+            {
+                task.LastDoneOdometerKm = odometerKm;
+                task.LastDoneDate = date;
+                task.UpdatedAt = now;
+            }
+        }
+
+        db.ServiceRecords.Add(record);
+        LogServiceReading(vehicle, readings, reading);
+
+        await db.SaveChangesAsync(ct);
+        return new(ToDto(record), linked.Select(t => ToDto(t, vehicle, today)).ToList());
+    }
+
+    /// <summary>
+    /// Undo, in any order: voids the record, and each linked task whose LastDone* still equals this record's date and odometer
+    /// goes to the latest remaining non-voided linked record (by date, odometer, creation time), or with none left to the
+    /// snapshot of its earliest-created linked record. Other tasks (a later record or a manual edit) are left alone. The
+    /// record's reading is removed (kept as a manual reading if it's the car's only one). One SaveChanges.
     /// </summary>
     public async Task<List<MaintenanceTaskDto>> VoidAsync(Guid userId, Guid vehicleId, Guid recordId, CancellationToken ct = default)
     {
@@ -180,27 +257,23 @@ public class MaintenanceTaskService(IAppDbContext db, VehicleService vehicleServ
             throw new ConflictException("serviceRecord.alreadyVoided", "This service record is already undone.");
         }
 
-        var taskIds = record.Tasks.Select(j => j.MaintenanceTaskId).ToList();
-        var hasLater = await db.ServiceRecordTasks.AnyAsync(j => taskIds.Contains(j.MaintenanceTaskId)
-            && j.ServiceRecordId != record.Id
-            && !j.ServiceRecord!.IsVoided
-            // Creation order, not Date: snapshots chain in the order resets were made, and dates can go backwards (±1 day slack).
-            && j.ServiceRecord.CreatedAt > record.CreatedAt, ct);
-        if (hasLater)
-        {
-            throw new ConflictException("serviceRecord.notLatest", "A later reset of this task must be undone first.");
-        }
-
         var now = DateTimeOffset.UtcNow;
         record.IsVoided = true;
         record.UpdatedAt = now;
 
+        var taskIds = record.Tasks.Select(j => j.MaintenanceTaskId).ToList();
         var tasks = await db.MaintenanceTasks.Where(t => taskIds.Contains(t.Id)).OrderBy(t => t.Name).ToListAsync(ct);
-        foreach (var task in tasks)
+        // Every link of these tasks, voided ones included (the earliest snapshot may sit on a voided record).
+        var links = await db.ServiceRecordTasks.Include(j => j.ServiceRecord)
+            .Where(j => taskIds.Contains(j.MaintenanceTaskId)).ToListAsync(ct);
+        foreach (var task in tasks.Where(t => t.LastDoneDate == record.Date && t.LastDoneOdometerKm == record.OdometerKm))
         {
-            var snapshot = record.Tasks.Single(j => j.MaintenanceTaskId == task.Id);
-            task.LastDoneOdometerKm = snapshot.PreviousLastDoneOdometerKm;
-            task.LastDoneDate = snapshot.PreviousLastDoneDate;
+            var own = links.Where(j => j.MaintenanceTaskId == task.Id).ToList();
+            var latest = own.Select(j => j.ServiceRecord!).Where(r => !r.IsVoided).MaxBy(r => (r.Date, r.OdometerKm, r.CreatedAt));
+            var earliest = own.MinBy(j => j.ServiceRecord!.CreatedAt)!;
+            (task.LastDoneDate, task.LastDoneOdometerKm) = latest is null
+                ? (earliest.PreviousLastDoneDate, earliest.PreviousLastDoneOdometerKm)
+                : (latest.Date, latest.OdometerKm);
             task.UpdatedAt = now;
         }
 
@@ -225,6 +298,47 @@ public class MaintenanceTaskService(IAppDbContext db, VehicleService vehicleServ
         var today = TodayUtc();
         return tasks.Select(t => ToDto(t, vehicle, today)).ToList();
     }
+
+    private static void ValidateCost(decimal? cost)
+    {
+        if (cost is { } c && (c < 0 || c > ServiceRecord.MaxCost || decimal.Round(c, 2) != c))
+        {
+            throw new ValidationFailedException("serviceRecord.invalidCost",
+                $"The cost must be 0 to {ServiceRecord.MaxCost} with at most 2 decimals.");
+        }
+    }
+
+    // Trimmed; blank is null.
+    private static string? TrimNotes(string? notes)
+    {
+        var trimmed = notes?.Trim();
+        if (trimmed?.Length > ServiceRecord.MaxNotesLength)
+        {
+            throw new ValidationFailedException("serviceRecord.notesTooLong", $"Notes can be up to {ServiceRecord.MaxNotesLength} characters.");
+        }
+
+        return string.IsNullOrEmpty(trimmed) ? null : trimmed;
+    }
+
+    private static OdometerReading ServiceReading(ServiceRecord record) => new()
+    {
+        VehicleId = record.VehicleId,
+        ValueKm = record.OdometerKm,
+        ReadingDate = record.Date,
+        Source = OdometerSource.Service,
+        ServiceRecord = record
+    };
+
+    private void LogServiceReading(Vehicle vehicle, List<OdometerReading> readings, OdometerReading reading)
+    {
+        db.OdometerReadings.Add(reading);
+        readings.Add(reading);
+        OdometerService.Recompute(vehicle, readings);
+    }
+
+    private static ServiceRecordDto ToDto(ServiceRecord r) => new(r.Id, r.Date, r.OdometerKm, r.ShopName, r.TotalCost, r.Notes,
+        r.Tasks.Where(j => j.MaintenanceTask is not null).Select(j => j.MaintenanceTask!)
+            .OrderBy(t => t.Name).Select(t => new ServiceRecordTaskDto(t.Id, t.Name, t.Category)).ToList());
 
     // Scoped to the owned vehicle, so another car's task id is simply not found.
     private async Task<MaintenanceTask> FindAsync(Guid vehicleId, Guid taskId, CancellationToken ct) =>

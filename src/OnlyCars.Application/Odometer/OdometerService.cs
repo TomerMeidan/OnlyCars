@@ -108,7 +108,7 @@ public class OdometerService(IAppDbContext db, VehicleService vehicleService)
     /// Checks a value and date for <paramref name="reading"/> before anything changes, so a failed check saves nothing.
     /// Neighbours are found by the new date, excluding the reading itself.
     /// </summary>
-    private static void Validate(List<OdometerReading> readings, OdometerReading reading, decimal valueKm, DateOnly date, bool confirmCorrection)
+    internal static void Validate(List<OdometerReading> readings, OdometerReading reading, decimal valueKm, DateOnly date, bool confirmCorrection)
     {
         if (valueKm < 0)
         {

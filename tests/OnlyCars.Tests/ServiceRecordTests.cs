@@ -252,21 +252,15 @@ public class ServiceRecordTests
         Assert.Equal((50_000m, 100m), (after.CurrentOdometerKm, after.AvgKmPerDay!.Value));
     }
 
+    // MVP3-A retired serviceRecord.notLatest: any non-voided record can be voided, in any order (decisions.md).
     [Fact]
-    public async Task Void_OnlyTheLatestReset_ThenEarlierOnes_AndNeverTwice()
+    public async Task Void_LatestResetFirst_ThenEarlier_EndsAtTheOriginal_AndNeverTwice()
     {
         var car = await CreateCarAsync();
         var task = await CreateTaskAsync(car);
         var a = await ResetAsync(car, task.Id, Today);
         await odometer.AddAsync(userId, car, new AddOdometerReadingRequest(50_500, Today));
         var b = await ResetAsync(car, task.Id, Today);
-
-        var notLatest = await Assert.ThrowsAsync<ConflictException>(() => tasks.VoidAsync(userId, car, a.ServiceRecordId));
-        Assert.Equal("serviceRecord.notLatest", notLatest.Code);
-        db.ChangeTracker.Clear();
-        Assert.False((await db.ServiceRecords.SingleAsync(r => r.Id == a.ServiceRecordId)).IsVoided);
-        Assert.Equal(50_500m, (await db.MaintenanceTasks.SingleAsync()).LastDoneOdometerKm);
-        Assert.Equal(2, await db.OdometerReadings.CountAsync(r => r.Source == OdometerSource.Service));
 
         var afterB = Assert.Single(await tasks.VoidAsync(userId, car, b.ServiceRecordId));
         Assert.Equal((50_000m, Today), (afterB.LastDoneOdometerKm, afterB.LastDoneDate));
@@ -280,15 +274,52 @@ public class ServiceRecordTests
     }
 
     [Fact]
-    public async Task Void_LatestIsByCreationOrder_EvenWhenTheLaterResetHasAnEarlierDate()
+    public async Task Void_EarlierResetFirst_LeavesTheTaskAtTheLaterOne_ThenTheLaterRestoresTheOriginal()
+    {
+        var car = await CreateCarAsync();
+        var task = await CreateTaskAsync(car);
+        var a = await ResetAsync(car, task.Id, Today);
+        await odometer.AddAsync(userId, car, new AddOdometerReadingRequest(50_500, Today));
+        var b = await ResetAsync(car, task.Id, Today);
+
+        var afterA = Assert.Single(await tasks.VoidAsync(userId, car, a.ServiceRecordId));
+        Assert.Equal((50_500m, Today), (afterA.LastDoneOdometerKm, afterA.LastDoneDate));
+        db.ChangeTracker.Clear();
+        Assert.True((await db.ServiceRecords.SingleAsync(r => r.Id == a.ServiceRecordId)).IsVoided);
+        var untouched = await db.MaintenanceTasks.SingleAsync();
+        Assert.Equal((50_500m, Today), (untouched.LastDoneOdometerKm, untouched.LastDoneDate));
+        Assert.Equal(1, await db.OdometerReadings.CountAsync(r => r.Source == OdometerSource.Service));
+
+        // None left, so the earliest-created record's snapshot (a's: the original values).
+        var afterB = Assert.Single(await tasks.VoidAsync(userId, car, b.ServiceRecordId));
+        Assert.Equal((40_000m, OriginalDate), (afterB.LastDoneOdometerKm, afterB.LastDoneDate));
+        db.ChangeTracker.Clear();
+        var stored = await db.MaintenanceTasks.SingleAsync();
+        Assert.Equal((40_000m, OriginalDate), (stored.LastDoneOdometerKm, stored.LastDoneDate));
+    }
+
+    [Fact]
+    public async Task Void_ResetsWithDatesGoingBackwards_WorkInEitherOrder()
+    {
+        var car = await CreateCarAsync();
+        var task = await CreateTaskAsync(car);
+        var a = await ResetAsync(car, task.Id, Today.AddDays(1));
+        var b = await ResetAsync(car, task.Id, Today); // the one-tap reset always moves last done, so the task is at b
+
+        // a isn't the task's last done, so its void leaves the task alone; then b's void finds no record left.
+        var first = Assert.Single(await tasks.VoidAsync(userId, car, a.ServiceRecordId));
+        Assert.Equal((50_000m, Today), (first.LastDoneOdometerKm, first.LastDoneDate));
+        var second = Assert.Single(await tasks.VoidAsync(userId, car, b.ServiceRecordId));
+        Assert.Equal((40_000m, OriginalDate), (second.LastDoneOdometerKm, second.LastDoneDate));
+    }
+
+    [Fact]
+    public async Task Void_ResetsWithDatesGoingBackwards_LaterCreatedFirst_GoesToTheLatestRemainingByDate()
     {
         var car = await CreateCarAsync();
         var task = await CreateTaskAsync(car);
         var a = await ResetAsync(car, task.Id, Today.AddDays(1));
         var b = await ResetAsync(car, task.Id, Today);
-
-        var notLatest = await Assert.ThrowsAsync<ConflictException>(() => tasks.VoidAsync(userId, car, a.ServiceRecordId));
-        Assert.Equal("serviceRecord.notLatest", notLatest.Code);
 
         var afterB = Assert.Single(await tasks.VoidAsync(userId, car, b.ServiceRecordId));
         Assert.Equal((50_000m, Today.AddDays(1)), (afterB.LastDoneOdometerKm, afterB.LastDoneDate));

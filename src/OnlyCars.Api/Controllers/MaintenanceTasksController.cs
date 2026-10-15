@@ -40,6 +40,14 @@ public class MaintenanceTasksController(MaintenanceTaskService taskService) : Co
         [FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Allow)] ResetTaskRequest? request, CancellationToken ct) =>
         StatusCode(StatusCodes.Status201Created, await taskService.ResetAsync(User.GetUserId(), vehicleId, taskId, request, ct));
 
+    [HttpGet("vehicles/{vehicleId:guid}/service-records")]
+    public async Task<ActionResult<List<ServiceRecordDto>>> Records(Guid vehicleId, CancellationToken ct) =>
+        Ok(await taskService.ListRecordsAsync(User.GetUserId(), vehicleId, ct));
+
+    [HttpPost("vehicles/{vehicleId:guid}/service-records")]
+    public async Task<ActionResult<CreateServiceRecordResponse>> CreateRecord(Guid vehicleId, CreateServiceRecordRequest request, CancellationToken ct) =>
+        StatusCode(StatusCodes.Status201Created, await taskService.CreateRecordAsync(User.GetUserId(), vehicleId, request, ct));
+
     [HttpPost("vehicles/{vehicleId:guid}/service-records/{recordId:guid}/void")]
     public async Task<ActionResult<List<MaintenanceTaskDto>>> Void(Guid vehicleId, Guid recordId, CancellationToken ct) =>
         Ok(await taskService.VoidAsync(User.GetUserId(), vehicleId, recordId, ct));

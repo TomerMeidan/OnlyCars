@@ -2,7 +2,7 @@
 
 One line per requirement in `docs/spec.md`. Updated after every ticket is signed off. Evidence and details are in `docs/requirements-status.md`.
 
-**Last updated:** 2026-10-15, SET-2 signed off (km or miles); next: MVP3-A, service history
+**Last updated:** 2026-10-15, MVP3-A backend done (service records API); frontend next
 **Progress:** 16 of 50 required items done, 6 partly done, 28 not started. The 7 optional items are not counted.
 
 Legend:
@@ -20,7 +20,7 @@ Legend:
 ## MVP progress
 - [x] **Step 1: Accounts, cars, odometer.** Done (MVP1-A, B and C signed off), apart from the gaps marked below. Settings signed off: language, theme and currency (SET-1), and km or miles (SET-2).
 - [x] **Step 2: Maintenance tasks, templates, Reset.** Done (MVP2-A, B and C signed off).
-- [ ] **Step 3: Service history with costs** 🔨 Next: MVP3-A (history list, record a past service, undo from the history). Then MVP3-B (line items, edit) and MVP3-C (filter and search).
+- [ ] **Step 3: Service history with costs** 🔨 Now: MVP3-A (history list, record a past service, undo from the history): backend done (217 tests), frontend next. Then MVP3-B (line items, edit) and MVP3-C (filter and search).
 - [ ] **Step 4: Dashboard with due and overdue status**
 - [ ] **Step 5: Checklists, then tires, then reports and notifications**
 - [x] **Before going online: SEC-1** (limit login attempts, account lockout, constant-time login). Signed off.

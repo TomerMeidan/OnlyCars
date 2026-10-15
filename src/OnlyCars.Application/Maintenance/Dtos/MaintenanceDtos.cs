@@ -50,3 +50,21 @@ public record UpdateMaintenanceTaskRequest(
 public record ResetTaskRequest(DateOnly? Date = null, decimal? Cost = null, string? Notes = null);
 
 public record ResetTaskResponse(Guid ServiceRecordId, MaintenanceTaskDto Task);
+
+public record ServiceRecordTaskDto(Guid Id, string Name, TaskCategory Category);
+
+// A null ShopName is DIY; a null TotalCost was skipped. Tasks are the linked tasks that still exist.
+public record ServiceRecordDto(Guid Id, DateOnly Date, decimal OdometerKm, string? ShopName, decimal? TotalCost, string? Notes,
+    List<ServiceRecordTaskDto> Tasks);
+
+// Date and OdometerKm are nullable only so a missing value gets a coded error (a missing date means UTC today, as for readings).
+public record CreateServiceRecordRequest(
+    DateOnly? Date,
+    decimal? OdometerKm,
+    string? ShopName,
+    decimal? TotalCost,
+    string? Notes,
+    List<Guid>? TaskIds,
+    bool ConfirmCorrection = false);
+
+public record CreateServiceRecordResponse(ServiceRecordDto Record, List<MaintenanceTaskDto> Tasks);

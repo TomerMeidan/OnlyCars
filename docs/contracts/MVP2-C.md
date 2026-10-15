@@ -28,7 +28,7 @@ Undo. No body.
 
 Side effects: the record's `Service` reading is deleted and the car's current odometer and average are recomputed, so re-fetch the car and the history. If that reading is the car's only reading, it stays, as a `Manual` reading.
 
-Order of checks: `vehicle.notFound`, `serviceRecord.notFound`, `serviceRecord.alreadyVoided`, `serviceRecord.notLatest`.
+Order of checks: `vehicle.notFound`, `serviceRecord.notFound`, `serviceRecord.alreadyVoided`. (MVP3-A retired `serviceRecord.notLatest`; any record can be voided in any order. See `MVP3-A.md`.)
 
 ## Changed
 - `DELETE /api/vehicles/{vehicleId}/tasks/{taskId}`: still 204 when the task has resets. The resets' records and readings stay.
@@ -44,7 +44,6 @@ Order of checks: `vehicle.notFound`, `serviceRecord.notFound`, `serviceRecord.al
 | `serviceRecord.notesTooLong` | 400 | none | `notes` over 1,000 characters after trimming |
 | `serviceRecord.notFound` | 404 | none | The record isn't on this car (also another user's record). Another user's car is `vehicle.notFound` |
 | `serviceRecord.alreadyVoided` | 409 | none | The record was already undone |
-| `serviceRecord.notLatest` | 409 | none | A non-voided reset created later (by creation time, not `date`) exists for a task this record reset |
 
 ## Examples
 ```
@@ -66,6 +65,4 @@ POST /api/vehicles/{id}/service-records/{recordId}/void   (the latest of three s
 POST same again
 → 409 {"title":"Conflict","status":409,"detail":"This service record is already undone.","code":"serviceRecord.alreadyVoided"}
 
-POST …/void on an earlier reset of the same task
-→ 409 {"title":"Conflict","status":409,"detail":"A later reset of this task must be undone first.","code":"serviceRecord.notLatest"}
 ```
