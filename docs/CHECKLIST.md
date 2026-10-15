@@ -2,7 +2,7 @@
 
 One line per requirement in `docs/spec.md`. Updated after every ticket is signed off. Evidence and details are in `docs/requirements-status.md`.
 
-**Last updated:** 2026-10-15, after sign-off of MVP2-B (task status and the due-soon threshold)
+**Last updated:** 2026-10-15, MVP2-C backend done (Reset and Undo API)
 **Progress:** 12 of 50 required items done, 7 partly done, 31 not started. The 7 optional items are not counted.
 
 Legend:
@@ -11,9 +11,12 @@ Legend:
 - `[ ]` not started.
 - 🔨 being built now.
 
+**Progress:** `████▒▒░░░░░░░░░░░░░░` 14 of 66 done (21%), 8 partly done, 44 not started.
+<!-- Recount on every checklist update: █ done, ▒ partly done, ░ not started; 20 blocks = 66 items. -->
+
 ## MVP progress
 - [x] **Step 1: Accounts, cars, odometer.** Done (MVP1-A, B and C signed off), apart from the gaps marked below.
-- [~] **Step 2: Maintenance tasks, templates, Reset** 🔨 MVP2-A (tasks and templates) and MVP2-B (status, remaining km and days, due-soon threshold) signed off. Now: MVP2-C (Reset and Undo), the last part of step 2.
+- [~] **Step 2: Maintenance tasks, templates, Reset** 🔨 MVP2-A (tasks and templates) and MVP2-B (status, remaining km and days, due-soon threshold) signed off. Now: MVP2-C (Reset and Undo), the last part of step 2: backend done (157 tests), frontend next.
 - [ ] **Step 3: Service history with costs**
 - [ ] **Step 4: Dashboard with due and overdue status**
 - [ ] **Step 5: Checklists, then tires, then reports and notifications**

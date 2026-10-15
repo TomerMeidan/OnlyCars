@@ -15,6 +15,8 @@ public class AppDbContext : DbContext, IAppDbContext
     public DbSet<OdometerReading> OdometerReadings => Set<OdometerReading>();
     public DbSet<TaskTemplate> TaskTemplates => Set<TaskTemplate>();
     public DbSet<MaintenanceTask> MaintenanceTasks => Set<MaintenanceTask>();
+    public DbSet<ServiceRecord> ServiceRecords => Set<ServiceRecord>();
+    public DbSet<ServiceRecordTask> ServiceRecordTasks => Set<ServiceRecordTask>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

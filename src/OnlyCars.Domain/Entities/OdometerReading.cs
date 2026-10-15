@@ -12,4 +12,8 @@ public class OdometerReading : Entity
     public decimal ValueKm { get; set; }
     public DateOnly ReadingDate { get; set; }
     public OdometerSource Source { get; set; } = OdometerSource.Manual;
+
+    /// <summary>Set on the reading a reset logged, so undo can find and remove it.</summary>
+    public Guid? ServiceRecordId { get; set; }
+    public ServiceRecord? ServiceRecord { get; set; }
 }

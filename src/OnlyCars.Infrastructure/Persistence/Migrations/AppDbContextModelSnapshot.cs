@@ -90,6 +90,9 @@ namespace OnlyCars.Infrastructure.Persistence.Migrations
                     b.Property<DateOnly>("ReadingDate")
                         .HasColumnType("date");
 
+                    b.Property<Guid?>("ServiceRecordId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<int>("Source")
                         .HasColumnType("int");
 
@@ -104,10 +107,89 @@ namespace OnlyCars.Infrastructure.Persistence.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("ServiceRecordId");
+
                     b.HasIndex("VehicleId", "ReadingDate")
                         .IsDescending(false, true);
 
                     b.ToTable("OdometerReadings");
+                });
+
+            modelBuilder.Entity("OnlyCars.Domain.Entities.ServiceRecord", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateOnly>("Date")
+                        .HasColumnType("date");
+
+                    b.Property<bool>("IsVoided")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Notes")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<decimal>("OdometerKm")
+                        .HasColumnType("decimal(12,2)");
+
+                    b.Property<string>("ShopName")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<decimal?>("TotalCost")
+                        .HasColumnType("decimal(12,2)");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid>("VehicleId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("VehicleId", "Date")
+                        .IsDescending(false, true);
+
+                    b.ToTable("ServiceRecords");
+                });
+
+            modelBuilder.Entity("OnlyCars.Domain.Entities.ServiceRecordTask", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid>("MaintenanceTaskId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateOnly>("PreviousLastDoneDate")
+                        .HasColumnType("date");
+
+                    b.Property<decimal>("PreviousLastDoneOdometerKm")
+                        .HasColumnType("decimal(12,2)");
+
+                    b.Property<Guid>("ServiceRecordId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("MaintenanceTaskId");
+
+                    b.HasIndex("ServiceRecordId", "MaintenanceTaskId")
+                        .IsUnique();
+
+                    b.ToTable("ServiceRecordTasks");
                 });
 
             modelBuilder.Entity("OnlyCars.Domain.Entities.TaskTemplate", b =>
@@ -415,13 +497,50 @@ namespace OnlyCars.Infrastructure.Persistence.Migrations
 
             modelBuilder.Entity("OnlyCars.Domain.Entities.OdometerReading", b =>
                 {
+                    b.HasOne("OnlyCars.Domain.Entities.ServiceRecord", "ServiceRecord")
+                        .WithMany()
+                        .HasForeignKey("ServiceRecordId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
                     b.HasOne("OnlyCars.Domain.Entities.Vehicle", "Vehicle")
                         .WithMany("OdometerReadings")
                         .HasForeignKey("VehicleId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
+                    b.Navigation("ServiceRecord");
+
                     b.Navigation("Vehicle");
+                });
+
+            modelBuilder.Entity("OnlyCars.Domain.Entities.ServiceRecord", b =>
+                {
+                    b.HasOne("OnlyCars.Domain.Entities.Vehicle", "Vehicle")
+                        .WithMany()
+                        .HasForeignKey("VehicleId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Vehicle");
+                });
+
+            modelBuilder.Entity("OnlyCars.Domain.Entities.ServiceRecordTask", b =>
+                {
+                    b.HasOne("OnlyCars.Domain.Entities.MaintenanceTask", "MaintenanceTask")
+                        .WithMany()
+                        .HasForeignKey("MaintenanceTaskId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.HasOne("OnlyCars.Domain.Entities.ServiceRecord", "ServiceRecord")
+                        .WithMany("Tasks")
+                        .HasForeignKey("ServiceRecordId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("MaintenanceTask");
+
+                    b.Navigation("ServiceRecord");
                 });
 
             modelBuilder.Entity("OnlyCars.Domain.Entities.Vehicle", b =>
@@ -433,6 +552,11 @@ namespace OnlyCars.Infrastructure.Persistence.Migrations
                         .IsRequired();
 
                     b.Navigation("User");
+                });
+
+            modelBuilder.Entity("OnlyCars.Domain.Entities.ServiceRecord", b =>
+                {
+                    b.Navigation("Tasks");
                 });
 
             modelBuilder.Entity("OnlyCars.Domain.Entities.User", b =>

@@ -1,4 +1,6 @@
 using Microsoft.EntityFrameworkCore;
+using OnlyCars.Application.Maintenance;
+using OnlyCars.Application.Vehicles;
 using OnlyCars.Domain;
 using OnlyCars.Domain.Entities;
 using OnlyCars.Infrastructure.Persistence;
@@ -55,5 +57,40 @@ public class MaintenanceSchemaTests : IAsyncLifetime
 
         Assert.Equal(0, await db.MaintenanceTasks.CountAsync());
         Assert.Equal(12, await db.TaskTemplates.CountAsync());
+    }
+
+    [Fact]
+    public async Task ServiceRecords_DeletingATaskKeepsTheRecordAndReading_AndVehicleDeleteCascadesWithoutCycles()
+    {
+        // MVP2-C criterion 9, through the real services: delete removes the join row, keeps the record and its reading.
+        var vehicles = new VehicleService(db);
+        var tasks = new MaintenanceTaskService(db, vehicles);
+        var car = await AddCarAsync();
+        db.OdometerReadings.Add(new OdometerReading { VehicleId = car.Id, ValueKm = 1_000, ReadingDate = DateOnly.FromDateTime(DateTime.UtcNow).AddDays(-30) });
+        db.MaintenanceTasks.Add(new MaintenanceTask { VehicleId = car.Id, Name = "Oil", IntervalKm = 5_000 });
+        await db.SaveChangesAsync();
+        var task = await db.MaintenanceTasks.SingleAsync(t => t.VehicleId == car.Id);
+
+        var reset = await tasks.ResetAsync(car.UserId, car.Id, task.Id, null);
+        await tasks.DeleteAsync(car.UserId, car.Id, task.Id);
+        db.ChangeTracker.Clear();
+
+        Assert.Equal(0, await db.ServiceRecordTasks.CountAsync());
+        Assert.True(await db.ServiceRecords.AnyAsync(r => r.Id == reset.ServiceRecordId));
+        Assert.True(await db.OdometerReadings.AnyAsync(r => r.ServiceRecordId == reset.ServiceRecordId));
+
+        // Undo after the task is gone still voids the record and removes its reading, with no tasks to return.
+        Assert.Empty(await tasks.VoidAsync(car.UserId, car.Id, reset.ServiceRecordId));
+        db.ChangeTracker.Clear();
+
+        // Deleting the vehicle in the database cascades through records, join rows, tasks and readings in one statement.
+        db.MaintenanceTasks.Add(new MaintenanceTask { VehicleId = car.Id, Name = "Oil", IntervalKm = 5_000 });
+        await db.SaveChangesAsync();
+        await tasks.ResetAsync(car.UserId, car.Id, (await db.MaintenanceTasks.SingleAsync(t => t.VehicleId == car.Id)).Id, null);
+        await db.Vehicles.Where(v => v.Id == car.Id).ExecuteDeleteAsync();
+
+        Assert.Equal(0, await db.ServiceRecords.CountAsync());
+        Assert.Equal(0, await db.ServiceRecordTasks.CountAsync());
+        Assert.Equal(0, await db.OdometerReadings.CountAsync());
     }
 }

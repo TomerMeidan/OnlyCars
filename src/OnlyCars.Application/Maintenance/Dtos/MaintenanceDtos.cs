@@ -45,3 +45,8 @@ public record UpdateMaintenanceTaskRequest(
     DateOnly? LastDoneDate,
     bool? IsEnabled,
     int? DueSoonPercent = null);
+
+// Every field is optional: no date means UTC today; no cost or notes saves null.
+public record ResetTaskRequest(DateOnly? Date = null, decimal? Cost = null, string? Notes = null);
+
+public record ResetTaskResponse(Guid ServiceRecordId, MaintenanceTaskDto Task);

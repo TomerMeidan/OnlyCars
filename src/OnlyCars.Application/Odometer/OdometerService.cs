@@ -162,7 +162,7 @@ public class OdometerService(IAppDbContext db, VehicleService vehicleService)
     /// Current odometer = the last reading. Average = (last - first) / days between them; null with fewer than
     /// 2 readings, 0 days between them, or no increase.
     /// </summary>
-    private static void Recompute(Vehicle vehicle, List<OdometerReading> readings)
+    internal static void Recompute(Vehicle vehicle, List<OdometerReading> readings)
     {
         var ordered = readings.OrderBy(r => r.ReadingDate).ThenBy(r => r.CreatedAt).ToList();
         vehicle.UpdatedAt = DateTimeOffset.UtcNow;

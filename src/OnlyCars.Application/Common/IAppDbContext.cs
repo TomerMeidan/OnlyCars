@@ -14,6 +14,8 @@ public interface IAppDbContext
     DbSet<OdometerReading> OdometerReadings { get; }
     DbSet<TaskTemplate> TaskTemplates { get; }
     DbSet<MaintenanceTask> MaintenanceTasks { get; }
+    DbSet<ServiceRecord> ServiceRecords { get; }
+    DbSet<ServiceRecordTask> ServiceRecordTasks { get; }
 
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 }
