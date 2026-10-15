@@ -1,30 +1,29 @@
 # OnlyCars: Requirements Status
 
-**Audit date:** 2026-10-15 (seventh audit, sign-off of SET-1: backend commit `8a8dd1d`, plus the frontend, the review fixes and a test fix, which are not committed yet on `main`)
-**Overall:** MVP steps 1 and 2 are complete for the MVP. SET-1 added a Settings page where language, light or dark theme, and currency each save to the account as soon as they change. Step 1 still lacks car photos (blocked on R2) and the km/mi unit, which is next (SET-2). Then comes step 3, service history.
+**Audit date:** 2026-10-15 (eighth audit, sign-off of SET-2: backend commit `d3abd15`, plus the frontend and all review and QA fixes, which are not committed yet on `main`)
+**Overall:** MVP steps 1 and 2 are complete. With SET-2 every distance on screen follows the user's km or miles setting, so the settings work is finished. Step 1 still lacks only the car photo (blocked on R2). Next is step 3, service history (MVP3-A).
 
 | Status | Count |
 |---|---|
-| Done | 15 |
+| Done | 16 |
 | API only | 0 |
-| Partial | 7 |
+| Partial | 6 |
 | Missing | 28 |
 | Deferred | 7 |
 | **Total** | **57** |
 
-How this was checked (seventh audit):
-- Both dev servers were already running, and I left them as they were. The only uncommitted change outside `client/` is in `tests/` (`SettingsTests.cs`), so the live API already runs the SET-1 backend from `8a8dd1d`.
-- `dotnet test`, built into a scratch artifacts folder because the running API locks `src/*/bin`: 181 of 181 passed (158 before SET-1).
-- `client/ui-tests/smoke.mjs`: exit code 0, and all 46 steps `ok` in each setup (desktop-light-en and mobile-dark-he), including the new `settings-theme`, `settings-language`, `settings-currency` and `settings-save-fails`. The only 4xx responses were the expected 400s and 404s.
-- `client/ui-tests/qa-set1.mjs`: exit code 0. Its only 5xx and network failures are the mocked ones (three 500s on `PUT /api/me/settings` and one offline save). Its 400s come from deliberate bad inputs. Its contrast check reads 15.59:1 for text and 5.98:1 for the legends and the hint in dark Hebrew.
-- Screenshots I read:
-  - `mobile-dark-he-41-settings-save-fails.png`: the Hebrew RTL page at 390px, showing the three groups (שפה, ערכת נושא, מטבע), "USD – דולר אמריקאי", and the no-conversion hint under the select. Nothing overflows, and the header shows the הגדרות link.
-  - `desktop-light-en-40-settings-currency.png`: the car page in the forced dark theme from the earlier step, with every task row intact.
-  - `qaset1-mobile-dark-he-02-list.png`: the Hebrew car list, where "הצגת רכבים בארכיון" is a full-height row (`label.inline`, `min-height: 2.75rem`, `client/src/index.css:126`).
-- Reviews and QA, which I did not re-run:
-  - Code review fixes: focus on save (`aria-disabled` and a busy guard), the rollback race, the theme flash (an inline script in `client/index.html:11`), the sticky header error, and the late `GET /me`. No `light-dark()` fallback is needed, because Lightning CSS compiles it.
-  - Hebrew review: two strings improved.
-  - UI QA: passed with no High or Medium, plus a throttled production-build check that showed no theme flash. Its three Lows and its question are decided in decisions.md ("SET-1 QA Lows", "Where the 'amounts are not converted' hint goes").
+How this was checked (eighth audit):
+- Both dev servers were already running (API PID 11708 on 5150, Vite PID 13124 on 5173), and I left them running. Nothing in `src/` is uncommitted, so the live API runs `d3abd15`.
+- Live API with curl: `PUT /api/me/settings` with `{"distanceUnit":"Yards","theme":"Dark"}` returned 400 `settings.invalidDistanceUnit` and left the theme at System; `{"distanceUnit":"Mi"}` returned 200 with `distanceUnit` `Mi`.
+- `node --test ui-tests/units.test.mjs`: 6 of 6. `tsc -b`: clean.
+- `client/ui-tests/smoke.mjs`: exit code 0, 96 steps `ok` (48 per setup), including `settings-unit-miles` and `settings-unit-errors`.
+- `client/ui-tests/qa-set2.mjs`: exit code 0. Its 5xx are the three mocked `PUT /me/settings` 500s; its 400s are deliberate bad inputs. It checks stored km through the API (a 5,000 mi interval stored as 8,047 km; the neighbouring readings 79,401 km kept exact).
+- Screenshots I read (all from this run; the `qaset2-*-FAIL-*` files are from an earlier run at 09:00 and are stale):
+  - `mobile-dark-he-unit-miles-car.png`: Hebrew RTL at 390px, "050100 מייל" on the drum, "באיחור של 361 מייל", "כל 5,000 מייל", history in מייל, no overflow.
+  - `qaset2-mobile-dark-he-02-settings-mi.png`: the fourth group "יחידת מרחק" with קילומטרים / מיילים, saved.
+  - `qaset2-mobile-dark-he-11-mocked-errors.png`: the reading cap "6,213,711 מייל" and the interval cap "621,371 מייל" shown in Hebrew.
+  - `qaset2-mobile-dark-he-13-big-car-390-mi.png`: a 7-digit mile value fits the drum at 390px.
+- Reviews and QA, which I did not re-run: code review approved (with the km-keeping fix in `toKm`, `client/src/units.ts:21-26`); the Hebrew review improved `lastDoneKm` and `errors.task.invalidLastDone`; UI QA passed, and its Medium (retyping a neighbour's shown value drifted 1 km) and its focus Low are fixed and re-verified.
 - The notes from earlier audits are in git history.
 
 ---
@@ -45,7 +44,7 @@ How this was checked (seventh audit):
 | Manual odometer updates (quick-entry button on the dashboard) | **Partial** | The quick entry on each car card works, including the lower-reading check and the correction checkbox (`CarsPage.tsx:69-114`, `OdometerService.cs:30-65`). Tests: `OdometerServiceTests.cs`. Smoke steps `odometer-*` pass. The lower-reading error is now translated and shows the current reading (`odometer.lowerThanCurrent`, `i18n.ts:64-67`; Hebrew in `mobile-dark-he-05-odometer-lower-rejected.png`). | Quick entry is now also on the car page (`CarPage.tsx:50`), and the date-order rules apply (`odometer.lowerThanPrevious` / `higherThanNext`). Still missing: (1) there is no dashboard yet (see section 10); (2) quick entry always saves today; backdating goes through Edit, which is acceptable for now. |
 | Auto-log the odometer whenever a service is recorded | **Partial** | Every reset logs a `Source = Service` reading linked to its record (`OdometerReading.ServiceRecordId`, `MaintenanceTaskService.cs:99`). Undo removes it (`:171`). Tests: `ServiceRecordTests.cs` (13 tests). Browser: smoke `reset-task` and `undo-reset` (`mobile-dark-he-30-reset-task.png`, which shows the "Service" reading in the history). | Covers only the one-tap reset. A full service record with its own date and odometer comes in step 3. |
 | Optional: estimated average km/day, used to predict when tasks come due | **Partial** | `AvgKmPerDay` is computed (`OdometerService.cs:72-99`, test at `OdometerServiceTests.cs:91`) and shown on the card (`CarsPage.tsx:50-52`). | Nothing uses it for predictions yet. Tasks exist now, but a predicted due date is out of MVP2-B (decisions.md); it goes with the dashboard or later. |
-| Unit setting (km/miles), with the currency set per user | **Partial** | Currency is chosen at sign-up from ILS/USD/EUR/GBP, defaulting by UI language (`AuthPage.tsx:12-13,52`), validated and saved (`AuthService.cs:17,36-49`), and returned in `user.currency`. Smoke step `register-currency`. SET-1: the currency can be changed later on `/settings` (`client/src/pages/SettingsPage.tsx`, `PUT /api/me/settings`, `SettingsTests.cs`), and the car page's cost label follows it without a reload (smoke `settings-currency`, `qaset1-mobile-dark-he-14-cost-usd.png`). | No km/mi setting: the UI always shows "km" and never converts. That is SET-2, the next ticket. |
+| Unit setting (km/miles), with the currency set per user | **Done** | Currency: chosen at sign-up (`AuthPage.tsx`, `AuthService.cs`) and changeable on `/settings` (SET-1). Distance unit (SET-2): `PUT /api/me/settings` takes `distanceUnit` (`Km`/`Mi`), 400 `settings.invalidDistanceUnit` (`SettingsTests.cs`, contract `docs/contracts/SET-2.md`, verified live with curl). The client converts in one module, `client/src/units.ts` (1 mi = 1.609344 km, whole miles on display, whole km on input, caps rounded down, unchanged values send their stored km back), tested by `client/ui-tests/units.test.mjs` (6 tests). The car list, car form, car page, history, tasks, templates and error messages all use it. Settings has a fourth radio group. Browser: smoke `settings-unit-miles` and `settings-unit-errors` in both setups, `qa-set2.mjs` (`mobile-dark-he-unit-miles-car.png`, `qaset2-mobile-dark-he-02-settings-mi.png`). | Nothing. Remaining miles can be 1 off the shown numbers, and the Hebrew "קילומטראז׳" label stays in miles; both accepted (decisions.md, "SET-2 QA notes"). |
 
 ## 3. Maintenance Task Definitions
 
@@ -165,10 +164,10 @@ How this was checked (seventh audit):
 
 | Step | State |
 |---|---|
-| 1. Auth, cars, odometer | **Complete for the MVP. MVP1-A, MVP1-B and MVP1-C are signed off.** Working end to end in EN and HE: register (with currency) and login; add, edit, archive and unarchive cars; quick odometer entry on the list and the car page (both now send the local date); edit and delete readings with the date-order rules and recompute; focus and page titles on every route. Settings (SET-1, signed off): language, theme and currency. Remaining: the km/mi unit (SET-2, next) and the car photo (blocked until the R2 credentials exist). |
+| 1. Auth, cars, odometer | **Complete for the MVP. MVP1-A, MVP1-B, MVP1-C, SET-1 and SET-2 are signed off.** Working end to end in EN and HE: register (with currency) and login; add, edit, archive and unarchive cars; quick odometer entry; edit and delete readings with the date-order rules and recompute; focus and page titles on every route; Settings with language, theme, currency and km or miles. Remaining: the car photo (blocked until the R2 credentials exist). |
 | 2. Tasks, templates, km/time intervals, Reset | **Complete. MVP2-A, MVP2-B and MVP2-C are signed off.** All of spec sections 3 and 4 is done: tasks and templates, status with remaining km and days and a progress bar, the due-soon threshold, one-tap Mark done with optional cost and notes, and Undo. |
 | Deploy gate | **SEC-1 signed off.** Nothing else blocks a first deploy except the owner's Azure account. |
-| 3. Service history with costs | Not started. MVP2-C created `ServiceRecord` and `ServiceRecordTask` and the void endpoint; step 3 adds the history list, the full record form (date, odometer, shop, line items) and edit and delete. |
+| 3. Service history with costs | **Next: MVP3-A** (history list, record a past service, undo from the history), then MVP3-B (line items, edit) and MVP3-C (filter and search). Attachments wait for R2. MVP2-C already created `ServiceRecord`, `ServiceRecordTask` and the void endpoint. |
 | 4. Dashboard with due/overdue status | Not started. The per-task status and the reset endpoint it needs both exist. |
 | 5. Checklists, tires, reports, notifications | Not started |
 
@@ -176,8 +175,9 @@ How this was checked (seventh audit):
 
 | Order | Ticket | Who | State |
 |---|---|---|---|
-| 1 | SET-2: Distance unit (km/mi), converted on display and input (plus SET-1 QA Lows 1 and 2) | BE, then FE | **Next** (written below) |
-| 2 | MVP3-A: Service history list and the full service record form (spec section 5) | BE, then FE | Not written |
+| 1 | MVP3-A: Service history list, record a past service, undo from the history (spec 5.1, 2.2) | BE, then FE | **Next** (written below) |
+| 2 | MVP3-B: Line items and editing records (spec 5.2, 5.5) | BE, then FE | Not written |
+| 3 | MVP3-C: Filter and search (spec 5.4) | BE, then FE | Not written |
 
 ## Signed-off tickets
 
@@ -203,89 +203,89 @@ How this was checked (seventh audit):
   - Evidence: 181 of 181 tests, 23 more than before (`SettingsTests.cs`). Smoke passed 46 of 46 in both setups, with the new steps `settings-theme`, `settings-language`, `settings-currency` and `settings-save-fails`. `qa-set1.mjs` passed, including a throttled production build with no theme flash. Code review fixes are in, the Hebrew review improved two strings, and UI QA passed with no High or Medium.
   - MVP2-C QA note (a) is fixed: the 24px "Show archived" label is now a 44px row.
   - QA's three Lows and its question are decided in decisions.md ("SET-1 QA Lows" and "Where the 'amounts are not converted' hint goes"). Low 1 (focus moving to an unchecked radio during a save) and Low 2 (stale duplicate errors) are fixed in SET-2. Low 3 (a change on another device shows only after visiting Settings or logging in) is accepted. The hint stays only under the Settings currency field.
+- **SET-2 (backend commit `d3abd15`; the frontend and all fixes are not committed yet): signed off 2026-10-15.** All 13 criteria met.
+  - Evidence: 189 tests (8 new); smoke 48 of 48 in both setups, with the new steps `settings-unit-miles` and `settings-unit-errors`; `qa-set2.mjs` 17 of 17; `units.test.mjs` 6 of 6; the live API checked with curl. Code review approved, along with the five engineer deviations (unchanged fields send their stored km back; remaining miles round rather than round up; English km strings reworded; `{{distUnit}}`/`{{distUnits}}`; smoke cleanup). The Hebrew review improved two strings. UI QA passed; its Medium (a 1 km drift when retyping a neighbour's shown value) and its focus Low are fixed and re-verified.
+  - SET-1 QA Lows 1 and 2 are fixed here.
+  - QA's cosmetic Low (remaining miles 1 off the shown numbers) and the Hebrew "קילומטראז׳" label are accepted (decisions.md, "SET-2 QA notes").
 
 ## Next ticket
 
-### SET-2: Distance unit (km or miles)
+### MVP3-A: Service history and recording a past service
 
-**Goal:** A user who thinks in miles picks "Miles" in Settings, and from then on sees and enters every distance in the app in miles.
+**Goal:** On a car's page, a user sees every service done on the car, newest first, and can record a service after the fact (with its own date, odometer, shop, cost, notes and the tasks it covered), or undo one from the list.
 
-**Spec:** section 2, bullet 4 ("Unit setting (km/miles)"; SET-1 did the currency half). Part 2: `User.DistanceUnit`, and the convention "Distances are stored in km and converted for display". The column exists and `UserDto` already returns `distanceUnit` (`Km` or `Mi`), but nothing writes it.
+**Spec:** section 5, bullet 1 ("Date, odometer, shop (or DIY), total cost, notes"); section 2, bullet 2 ("Auto-log the odometer whenever a service is recorded"); section 4's Undo, from the history. Part 2: `ServiceRecord` (VehicleId, Date, OdometerKm, ShopName (null = DIY), TotalCost, Notes, IsVoided) and `ServiceRecordTask` ("one service can reset several tasks"). Both tables, the Service reading link and the void endpoint exist since MVP2-C.
 
-**Binding decisions** (`docs/decisions.md`, 2026-10-15, "Distance unit rules, SET-2" and "SET-1 QA Lows"):
-- Storage and the API stay in km. The client converts with 1 mi = 1.609344 km. Display rounds to whole miles; input rounds to whole km before it is sent.
-- The unit saves through `PUT /api/me/settings`, defaults to Km, and is not asked at sign-up.
-- Limits are shown in the user's unit, rounded down: "6,213,711 mi" for a reading and "621,371 mi" for a task interval.
-- Average distance per day shows one decimal in the user's unit. Templates show converted values. The due-soon percent and time intervals don't change.
-- SET-1 QA Low 1: while a radio group is saving, focus stays on its checked radio. Low 2: any new settings action, on the page or with the header switch, clears every earlier settings error.
+**Binding decisions** (`docs/decisions.md`, 2026-10-15, "Service history scope and split, step 3" and "Backdated service records, MVP3-A"; earlier: MVP2-C's reset and cost rules, SET-2's units, MVP1-C's focus rules):
+- A record's date is any day up to today (the client sends its local date; the server allows UTC today plus 1 day, as for resets). Its odometer reading follows the manual-reading date-order rules, with `confirmCorrection`.
+- A linked task's `LastDone*` moves to the record only when the record is at least as recent as the task's current last done (by date, then odometer).
+- Undo (void) works on any non-voided record in any order; `serviceRecord.notLatest` is retired. The recompute rule is in decisions.md.
+- Voided records are hidden from the history. Cost: 0 to 1,000,000, 2 decimals, optional. Shop: up to 100 characters, empty means DIY. Notes: up to 1,000 characters.
+- Distances are in km in the API and shown in the user's unit through `client/src/units.ts`.
 
 **Scope**
 
-*Backend (backend-engineer). Runs first. Publish the contract in `docs/contracts/SET-2.md`; it can extend `SET-1.md`.*
-- `PUT /api/me/settings` also takes `distanceUnit`: `Km` or `Mi`, in the same casing as `UserDto`. A missing field is left unchanged, as for the others.
-- An invalid value returns 400 `settings.invalidDistanceUnit` and saves nothing from the body. In the check order it comes after currency.
-- No other endpoint changes. Every distance in requests, responses and error extensions (`previousKm`, `nextKm`, `currentKm`) stays in km.
+*Backend (backend-engineer). Runs first. Publish the contract in `docs/contracts/MVP3-A.md`.*
+- `GET /api/vehicles/{vehicleId}/service-records`: the car's non-voided records, ordered by `date` DESC, then `createdAt` DESC. Each item: `id`, `date`, `odometerKm`, `shopName` (null = DIY), `totalCost` (nullable), `notes`, and `tasks` (`id`, `name`, `category` of each linked task that still exists).
+- `POST /api/vehicles/{vehicleId}/service-records`: body `date`, `odometerKm`, `shopName`, `totalCost`, `notes`, `taskIds` (0 or more of this car's tasks; duplicates ignored), `confirmCorrection`. In one save: the `ServiceRecord`, one `ServiceRecordTask` per task with the `PreviousLastDone*` snapshot, `LastDone*` moved per the rule above, and an `OdometerReading` with `Source = Service` and `ServiceRecordId` at the record's date and odometer, then the odometer recompute. Returns 201 with the record DTO and the updated `MaintenanceTaskDto[]` of the linked tasks.
+- Validation codes: `vehicle.notFound`; `serviceRecord.futureDate`; `odometer.invalidValue`, `odometer.lowerThanPrevious`, `odometer.higherThanNext` (same extensions as readings, in km); cost, shop and notes limits (reuse the MVP2-C codes where they exist, add `serviceRecord.shopTooLong` if missing); `task.notFound` for a task id that isn't this car's. Nothing is saved on any error.
+- `POST .../service-records/{recordId}/void`: drop the `notLatest` check and use the new recompute rule. Keep the response shape, the other codes, and MVP2-C's "only reading" rule.
+- The one-tap reset is unchanged.
+- Tests: create with 0, 1 and 2 tasks; a backdated record older than a task's last done leaves it alone; date-order errors and confirm; future date; every validation code; another user's car and task; list order with voided hidden; void in any order (void the newer then the older, ending at the original snapshot, and the reverse); a manual edit after a record is left alone by its void. Update the MVP2-C tests that expect `notLatest`.
 
-*Frontend (frontend-engineer). Builds against `docs/contracts/SET-2.md`.*
-- **One conversion module** (for example `client/src/units.ts`) covers km to the display value, the input value to km, the unit label, and the per-day value. Everything below uses it, and no screen converts on its own.
-- **Settings page:** a fourth radio group, "Distance unit", with Kilometres or Miles. It saves on change like the other groups.
-- **Every distance on screen follows the unit:**
-  - Car list (`CarsPage.tsx`): the odometer digits and unit, the quick-add placeholder and value, and the average per day.
-  - Car form (`CarFormPage.tsx`): the "Current odometer" label and value.
-  - Car page (`CarPage.tsx`): the odometer, the quick-add, and the history list, including its edit form and the names of its Edit and Delete buttons.
-  - Tasks (`TasksSection.tsx`): the interval, the last-done value, the remaining and overdue text, the add and edit forms (interval and last done), and the template picker's defaults.
-  - Errors: the client-side validation messages and the translated server errors (`odometer.lowerThanPrevious`, `higherThanNext`, `invalidValue`, `task.invalidInterval`, `invalidLastDone`, and so on) show values and limits in the user's unit.
-- **Strings:** every string that says "km" or "ק״מ" takes its unit from the module instead. In Hebrew, miles are "מייל" or "מיילים", and the Hebrew reviewer decides the forms. New strings: Distance unit, Kilometres, Miles, and `errors.settings.invalidDistanceUnit`.
-- **SET-1 QA Lows 1 and 2**, on the Settings page and the header switch, as in the decisions above.
+*Frontend (frontend-engineer). Builds against `docs/contracts/MVP3-A.md`.*
+- **Service history section** on `/cars/:id`, between the tasks and the odometer history. Each row: date, odometer (user's unit), shop or "DIY", cost with the user's currency (nothing when null), the names of the linked tasks, and notes (wrapped, not truncated). Loading, empty ("No services recorded yet") and error states, as in the other sections.
+- **Record a service** button (active cars only) opens an inline form: date (default today, max today), odometer (default the car's current odometer in the user's unit, with `readingInput` limits and the date-order confirm checkbox as on the history edit form), shop with a "leave empty for DIY" hint, cost (labelled with the currency), notes, and a checkbox list of the car's enabled tasks. Save, Cancel and Escape follow the MVP1-C focus rules.
+- After saving or undoing, reload the history, the tasks and the odometer history (as Mark done does), so status and readings update without a page reload. Mark done and its Undo bar also reload the history.
+- **Undo** on each row (active cars only) with a confirm step, as for Delete. It calls the void endpoint and the row disappears.
+- Strings in `en` and `he` for everything new, including the new error codes.
 
 **Acceptance criteria**
 
 *API*
-1. [BE] `PUT /api/me/settings` with `{ "distanceUnit": "Mi" }` saves it, leaves the other settings unchanged, and returns the `UserDto` with `distanceUnit` `Mi`. `GET /api/me` and login then return `Mi`.
-2. [BE] An invalid `distanceUnit` returns 400 `settings.invalidDistanceUnit` and saves nothing, even when the other fields are valid. Service tests cover criteria 1 and 2, and one user's change doesn't affect another user.
+1. [BE] `POST` with two task ids creates one record linked to both, sets both tasks' last done to the record, logs one Service reading at the record's date and odometer, and the car's current odometer follows it. `GET` then lists it first.
+2. [BE] A record dated before a task's current last done links the task but leaves its `LastDone*` unchanged.
+3. [BE] A backdated odometer that breaks date order returns `odometer.lowerThanPrevious` or `odometer.higherThanNext` with the neighbour in km, and succeeds with `confirmCorrection: true`. A future date returns `serviceRecord.futureDate`. Nothing is saved on any error.
+4. [BE] Void works on any non-voided record in any order, and the tasks end where decisions.md says (both two-record orders and the manual-edit case are tested). `serviceRecord.notLatest` no longer exists in the code or the contract.
+5. [BE] Voided records are not listed. Another user's car or task returns 404. `dotnet test` passes.
 
-*Conversion*
+*UI*
 
-3. [FE] With Miles chosen, a car at 80,467 km shows "50,000 mi" on the car list and the car page. Adding a reading of 50,100 mi stores 80,628 km (checked through the API) and shows "50,100 mi". A whole-mile value always shows back unchanged after saving.
-4. [FE] A task with a 10,000 km interval shows "Every 6,214 mi". Its remaining and overdue text and its last-done value are in miles. Adding or editing a task with a 5,000 mi interval stores 8,047 km.
-5. [FE] The server's date-order errors show the neighbouring reading in miles. The client blocks a reading above 6,213,711 mi, or an interval above 621,371 mi, with the limit in miles. The server never receives a value above its km cap.
-6. [FE] The average per day shows one decimal in the user's unit ("31.1 mi/day").
-7. [FE] Switching back to Kilometres shows every value exactly as before the switch, with no reload. Nothing stored changes when the unit changes.
-
-*Settings page*
-
-8. [BE+FE] The unit group saves on change. A failed save (mocked 500) reverts it and shows the translated error, as in the other groups.
-9. [FE] SET-1 Low 1: an arrow key pressed while a group is saving leaves focus on its checked radio. Low 2: after a failed save, any later settings action (on the page or with the header switch) clears the old error, so the same error never shows twice.
-
-*Every screen*
-
-10. [FE] Hebrew and RTL: every new or changed string exists in `en` and `he`. Values with units read correctly in RTL, with the number and unit isolated as they are today. The Hebrew reviewer approves the mile forms.
-11. [FE] Mobile: at 390px there is no horizontal overflow on the car list, the car page or Settings, in both units and both languages. A 7-digit mile value still fits the odometer digits. The new radios are at least 44px tall.
-12. [FE] Accessibility: the unit group is a `fieldset` with a `legend`, and the Edit and Delete button names give the unit ("Edit reading 50,000 mi").
-13. [BE+FE] Tests: `dotnet test` passes, with new tests for criteria 1 and 2. The conversion module has a small test or an assert-based self-check for rounding and the limits. `smoke.mjs` gains the steps `settings-unit-miles` (criteria 3, 4 and 7) and `settings-unit-errors` (criterion 5), and every step passes in both setups.
+6. [FE] Recording a service with a shop, a cost, notes and two tasks shows it at the top of the history; both task rows show it as last done with their status updated; and the odometer history shows a Service reading, all without a reload. A Mark done also appears in the history at once.
+7. [FE] An empty shop shows "DIY", an empty cost shows no amount, and a long shop name or notes wrap without widening the page.
+8. [FE] A date and odometer out of order show the translated error with the neighbour in the user's unit, and ticking the confirm checkbox saves it. A future date can't be picked, and if the server rejects one the error is translated.
+9. [FE] Undo from the history, after confirming, removes the row, and the tasks and odometer update without a reload. A failed undo (mocked 500) keeps the row and shows the error on it.
+10. [FE] In miles, the form's default odometer is the car's odometer in miles, and saving it unchanged stores the exact km (no 1 km drift, using `toKm`'s kept values). The history shows miles.
+11. [FE] Archived cars show the history read-only (no Record or Undo).
+12. [FE] Loading, empty and error states exist for the history, and a failed save keeps the form open with every typed value.
+13. [FE] Hebrew and RTL: every new string is in `en` and `he`; dates, amounts and distances read correctly in RTL; the Hebrew reviewer approves.
+14. [FE] Mobile: at 390px there is no horizontal overflow in the history or the form, in both languages, and every button and checkbox row is at least 44px tall.
+15. [FE] Accessibility: every field has a label, the task checkboxes are a `fieldset` with a `legend`, errors are tied to their fields, focus follows the MVP1-C rules after Save, Cancel, Escape and Undo, and each Undo button names its record ("Undo service of 15 Oct 2026").
+16. [BE+FE] Tests: `smoke.mjs` gains `service-history-empty`, `record-service`, `record-service-backdated` and `undo-service-from-history`, and every step passes in both setups.
 
 **Out of scope**
-- Storing distances in miles, or a unit per car.
-- Asking for the unit at sign-up.
-- Starter templates with round mile values (such as 5,000 mi).
-- Distances that don't exist yet (service records, tires and checklists). They will use the module when they're built.
-- Live updates of settings across devices (SET-1 Low 3, accepted).
+- Line items (`ServiceItem`) and editing a record: MVP3-B.
+- Filter and search: MVP3-C.
+- Attachments and receipts: blocked on the R2 credentials.
+- A history across all cars, and the dashboard (step 4).
+- Garages (spec 11, optional).
+- Showing voided records.
 
-**Open questions:** none blocking; every rule is in decisions.md. For the owner to review: whether miles users should see round template intervals (such as 5,000 mi) instead of converted ones (6,214 mi), and whether to ask for the unit at sign-up.
+**Open questions:** none blocking; the rules are in decisions.md. For the owner to review: whether undone records should stay visible (greyed out) instead of hidden, and the backdated rule (an old service never moves a task's last done backwards).
 
 ---
 
 ### Later
-- **MVP3-A, service history:** a list per car, the full record form (date, odometer, shop or DIY, cost, notes), and void or edit from the history.
-- **Car photo upload:** blocked until the owner creates the Cloudflare R2 credentials.
+- **MVP3-B:** line items (part, brand, part number, quantity, unit cost, labour) and editing and deleting records.
+- **MVP3-C:** filter and search by car, task, date and shop.
+- **Car photo upload and attachments:** blocked until the owner creates the Cloudflare R2 credentials.
 - **Predicted due date** from `AvgKmPerDay` (spec 2.3): with the dashboard (step 4) or later.
 
 ## Changed since last audit
-- **Signed off:** SET-1. The backend is in `8a8dd1d`; the frontend, the review fixes and the `SettingsTests.cs` fix are not committed yet.
-- **Section 12:** "Light and dark mode" went from Partial to **Done**. "Hebrew and English UI" stays Done, and its `User.Locale` note is resolved.
-- **Section 2:** "Unit setting (km/miles), with the currency set per user" stays **Partial**. The currency can now be changed, and only km/mi is missing (SET-2).
-- **MVP2-C QA note (a)** ("Show archived" at 24px) is fixed.
-- **Counts:** Done went from 14 to 15, and Partial from 8 to 7.
-- **New decisions** (`docs/decisions.md`, 2026-10-15): the SET-1 QA Lows (1 and 2 are fixed in SET-2, and 3 is accepted), where the currency hint goes (Settings only), and the distance unit rules for SET-2.
-- **Next ticket:** SET-2, written in full. The SET-1 ticket text is in git history up to `ad60b83`.
-- **Tests:** `dotnet test` grew from 158 to 181 tests, and the smoke suite from 42 to 46 steps per setup.
+- **Signed off:** SET-2. The backend is in `d3abd15`; the frontend and all fixes are not committed yet.
+- **Section 2:** "Unit setting (km/miles), with the currency set per user" went from Partial to **Done**.
+- **Counts:** Done went from 15 to 16, and Partial from 7 to 6.
+- **SET-1 QA Lows 1 and 2** (focus on a busy radio group, duplicate stale errors) are fixed and verified by QA.
+- **New decisions** (`docs/decisions.md`, 2026-10-15): the SET-2 QA notes (both accepted), the step 3 split (MVP3-A, B, C), and the backdated-record and Undo rule, which retires `serviceRecord.notLatest`.
+- **Next ticket:** MVP3-A, written in full. The SET-2 ticket text is in git history up to `d3abd15`.
+- **Tests:** `dotnet test` grew from 181 to 189 tests, the smoke suite from 46 to 48 steps per setup, plus `units.test.mjs` (6) and `qa-set2.mjs`.

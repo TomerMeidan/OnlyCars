@@ -328,7 +328,7 @@ for (const s of setups) {
     await page.waitForTimeout(300)
     page.off('request', countPost)
     const required = await form.locator('[role=alert]').textContent()
-    if (posted || required !== (he ? 'הזינו מרווח בק״מ, מרווח זמן או את שניהם.' : 'Enter a km interval, a time interval, or both.')) throw new Error(`${posted} POST, "${required}"`)
+    if (posted || required !== (he ? 'הזינו מרווח בק״מ, מרווח זמן או את שניהם.' : 'Enter an interval in km, a time interval, or both.')) throw new Error(`${posted} POST, "${required}"`)
     // A last-done km above the odometer: the server's error names the current km, and the input is kept.
     await form.locator('input[name=intervalTime]').fill('6')
     await form.locator('select[name=intervalUnit]').selectOption('months')
@@ -563,7 +563,7 @@ for (const s of setups) {
   await step('task-due-soon-percent', async () => {
     const msg = he
       ? { pct: 'הזינו מספר שלם בין 1 ל־50.', km: 'הזינו מרווח של 1 עד 1,000,000 ק״מ.', time: 'הזינו מרווח זמן של עד 20 שנה (243 חודשים או 7,300 ימים).' }
-      : { pct: 'Enter a whole number from 1 to 50.', km: 'Enter a km interval from 1 to 1,000,000.', time: 'Enter a time interval of up to 20 years (243 months or 7,300 days).' }
+      : { pct: 'Enter a whole number from 1 to 50.', km: 'Enter an interval from 1 to 1,000,000 km.', time: 'Enter a time interval of up to 20 years (243 months or 7,300 days).' }
     // The add form starts at 10.
     await tasks.getByRole('button', { name: TK.add }).click()
     await tasks.locator('.picker button', { hasText: TK.custom }).click()
@@ -852,7 +852,7 @@ for (const s of setups) {
     await res
     const l = await looks()
     if (ratio(l.ink, l.surface) < 4.5) throw new Error(`${forced} text contrast ${ratio(l.ink, l.surface).toFixed(2)}:1`)
-    if ((await page.locator('main fieldset > legend').count()) !== 2) throw new Error('radio groups without fieldset and legend')
+    if ((await page.locator('main fieldset > legend').count()) !== 3) throw new Error('radio groups without fieldset and legend')
     for (const label of await page.locator('main label').all()) await tall(label, `"${await label.textContent()}"`)
     await tall(page.locator('header a[href="/settings"]'), 'Settings link')
     await noOverflow(`settings at 390px, ${forced}`)
@@ -969,6 +969,210 @@ for (const s of setups) {
     await themeIs('System', 'System after the failures')
     await page.setViewportSize(s.viewport)
   })
+  // SET-2: km or miles, at 390px. A fresh car at 80,467 km (50,000 mi), 500 km in the 10 days before (50 km/day, 31.1 mi/day).
+  const UM = he
+    ? { mi: 'מייל', km: 'ק״מ', newReading: 'קריאה חדשה במיילים', perDay: '31.1 מייל ליום', perDayKm: '66.1 ק״מ ליום', edit: 'עריכה של הקריאה ', readingLabel: 'קריאה במיילים',
+        every6214: 'כל 6,214 מייל', left853: 'עוד 853 מייל', left5000: 'עוד 5,000 מייל', at44739: 'ב־44,739 מייל', every5000: 'כל 5,000 מייל', every8047: 'כל 8,047 ק״מ', beltMi: 'כל 62,137 מייל או 5 שנים',
+        intervalLabel: 'מרווח במיילים', initialLabel: 'קילומטראז׳ נוכחי (מייל)', maxReading: 'הזינו קריאה בין 0 ל־6,213,711 מייל.', maxInterval: 'הזינו מרווח של 1 עד 621,371 מייל.',
+        previous: '(50,100 מייל)', current: '(50,100 מייל)' }
+    : { mi: 'mi', km: 'km', newReading: 'New reading in miles', perDay: '31.1 mi/day', perDayKm: '66.1 km/day', edit: 'Edit reading ', readingLabel: 'Reading in miles',
+        every6214: 'Every 6,214 mi', left853: '853 mi left', left5000: '5,000 mi left', at44739: 'at 44,739 mi', every5000: 'Every 5,000 mi', every8047: 'Every 8,047 km', beltMi: 'Every 62,137 mi or 5 years',
+        intervalLabel: 'Interval in miles', initialLabel: 'Current odometer (mi)', maxReading: 'Enter a reading between 0 and 6,213,711 mi.', maxInterval: 'Enter an interval from 1 to 621,371 mi.',
+        previous: '(50,100 mi)', current: 'the current 50,100 mi' }
+  const mileCar = () => page.locator('.cars > li').filter({ has: page.getByRole('link', { name: 'Mile car', exact: true }) })
+  const apiCall = async (method, path, data) => {
+    const token = await page.evaluate(() => localStorage.getItem('token'))
+    const r = await page.request.fetch(`${BASE}/api${path}`, { method, headers: { Authorization: `Bearer ${token}` }, data })
+    if (!r.ok()) throw new Error(`${method} ${path}: ${r.status()} ${await r.text()}`)
+    return r.status() === 204 ? null : r.json()
+  }
+  const carState = async (id) => JSON.stringify(await Promise.all(['', '/odometer', '/tasks'].map((p) => apiCall('GET', `/vehicles/${id}${p}`))))
+  let mileCarId
+  const unitIs = async (unit) => {
+    await openSettings()
+    if (await radio('distanceUnit', unit).isChecked()) return
+    const res = putSettings()
+    await radio('distanceUnit', unit).click()
+    if ((await res).request().postDataJSON().distanceUnit !== unit) throw new Error(`PUT did not save ${unit}`)
+    await savedShown()
+  }
+  const odometerLabel = (loc) => loc.locator('.odometer').first().getAttribute('aria-label')
+  await step('settings-unit-miles', async () => {
+    await page.setViewportSize({ width: 390, height: 844 })
+    await page.evaluate(() => { window.noReload = true })
+    const utc = (daysAgo) => new Date(Date.now() - daysAgo * 86_400_000).toISOString().slice(0, 10)
+    mileCarId = (await apiCall('POST', '/vehicles', { nickname: 'Mile car', initialOdometerKm: 80467 })).id
+    await apiCall('POST', `/vehicles/${mileCarId}/odometer`, { valueKm: 79967, readingDate: utc(10) })
+    await apiCall('POST', `/vehicles/${mileCarId}/tasks`, { name: 'Mile oil', category: 'Oil', intervalKm: 10000, intervalDays: null, dueSoonPercent: 10, lastDoneOdometerKm: 72000, lastDoneDate: utc(0) })
+    if (!(await radio('distanceUnit', 'Km').isChecked())) throw new Error('unit not Km by default')
+    // SET-1 QA Low 1: an arrow key while the group saves leaves focus on its checked radio, and sends nothing.
+    let puts = 0
+    const count = (r) => r.method() === 'PUT' && puts++
+    page.on('request', count)
+    await page.route('**/api/me/settings', async (r) => { await page.waitForTimeout(700); await r.continue() }, { times: 1 })
+    const res = putSettings()
+    await radio('distanceUnit', 'Mi').click()
+    await page.keyboard.press('ArrowUp')
+    await focusIs('input[name=distanceUnit][value=Mi]:checked', 'unit group after an arrow key while saving')
+    if ((await res).request().postDataJSON().distanceUnit !== 'Mi') throw new Error('Mi not saved')
+    await savedShown()
+    page.off('request', count)
+    if (puts !== 1) throw new Error(`${puts} PUTs`)
+    await focusIs('input[name=distanceUnit][value=Mi]:checked', 'unit group after the save')
+    await noOverflow('settings in miles')
+    await sweep('settings in miles')
+    // Car list: odometer, average and quick-add in miles; 50,100 mi is stored as 80,628 km and shows back unchanged.
+    await page.click('header a.brand')
+    await mileCar().waitFor()
+    if ((await odometerLabel(mileCar())) !== `50,000 ${UM.mi}`) throw new Error(`list odometer "${await odometerLabel(mileCar())}"`)
+    if ((await mileCar().locator('.reading .unit').textContent()) !== UM.mi) throw new Error('list unit')
+    if (!(await mileCar().locator('.reading').textContent()).includes(UM.perDay)) throw new Error(`average "${await mileCar().locator('.reading').textContent()}"`)
+    const quick = mileCar().locator('.quick input[type=number]')
+    if ((await quick.getAttribute('placeholder')) !== UM.newReading) throw new Error(`placeholder "${await quick.getAttribute('placeholder')}"`)
+    await quick.fill('50100')
+    const post = page.waitForResponse((r) => r.request().method() === 'POST' && r.url().endsWith('/odometer'))
+    await mileCar().locator('.quick button').click()
+    if ((await post).request().postDataJSON().valueKm !== 80628) throw new Error(`POST ${JSON.stringify((await post).request().postDataJSON())}`)
+    await page.waitForFunction(() => [...document.querySelectorAll('.odometer')].some((o) => o.getAttribute('aria-label').startsWith('50,100')))
+    if ((await apiCall('GET', `/vehicles/${mileCarId}`)).currentOdometerKm !== 80628) throw new Error('not stored as 80,628 km')
+    await noOverflow('the list in miles')
+    // Car page: odometer, history and its edit form, tasks, and the template picker.
+    await mileCar().locator('h2 a').click()
+    await arrivedAt('Mile car')
+    if ((await odometerLabel(page.locator('main'))) !== `50,100 ${UM.mi}`) throw new Error(`car odometer "${await odometerLabel(page.locator('main'))}"`)
+    const values = await page.locator('.history .value').allTextContents()
+    if (values.map(plain).join('|') !== ['50,100', '50,000', '49,689'].map((v) => `${v} ${UM.mi}`).join('|')) throw new Error(`history ${values}`)
+    await page.getByRole('button', { name: `${UM.edit}50,000 ${UM.mi}`, exact: true }).click()
+    const readingInput = page.locator('.history input[name=valueKm]')
+    if ((await readingInput.inputValue()) !== '50000') throw new Error(`edit value ${await readingInput.inputValue()}`)
+    if (!plain(await page.locator('.history form label').first().textContent()).startsWith(UM.readingLabel)) throw new Error('reading label')
+    // Saved untouched, the reading keeps its exact km.
+    const put = page.waitForResponse((r) => r.request().method() === 'PUT' && r.url().includes('/odometer/'))
+    await page.locator('.history form button:not(.link)').click()
+    if ((await put).request().postDataJSON().valueKm !== 80467) throw new Error(`PUT ${JSON.stringify((await put).request().postDataJSON())}`)
+    const row = plain(await taskRow('Mile oil').textContent())
+    for (const want of [UM.every6214, UM.left853, UM.at44739]) if (!row.includes(want)) throw new Error(`task row lacks "${want}": "${row}"`)
+    await taskBtn(TK.edit, 'Mile oil').click()
+    const form = taskRow('Mile oil').locator('form')
+    if ((await form.locator('input[name=intervalKm]').inputValue()) !== '6214' || (await form.locator('input[name=lastDoneOdometerKm]').inputValue()) !== '44739') throw new Error('edit form not in miles')
+    if (!plain(await form.locator('label', { has: page.locator('input[name=intervalKm]') }).textContent()).startsWith(UM.intervalLabel)) throw new Error('interval label')
+    await form.locator('input[name=intervalKm]').fill('5000')
+    const taskPut = page.waitForResponse((r) => r.request().method() === 'PUT' && r.url().includes('/tasks/'))
+    await form.locator('button:not(.link)').click()
+    let body = (await taskPut).request().postDataJSON()
+    if (body.intervalKm !== 8047 || body.lastDoneOdometerKm !== 72000) throw new Error(`task PUT ${JSON.stringify(body)}`)
+    await page.waitForFunction((w) => document.querySelector('.tasks')?.textContent.replace(/[⁦-⁩]/g, '').replace(/\s+/g, ' ').includes(w), UM.every5000)
+    await tasks.getByRole('button', { name: TK.add }).click()
+    const options = (await tasks.locator('.picker li button').allTextContents()).map(plain)
+    if (!options.some((o) => o.startsWith(TK.belt) && o.includes(UM.beltMi))) throw new Error(`picker ${options}`)
+    await tasks.locator('.picker button', { hasText: TK.custom }).click()
+    const add = tasks.locator('form')
+    await add.locator('input[name=name]').fill('Mile wash')
+    await add.locator('input[name=intervalKm]').fill('5000')
+    if ((await add.locator('input[name=lastDoneOdometerKm]').inputValue()) !== '50100') throw new Error('add form last done not in miles')
+    const taskPost = page.waitForResponse((r) => r.request().method() === 'POST' && r.url().endsWith('/tasks'))
+    await add.locator('button:not(.link)').click()
+    body = (await taskPost).request().postDataJSON()
+    if (body.intervalKm !== 8047 || body.lastDoneOdometerKm !== 80628) throw new Error(`task POST ${JSON.stringify(body)}`)
+    await taskRow('Mile wash').waitFor()
+    // Just done: the remaining distance adds up with the shown interval (8,047 km is 5,000.2 mi).
+    if (!plain(await taskRow('Mile wash').textContent()).includes(UM.left5000)) throw new Error(`new task row: ${await taskRow('Mile wash').textContent()}`)
+    await noOverflow('the car page in miles')
+    await sweep('the car page in miles')
+    await page.screenshot({ path: `${OUT}/${s.name}-unit-miles-car.png`, fullPage: true })
+    // Back to km: every value as before, no reload, nothing stored changed.
+    const stored = await carState(mileCarId)
+    await unitIs('Km')
+    await page.goBack()
+    await taskRow('Mile wash').waitFor()
+    if ((await odometerLabel(page.locator('main'))) !== `80,628 ${UM.km}`) throw new Error(`km odometer "${await odometerLabel(page.locator('main'))}"`)
+    const kmValues = (await page.locator('.history .value bdi').allTextContents()).join('|')
+    if (kmValues !== '80,628|80,467|79,967') throw new Error(`km history ${kmValues}`)
+    if (!plain(await taskRow('Mile oil').textContent()).includes(UM.every8047)) throw new Error('km interval')
+    if ((await carState(mileCarId)) !== stored) throw new Error('stored values changed with the unit')
+    await page.click('header a.brand')
+    await mileCar().waitFor()
+    if (!(await mileCar().locator('.reading').textContent()).includes(UM.perDayKm)) throw new Error(`km average "${await mileCar().locator('.reading').textContent()}"`)
+    if (!(await page.evaluate(() => window.noReload))) throw new Error('the page reloaded')
+  })
+  await step('settings-unit-errors', async () => {
+    await page.setViewportSize({ width: 390, height: 844 })
+    // SET-1 QA Low 2: each later settings action, on the page or with the header switch, clears every earlier error.
+    await openSettings()
+    const alerts = () => page.locator('main [role=alert]')
+    const fail = (r) => r.fulfill({ status: 500, contentType: 'application/json', body: '{}' })
+    await page.route('**/api/me/settings', fail, { times: 1 })
+    await radio('theme', 'Dark').click()
+    await page.locator('fieldset:has(input[name=theme]) [role=alert]').waitFor()
+    await page.route('**/api/me/settings', fail, { times: 1 })
+    await page.click('header nav button.link >> nth=0')
+    await page.locator('main > p[role=alert]').waitFor()
+    if ((await alerts().count()) !== 1) throw new Error(`${await alerts().count()} alerts after the header switch failed`)
+    const res = putSettings()
+    await radio('distanceUnit', 'Mi').click()
+    await res
+    await savedShown()
+    if (await alerts().count()) throw new Error('old errors still shown after a successful save')
+    forget500()
+    // Criterion 5: limits in miles, blocked before any request; the server's errors name readings in miles.
+    let sent = 0
+    const count = (r) => ['POST', 'PUT'].includes(r.method()) && !r.url().endsWith('/me/settings') && sent++
+    page.on('request', count)
+    const blocked = async (input, submit, want) => {
+      await submit.click()
+      const msg = plain(await input.evaluate((el) => el.validationMessage))
+      if (msg !== want) throw new Error(`"${msg}", want "${want}"`)
+    }
+    await page.click('header a.brand')
+    await page.click('a[href="/cars/new"]')
+    await arrivedAt(T.addCar)
+    if (!plain(await page.locator('label', { has: page.locator('input[name=initialOdometerKm]') }).textContent()).startsWith(UM.initialLabel)) throw new Error('car form label')
+    await page.fill('input[name=nickname]', 'Too far')
+    await page.fill('input[name=initialOdometerKm]', '6213712')
+    await blocked(page.locator('input[name=initialOdometerKm]'), page.locator('form button:not(.link)'), UM.maxReading)
+    await page.click('form button.link')
+    await mileCar().waitFor()
+    const quick = mileCar().locator('.quick input[type=number]')
+    await quick.fill('6213712')
+    await blocked(quick, mileCar().locator('.quick button'), UM.maxReading)
+    await mileCar().locator('h2 a').click()
+    await taskRow('Mile oil').waitFor()
+    await taskBtn(TK.edit, 'Mile oil').click()
+    const form = taskRow('Mile oil').locator('form')
+    await form.locator('input[name=intervalKm]').fill('621372')
+    await blocked(form.locator('input[name=intervalKm]'), form.locator('button:not(.link)'), UM.maxInterval)
+    await page.waitForTimeout(300)
+    page.off('request', count)
+    if (sent) throw new Error(`${sent} requests sent for blocked values`)
+    await form.locator('input[name=intervalKm]').fill('5000')
+    await form.locator('input[name=lastDoneOdometerKm]').fill('60000')
+    await form.locator('button:not(.link)').click()
+    await form.locator('[role=alert]').waitFor()
+    const lastDone = plain(await form.locator('[role=alert]').textContent())
+    if (!lastDone.includes(UM.current)) throw new Error(`invalidLastDone "${lastDone}"`)
+    noLatin(lastDone, 'error')
+    await page.keyboard.press('Escape')
+    await page.locator('main > .card .quick input[type=number]').fill('49000')
+    await page.locator('main > .card .quick button').click()
+    await page.locator('main > .card .quick [role=alert]').waitFor()
+    const lower = plain(await page.locator('main > .card .quick [role=alert]').textContent())
+    if (!lower.includes(UM.previous)) throw new Error(`lowerThanPrevious "${lower}"`)
+    noLatin(lower, 'error')
+    // A failed history save puts focus back on Save, so Escape still closes the form.
+    await page.getByRole('button', { name: `${UM.edit}50,000 ${UM.mi}`, exact: true }).click()
+    await page.route('**/odometer/*', (r) => r.fulfill({ status: 500, contentType: 'application/json', body: '{}' }), { times: 1 })
+    await page.locator('.history form button:not(.link)').click()
+    await page.locator('.history form [role=alert]').waitFor()
+    await focusIs('.history form button:not(.link)', 'after a failed history save')
+    await page.keyboard.press('Escape')
+    await page.locator('.history form').waitFor({ state: 'detached' })
+    forget500()
+    await noOverflow('the car page with errors in miles')
+    await page.screenshot({ path: `${OUT}/${s.name}-unit-errors-car.png`, fullPage: true })
+    await unitIs('Km')
+    await apiCall('POST', `/vehicles/${mileCarId}/archive`) // the steps below expect one car
+    await page.setViewportSize(s.viewport)
+  })
   await step('tap-targets-list', async () => {
     await page.click('header a.brand')
     await page.setViewportSize({ width: 390, height: 844 })
@@ -981,10 +1185,10 @@ for (const s of setups) {
     await page.click('.cars li .actions button.link')
     await page.locator('.cars li').waitFor({ state: 'detached' })
     await page.check('main > label.inline input')
-    await page.locator('.cars li.archived').waitFor()
+    await page.locator('.cars li.archived', { hasText: 'Renamed Corolla' }).waitFor()
   })
   await step('archived-tasks-read-only', async () => {
-    await page.click('.cars li.archived h2 a')
+    await page.locator('.cars li.archived', { hasText: 'Renamed Corolla' }).locator('h2 a').click()
     await taskRow(TK.belt).waitFor()
     const controls = await tasks.locator('button, input, select').count()
     if (controls) throw new Error(`${controls} controls on an archived car's tasks`)

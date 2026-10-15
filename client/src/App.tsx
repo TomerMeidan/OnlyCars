@@ -11,26 +11,19 @@ import SettingsPage from './pages/SettingsPage'
 
 export default function App() {
   const { t, i18n } = useTranslation()
-  const { user, logout, saveSettings } = useAuth()
+  const { user, logout, saveSettings, settingsError } = useAuth()
   const otherLang = i18n.resolvedLanguage === 'he' ? 'en' : 'he'
-  // Kept with the page it happened on, so navigating (or logging out) clears it.
-  const { key } = useLocation()
-  const [langError, setLangError] = useState<{ key: string; err: unknown } | null>(null)
+  // A failure is kept with the page it happened on, so navigating (or logging out) clears it.
+  const at = `header@${useLocation().key}`
   const [langBusy, setLangBusy] = useState(false)
 
   // Signed in, the switch also saves the language to the account.
   async function switchLanguage() {
     if (langBusy) return // aria-disabled rather than disabled, so the button keeps focus
-    setLangError(null)
     if (!user) return i18n.changeLanguage(otherLang)
     setLangBusy(true)
-    try {
-      await saveSettings({ locale: toLocale(otherLang) })
-    } catch (err) {
-      setLangError({ key, err })
-    } finally {
-      setLangBusy(false)
-    }
+    await saveSettings({ locale: toLocale(otherLang) }, at)
+    setLangBusy(false)
   }
 
   return (
@@ -46,7 +39,7 @@ export default function App() {
         </nav>
       </header>
       <main>
-        {langError?.key === key && <p className="error" role="alert">{errorMessage(langError.err)}</p>}
+        {settingsError?.at === at && <p className="error" role="alert">{errorMessage(settingsError.err)}</p>}
         {user ? (
           <Routes>
             <Route path="/" element={<CarsPage />} />

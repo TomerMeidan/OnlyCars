@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from 'react'
 import { Trans, useTranslation } from 'react-i18next'
-import { useAuth } from '../auth'
+import { useAuth, useDistance } from '../auth'
 import { api, ApiError, localToday, taskCategories, type MaintenanceTask, type TaskCategory, type TaskStatus, type TaskTemplate, type Vehicle } from '../api'
 import { errorMessage } from '../i18n'
 
@@ -18,9 +18,10 @@ const rank = (s: TaskStatus | null) => (s ? ['Overdue', 'DueSoon', 'Ok'].indexOf
 
 // "Every 10,000 km or 1 year", "Every 2 years", "Every 60,000 km".
 function Interval({ km, days }: { km: number | null; days: number | null }) {
-  const { t, i18n } = useTranslation()
+  const { t } = useTranslation()
+  const d = useDistance()
   const parts: ReactNode[] = []
-  if (km != null) parts.push(<><bdi>{km.toLocaleString(i18n.resolvedLanguage)}</bdi> {t('km')}</>)
+  if (km != null) parts.push(<><bdi>{d.fmt(km)}</bdi> {d.vars.distUnit}</>)
   if (days != null) {
     const [n, unit] = splitDays(days)
     parts.push(<Trans i18nKey={`duration.${unit}`} count={n} components={{ n: <bdi /> }} />)
@@ -30,10 +31,11 @@ function Interval({ km, days }: { km: number | null; days: number | null }) {
 
 // "1,200 km or 40 days left", "about 4 months left", "Overdue by 300 km and 12 days". Once overdue, only the overdue parts show.
 function Remaining({ km, days }: { km: number | null; days: number | null }) {
-  const { t, i18n } = useTranslation()
+  const { t } = useTranslation()
+  const d = useDistance()
   const late = (km ?? 0) < 0 || (days ?? 0) < 0
   const parts: ReactNode[] = []
-  if (km != null && km < 0 === late) parts.push(<><bdi>{Math.ceil(Math.abs(km)).toLocaleString(i18n.resolvedLanguage)}</bdi>{'\u00a0'}{t('km')}</>)
+  if (km != null && km < 0 === late) parts.push(<><bdi>{d.fmtUp(Math.abs(km))}</bdi>{'\u00a0'}{d.vars.distUnit}</>)
   if (days != null && days < 0 === late) {
     const d = Math.abs(days)
     parts.push(d < 60
@@ -129,6 +131,7 @@ export function TasksSection({ car, onOdometerChanged }: { car: Vehicle; onOdome
     addForm = (
       <TaskForm
         initial={initial}
+        currentKm={car.currentOdometerKm}
         onCancel={closeAdd}
         onSubmit={async (body) => {
           const task = await api<MaintenanceTask>(path, 'POST', { ...body, templateId: tp?.id ?? null })
@@ -184,6 +187,7 @@ export function TasksSection({ car, onOdometerChanged }: { car: Vehicle; onOdome
               key={task.id}
               task={task}
               url={`${path}/${encodeURIComponent(task.id)}`}
+              currentKm={car.currentOdometerKm}
               readOnly={readOnly}
               onSaved={saved}
               onReset={(body) => reset(`${path}/${encodeURIComponent(task.id)}`, body)}
@@ -202,12 +206,14 @@ export function TasksSection({ car, onOdometerChanged }: { car: Vehicle; onOdome
   )
 }
 
-function TaskForm({ initial, onSubmit, onCancel }: {
+function TaskForm({ initial, currentKm, onSubmit, onCancel }: {
   initial: TaskBody
+  currentKm: number
   onSubmit: (body: TaskBody) => Promise<void>
   onCancel: () => void
 }) {
   const { t } = useTranslation()
+  const d = useDistance()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<unknown>(null)
   const [count, unit] = initial.intervalDays == null ? [null, 'months' as Unit] : splitDays(initial.intervalDays)
@@ -217,13 +223,14 @@ function TaskForm({ initial, onSubmit, onCancel }: {
     const f = new FormData(e.currentTarget)
     const num = (k: string) => (f.get(k) === '' ? null : Number(f.get(k)))
     const time = num('intervalTime')
+    const intervalKm = num('intervalKm')
     const body: TaskBody = {
       name: String(f.get('name')),
       category: f.get('category') as TaskCategory,
-      intervalKm: num('intervalKm'),
+      intervalKm: intervalKm == null ? null : d.toKm(intervalKm, initial.intervalKm),
       intervalDays: time == null ? null : time * unitDays[f.get('intervalUnit') as Unit],
       dueSoonPercent: Number(f.get('dueSoonPercent')),
-      lastDoneOdometerKm: Number(f.get('lastDoneOdometerKm')),
+      lastDoneOdometerKm: d.toKm(Number(f.get('lastDoneOdometerKm')), initial.lastDoneOdometerKm, currentKm),
       lastDoneDate: String(f.get('lastDoneDate')),
     }
     if (body.intervalKm == null && body.intervalDays == null) return setError(new ApiError(400, { code: 'task.intervalRequired' }, ''))
@@ -245,7 +252,7 @@ function TaskForm({ initial, onSubmit, onCancel }: {
     for (const [name, ok] of [['intervalKm', true], ['intervalTime', days <= 7300], ['dueSoonPercent', true]] as const) {
       const el = field(name)
       el.setCustomValidity('')
-      el.setCustomValidity(el.validity.valid && ok ? '' : t(`limits.${name}`))
+      el.setCustomValidity(el.validity.valid && ok ? '' : t(`limits.${name}`, { ...d.vars, maxInterval: d.maxInterval }))
     }
   }
 
@@ -263,8 +270,8 @@ function TaskForm({ initial, onSubmit, onCancel }: {
         </select>
       </label>
       <label>
-        {t('intervalKm')}
-        <input name="intervalKm" type="number" inputMode="numeric" min={1} max={1_000_000} step={1} defaultValue={initial.intervalKm ?? ''} />
+        {t('intervalKm', d.vars)}
+        <input name="intervalKm" type="number" inputMode="numeric" min={1} max={d.maxInterval} step={1} defaultValue={initial.intervalKm == null ? '' : d.value(initial.intervalKm)} />
       </label>
       <div className="pair">
         <label>
@@ -283,8 +290,8 @@ function TaskForm({ initial, onSubmit, onCancel }: {
         </span>
       </label>
       <label>
-        {t('lastDoneKm')}
-        <input name="lastDoneOdometerKm" type="number" inputMode="decimal" min={0} step="any" required defaultValue={initial.lastDoneOdometerKm} />
+        {t('lastDoneKm', d.vars)}
+        <input name="lastDoneOdometerKm" type="number" inputMode="decimal" min={0} step="any" required defaultValue={d.value(initial.lastDoneOdometerKm)} />
       </label>
       <label>
         {t('lastDoneDate')}
@@ -299,9 +306,10 @@ function TaskForm({ initial, onSubmit, onCancel }: {
   )
 }
 
-function TaskRow({ task, url, readOnly, onSaved, onDeleted, onReset, onUndo }: {
+function TaskRow({ task, url, currentKm, readOnly, onSaved, onDeleted, onReset, onUndo }: {
   task: MaintenanceTask
   url: string
+  currentKm: number
   readOnly: boolean
   onSaved: (task: MaintenanceTask, focus?: string) => void
   onDeleted: () => void
@@ -311,6 +319,7 @@ function TaskRow({ task, url, readOnly, onSaved, onDeleted, onReset, onUndo }: {
 }) {
   const { t, i18n } = useTranslation()
   const { user } = useAuth()
+  const d = useDistance()
   const [mode, setMode] = useState<'view' | 'edit' | 'delete' | 'cost'>('view')
   // The opener, refocused when Cancel or Escape returns the row to view. After Save or Delete the section refocuses instead.
   const returnTo = useRef<typeof mode>('view')
@@ -398,7 +407,8 @@ function TaskRow({ task, url, readOnly, onSaved, onDeleted, onReset, onUndo }: {
         <Trans
           i18nKey="lastDone"
           values={{
-            km: task.lastDoneOdometerKm.toLocaleString(lng),
+            ...d.vars,
+            value: d.fmt(task.lastDoneOdometerKm),
             date: new Date(task.lastDoneDate).toLocaleDateString(lng, { dateStyle: 'medium', timeZone: 'UTC' }),
           }}
           components={{ n: <bdi />, d: <time dateTime={task.lastDoneDate} /> }}
@@ -439,6 +449,7 @@ function TaskRow({ task, url, readOnly, onSaved, onDeleted, onReset, onUndo }: {
       {mode === 'edit' && (
         <TaskForm
           initial={task}
+          currentKm={currentKm}
           onCancel={() => open('view')}
           onSubmit={async (body) => {
             const saved = await api<MaintenanceTask>(url, 'PUT', body)

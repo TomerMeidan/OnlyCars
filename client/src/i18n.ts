@@ -1,7 +1,8 @@
 import i18n from 'i18next'
 import LanguageDetector from 'i18next-browser-languagedetector'
 import { initReactI18next } from 'react-i18next'
-import { ApiError, type User } from './api'
+import { ApiError, cachedUser, type User } from './api'
+import { distance } from './units'
 
 const en = {
   appName: 'OnlyCars',
@@ -32,13 +33,15 @@ const en = {
   fuelType: 'Fuel type',
   purchaseDate: 'Purchase date',
   purchasePrice: 'Purchase price',
-  initialOdometer: 'Current odometer (km)',
+  initialOdometer: 'Current odometer ({{distUnit}})',
   odometer: 'Odometer',
-  newReading: 'New reading in km',
+  newReading: 'New reading in {{distUnits}}',
   plateValue: 'Plate {{plate}}',
   intro: 'Track mileage and upkeep for every car you own.',
-  km: 'km',
-  kmPerDay: '{{value}} km/day',
+  // {{distUnit}} follows a number, {{distUnits}} names the unit in a label; both come from units.ts.
+  distance: { Km: 'km', Mi: 'mi' },
+  distances: { Km: 'km', Mi: 'miles' },
+  perDay: '{{value}} {{distUnit}}/day',
   updateOdometer: 'Update',
   confirmCorrection: 'This is a correction, save anyway',
   fuel: { Petrol: 'Petrol', Diesel: 'Diesel', Hybrid: 'Hybrid', Electric: 'Electric', Lpg: 'LPG', Other: 'Other' },
@@ -47,15 +50,17 @@ const en = {
   odometerHistory: 'Odometer history',
   noReadings: 'No readings yet.',
   delete: 'Delete',
-  readingValue: 'Reading in km',
+  readingValue: 'Reading in {{distUnits}}',
   readingDate: 'Date',
-  editReading: 'Edit reading {{value}} km',
-  deleteReading: 'Delete reading {{value}} km',
+  editReading: 'Edit reading {{value}} {{distUnit}}',
+  deleteReading: 'Delete reading {{value}} {{distUnit}}',
   confirmDeleteReading: 'Delete this reading?',
   currency: 'Currency',
   settings: 'Settings',
   language: 'Language',
   theme: 'Theme',
+  distanceUnit: 'Distance unit',
+  distanceUnits: { Km: 'Kilometres', Mi: 'Miles' },
   themes: { System: 'System', Light: 'Light', Dark: 'Dark' },
   currencyHint: "Changing the currency doesn't convert amounts you've already entered.",
   saved: 'Saved',
@@ -67,11 +72,11 @@ const en = {
   customTask: 'Custom task',
   taskName: 'Name',
   category: 'Category',
-  intervalKm: 'Interval in km',
+  intervalKm: 'Interval in {{distUnits}}',
   intervalTime: 'Time interval',
   intervalUnit: 'Time unit',
   units: { days: 'Days', months: 'Months', years: 'Years' },
-  lastDoneKm: 'Last done at km',
+  lastDoneKm: 'Odometer when last done ({{distUnit}})',
   lastDoneDate: 'Last done on',
   enabled: 'Enabled',
   disabled: 'Disabled',
@@ -93,7 +98,7 @@ const en = {
     years_two: '<n>{{count, number}}</n> years',
     years_other: '<n>{{count, number}}</n> years',
   },
-  lastDone: 'Last done at <n>{{km}}</n> km on <d>{{date}}</d>',
+  lastDone: 'Last done at <n>{{value}}</n> {{distUnit}} on <d>{{date}}</d>',
   status: { Ok: 'OK', DueSoon: 'Due soon', Overdue: 'Overdue' },
   // <x/> is "1,200 km or 40 days", "300 km and 12 days", or one of them.
   left: '<x/> left',
@@ -114,7 +119,7 @@ const en = {
   undo: 'Undo',
   // Shown by the browser on the field, before any request.
   limits: {
-    intervalKm: 'Enter a km interval from 1 to 1,000,000.',
+    intervalKm: 'Enter an interval from 1 to {{maxInterval, number}} {{distUnit}}.',
     intervalTime: 'Enter a time interval of up to 20 years (243 months or 7,300 days).',
     dueSoonPercent: 'Enter a whole number from 1 to 50.',
     cost: 'Enter a cost from 0 to 1,000,000 with up to 2 decimals.',
@@ -157,11 +162,11 @@ const en = {
     },
     odometer: {
       lowerThanPrevious:
-        'This reading is lower than the reading before it ({{previousKm, number}} km). If it is a correction, tick the box and save again.',
+        'This reading is lower than the reading before it ({{previous, number}} {{distUnit}}). If it is a correction, tick the box and save again.',
       higherThanNext:
-        'This reading is higher than the reading after it ({{nextKm, number}} km). If it is a correction, tick the box and save again.',
+        'This reading is higher than the reading after it ({{next, number}} {{distUnit}}). If it is a correction, tick the box and save again.',
       futureDate: "The date can't be in the future.",
-      invalidValue: "Enter a reading between 0 and 10,000,000 km.",
+      invalidValue: 'Enter a reading between 0 and {{maxReading, number}} {{distUnit}}.',
       onlyReading: "This is the car's only reading, so it can't be deleted. Edit it instead.",
       notManual: "This reading comes from another record and can't be changed here.",
     },
@@ -171,10 +176,10 @@ const en = {
     task: {
       nameRequired: 'Enter a name of up to 100 characters.',
       invalidCategory: 'Choose one of the listed categories.',
-      intervalRequired: 'Enter a km interval, a time interval, or both.',
-      invalidInterval: 'Enter a km interval from 1 to 1,000,000 and a time interval of up to 20 years.',
+      intervalRequired: 'Enter an interval in {{distUnits}}, a time interval, or both.',
+      invalidInterval: 'Enter an interval from 1 to {{maxInterval, number}} {{distUnit}} and a time interval of up to 20 years.',
       invalidDueSoonPercent: 'Enter a due-soon value from 1 to 50 percent of the interval.',
-      invalidLastDone: 'Enter when it was last done: a date, and a km from 0 to the current {{currentKm, number}} km.',
+      invalidLastDone: 'Enter when it was last done: a date, and a reading in {{distUnits}} from 0 to the current {{current, number}} {{distUnit}}.',
       futureDate: "The date can't be in the future.",
       invalidTemplate: 'This template was not found.',
     },
@@ -192,6 +197,7 @@ const en = {
     settings: {
       invalidLocale: 'Choose one of the listed languages.',
       invalidTheme: 'Choose one of the listed themes.',
+      invalidDistanceUnit: 'Choose one of the listed units.',
     },
     user: {
       notFound: 'Your account was not found. Log out and log in again.',
@@ -228,13 +234,15 @@ const he: typeof en = {
   fuelType: 'סוג דלק',
   purchaseDate: 'תאריך רכישה',
   purchasePrice: 'מחיר רכישה',
-  initialOdometer: 'קילומטראז׳ נוכחי (ק״מ)',
+  initialOdometer: 'קילומטראז׳ נוכחי ({{distUnit}})',
   odometer: 'קילומטראז׳',
-  newReading: 'קריאה חדשה בק״מ',
+  newReading: 'קריאה חדשה ב{{distUnits}}',
   plateValue: 'מספר רישוי {{plate}}',
   intro: 'מעקב אחר קילומטראז׳ ותחזוקה לכל הרכבים שלך.',
-  km: 'ק״מ',
-  kmPerDay: '{{value}} ק״מ ליום',
+  // Like ק״מ, מייל after a number stays singular; the plural names the unit in a label (במיילים).
+  distance: { Km: 'ק״מ', Mi: 'מייל' },
+  distances: { Km: 'ק״מ', Mi: 'מיילים' },
+  perDay: '{{value}} {{distUnit}} ליום',
   updateOdometer: 'עדכון',
   confirmCorrection: 'זה תיקון, לשמור בכל זאת',
   fuel: { Petrol: 'בנזין', Diesel: 'דיזל', Hybrid: 'היברידי', Electric: 'חשמלי', Lpg: 'גפ״מ', Other: 'אחר' },
@@ -243,15 +251,17 @@ const he: typeof en = {
   odometerHistory: 'היסטוריית קילומטראז׳',
   noReadings: 'עדיין אין קריאות.',
   delete: 'מחיקה',
-  readingValue: 'קריאה בק״מ',
+  readingValue: 'קריאה ב{{distUnits}}',
   readingDate: 'תאריך',
-  editReading: 'עריכה של הקריאה {{value}} ק״מ',
-  deleteReading: 'מחיקה של הקריאה {{value}} ק״מ',
+  editReading: 'עריכה של הקריאה {{value}} {{distUnit}}',
+  deleteReading: 'מחיקה של הקריאה {{value}} {{distUnit}}',
   confirmDeleteReading: 'למחוק את הקריאה הזו?',
   currency: 'מטבע',
   settings: 'הגדרות',
   language: 'שפה',
   theme: 'ערכת נושא',
+  distanceUnit: 'יחידת מרחק',
+  distanceUnits: { Km: 'קילומטרים', Mi: 'מיילים' },
   themes: { System: 'לפי המערכת', Light: 'בהירה', Dark: 'כהה' },
   currencyHint: 'שינוי המטבע לא ממיר את הסכומים שכבר הזנתם.',
   saved: 'נשמר',
@@ -263,11 +273,11 @@ const he: typeof en = {
   customTask: 'משימה מותאמת אישית',
   taskName: 'שם',
   category: 'קטגוריה',
-  intervalKm: 'מרווח בק״מ',
+  intervalKm: 'מרווח ב{{distUnits}}',
   intervalTime: 'מרווח זמן',
   intervalUnit: 'יחידת זמן',
   units: { days: 'ימים', months: 'חודשים', years: 'שנים' },
-  lastDoneKm: 'ק״מ בביצוע האחרון',
+  lastDoneKm: 'קילומטראז׳ בביצוע האחרון ({{distUnit}})',
   lastDoneDate: 'תאריך הביצוע האחרון',
   enabled: 'פעילה',
   disabled: 'לא פעילה',
@@ -288,7 +298,7 @@ const he: typeof en = {
     years_two: 'שנתיים',
     years_other: '<n>{{count, number}}</n> שנים',
   },
-  lastDone: 'בוצע לאחרונה ב־<n>{{km}}</n> ק״מ, ב־<d>{{date}}</d>',
+  lastDone: 'בוצע לאחרונה ב־<n>{{value}}</n> {{distUnit}}, ב־<d>{{date}}</d>',
   status: { Ok: 'תקין', DueSoon: 'בקרוב', Overdue: 'באיחור' },
   left: 'עוד <x/>',
   overdueBy: 'באיחור של <x/>',
@@ -307,7 +317,7 @@ const he: typeof en = {
   markedDone: 'סומן כבוצע.',
   undo: 'ביטול הסימון',
   limits: {
-    intervalKm: 'הזינו מרווח של ⁦1⁩ עד ⁦1,000,000⁩ ק״מ.',
+    intervalKm: 'הזינו מרווח של ⁦1⁩ עד ⁦{{maxInterval, number}}⁩ {{distUnit}}.',
     intervalTime: 'הזינו מרווח זמן של עד ⁦20⁩ שנה (⁦243⁩ חודשים או ⁦7,300⁩ ימים).',
     dueSoonPercent: 'הזינו מספר שלם בין ⁦1⁩ ל־⁦50⁩.',
     cost: 'הזינו עלות בין ⁦0⁩ ל־⁦1,000,000⁩, עם עד ⁦2⁩ ספרות אחרי הנקודה.',
@@ -350,11 +360,11 @@ const he: typeof en = {
     },
     odometer: {
       lowerThanPrevious:
-        'הקריאה נמוכה מהקריאה שלפניה (⁦{{previousKm, number}}⁩ ק״מ). אם זה תיקון, סמנו את התיבה ושמרו שוב.',
+        'הקריאה נמוכה מהקריאה שלפניה (⁦{{previous, number}}⁩ {{distUnit}}). אם זה תיקון, סמנו את התיבה ושמרו שוב.',
       higherThanNext:
-        'הקריאה גבוהה מהקריאה שאחריה (⁦{{nextKm, number}}⁩ ק״מ). אם זה תיקון, סמנו את התיבה ושמרו שוב.',
+        'הקריאה גבוהה מהקריאה שאחריה (⁦{{next, number}}⁩ {{distUnit}}). אם זה תיקון, סמנו את התיבה ושמרו שוב.',
       futureDate: 'התאריך לא יכול להיות בעתיד.',
-      invalidValue: 'הזינו קריאה בין ⁦0⁩ ל־⁦10,000,000⁩ ק״מ.',
+      invalidValue: 'הזינו קריאה בין ⁦0⁩ ל־⁦{{maxReading, number}}⁩ {{distUnit}}.',
       onlyReading: 'זו הקריאה היחידה של הרכב, ולכן אי אפשר למחוק אותה. אפשר לערוך אותה.',
       notManual: 'הקריאה הזו מגיעה מרשומה אחרת, ואי אפשר לשנות אותה כאן.',
     },
@@ -364,10 +374,10 @@ const he: typeof en = {
     task: {
       nameRequired: 'הזינו שם של עד ⁦100⁩ תווים.',
       invalidCategory: 'בחרו אחת מהקטגוריות ברשימה.',
-      intervalRequired: 'הזינו מרווח בק״מ, מרווח זמן או את שניהם.',
-      invalidInterval: 'הזינו מרווח של ⁦1⁩ עד ⁦1,000,000⁩ ק״מ ומרווח זמן של עד ⁦20⁩ שנה.',
+      intervalRequired: 'הזינו מרווח ב{{distUnits}}, מרווח זמן או את שניהם.',
+      invalidInterval: 'הזינו מרווח של ⁦1⁩ עד ⁦{{maxInterval, number}}⁩ {{distUnit}} ומרווח זמן של עד ⁦20⁩ שנה.',
       invalidDueSoonPercent: 'הזינו ערך בין ⁦1⁩ ל־⁦50⁩ אחוז מהמרווח.',
-      invalidLastDone: 'הזינו מתי בוצעה המשימה לאחרונה: תאריך, וק״מ בין ⁦0⁩ לקילומטראז׳ הנוכחי (⁦{{currentKm, number}}⁩ ק״מ).',
+      invalidLastDone: 'הזינו מתי בוצעה המשימה לאחרונה: תאריך, וקריאה ב{{distUnits}} בין ⁦0⁩ לקילומטראז׳ הנוכחי (⁦{{current, number}}⁩ {{distUnit}}).',
       futureDate: 'התאריך לא יכול להיות בעתיד.',
       invalidTemplate: 'התבנית לא נמצאה.',
     },
@@ -385,6 +395,7 @@ const he: typeof en = {
     settings: {
       invalidLocale: 'בחרו אחת מהשפות ברשימה.',
       invalidTheme: 'בחרו אחת מבין ערכות הנושא ברשימה.',
+      invalidDistanceUnit: 'בחרו אחת מהיחידות ברשימה.',
     },
     user: {
       notFound: 'החשבון שלך לא נמצא. התנתקו והתחברו שוב.',
@@ -413,7 +424,19 @@ i18n.on('languageChanged', applyDir)
 // Translated text for any thrown error: known API codes get their own message, everything else the generic one.
 export function errorMessage(err: unknown) {
   const problem = err instanceof ApiError ? err.problem : {}
-  return i18n.t(`errors.${problem.code}`, { previousKm: problem.previousKm, nextKm: problem.nextKm, currentKm: problem.currentKm, defaultValue: i18n.t('errors.generic') })
+  // Distance errors show only where a car is, never on Settings mid-save, so the saved unit is the one on screen.
+  // shortcut: reads the unit from localStorage, so a unit changed in another tab shows here before this tab re-renders; read it from the auth context if that matters.
+  const d = distance(cachedUser()?.distanceUnit ?? 'Km', i18n.t, i18n.resolvedLanguage)
+  const shown = (km: number | undefined) => (km == null ? undefined : d.value(km))
+  return i18n.t(`errors.${problem.code}`, {
+    ...d.vars,
+    previous: shown(problem.previousKm),
+    next: shown(problem.nextKm),
+    current: shown(problem.currentKm),
+    maxReading: d.maxReading,
+    maxInterval: d.maxInterval,
+    defaultValue: i18n.t('errors.generic'),
+  })
 }
 
 export const toLocale = (lng: string | undefined): User['locale'] => (lng === 'he' ? 'He' : 'En')

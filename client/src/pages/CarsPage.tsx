@@ -3,10 +3,12 @@ import { useTranslation } from 'react-i18next'
 import { errorMessage } from '../i18n'
 import { Link } from 'react-router-dom'
 import { api, isOrderError, localToday, type Vehicle } from '../api'
+import { useDistance } from '../auth'
 import { usePage } from '../usePage'
 
 export default function CarsPage() {
   const { t } = useTranslation()
+  const d = useDistance()
   const [cars, setCars] = useState<Vehicle[] | null>(null)
   const [showArchived, setShowArchived] = useState(false)
   const [error, setError] = useState<unknown>(null)
@@ -49,9 +51,9 @@ export default function CarsPage() {
             </div>
             <div className="reading">
               <Odometer km={car.currentOdometerKm} />
-              <span className="unit">{t('km')}</span>
+              <span className="unit">{d.vars.distUnit}</span>
               {car.avgKmPerDay != null && (
-                <span className="muted">{t('kmPerDay', { value: Math.round(car.avgKmPerDay) })}</span>
+                <span className="muted">{t('perDay', { ...d.vars, value: d.perDay(car.avgKmPerDay) })}</span>
               )}
             </div>
             {!car.isArchived && <OdometerQuickEntry car={car} onSaved={load} />}
@@ -70,6 +72,7 @@ export default function CarsPage() {
 
 export function OdometerQuickEntry({ car, onSaved }: { car: Vehicle; onSaved: () => void }) {
   const { t } = useTranslation()
+  const d = useDistance()
   const [value, setValue] = useState('')
   const [error, setError] = useState<unknown>(null)
   const [needsConfirm, setNeedsConfirm] = useState(false)
@@ -82,7 +85,7 @@ export function OdometerQuickEntry({ car, onSaved }: { car: Vehicle; onSaved: ()
     setError(null)
     try {
       // A ticked box that is hidden again must not confirm a later reading.
-      await api(`/vehicles/${car.id}/odometer`, 'POST', { valueKm: Number(value), readingDate: localToday(), confirmCorrection: needsConfirm && confirmCorrection })
+      await api(`/vehicles/${car.id}/odometer`, 'POST', { valueKm: d.toKm(Number(value), car.currentOdometerKm), readingDate: localToday(), confirmCorrection: needsConfirm && confirmCorrection })
       setValue('')
       setNeedsConfirm(false)
       setConfirmCorrection(false)
@@ -100,11 +103,10 @@ export function OdometerQuickEntry({ car, onSaved }: { car: Vehicle; onSaved: ()
       <input
         type="number"
         inputMode="numeric"
-        min={0}
-        step="any"
+        {...d.readingInput}
         required
-        placeholder={t('newReading')}
-        aria-label={t('newReading')}
+        placeholder={t('newReading', d.vars)}
+        aria-label={t('newReading', d.vars)}
         value={value}
         onChange={(e) => setValue(e.target.value)}
       />
@@ -122,8 +124,8 @@ export function OdometerQuickEntry({ car, onSaved }: { car: Vehicle; onSaved: ()
 
 // Drum counter; only digits that changed since the last render roll in.
 export function Odometer({ km }: { km: number }) {
-  const { t } = useTranslation()
-  const value = String(Math.round(km))
+  const d = useDistance()
+  const value = String(Math.round(d.value(km)))
   const digits = value.padStart(6, '0')
   const [seen, setSeen] = useState({ digits, before: digits })
   if (seen.digits !== digits) setSeen({ digits, before: seen.digits })
@@ -131,7 +133,7 @@ export function Odometer({ km }: { km: number }) {
   const { before } = seen
 
   return (
-    <span className="odometer" role="img" aria-label={`${Math.round(km).toLocaleString()} ${t('km')}`}>
+    <span className="odometer" role="img" aria-label={`${Number(value).toLocaleString()} ${d.vars.distUnit}`}>
       {[...digits].map((d, i) => (
         <span key={digits.length - i} className={i < lead ? 'lead' : undefined} aria-hidden>
           <b key={d} className={before.length === digits.length && before[i] !== d ? 'roll' : undefined}>{d}</b>

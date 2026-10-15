@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { Link, useParams } from 'react-router-dom'
 import { api, carNotFound, isGuid, isOrderError, localToday, type OdometerReading, type Vehicle } from '../api'
 import { errorMessage } from '../i18n'
+import { useDistance } from '../auth'
 import { usePage } from '../usePage'
 import { Odometer, OdometerQuickEntry } from './CarsPage'
 import { TasksSection } from './TasksSection'
@@ -10,6 +11,7 @@ import { TasksSection } from './TasksSection'
 // Car detail page: maintenance tasks above the odometer history. Service history lands here later.
 export default function CarPage() {
   const { t } = useTranslation()
+  const d = useDistance()
   const { id = '' } = useParams()
   const [car, setCar] = useState<Vehicle | null>(null)
   const [readings, setReadings] = useState<OdometerReading[] | null>(null)
@@ -68,7 +70,7 @@ export default function CarPage() {
         </div>
         <div className="reading">
           <Odometer km={car.currentOdometerKm} />
-          <span className="unit">{t('km')}</span>
+          <span className="unit">{d.vars.distUnit}</span>
         </div>
         {!car.isArchived && <OdometerQuickEntry car={car} onSaved={load} />}
       </div>
@@ -90,6 +92,8 @@ export default function CarPage() {
                 editable={!car.isArchived && r.source === 'Manual'}
                 // The only reading can't be deleted (the API answers 409); the user edits it instead.
                 deletable={readings.length > 1}
+                // Newest first, in the server's order: the neighbours it compares an edit against.
+                neighbourKm={[readings[i + 1]?.valueKm, readings[i - 1]?.valueKm]}
                 onSaved={(deleted) => {
                   focusAfterLoad.current = deleted ? { index: i } : { id: r.id }
                   load()
@@ -116,14 +120,16 @@ export function CarError({ error }: { error: unknown }) {
   )
 }
 
-function ReadingRow({ reading: r, url, editable, deletable, onSaved }: {
+function ReadingRow({ reading: r, url, editable, deletable, neighbourKm, onSaved }: {
   reading: OdometerReading
   url: string
   editable: boolean
   deletable: boolean
+  neighbourKm: (number | undefined)[]
   onSaved: (deleted: boolean) => void
 }) {
   const { t, i18n } = useTranslation()
+  const d = useDistance()
   const [mode, setMode] = useState<'view' | 'edit' | 'delete'>('view')
   // The opener, refocused when Cancel or Escape returns the row to view. After Save or Delete the page refocuses instead.
   const returnTo = useRef<typeof mode>('view')
@@ -138,7 +144,14 @@ function ReadingRow({ reading: r, url, editable, deletable, onSaved }: {
   const [error, setError] = useState<unknown>(null)
   const [needsConfirm, setNeedsConfirm] = useState(false)
   const [confirmCorrection, setConfirmCorrection] = useState(false)
-  const value = r.valueKm.toLocaleString(i18n.resolvedLanguage)
+  const value = d.fmt(r.valueKm)
+  // Save and Delete are disabled while their request runs, which drops focus; after a failure it goes back where it was.
+  const retry = useRef<HTMLElement | null>(null)
+  useEffect(() => {
+    if (busy) return
+    retry.current?.focus()
+    retry.current = null
+  }, [busy])
 
   function open(next: typeof mode) {
     returnTo.current = mode
@@ -151,6 +164,7 @@ function ReadingRow({ reading: r, url, editable, deletable, onSaved }: {
   const onEscape = (e: KeyboardEvent) => !busy && e.key === 'Escape' && open('view')
 
   async function send(method: 'PUT' | 'DELETE', body?: unknown) {
+    const from = document.activeElement as HTMLElement | null
     setBusy(true)
     setError(null)
     try {
@@ -161,6 +175,7 @@ function ReadingRow({ reading: r, url, editable, deletable, onSaved }: {
     } catch (err) {
       setError(err)
       setNeedsConfirm(isOrderError(err))
+      retry.current = from
     } finally {
       setBusy(false)
     }
@@ -169,7 +184,7 @@ function ReadingRow({ reading: r, url, editable, deletable, onSaved }: {
   function save(e: FormEvent<HTMLFormElement>) {
     e.preventDefault()
     const f = new FormData(e.currentTarget)
-    send('PUT', { valueKm: Number(f.get('valueKm')), readingDate: f.get('readingDate'), confirmCorrection: needsConfirm && confirmCorrection })
+    send('PUT', { valueKm: d.toKm(Number(f.get('valueKm')), r.valueKm, ...neighbourKm), readingDate: f.get('readingDate'), confirmCorrection: needsConfirm && confirmCorrection })
   }
 
   const errorText = error != null && <p className="error" role="alert">{errorMessage(error)}</p>
@@ -180,7 +195,7 @@ function ReadingRow({ reading: r, url, editable, deletable, onSaved }: {
   return (
     <li data-id={r.id}>
       <span className="value">
-        <bdi>{value}</bdi> {t('km')}
+        <bdi>{value}</bdi> {d.vars.distUnit}
       </span>
       <span className="muted">{t(`source.${r.source}`)}</span>
       {/* ReadingDate is a calendar date; format it in UTC so the viewer's time zone can't shift the day. */}
@@ -190,11 +205,11 @@ function ReadingRow({ reading: r, url, editable, deletable, onSaved }: {
 
       {editable && mode === 'view' && (
         <div className="actions">
-          <button className="link edit" aria-label={t('editReading', { value })} ref={editRef} onClick={() => open('edit')}>
+          <button className="link edit" aria-label={t('editReading', { ...d.vars, value })} ref={editRef} onClick={() => open('edit')}>
             {t('edit')}
           </button>
           {deletable && (
-            <button className="link" aria-label={t('deleteReading', { value })} ref={deleteRef} onClick={() => open('delete')}>
+            <button className="link" aria-label={t('deleteReading', { ...d.vars, value })} ref={deleteRef} onClick={() => open('delete')}>
               {t('delete')}
             </button>
           )}
@@ -204,8 +219,8 @@ function ReadingRow({ reading: r, url, editable, deletable, onSaved }: {
       {mode === 'edit' && (
         <form className="inline-form" onSubmit={save} onKeyDown={onEscape}>
           <label>
-            {t('readingValue')}
-            <input name="valueKm" type="number" inputMode="numeric" min={0} step="any" required defaultValue={r.valueKm} autoFocus />
+            {t('readingValue', d.vars)}
+            <input name="valueKm" type="number" inputMode="numeric" {...d.readingInput} max={Math.max(d.maxReading, d.value(r.valueKm))} required defaultValue={d.value(r.valueKm)} autoFocus />
           </label>
           <label>
             {t('readingDate')}

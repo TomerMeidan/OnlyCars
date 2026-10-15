@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { errorMessage } from '../i18n'
 import { useNavigate, useParams } from 'react-router-dom'
 import { api, carNotFound, fuelTypes, isGuid, type FuelType, type Vehicle, type VehicleInput } from '../api'
+import { useDistance } from '../auth'
 import { usePage } from '../usePage'
 import { CarError } from './CarPage'
 
@@ -10,6 +11,7 @@ const maxYear = new Date().getFullYear() + 1
 
 export default function CarFormPage() {
   const { t } = useTranslation()
+  const d = useDistance()
   const { id } = useParams()
   const navigate = useNavigate()
   const [car, setCar] = useState<Vehicle | null>(null)
@@ -28,6 +30,7 @@ export default function CarFormPage() {
     const f = new FormData(e.currentTarget)
     const str = (k: string) => String(f.get(k) ?? '').trim() || null
     const num = (k: string) => (str(k) === null ? null : Number(str(k)))
+    const initialOdometer = num('initialOdometerKm')
     const body: VehicleInput = {
       nickname: str('nickname')!,
       make: str('make'),
@@ -39,7 +42,7 @@ export default function CarFormPage() {
       purchaseDate: str('purchaseDate'),
       purchasePrice: num('purchasePrice'),
       photoUrl: car?.photoUrl ?? null,
-      ...(!id && { initialOdometerKm: num('initialOdometerKm') }),
+      ...(!id && { initialOdometerKm: initialOdometer == null ? null : d.toKm(initialOdometer) }),
     }
     try {
       await api(id ? `/vehicles/${encodeURIComponent(id)}` : '/vehicles', id ? 'PUT' : 'POST', body)
@@ -53,7 +56,7 @@ export default function CarFormPage() {
 
   const field = (name: keyof Vehicle | 'initialOdometerKm', type = 'text', extra = {}) => (
     <label>
-      {t(name === 'initialOdometerKm' ? 'initialOdometer' : name)}
+      {t(name === 'initialOdometerKm' ? 'initialOdometer' : name, d.vars)}
       <input name={name} type={type} defaultValue={String(car?.[name as keyof Vehicle] ?? '')} {...extra} />
     </label>
   )
@@ -76,7 +79,7 @@ export default function CarFormPage() {
       </label>
       {field('purchaseDate', 'date')}
       {field('purchasePrice', 'number', { min: 0, step: '0.01' })}
-      {!id && field('initialOdometerKm', 'number', { min: 0, max: 10_000_000, step: 'any' })}
+      {!id && field('initialOdometerKm', 'number', d.readingInput)}
       {error != null && <p className="error" role="alert">{errorMessage(error)}</p>}
       <div className="actions">
         <button>{t('save')}</button>
