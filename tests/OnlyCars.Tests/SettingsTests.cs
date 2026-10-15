@@ -106,6 +106,68 @@ public class SettingsTests
         Assert.Equal(me, await _service.GetMeAsync(me.Id));
     }
 
+    // SET-2: the distance unit.
+    [Fact]
+    public async Task UpdateSettings_OnlyDistanceUnit_SavesMi_AndLeavesOthersUnchanged()
+    {
+        var me = await Register(locale: "He");
+        var other = await Register("other@example.com");
+
+        var dto = await _service.UpdateSettingsAsync(me.Id, new UpdateSettingsRequest(DistanceUnit: "Mi"));
+
+        Assert.Equal(me with { DistanceUnit = DistanceUnit.Mi }, dto);
+        _db.ChangeTracker.Clear();
+        Assert.Equal(dto, await _service.GetMeAsync(me.Id));
+        var saved = _db.Users.Single(u => u.Id == me.Id);
+        Assert.Equal((DistanceUnit.Mi, Locale.He, Theme.System, "ILS"), (saved.DistanceUnit, saved.Locale, saved.Theme, saved.Currency));
+        Assert.Equal(other, await _service.GetMeAsync(other.Id));
+        var login = await _service.LoginAsync(new LoginRequest("me@example.com", "Passw0rd!"));
+        Assert.Equal(DistanceUnit.Mi, login.User.DistanceUnit);
+    }
+
+    [Fact]
+    public async Task UpdateSettings_DistanceUnitBackToKm_Saves()
+    {
+        var me = await Register();
+        await _service.UpdateSettingsAsync(me.Id, new UpdateSettingsRequest(DistanceUnit: "Mi"));
+
+        var dto = await _service.UpdateSettingsAsync(me.Id, new UpdateSettingsRequest(DistanceUnit: "Km"));
+
+        Assert.Equal(me, dto);
+        _db.ChangeTracker.Clear();
+        Assert.Equal(DistanceUnit.Km, _db.Users.Single(u => u.Id == me.Id).DistanceUnit);
+    }
+
+    [Theory]
+    [InlineData("Miles")]
+    [InlineData("mi")] // exact casing only
+    [InlineData("KM")]
+    [InlineData("1")] // no numeric enum values
+    [InlineData("")]
+    public async Task UpdateSettings_InvalidDistanceUnit_WithValidOthers_Throws_AndSavesNothing(string distanceUnit)
+    {
+        var me = await Register();
+
+        var ex = await Assert.ThrowsAsync<ValidationFailedException>(() =>
+            _service.UpdateSettingsAsync(me.Id, new UpdateSettingsRequest("He", "Dark", "USD", distanceUnit)));
+
+        Assert.Equal("settings.invalidDistanceUnit", ex.Code);
+        Assert.Empty(ex.Extensions);
+        _db.ChangeTracker.Clear();
+        Assert.Equal(me, await _service.GetMeAsync(me.Id));
+    }
+
+    [Fact]
+    public async Task UpdateSettings_InvalidCurrencyAndDistanceUnit_ReportsCurrencyFirst()
+    {
+        var me = await Register();
+
+        var ex = await Assert.ThrowsAsync<ValidationFailedException>(() =>
+            _service.UpdateSettingsAsync(me.Id, new UpdateSettingsRequest(Currency: "JPY", DistanceUnit: "Miles")));
+
+        Assert.Equal("auth.invalidCurrency", ex.Code);
+    }
+
     [Fact]
     public async Task UpdateSettings_DoesNotAffectOtherUser()
     {

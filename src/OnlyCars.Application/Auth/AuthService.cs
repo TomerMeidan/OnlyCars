@@ -115,11 +115,13 @@ public class AuthService(
         var locale = ParseEnum<Locale>(request.Locale, "settings.invalidLocale");
         var theme = ParseEnum<Theme>(request.Theme, "settings.invalidTheme");
         ValidateCurrency(request.Currency);
+        var distanceUnit = ParseEnum<DistanceUnit>(request.DistanceUnit, "settings.invalidDistanceUnit");
 
         var user = await FindUserAsync(userId, ct);
         user.Locale = locale ?? user.Locale;
         user.Theme = theme ?? user.Theme;
         user.Currency = request.Currency ?? user.Currency;
+        user.DistanceUnit = distanceUnit ?? user.DistanceUnit;
         await db.SaveChangesAsync(ct);
         return ToDto(user);
     }

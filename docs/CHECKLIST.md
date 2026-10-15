@@ -2,7 +2,7 @@
 
 One line per requirement in `docs/spec.md`. Updated after every ticket is signed off. Evidence and details are in `docs/requirements-status.md`.
 
-**Last updated:** 2026-10-15, SET-1 signed off (Settings page: language, theme, currency); next is SET-2 (km or miles)
+**Last updated:** 2026-10-15, SET-2 backend done (distance unit setting); frontend next
 **Progress:** 15 of 50 required items done, 7 partly done, 28 not started. The 7 optional items are not counted.
 
 Legend:
@@ -18,7 +18,7 @@ Legend:
 <!-- progress:end -->
 
 ## MVP progress
-- [x] **Step 1: Accounts, cars, odometer.** Done (MVP1-A, B and C signed off), apart from the gaps marked below. Settings page (SET-1) signed off: language, theme and currency. 🔨 Next: SET-2, km or miles.
+- [x] **Step 1: Accounts, cars, odometer.** Done (MVP1-A, B and C signed off), apart from the gaps marked below. Settings page (SET-1) signed off: language, theme and currency. 🔨 Now: SET-2, km or miles: backend done (189 tests), frontend next.
 - [x] **Step 2: Maintenance tasks, templates, Reset.** Done (MVP2-A, B and C signed off).
 - [ ] **Step 3: Service history with costs**
 - [ ] **Step 4: Dashboard with due and overdue status**
