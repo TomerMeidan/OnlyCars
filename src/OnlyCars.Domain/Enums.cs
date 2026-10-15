@@ -57,3 +57,10 @@ public enum DueStatus
     DueSoon,
     Overdue
 }
+
+public enum ChecklistItemType
+{
+    Check,
+    Number,
+    Text
+}

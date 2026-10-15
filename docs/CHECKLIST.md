@@ -2,7 +2,7 @@
 
 One line per requirement in `docs/spec.md`. Updated after every ticket is signed off. Evidence and details are in `docs/requirements-status.md`.
 
-**Last updated:** 2026-10-16, LOW-2 (a batch of small fixes to the dashboard and service history) signed off; next: MVP5-A (checklist templates)
+**Last updated:** 2026-10-16, MVP5-A backend built (checklist templates API, contract in `docs/contracts/MVP5-A.md`); next: MVP5-A frontend
 **Progress:** 24 of 50 required items done, 5 partly done, 21 not started. The 7 optional items are not counted.
 
 Legend:
@@ -22,7 +22,7 @@ Legend:
 - [x] **Step 2: Maintenance tasks, templates, Reset.** Done (MVP2-A, B and C signed off).
 - [~] **Step 3: Service history with costs** MVP3-A, B, C and D signed off (history list, record a past service with parts and labour, edit everything including date, odometer and tasks, delete, filter and search on the Service history page), and LOW-1. *Missing: attachments (waits for Cloudflare R2).*
 - [~] **Step 4: Dashboard with due and overdue status** MVP4-A signed off (the dashboard on `/`: overdue and due-soon counts, this month's spend linking to the history, each car's next 3 tasks with Mark done and Undo, quick odometer entry). 🔨 Now: LOW-2 (a batch of small fixes) built, in QA. *Missing: "Start a checklist", which waits for checklists (step 5).*
-- [ ] **Step 5: Checklists, then tires, then reports and notifications** 🔨 Next: MVP5-A (checklist templates and their items). Then MVP5-B (run a checklist on a car, with a schedule and history) and MVP5-C (a failed item creates a task).
+- [ ] **Step 5: Checklists, then tires, then reports and notifications** 🔨 Now: MVP5-A (checklist templates and their items): backend built and tested (create, edit, reorder and delete templates through the API); the Checklists page is next. Then MVP5-B (run a checklist on a car, with a schedule and history) and MVP5-C (a failed item creates a task).
 - [x] **Before going online: SEC-1** (limit login attempts, account lockout, constant-time login). Signed off.
 
 ## 1. Vehicles
@@ -65,8 +65,8 @@ Legend:
 - [ ] Storage notes for the off-season set
 
 ## 7. Inspection Checklists
-- [ ] Checklist templates 🔨
-- [ ] Items: checkbox, number or text 🔨
+- [ ] Checklist templates 🔨 *(backend built in MVP5-A; the page is next)*
+- [ ] Items: checkbox, number or text 🔨 *(backend built in MVP5-A; the page is next)*
 - [ ] Schedule by km, by time, or manual only
 - [ ] Run a checklist: tick items, add notes or photos, flag issues
 - [ ] Failed items create a to-do or a maintenance task

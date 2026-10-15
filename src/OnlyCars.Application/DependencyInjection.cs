@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.DependencyInjection;
 using OnlyCars.Application.Auth;
+using OnlyCars.Application.Checklists;
 using OnlyCars.Application.Maintenance;
 using OnlyCars.Application.Odometer;
 using OnlyCars.Application.Vehicles;
@@ -21,6 +22,7 @@ public static class DependencyInjection
         services.AddScoped<VehicleService>();
         services.AddScoped<OdometerService>();
         services.AddScoped<MaintenanceTaskService>();
+        services.AddScoped<ChecklistTemplateService>();
 
         return services;
     }
