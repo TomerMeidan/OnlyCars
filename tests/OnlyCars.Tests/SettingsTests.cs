@@ -55,6 +55,7 @@ public class SettingsTests
         var dto = await _service.UpdateSettingsAsync(me.Id, new UpdateSettingsRequest(Theme: "Dark"));
 
         Assert.Equal(me with { Theme = Theme.Dark }, dto);
+        _db.ChangeTracker.Clear();
         var saved = _db.Users.Single(u => u.Id == me.Id);
         Assert.Equal((Theme.Dark, Locale.He, "ILS"), (saved.Theme, saved.Locale, saved.Currency));
     }
@@ -67,6 +68,7 @@ public class SettingsTests
         var dto = await _service.UpdateSettingsAsync(me.Id, new UpdateSettingsRequest("He", "Light", "USD"));
 
         Assert.Equal(me with { Locale = Locale.He, Theme = Theme.Light, Currency = "USD" }, dto);
+        _db.ChangeTracker.Clear();
         Assert.Equal(dto, await _service.GetMeAsync(me.Id));
         Assert.Equal(DistanceUnit.Km, dto.DistanceUnit);
     }

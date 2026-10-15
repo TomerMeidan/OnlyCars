@@ -1,7 +1,7 @@
 // UI smoke run: walks the main flows in two setups and prints a JSON report.
 // Usage (API + Vite must be running): node ui-tests/smoke.mjs
 import { chromium } from 'playwright'
-import { mkdirSync } from 'node:fs'
+import { mkdirSync, readFileSync } from 'node:fs'
 
 const BASE = process.env.BASE_URL ?? 'http://localhost:5173'
 const OUT = process.env.OUT_DIR ?? 'ui-tests/out'
@@ -113,6 +113,7 @@ for (const s of setups) {
     const expected = s.lng === 'he' ? 'ILS' : 'USD'
     if (defaultCurrency !== expected) throw new Error(`default currency ${defaultCurrency}`)
     if (registered?.user?.currency !== expected) throw new Error(`saved currency ${registered?.user?.currency}`)
+    if (registered?.user?.locale !== (s.lng === 'he' ? 'He' : 'En')) throw new Error(`saved locale ${registered?.user?.locale}`)
     if (currencyOptions.map((o) => o.slice(0, 3)).join() !== 'ILS,USD,EUR,GBP') throw new Error(`options: ${currencyOptions}`)
     if (!currencyOptions[0].includes(s.lng === 'he' ? 'שקל' : 'Shekel')) throw new Error(`ILS label: ${currencyOptions[0]}`)
   })
@@ -800,8 +801,179 @@ for (const s of setups) {
     await page.getByRole('heading', { name: 'Renamed Corolla' }).waitFor()
     await arrivedAt(T.myCars)
   })
-  await step('tap-targets-list', async () => {
+  // SET-1: settings. Each setup forces the theme opposite to its OS one, at 390px wide.
+  // The hint comes from i18n.ts (en first, then he), so copy edits don't break the step.
+  const hints = [...readFileSync(new URL('../src/i18n.ts', import.meta.url), 'utf8').matchAll(/currencyHint: (['"])(.*)\1,/g)].map((m) => m[2])
+  const SE = he ? { settings: 'הגדרות', saved: 'נשמר', hint: hints[1] } : { settings: 'Settings', saved: 'Saved', hint: hints[0] }
+  const osTheme = s.colorScheme === 'light' ? 'Light' : 'Dark'
+  const forced = osTheme === 'Light' ? 'Dark' : 'Light'
+  const BG = { Light: 'rgb(230, 233, 238)', Dark: 'rgb(17, 21, 28)' } // --bg
+  const looks = () => page.evaluate(() => ({
+    attr: document.documentElement.dataset.theme ?? null,
+    bg: getComputedStyle(document.documentElement).backgroundColor,
+    ink: getComputedStyle(document.body).color,
+    surface: getComputedStyle(document.querySelector('.card') ?? document.body).backgroundColor,
+  }))
+  async function themeIs(theme, when) {
+    const l = await looks()
+    if (l.attr !== (theme === 'System' ? null : theme.toLowerCase()) || l.bg !== BG[theme === 'System' ? osTheme : theme]) throw new Error(`${when}: ${JSON.stringify(l)}`)
+  }
+  const radio = (name, v) => page.locator(`input[name=${name}][value=${v}]`)
+  const putSettings = () => page.waitForResponse((r) => r.request().method() === 'PUT' && r.url().endsWith('/api/me/settings'))
+  const savedShown = () => page.locator('main [role=status]', { hasText: SE.saved }).waitFor({ timeout: 3000 })
+  const dirIs = (d) => page.waitForFunction((d) => document.documentElement.dir === d, d, { timeout: 3000 })
+  const openSettings = async () => {
+    await page.click('header a[href="/settings"]')
+    await radio('theme', 'System').waitFor()
+    await arrivedAt(SE.settings)
+  }
+  await step('settings-theme', async () => {
     await page.setViewportSize({ width: 390, height: 844 })
+    await openSettings()
+    if (!(await radio('theme', 'System').isChecked())) throw new Error('theme not System by default')
+    let res = putSettings()
+    await radio('theme', forced).click()
+    const body = JSON.stringify((await res).request().postDataJSON())
+    if (body !== JSON.stringify({ theme: forced })) throw new Error(`PUT body ${body}`)
+    await savedShown()
+    await themeIs(forced, `${forced} picked`)
+    // Applied before the first render, so the reload never shows the OS theme.
+    await page.reload({ waitUntil: 'domcontentloaded' })
+    await themeIs(forced, 'right after a reload')
+    await page.screenshot({ path: `${OUT}/${s.name}-theme-right-after-reload.png` })
+    await radio('theme', forced).waitFor()
+    if (!(await radio('theme', forced).isChecked())) throw new Error(`${forced} not checked after a reload`)
+    res = putSettings()
+    await radio('theme', 'System').click()
+    await res
+    await themeIs('System', 'System picked')
+    res = putSettings()
+    await radio('theme', forced).click() // kept for the next steps and their screenshots
+    await res
+    const l = await looks()
+    if (ratio(l.ink, l.surface) < 4.5) throw new Error(`${forced} text contrast ${ratio(l.ink, l.surface).toFixed(2)}:1`)
+    if ((await page.locator('main fieldset > legend').count()) !== 2) throw new Error('radio groups without fieldset and legend')
+    for (const label of await page.locator('main label').all()) await tall(label, `"${await label.textContent()}"`)
+    await tall(page.locator('header a[href="/settings"]'), 'Settings link')
+    await noOverflow(`settings at 390px, ${forced}`)
+    await sweep('settings page')
+  })
+  await step('settings-language', async () => {
+    const [own, other] = he ? ['He', 'En'] : ['En', 'He']
+    const [ownDir, otherDir] = he ? ['rtl', 'ltr'] : ['ltr', 'rtl']
+    let res = putSettings()
+    await radio('locale', other).click()
+    if ((await res).request().postDataJSON().locale !== other) throw new Error('settings radio did not save the language')
+    await dirIs(otherDir)
+    await page.locator('main h1', { hasText: he ? 'Settings' : 'הגדרות' }).waitFor()
+    await noOverflow(`settings at 390px in the other language, ${forced}`)
+    await sweep('settings page in the other language')
+    // The header switch saves the language too.
+    res = putSettings()
+    await page.click('header nav button.link >> nth=0')
+    if ((await res).request().postDataJSON().locale !== own) throw new Error('header switch did not save the language')
+    await dirIs(ownDir)
+    if (!(await radio('locale', own).isChecked())) throw new Error(`${own} not checked after the header switch`)
+    // Signed out: no Settings link, /settings goes to the login page, and the switch saves nothing.
+    await page.click('header nav button.link >> nth=1')
+    await page.locator('input[name=email]').waitFor()
+    if (await page.locator('header a[href="/settings"]').count()) throw new Error('Settings link while signed out')
+    await page.goto(`${BASE}/settings`)
+    await page.waitForURL('**/login')
+    let puts = 0
+    const count = (r) => r.method() === 'PUT' && puts++
+    page.on('request', count)
+    await page.click('header nav button.link >> nth=0')
+    await dirIs(otherDir)
+    page.off('request', count)
+    if (puts) throw new Error('the signed-out switch sent a PUT')
+    // Logging in applies the saved language and theme.
+    await page.fill('input[name=email]', registered.user.email)
+    await page.fill('input[name=password]', 'Passw0rd!')
+    await page.click('form button:not(.link)')
+    await page.locator('a[href="/cars/new"]').waitFor()
+    await dirIs(ownDir)
+    await titleIs(T.myCars)
+    await themeIs(forced, 'after logging in')
+  })
+  await step('settings-currency', async () => {
+    const target = registered.user.currency === 'USD' ? 'EUR' : 'USD'
+    await page.evaluate(() => { window.noReload = true })
+    await openSettings()
+    const select = page.locator('select[name=currency]')
+    const hint = page.locator(`#${await select.getAttribute('aria-describedby')}`)
+    if (!(await hint.isVisible()) || (await hint.textContent()) !== SE.hint) throw new Error(`hint "${await hint.textContent()}"`)
+    const res = putSettings()
+    await select.selectOption(target)
+    if ((await res).request().postDataJSON().currency !== target) throw new Error('currency not saved')
+    await savedShown()
+    if (await page.evaluate(() => JSON.parse(localStorage.getItem('user')).currency) !== target) throw new Error('cached user not updated')
+    // The cost label follows without a reload.
+    await page.click('header a.brand')
+    await page.click('.cars li h2 a')
+    await taskBtn(RS.cost, 'Brakes').click()
+    const label = plain(await taskRow('Brakes').locator('form label').first().textContent())
+    if (!label.includes(target)) throw new Error(`cost label "${label}"`)
+    await page.keyboard.press('Escape')
+    if (!(await page.evaluate(() => window.noReload))) throw new Error('the page reloaded')
+  })
+  await step('settings-save-fails', async () => {
+    await openSettings()
+    const fail = (r) => r.fulfill({ status: 500, contentType: 'application/json', body: '{}' })
+    const themeGroup = page.locator('fieldset', { has: radio('theme', 'System') })
+    const select = page.locator('select[name=currency]')
+    const focusInTheme = (when) => focusIs('fieldset:has(input[name=theme]) input', `theme group ${when}`)
+    // Held, so the in-flight state is visible: the whole page is busy but keeps focus, then the radio goes back with the error next to it.
+    let puts = 0
+    const count = (r) => r.method() === 'PUT' && puts++
+    page.on('request', count)
+    await page.route('**/api/me/settings', async (r) => { await page.waitForTimeout(700); await fail(r) }, { times: 1 })
+    const before = await select.inputValue()
+    await radio('theme', 'System').click()
+    if ((await themeGroup.getAttribute('aria-disabled')) !== 'true') throw new Error('theme group not busy while saving')
+    if ((await select.getAttribute('aria-disabled')) !== 'true') throw new Error('currency not busy while the theme saves')
+    // Changes while busy are ignored. Sent from the page: Playwright's own actions wait out aria-disabled, even with force.
+    await select.evaluate((el) => { el.value = 'GBP'; el.dispatchEvent(new Event('change', { bubbles: true })) })
+    await radio('theme', forced === 'Dark' ? 'Light' : 'Dark').evaluate((el) => el.click())
+    if (!(await radio('theme', 'System').isChecked())) throw new Error(`theme changed while busy: ${await page.evaluate(() => [...document.querySelectorAll('input[name=theme]')].map((i) => i.value + (i.checked ? '*' : '')).join())}`)
+    if ((await select.inputValue()) !== before) throw new Error('currency changed while busy')
+    await focusInTheme('while saving')
+    const alert = themeGroup.locator('[role=alert]')
+    await alert.waitFor()
+    page.off('request', count)
+    if (puts !== 1) throw new Error(`${puts} PUTs while busy`)
+    if ((await alert.textContent()) !== RS.generic) throw new Error(`theme error "${await alert.textContent()}"`)
+    if (!(await radio('theme', forced).isChecked())) throw new Error('theme radio not put back')
+    await themeIs(forced, 'after a failed save')
+    await focusInTheme('after a failed save')
+    await page.route('**/api/me/settings', fail, { times: 1 })
+    await select.focus() // selectOption doesn't move focus
+    await select.selectOption('GBP')
+    await page.locator('.field [role=alert]').waitFor()
+    if ((await select.inputValue()) !== before) throw new Error(`currency not put back: ${await select.inputValue()}`)
+    if (await themeGroup.locator('[role=alert]').count()) throw new Error('old theme error still shown')
+    await focusIs('select[name=currency]', 'after a failed currency save')
+    forget500()
+    // Keyboard: an arrow key in the Theme group saves the next theme, and focus stays in the group. Dark is last, and Chrome doesn't wrap.
+    await radio('theme', forced).focus()
+    let res = putSettings()
+    await page.keyboard.press(forced === 'Dark' ? 'ArrowUp' : 'ArrowDown')
+    if ((await res).status() !== 200) throw new Error(`PUT ${(await res).status()}`)
+    await savedShown()
+    await focusInTheme('after a keyboard save')
+    // Back to System for the rest of the run.
+    res = putSettings()
+    await radio('theme', 'System').click()
+    if ((await res).status() !== 200) throw new Error(`PUT ${(await res).status()}`)
+    await savedShown()
+    await themeIs('System', 'System after the failures')
+    await page.setViewportSize(s.viewport)
+  })
+  await step('tap-targets-list', async () => {
+    await page.click('header a.brand')
+    await page.setViewportSize({ width: 390, height: 844 })
+    await page.locator('.cars li').first().waitFor()
+    await tall(page.locator('main > label.inline'), 'Show archived') // MVP2-C QA note (a)
     await sweep('list page at 390px') // the screenshot is taken at 390px; the next step restores the viewport
   })
   await step('archive-car', async () => {

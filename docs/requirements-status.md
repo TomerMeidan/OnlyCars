@@ -1,28 +1,30 @@
 # OnlyCars: Requirements Status
 
-**Audit date:** 2026-10-15 (sixth audit, sign-off of MVP2-C: backend commit `7d9012d`, plus the frontend and review fixes, which are not committed yet on `main`)
-**Overall:** MVP steps 1 and 2 are complete for the MVP. Step 1 still lacks car photos (blocked on R2) and the settings screen. Step 2 closed with MVP2-C: one tap marks a task as done, with optional cost and notes. That restarts its countdown, creates a service record and logs a "Service" odometer reading, and the user can undo it straight away. Next is the settings screen (SET-1, then SET-2), then step 3, service history.
+**Audit date:** 2026-10-15 (seventh audit, sign-off of SET-1: backend commit `8a8dd1d`, plus the frontend, the review fixes and a test fix, which are not committed yet on `main`)
+**Overall:** MVP steps 1 and 2 are complete for the MVP. SET-1 added a Settings page where language, light or dark theme, and currency each save to the account as soon as they change. Step 1 still lacks car photos (blocked on R2) and the km/mi unit, which is next (SET-2). Then comes step 3, service history.
 
 | Status | Count |
 |---|---|
-| Done | 14 |
+| Done | 15 |
 | API only | 0 |
-| Partial | 8 |
+| Partial | 7 |
 | Missing | 28 |
 | Deferred | 7 |
 | **Total** | **57** |
 
-How this was checked (sixth audit):
-- Both dev servers were already running. The API process started at 07:30:39 on 2026-10-15, after the last `src/` change at 07:28:50, so the live API runs the latest code, including the uncommitted `notLatest` fix. I didn't restart anything.
-- `dotnet test`, built into a scratch artifacts folder because the running API locks `src/*/bin`: 158 of 158 passed (136 before MVP2-C).
-- `client/ui-tests/smoke.mjs`: exit code 0, and all 42 steps `ok` in each setup (desktop-light-en and mobile-dark-he). The only 4xx responses were the expected ones: 400s for a lower odometer reading and an invalid task, and 404s for another user's car. I read two screenshots:
-  - `mobile-dark-he-30-reset-task.png` (Hebrew, RTL, dark): Oil went from Overdue to OK with "עוד 10,000 ק״מ" and an empty bar. The Undo bar "סומן כבוצע. ביטול הסימון" shows on that row, and the history has a "טיפול" (Service) reading with no Edit or Delete.
-  - `desktop-light-en-32-reset-with-cost.png`: both buttons are on every enabled row, and neither is on the disabled Timing belt.
-- `client/ui-tests/qa-mvp2c.mjs`: exit code 0 in both setups, with no console errors and no unexpected responses (12 resets and 8 voids per setup). It confirms that disabled tasks and archived cars have no Mark done or cost buttons, and that the car list's quick-add sends the local date. Its only finding is the existing 24px "Show archived" label, decided in decisions.md ("MVP2-C QA notes").
+How this was checked (seventh audit):
+- Both dev servers were already running, and I left them as they were. The only uncommitted change outside `client/` is in `tests/` (`SettingsTests.cs`), so the live API already runs the SET-1 backend from `8a8dd1d`.
+- `dotnet test`, built into a scratch artifacts folder because the running API locks `src/*/bin`: 181 of 181 passed (158 before SET-1).
+- `client/ui-tests/smoke.mjs`: exit code 0, and all 46 steps `ok` in each setup (desktop-light-en and mobile-dark-he), including the new `settings-theme`, `settings-language`, `settings-currency` and `settings-save-fails`. The only 4xx responses were the expected 400s and 404s.
+- `client/ui-tests/qa-set1.mjs`: exit code 0. Its only 5xx and network failures are the mocked ones (three 500s on `PUT /api/me/settings` and one offline save). Its 400s come from deliberate bad inputs. Its contrast check reads 15.59:1 for text and 5.98:1 for the legends and the hint in dark Hebrew.
+- Screenshots I read:
+  - `mobile-dark-he-41-settings-save-fails.png`: the Hebrew RTL page at 390px, showing the three groups (שפה, ערכת נושא, מטבע), "USD – דולר אמריקאי", and the no-conversion hint under the select. Nothing overflows, and the header shows the הגדרות link.
+  - `desktop-light-en-40-settings-currency.png`: the car page in the forced dark theme from the earlier step, with every task row intact.
+  - `qaset1-mobile-dark-he-02-list.png`: the Hebrew car list, where "הצגת רכבים בארכיון" is a full-height row (`label.inline`, `min-height: 2.75rem`, `client/src/index.css:126`).
 - Reviews and QA, which I did not re-run:
-  - Code review fixes: focus after a failed cost-form reset; `aria-describedby` on Undo; `notLatest` ranked by creation time only (decision of 2026-10-15).
-  - Hebrew review: no changes.
-  - UI QA: passed. Its Medium (the first Enabled-checkbox tap was swallowed while the Undo bar showed) is fixed, and the smoke step `toggle-clears-undo` covers it.
+  - Code review fixes: focus on save (`aria-disabled` and a busy guard), the rollback race, the theme flash (an inline script in `client/index.html:11`), the sticky header error, and the late `GET /me`. No `light-dark()` fallback is needed, because Lightning CSS compiles it.
+  - Hebrew review: two strings improved.
+  - UI QA: passed with no High or Medium, plus a throttled production-build check that showed no theme flash. Its three Lows and its question are decided in decisions.md ("SET-1 QA Lows", "Where the 'amounts are not converted' hint goes").
 - The notes from earlier audits are in git history.
 
 ---
@@ -43,7 +45,7 @@ How this was checked (sixth audit):
 | Manual odometer updates (quick-entry button on the dashboard) | **Partial** | The quick entry on each car card works, including the lower-reading check and the correction checkbox (`CarsPage.tsx:69-114`, `OdometerService.cs:30-65`). Tests: `OdometerServiceTests.cs`. Smoke steps `odometer-*` pass. The lower-reading error is now translated and shows the current reading (`odometer.lowerThanCurrent`, `i18n.ts:64-67`; Hebrew in `mobile-dark-he-05-odometer-lower-rejected.png`). | Quick entry is now also on the car page (`CarPage.tsx:50`), and the date-order rules apply (`odometer.lowerThanPrevious` / `higherThanNext`). Still missing: (1) there is no dashboard yet (see section 10); (2) quick entry always saves today; backdating goes through Edit, which is acceptable for now. |
 | Auto-log the odometer whenever a service is recorded | **Partial** | Every reset logs a `Source = Service` reading linked to its record (`OdometerReading.ServiceRecordId`, `MaintenanceTaskService.cs:99`). Undo removes it (`:171`). Tests: `ServiceRecordTests.cs` (13 tests). Browser: smoke `reset-task` and `undo-reset` (`mobile-dark-he-30-reset-task.png`, which shows the "Service" reading in the history). | Covers only the one-tap reset. A full service record with its own date and odometer comes in step 3. |
 | Optional: estimated average km/day, used to predict when tasks come due | **Partial** | `AvgKmPerDay` is computed (`OdometerService.cs:72-99`, test at `OdometerServiceTests.cs:91`) and shown on the card (`CarsPage.tsx:50-52`). | Nothing uses it for predictions yet. Tasks exist now, but a predicted due date is out of MVP2-B (decisions.md); it goes with the dashboard or later. |
-| Unit setting (km/miles), with the currency set per user | **Partial** | Currency is chosen at sign-up from ILS/USD/EUR/GBP, defaulting by UI language (`AuthPage.tsx:12-13,52`), validated and saved (`AuthService.cs:17,36-49`), and returned in `user.currency`. Smoke step `register-currency`; QA criteria 21-23. | No way to change the currency after sign-up. No km/mi setting: the UI always shows "km" and never converts. Both need a settings screen. |
+| Unit setting (km/miles), with the currency set per user | **Partial** | Currency is chosen at sign-up from ILS/USD/EUR/GBP, defaulting by UI language (`AuthPage.tsx:12-13,52`), validated and saved (`AuthService.cs:17,36-49`), and returned in `user.currency`. Smoke step `register-currency`. SET-1: the currency can be changed later on `/settings` (`client/src/pages/SettingsPage.tsx`, `PUT /api/me/settings`, `SettingsTests.cs`), and the car page's cost label follows it without a reload (smoke `settings-currency`, `qaset1-mobile-dark-he-14-cost-usd.png`). | No km/mi setting: the UI always shows "km" and never converts. That is SET-2, the next ticket. |
 
 ## 3. Maintenance Task Definitions
 
@@ -138,9 +140,9 @@ How this was checked (sixth audit):
 |---|---|---|---|
 | Email/password auth, optional Google login | **Done** | Register and login work in the UI (`AuthPage.tsx`). The server now rejects a malformed email (`auth.invalidEmail`, `AuthService.cs:22-27`), a password under 8 characters (`auth.passwordTooShort`, `AuthService.cs:29-33`) and an empty login (`auth.credentialsRequired`, `AuthService.cs:52-55`), as decisions.md requires. Tests: `AuthServiceTests.cs:41-79`. Verified with curl and smoke step `api-register-short-password`. Auth errors are translated (`i18n.ts:53-59,117-123`). | Google login is optional and not started. |
 | Mobile-first responsive UI, installable PWA | **Partial** | At 390px wide there is no horizontal overflow in any smoke step (`out/mobile-dark-he-*.png`). The PWA manifest and service worker are configured (`vite.config.ts:8-18`). | I did not verify that the app can be installed. The only icon is an SVG with `sizes: any`, with no 192 or 512 PNG. |
-| Light and dark mode | **Partial** | The app follows the system theme (`index.css:16,22`) and is checked in dark mode by the smoke test. | There is no in-app toggle. `User.Theme` is never read or written. |
+| Light and dark mode | **Done** | SET-1: System, Light or Dark on `/settings`, saved to `User.Theme` through `PUT /api/me/settings` (`SettingsTests.cs`). A `data-theme` attribute overrides the OS setting (`client/src/index.css`), and it is applied before first paint from the cached user (`client/index.html:11`). Smoke `settings-theme` passes in both setups; QA forced Dark with the OS light and Light with the OS dark (`qaset1-mobile-dark-he-07-*.png`) and saw no flash on a throttled production build. | Nothing. |
 | Per-user data isolation, data export and delete-account | **Partial** | Isolation: every vehicle, odometer and task call checks ownership and returns 404 for other users' data (`VehicleService.cs:113-128`). Tests: `VehicleServiceTests.cs:52`, `OdometerServiceTests.cs:78`. | No data export and no delete-account. |
-| Hebrew and English UI, including RTL | **Done** | Every UI string exists in `en` and `he`, and `he: typeof en` makes the compiler enforce it (`i18n.ts`). `dir` is set to rtl or ltr. Every API error now has a stable `code` (`AppException.cs`, `GlobalExceptionHandler.cs`, fallback `http.<status>` in `Program.cs`). The client translates the code, or shows a translated generic message for unknown codes (`i18n.ts:154-157`). Tests: `GlobalExceptionHandlerTests.cs`. Browser: the Hebrew error screenshots `mobile-dark-he-05-*` and `-08-*`. | The language choice is saved only in localStorage, not in `User.Locale`. This is a settings gap, not a UI-language gap. |
+| Hebrew and English UI, including RTL | **Done** | Every UI string exists in `en` and `he`, and `he: typeof en` makes the compiler enforce it (`i18n.ts`). `dir` is set to rtl or ltr. Every API error now has a stable `code` (`AppException.cs`, `GlobalExceptionHandler.cs`, fallback `http.<status>` in `Program.cs`). The client translates the code, or shows a translated generic message for unknown codes (`i18n.ts:154-157`). Tests: `GlobalExceptionHandlerTests.cs`. Browser: the Hebrew error screenshots `mobile-dark-he-05-*` and `-08-*`. | Nothing. SET-1 saves the language to `User.Locale` from Settings and the header switch, applies it at login, and register saves the form's language (smoke `settings-language`; `qaset1-mobile-dark-he-17-after-login.png`). |
 | Receipt image storage with size limits | **Missing** | none | Everything. Car photo upload needs the same storage. |
 | Offline-tolerant odometer entry (sync later) | **Missing** | The service worker caches only the app shell. | Quick entry posts directly and fails when offline. There is no queue. |
 
@@ -163,7 +165,7 @@ How this was checked (sixth audit):
 
 | Step | State |
 |---|---|
-| 1. Auth, cars, odometer | **Complete for the MVP. MVP1-A, MVP1-B and MVP1-C are signed off.** Working end to end in EN and HE: register (with currency) and login; add, edit, archive and unarchive cars; quick odometer entry on the list and the car page (both now send the local date); edit and delete readings with the date-order rules and recompute; focus and page titles on every route. Remaining: the car photo (blocked until the R2 credentials exist) and the settings screen, which is next (SET-1, then SET-2). |
+| 1. Auth, cars, odometer | **Complete for the MVP. MVP1-A, MVP1-B and MVP1-C are signed off.** Working end to end in EN and HE: register (with currency) and login; add, edit, archive and unarchive cars; quick odometer entry on the list and the car page (both now send the local date); edit and delete readings with the date-order rules and recompute; focus and page titles on every route. Settings (SET-1, signed off): language, theme and currency. Remaining: the km/mi unit (SET-2, next) and the car photo (blocked until the R2 credentials exist). |
 | 2. Tasks, templates, km/time intervals, Reset | **Complete. MVP2-A, MVP2-B and MVP2-C are signed off.** All of spec sections 3 and 4 is done: tasks and templates, status with remaining km and days and a progress bar, the due-soon threshold, one-tap Mark done with optional cost and notes, and Undo. |
 | Deploy gate | **SEC-1 signed off.** Nothing else blocks a first deploy except the owner's Azure account. |
 | 3. Service history with costs | Not started. MVP2-C created `ServiceRecord` and `ServiceRecordTask` and the void endpoint; step 3 adds the history list, the full record form (date, odometer, shop, line items) and edit and delete. |
@@ -174,9 +176,8 @@ How this was checked (sixth audit):
 
 | Order | Ticket | Who | State |
 |---|---|---|---|
-| 1 | SET-1: Settings screen, part 1: language, theme, currency (plus MVP2-C QA note (a)) | BE, then FE | **Next** (written below) |
-| 2 | SET-2: Distance unit (km/mi), converted on display and input | BE, then FE | Not written |
-| 3 | MVP3-A: Service history list and the full service record form (spec section 5) | BE, then FE | Not written |
+| 1 | SET-2: Distance unit (km/mi), converted on display and input (plus SET-1 QA Lows 1 and 2) | BE, then FE | **Next** (written below) |
+| 2 | MVP3-A: Service history list and the full service record form (spec section 5) | BE, then FE | Not written |
 
 ## Signed-off tickets
 
@@ -194,97 +195,97 @@ How this was checked (sixth audit):
   - Evidence: 136 of 136 tests (10 new calculator tests, plus service tests for the DTO fields, `dueSoonPercent` validation and keep-on-PUT); smoke 37 of 37 in both setups, with new steps `task-status-order`, `task-status-after-odometer`, `task-due-soon-percent` and `templates-error`; code review approved, with all nits fixed; Hebrew review done; UI QA passed every criterion area, including the threshold boundaries, the sort, status following odometer add/edit/delete without a reload, contrast in both themes, the RTL fill and 390px.
   - MVP2-A Lows (a), (c) and (d) are fixed and verified here.
   - QA's three Lows are decided in decisions.md ("MVP2-B QA Lows"): 1 (rows vanish on a failed reload) and 2 (the "about 243 / months" wrap) are folded into MVP2-C, and 3 (`aria-valuetext` above 100%) is accepted.
-- **MVP2-C (backend commit `7d9012d`; the frontend and review fixes are not committed yet): signed off 2026-10-15.** All 19 criteria met.
+- **MVP2-C (commits `7d9012d`, `6a41f70`): signed off 2026-10-15.** All 19 criteria met.
   - Evidence: 158 of 158 tests, 22 more than before, mostly in `ServiceRecordTests.cs` and `MaintenanceSchemaTests.cs`. Smoke passed 42 of 42 in both setups, with the new steps `reset-task`, `undo-reset`, `reset-with-cost`, `toggle-clears-undo` and `tasks-reload-error-keeps-rows`. `qa-mvp2c.mjs` passed in both setups. Code review fixes are in; the Hebrew review needed no changes; UI QA passed, and its Medium is fixed and covered by smoke.
   - MVP2-B Lows 1 and 2 are fixed here. QA's notes (a) to (c) are decided in decisions.md ("MVP2-C QA notes"): (a) is fixed in SET-1, and (b) and (c) are accepted.
   - The car list's quick-add now sends the local date (decision 2026-10-15).
+- **SET-1 (backend commit `8a8dd1d`; the frontend, the review fixes and the `SettingsTests.cs` fix are not committed yet): signed off 2026-10-15.** All 14 criteria met.
+  - Evidence: 181 of 181 tests, 23 more than before (`SettingsTests.cs`). Smoke passed 46 of 46 in both setups, with the new steps `settings-theme`, `settings-language`, `settings-currency` and `settings-save-fails`. `qa-set1.mjs` passed, including a throttled production build with no theme flash. Code review fixes are in, the Hebrew review improved two strings, and UI QA passed with no High or Medium.
+  - MVP2-C QA note (a) is fixed: the 24px "Show archived" label is now a 44px row.
+  - QA's three Lows and its question are decided in decisions.md ("SET-1 QA Lows" and "Where the 'amounts are not converted' hint goes"). Low 1 (focus moving to an unchecked radio during a save) and Low 2 (stale duplicate errors) are fixed in SET-2. Low 3 (a change on another device shows only after visiting Settings or logging in) is accepted. The hint stays only under the Settings currency field.
 
 ## Next ticket
 
-### SET-1: Settings screen, part 1 (language, theme, currency)
+### SET-2: Distance unit (km or miles)
 
-**Goal:** A signed-in user opens Settings from the header and changes their language, light or dark theme, and currency. Each change applies at once and is still there after logging in on another device.
+**Goal:** A user who thinks in miles picks "Miles" in Settings, and from then on sees and enters every distance in the app in miles.
 
-**Spec:** section 2, bullet 4 ("currency set per user"; the km/mi half is SET-2); section 12, "Light and dark mode" (the in-app switch) and "Hebrew and English UI" (saving `User.Locale`). Part 2: `User.Currency`, `User.Locale`, `User.Theme`. All three columns already exist and are returned in `UserDto` (`AuthDtos.cs:10`), but nothing writes them after sign-up.
+**Spec:** section 2, bullet 4 ("Unit setting (km/miles)"; SET-1 did the currency half). Part 2: `User.DistanceUnit`, and the convention "Distances are stored in km and converted for display". The column exists and `UserDto` already returns `distanceUnit` (`Km` or `Mi`), but nothing writes it.
 
-**Binding decisions** (`docs/decisions.md`, 2026-10-15, "Settings screen scope and split" and "Settings rules, SET-1"):
-- The page is `/settings`, linked from the header. Each control saves when it changes; there is no Save button.
-- Theme is System, Light or Dark, and defaults to System. It is applied before first paint from the cached user.
-- Currency is one of ILS, USD, EUR or GBP. Changing it only relabels amounts; stored costs are not converted, and the page says so.
-- Language: when signed in, `User.Locale` wins. It is applied at login, and the header switch also saves it. Signed out, the app behaves as today. Register saves the language the form was shown in.
-- A failed save puts the control back to its old value and shows a translated error.
-- MVP2-C QA note (a): the car list's "Show archived" label becomes at least 44px tall.
+**Binding decisions** (`docs/decisions.md`, 2026-10-15, "Distance unit rules, SET-2" and "SET-1 QA Lows"):
+- Storage and the API stay in km. The client converts with 1 mi = 1.609344 km. Display rounds to whole miles; input rounds to whole km before it is sent.
+- The unit saves through `PUT /api/me/settings`, defaults to Km, and is not asked at sign-up.
+- Limits are shown in the user's unit, rounded down: "6,213,711 mi" for a reading and "621,371 mi" for a task interval.
+- Average distance per day shows one decimal in the user's unit. Templates show converted values. The due-soon percent and time intervals don't change.
+- SET-1 QA Low 1: while a radio group is saving, focus stays on its checked radio. Low 2: any new settings action, on the page or with the header switch, clears every earlier settings error.
 
 **Scope**
 
-*Backend (backend-engineer). Runs first. Publish the contract in `docs/contracts/SET-1.md`.*
-- `GET /api/me` returns **200** `UserDto` for the caller.
-- `PUT /api/me/settings` takes `{ locale?, theme?, currency? }`, with locale En or He, theme System, Light or Dark, and currency ILS, USD, EUR or GBP. A missing field is left unchanged. It returns **200** `UserDto`. Use the same enum casing as the current `UserDto` JSON, and write that casing in the contract.
-- Errors, each 400 with no extensions: `settings.invalidLocale` and `settings.invalidTheme`. An invalid currency reuses the code and the currency list that register already uses; don't add a second list.
-- Register: an optional `locale` in the body, saved to `User.Locale`. An invalid value returns `settings.invalidLocale`. When it's missing, the default stays En.
-- Both endpoints require auth. A missing or invalid token returns 401, as for every other endpoint.
-- Leave `DistanceUnit` alone. It is in `UserDto` already, and SET-2 adds it to settings.
+*Backend (backend-engineer). Runs first. Publish the contract in `docs/contracts/SET-2.md`; it can extend `SET-1.md`.*
+- `PUT /api/me/settings` also takes `distanceUnit`: `Km` or `Mi`, in the same casing as `UserDto`. A missing field is left unchanged, as for the others.
+- An invalid value returns 400 `settings.invalidDistanceUnit` and saves nothing from the body. In the check order it comes after currency.
+- No other endpoint changes. Every distance in requests, responses and error extensions (`previousKm`, `nextKm`, `currentKm`) stays in km.
 
-*Frontend (frontend-engineer). Builds against `docs/contracts/SET-1.md`.*
-- **Header** (`App.tsx:16-24`): a "Settings" link for signed-in users. The language switch, when signed in, changes the language and saves `locale`, and if the save fails it shows a translated error and switches back.
-- **`/settings` page** (`client/src/pages/SettingsPage.tsx`), with its title "Settings · OnlyCars" and focus on the `h1` (the MVP1-C rules):
-  - Language: a radio group, Hebrew or English. It switches the UI at once.
-  - Theme: a radio group, System, Light or Dark.
-  - Currency: a select of the four codes, with a hint under it: "Changing the currency doesn't convert amounts you've already entered."
-  - Each control saves on change and is disabled while saving. On success the cached user in `auth.tsx` (localStorage `USER_KEY`) is updated, and a short `role="status"` message "Saved" appears. On failure the control goes back to its old value, and a translated error shows next to it.
-  - Loading: the page reads from the cached user, so there is no spinner. It also calls `GET /api/me` once and updates the cache if anything differs, for example after a change on another device.
-- **Theme:** the CSS today is `@media (prefers-color-scheme: dark)` on `:root` (`index.css:21,27-28`). Add a `data-theme` attribute (light or dark) on `<html>` that wins over the media query, with `color-scheme` to match. System removes the attribute. Set it in `main.tsx` from the cached user before React renders, so there is no flash.
-- **Locale on login:** after login, if `user.locale` differs from the UI language, switch to it. Register sends the current UI language as `locale`.
-- **Cost label:** the cost field in `TasksSection` already reads `user.currency`, so it follows the new value without a reload.
-- **QA note (a):** the "Show archived" checkbox label on the car list (`CarsPage.tsx:34-35`) is at least 44px tall.
-- **Strings** in `en` and `he`: Settings, Language, Theme, System, Light, Dark, Currency, the currency hint, Saved, and `errors.settings.*`.
+*Frontend (frontend-engineer). Builds against `docs/contracts/SET-2.md`.*
+- **One conversion module** (for example `client/src/units.ts`) covers km to the display value, the input value to km, the unit label, and the per-day value. Everything below uses it, and no screen converts on its own.
+- **Settings page:** a fourth radio group, "Distance unit", with Kilometres or Miles. It saves on change like the other groups.
+- **Every distance on screen follows the unit:**
+  - Car list (`CarsPage.tsx`): the odometer digits and unit, the quick-add placeholder and value, and the average per day.
+  - Car form (`CarFormPage.tsx`): the "Current odometer" label and value.
+  - Car page (`CarPage.tsx`): the odometer, the quick-add, and the history list, including its edit form and the names of its Edit and Delete buttons.
+  - Tasks (`TasksSection.tsx`): the interval, the last-done value, the remaining and overdue text, the add and edit forms (interval and last done), and the template picker's defaults.
+  - Errors: the client-side validation messages and the translated server errors (`odometer.lowerThanPrevious`, `higherThanNext`, `invalidValue`, `task.invalidInterval`, `invalidLastDone`, and so on) show values and limits in the user's unit.
+- **Strings:** every string that says "km" or "ק״מ" takes its unit from the module instead. In Hebrew, miles are "מייל" or "מיילים", and the Hebrew reviewer decides the forms. New strings: Distance unit, Kilometres, Miles, and `errors.settings.invalidDistanceUnit`.
+- **SET-1 QA Lows 1 and 2**, on the Settings page and the header switch, as in the decisions above.
 
 **Acceptance criteria**
 
 *API*
-1. [BE] `GET /api/me` returns the caller's `UserDto`, and 401 without a token.
-2. [BE] `PUT /api/me/settings` with only `theme` Dark changes the theme and leaves locale and currency unchanged. With all three fields it changes all three. Both return the updated `UserDto`.
-3. [BE] An invalid locale, theme or currency returns 400 with its code and saves nothing, even when the other fields in the body are valid.
-4. [BE] Register with locale He saves He; without `locale` it saves En; with an invalid locale it returns 400 `settings.invalidLocale` and creates no user. Login returns the saved locale, theme and currency.
-5. [BE] Service tests cover criteria 1 to 4, and one user's change does not affect another user's settings.
+1. [BE] `PUT /api/me/settings` with `{ "distanceUnit": "Mi" }` saves it, leaves the other settings unchanged, and returns the `UserDto` with `distanceUnit` `Mi`. `GET /api/me` and login then return `Mi`.
+2. [BE] An invalid `distanceUnit` returns 400 `settings.invalidDistanceUnit` and saves nothing, even when the other fields are valid. Service tests cover criteria 1 and 2, and one user's change doesn't affect another user.
+
+*Conversion*
+
+3. [FE] With Miles chosen, a car at 80,467 km shows "50,000 mi" on the car list and the car page. Adding a reading of 50,100 mi stores 80,628 km (checked through the API) and shows "50,100 mi". A whole-mile value always shows back unchanged after saving.
+4. [FE] A task with a 10,000 km interval shows "Every 6,214 mi". Its remaining and overdue text and its last-done value are in miles. Adding or editing a task with a 5,000 mi interval stores 8,047 km.
+5. [FE] The server's date-order errors show the neighbouring reading in miles. The client blocks a reading above 6,213,711 mi, or an interval above 621,371 mi, with the limit in miles. The server never receives a value above its km cap.
+6. [FE] The average per day shows one decimal in the user's unit ("31.1 mi/day").
+7. [FE] Switching back to Kilometres shows every value exactly as before the switch, with no reload. Nothing stored changes when the unit changes.
 
 *Settings page*
 
-6. [BE+FE] Changing the theme to Dark makes the app dark at once, with the OS in light mode. After a reload it is still dark, with no light flash (screenshot right after load). Light forces light with the OS in dark mode. System follows the OS again.
-7. [BE+FE] Changing the language on the settings page or with the header switch flips the UI and `dir` at once. After logging out, switching the signed-out UI to the other language and logging in again, the saved language is applied.
-8. [BE+FE] Changing the currency to USD saves it, and the "Add cost or notes" form on a car page then shows "Cost (USD)" with no reload. The hint about not converting amounts is visible under the field.
-9. [FE] A failed save (mocked 500) puts the control back to its previous value and shows the translated error next to it, and the page stays usable. While a save is in flight, that control is disabled.
-10. [FE] The Settings link appears only when signed in. `/settings` when signed out goes to `/login`, as other routes do.
+8. [BE+FE] The unit group saves on change. A failed save (mocked 500) reverts it and shows the translated error, as in the other groups.
+9. [FE] SET-1 Low 1: an arrow key pressed while a group is saving leaves focus on its checked radio. Low 2: after a failed save, any later settings action (on the page or with the header switch) clears the old error, so the same error never shows twice.
 
 *Every screen*
 
-11. [FE] Hebrew and RTL: every new string exists in `en` and `he`; the radio groups and the select lay out correctly in RTL; currency codes are in `<bdi>`.
-12. [FE] Mobile: at 390px wide there is no horizontal overflow on `/settings`, in both languages and both forced themes. Every radio, select and link, and the car list's "Show archived" label, is at least 44px tall (QA note (a)).
-13. [FE] Accessibility: each group is a `fieldset` with a `legend`; "Saved" and errors are announced (`role="status"` and `role="alert"`); the forced dark and light themes keep text contrast at least 4.5:1 (the existing tokens).
-14. [BE+FE] Tests: `dotnet test` passes, with new tests for criteria 1 to 5. `smoke.mjs` gains the steps `settings-theme` (6), `settings-language` (7), `settings-currency` (8) and `settings-save-fails` (9, mocked). They pass in both setups, along with every existing step.
+10. [FE] Hebrew and RTL: every new or changed string exists in `en` and `he`. Values with units read correctly in RTL, with the number and unit isolated as they are today. The Hebrew reviewer approves the mile forms.
+11. [FE] Mobile: at 390px there is no horizontal overflow on the car list, the car page or Settings, in both units and both languages. A 7-digit mile value still fits the odometer digits. The new radios are at least 44px tall.
+12. [FE] Accessibility: the unit group is a `fieldset` with a `legend`, and the Edit and Delete button names give the unit ("Edit reading 50,000 mi").
+13. [BE+FE] Tests: `dotnet test` passes, with new tests for criteria 1 and 2. The conversion module has a small test or an assert-based self-check for rounding and the limits. `smoke.mjs` gains the steps `settings-unit-miles` (criteria 3, 4 and 7) and `settings-unit-errors` (criterion 5), and every step passes in both setups.
 
 **Out of scope**
-- Km/mi (SET-2): the unit setting, and converting distances on display and input.
-- Converting stored amounts when the currency changes.
-- Changing the email or password, and delete-account and data export (section 12; a later ticket).
-- Currencies beyond the four at sign-up.
+- Storing distances in miles, or a unit per car.
+- Asking for the unit at sign-up.
+- Starter templates with round mile values (such as 5,000 mi).
+- Distances that don't exist yet (service records, tires and checklists). They will use the module when they're built.
+- Live updates of settings across devices (SET-1 Low 3, accepted).
 
-**Open questions:** none blocking. Every rule is in decisions.md. For the owner to review: whether changing the currency should eventually offer to convert old amounts, and whether more currencies are wanted.
+**Open questions:** none blocking; every rule is in decisions.md. For the owner to review: whether miles users should see round template intervals (such as 5,000 mi) instead of converted ones (6,214 mi), and whether to ask for the unit at sign-up.
 
 ---
 
 ### Later
-- **SET-2, distance unit:** km/mi, with conversion on display and input (odometer, readings, task intervals, remaining). Values are still stored in km.
 - **MVP3-A, service history:** a list per car, the full record form (date, odometer, shop or DIY, cost, notes), and void or edit from the history.
 - **Car photo upload:** blocked until the owner creates the Cloudflare R2 credentials.
 - **Predicted due date** from `AvgKmPerDay` (spec 2.3): with the dashboard (step 4) or later.
 
 ## Changed since last audit
-- **Signed off:** MVP2-C. The backend is in `7d9012d`; the frontend and review fixes are not committed yet.
-- **Section 4:** "Reset / Mark as done" and "Undo" went from Missing to **Done**. All of section 4 is now done.
-- **Section 2:** "Auto-log the odometer whenever a service is recorded" went from Missing to **Partial**: resets log a Service reading, and the full service record comes in step 3.
-- **Counts:** Done went from 12 to 14, Partial from 7 to 8, and Missing from 31 to 28.
-- **MVP step 2 is complete.**
-- **New decisions** (`docs/decisions.md`, 2026-10-15): MVP2-C QA notes ((a) is fixed in SET-1; (b) and (c) are accepted), the settings screen scope and split, and the settings rules for SET-1.
-- **Next ticket:** SET-1, written in full. The MVP2-C ticket text is in git history up to `7d9012d`.
-- **Tests:** `dotnet test` grew from 136 to 158 tests, and the smoke suite from 37 to 42 steps per setup.
+- **Signed off:** SET-1. The backend is in `8a8dd1d`; the frontend, the review fixes and the `SettingsTests.cs` fix are not committed yet.
+- **Section 12:** "Light and dark mode" went from Partial to **Done**. "Hebrew and English UI" stays Done, and its `User.Locale` note is resolved.
+- **Section 2:** "Unit setting (km/miles), with the currency set per user" stays **Partial**. The currency can now be changed, and only km/mi is missing (SET-2).
+- **MVP2-C QA note (a)** ("Show archived" at 24px) is fixed.
+- **Counts:** Done went from 14 to 15, and Partial from 8 to 7.
+- **New decisions** (`docs/decisions.md`, 2026-10-15): the SET-1 QA Lows (1 and 2 are fixed in SET-2, and 3 is accepted), where the currency hint goes (Settings only), and the distance unit rules for SET-2.
+- **Next ticket:** SET-2, written in full. The SET-1 ticket text is in git history up to `ad60b83`.
+- **Tests:** `dotnet test` grew from 158 to 181 tests, and the smoke suite from 42 to 46 steps per setup.

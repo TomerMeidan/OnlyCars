@@ -1,7 +1,7 @@
 import i18n from 'i18next'
 import LanguageDetector from 'i18next-browser-languagedetector'
 import { initReactI18next } from 'react-i18next'
-import { ApiError } from './api'
+import { ApiError, type User } from './api'
 
 const en = {
   appName: 'OnlyCars',
@@ -53,6 +53,12 @@ const en = {
   deleteReading: 'Delete reading {{value}} km',
   confirmDeleteReading: 'Delete this reading?',
   currency: 'Currency',
+  settings: 'Settings',
+  language: 'Language',
+  theme: 'Theme',
+  themes: { System: 'System', Light: 'Light', Dark: 'Dark' },
+  currencyHint: "Changing the currency doesn't convert amounts you've already entered.",
+  saved: 'Saved',
   source: { Manual: 'Manual', Service: 'Service', Checklist: 'Checklist', Fuel: 'Fuel' },
   maintenance: 'Maintenance',
   addTask: 'Add task',
@@ -183,6 +189,13 @@ const en = {
       alreadyVoided: 'This was already undone.',
       notLatest: 'A later reset of this task must be undone first.',
     },
+    settings: {
+      invalidLocale: 'Choose one of the listed languages.',
+      invalidTheme: 'Choose one of the listed themes.',
+    },
+    user: {
+      notFound: 'Your account was not found. Log out and log in again.',
+    },
   },
 }
 
@@ -236,6 +249,12 @@ const he: typeof en = {
   deleteReading: 'מחיקה של הקריאה {{value}} ק״מ',
   confirmDeleteReading: 'למחוק את הקריאה הזו?',
   currency: 'מטבע',
+  settings: 'הגדרות',
+  language: 'שפה',
+  theme: 'ערכת נושא',
+  themes: { System: 'לפי המערכת', Light: 'בהירה', Dark: 'כהה' },
+  currencyHint: 'שינוי המטבע לא ממיר את הסכומים שכבר הזנתם.',
+  saved: 'נשמר',
   source: { Manual: 'ידני', Service: 'טיפול', Checklist: 'רשימת בדיקה', Fuel: 'תדלוק' },
   maintenance: 'תחזוקה',
   addTask: 'הוספת משימה',
@@ -363,6 +382,13 @@ const he: typeof en = {
       alreadyVoided: 'הסימון כבר בוטל.',
       notLatest: 'צריך קודם לבטל סימון מאוחר יותר של המשימה הזו.',
     },
+    settings: {
+      invalidLocale: 'בחרו אחת מהשפות ברשימה.',
+      invalidTheme: 'בחרו אחת מבין ערכות הנושא ברשימה.',
+    },
+    user: {
+      notFound: 'החשבון שלך לא נמצא. התנתקו והתחברו שוב.',
+    },
   },
 }
 
@@ -389,5 +415,7 @@ export function errorMessage(err: unknown) {
   const problem = err instanceof ApiError ? err.problem : {}
   return i18n.t(`errors.${problem.code}`, { previousKm: problem.previousKm, nextKm: problem.nextKm, currentKm: problem.currentKm, defaultValue: i18n.t('errors.generic') })
 }
+
+export const toLocale = (lng: string | undefined): User['locale'] => (lng === 'he' ? 'He' : 'En')
 
 export default i18n

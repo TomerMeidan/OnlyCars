@@ -107,6 +107,15 @@ export const getToken = () => localStorage.getItem(TOKEN_KEY)
 export const setToken = (t: string | null) =>
   t ? localStorage.setItem(TOKEN_KEY, t) : localStorage.removeItem(TOKEN_KEY)
 
+export const USER_KEY = 'user'
+export const cachedUser = (): User | null => (getToken() ? JSON.parse(localStorage.getItem(USER_KEY) ?? 'null') : null)
+
+// System removes the attribute, so the OS preference applies through the CSS.
+export function applyTheme(theme: User['theme'] | undefined) {
+  if (theme === 'Light' || theme === 'Dark') document.documentElement.dataset.theme = theme.toLowerCase()
+  else delete document.documentElement.dataset.theme
+}
+
 export async function api<T>(path: string, method = 'GET', body?: unknown): Promise<T> {
   const token = getToken()
   const res = await fetch(`/api${path}`, {
