@@ -49,6 +49,10 @@ public class MaintenanceTasksController(MaintenanceTaskService taskService) : Co
         string? q, CancellationToken ct, int skip = 0, int take = 50) =>
         Ok(await taskService.SearchRecordsAsync(User.GetUserId(), vehicleId, taskId, from, to, q, skip, take, ct));
 
+    [HttpGet("dashboard")]
+    public async Task<ActionResult<DashboardDto>> Dashboard(DateOnly? today, CancellationToken ct) =>
+        Ok(await taskService.DashboardAsync(User.GetUserId(), today, ct));
+
     [HttpPost("vehicles/{vehicleId:guid}/service-records")]
     public async Task<ActionResult<CreateServiceRecordResponse>> CreateRecord(Guid vehicleId, CreateServiceRecordRequest request, CancellationToken ct) =>
         StatusCode(StatusCodes.Status201Created, await taskService.CreateRecordAsync(User.GetUserId(), vehicleId, request, ct));

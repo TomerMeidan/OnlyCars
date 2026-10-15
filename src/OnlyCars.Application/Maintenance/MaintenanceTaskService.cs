@@ -1,3 +1,4 @@
+using System.Globalization;
 using Microsoft.EntityFrameworkCore;
 using OnlyCars.Application.Common;
 using OnlyCars.Application.Common.Exceptions;
@@ -218,6 +219,48 @@ public class MaintenanceTaskService(IAppDbContext db, VehicleService vehicleServ
             .ToListAsync(ct);
 
         return new(page.Select(ToDto).ToList(), totalCount, totalCost);
+    }
+
+    /// <summary>
+    /// Statuses of the enabled tasks of the caller's active cars (server UTC date, as on GET .../tasks), and the month's spend
+    /// with the same filter as the history search from the first of the month to <paramref name="today"/>. Four queries.
+    /// </summary>
+    public async Task<DashboardDto> DashboardAsync(Guid userId, DateOnly? today, CancellationToken ct = default)
+    {
+        var utcToday = TodayUtc();
+        // The client sends its local date; it only picks the spend month, with the same slack as reset.
+        var localToday = today ?? utcToday;
+        if (Math.Abs(localToday.DayNumber - utcToday.DayNumber) > 1)
+        {
+            throw new ValidationFailedException("dashboard.invalidDate", "The date must be today.");
+        }
+
+        var monthStart = new DateOnly(localToday.Year, localToday.Month, 1);
+        var month = db.ServiceRecords.Where(r => r.Vehicle!.UserId == userId && !r.IsVoided && r.Date >= monthStart && r.Date <= localToday);
+        var monthCount = await month.CountAsync(ct);
+        var monthCost = await month.SumAsync(r => r.TotalCost ?? 0, ct);
+
+        var vehicles = await db.Vehicles.Where(v => v.UserId == userId && !v.IsArchived).ToListAsync(ct);
+        var tasks = (await db.MaintenanceTasks
+            .Where(t => t.Vehicle!.UserId == userId && !t.Vehicle.IsArchived && t.IsEnabled)
+            .ToListAsync(ct)).ToLookup(t => t.VehicleId);
+
+        var cards = vehicles.Select(v =>
+            {
+                var list = tasks[v.Id].Select(t => ToDto(t, v, utcToday))
+                    .OrderByDescending(t => t.Status).ThenByDescending(t => t.Progress).ThenBy(t => t.Name, StringComparer.InvariantCulture)
+                    .ToList();
+                return new DashboardVehicleDto(v.Id, v.Nickname, v.Make, v.Model, v.Year, v.CurrentOdometerKm,
+                    list.Count(t => t.Status == DueStatus.Overdue), list.Count(t => t.Status == DueStatus.DueSoon), list);
+            })
+            .OrderBy(c => c.Tasks.Count == 0)
+            .ThenByDescending(c => c.Tasks.FirstOrDefault()?.Status)
+            .ThenByDescending(c => c.Tasks.FirstOrDefault()?.Progress)
+            .ThenBy(c => c.Nickname, StringComparer.InvariantCulture)
+            .ToList();
+
+        return new(cards.Sum(c => c.OverdueCount), cards.Sum(c => c.DueSoonCount), monthStart.ToString("yyyy-MM", CultureInfo.InvariantCulture),
+            monthCost, monthCount, cards);
     }
 
     /// <summary>

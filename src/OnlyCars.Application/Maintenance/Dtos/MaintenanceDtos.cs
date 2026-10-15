@@ -84,3 +84,11 @@ public record CreateServiceRecordRequest(
 
 // On POST, Tasks are the linked tasks; on PUT, every task of the car (an edit can move removed tasks too).
 public record CreateServiceRecordResponse(ServiceRecordDto Record, List<MaintenanceTaskDto> Tasks);
+
+// Tasks are the vehicle's enabled tasks in urgency order (Overdue, Due soon, OK; then progress descending; then name).
+public record DashboardVehicleDto(Guid Id, string Nickname, string? Make, string? Model, int? Year, decimal CurrentOdometerKm,
+    int OverdueCount, int DueSoonCount, List<MaintenanceTaskDto> Tasks);
+
+// Month is "YYYY-MM"; the month figures cover the first of that month to the client's today, archived cars included.
+public record DashboardDto(int OverdueCount, int DueSoonCount, string Month, decimal MonthTotalCost, int MonthServiceCount,
+    List<DashboardVehicleDto> Vehicles);
