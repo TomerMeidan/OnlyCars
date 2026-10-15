@@ -217,6 +217,47 @@ public class ServiceItemTests
     }
 
     [Fact]
+    public async Task TooManyItems_WinsOverABadFirstRow_OnCreateAndUpdate()
+    {
+        var car = await CreateCarAsync();
+        var record = await CreateAsync(car, null, Part);
+        ServiceItemRequest[] items = [new(null, null, null, 1, 1), .. Enumerable.Repeat(Labour, 50)];
+
+        Assert.Equal("serviceRecord.tooManyItems", (await Assert.ThrowsAsync<ValidationFailedException>(() => CreateAsync(car, null, items))).Code);
+        Assert.Equal("serviceRecord.tooManyItems", (await Assert.ThrowsAsync<ValidationFailedException>(() => UpdateAsync(car, record.Id, null, items))).Code);
+        await AssertUnchangedAsync(record);
+    }
+
+    [Fact]
+    public async Task BadItem_WinsOverATooLongShop_OnCreateAndUpdate()
+    {
+        var car = await CreateCarAsync();
+        var record = await CreateAsync(car, null, Part);
+        var shop = new string('s', 101);
+        List<ServiceItemRequest> items = [Part, Part with { Quantity = 0 }];
+
+        var create = await Assert.ThrowsAsync<ValidationFailedException>(() => tasks.CreateRecordAsync(userId, car,
+            new CreateServiceRecordRequest(Today, 49_000, shop, null, null, null, Items: items)));
+        Assert.Equal(("serviceItem.invalidQuantity", (object?)1), (create.Code, create.Extensions["index"]));
+        var update = await Assert.ThrowsAsync<ValidationFailedException>(() => tasks.UpdateRecordAsync(userId, car, record.Id,
+            new UpdateServiceRecordRequest(shop, null, null, items)));
+        Assert.Equal(("serviceItem.invalidQuantity", (object?)1), (update.Code, update.Extensions["index"]));
+        await AssertUnchangedAsync(record);
+    }
+
+    [Theory]
+    [InlineData(-5)]
+    [InlineData(1.001)]
+    public async Task WithItems_AnInvalidBodyTotalIsIgnored_OnCreateAndUpdate(decimal badTotal)
+    {
+        var car = await CreateCarAsync();
+
+        var record = await CreateAsync(car, badTotal, Part);
+        Assert.Equal(91.00m, record.TotalCost);
+        Assert.Equal(391.00m, (await UpdateAsync(car, record.Id, badTotal, Part, Labour)).TotalCost);
+    }
+
+    [Fact]
     public async Task Update_ShopNotesAndHandEnteredCostRules_ApplyAndSaveNothing()
     {
         var car = await CreateCarAsync();

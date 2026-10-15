@@ -90,7 +90,24 @@ export interface ServiceRecord {
   totalCost: number | null
   notes: string | null
   tasks: Pick<MaintenanceTask, 'id' | 'name' | 'category'>[]
+  items: ServiceItem[] // when not empty, totalCost is their sum
 }
+
+// The id changes on every save (the list is replaced), so nothing on screen is keyed on it.
+export interface ServiceItem {
+  id: string
+  description: string
+  brand: string | null
+  partNumber: string | null
+  quantity: number // hours on a labour row
+  unitCost: number
+  isLabor: boolean
+}
+
+// The server's total for items: the sum of quantity times unit cost, rounded once to 2 decimals, worked in integer cents
+// because floats misround (1.005 * 100 is 100.4999...). Exact up to the caps (5e15 < MAX_SAFE_INTEGER).
+export const itemsTotal = (items: { quantity: number; unitCost: number }[]) =>
+  Math.round(items.reduce((sum, i) => sum + Math.round(i.quantity * 100) * Math.round(i.unitCost * 100), 0) / 100) / 100
 
 // ProblemDetails from the API; `code` is translated by errorMessage() in i18n.ts.
 export interface Problem {
@@ -100,6 +117,7 @@ export interface Problem {
   previousKm?: number
   nextKm?: number
   currentKm?: number
+  index?: number // the 0-based item row of a serviceItem.* error
 }
 
 export class ApiError extends Error {
@@ -150,6 +168,10 @@ export async function api<T>(path: string, method = 'GET', body?: unknown): Prom
 // The API accepts an out-of-order reading once the user confirms it is a correction.
 export const isOrderError = (err: unknown) =>
   err instanceof ApiError && ['odometer.lowerThanPrevious', 'odometer.higherThanNext'].includes(err.problem.code ?? '')
+
+// The record was deleted meanwhile (for example in another tab): a row action reloads the history instead of showing an error.
+export const isGoneRecord = (err: unknown) =>
+  err instanceof ApiError && ['serviceRecord.alreadyVoided', 'serviceRecord.notFound'].includes(err.problem.code ?? '')
 
 export const isGuid = (s: string | undefined) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s ?? '')
 

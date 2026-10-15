@@ -152,6 +152,7 @@ public class MaintenanceTaskService(IAppDbContext db, VehicleService vehicleServ
         var records = await db.ServiceRecords
             .Include(r => r.Tasks).ThenInclude(j => j.MaintenanceTask)
             .Include(r => r.Items)
+            .AsSplitQuery()
             .Where(r => r.VehicleId == vehicleId && !r.IsVoided)
             .OrderByDescending(r => r.Date)
             .ThenByDescending(r => r.CreatedAt)
@@ -246,6 +247,7 @@ public class MaintenanceTaskService(IAppDbContext db, VehicleService vehicleServ
         var record = await db.ServiceRecords
             .Include(r => r.Tasks).ThenInclude(j => j.MaintenanceTask)
             .Include(r => r.Items)
+            .AsSplitQuery()
             .FirstOrDefaultAsync(r => r.Id == recordId && r.VehicleId == vehicle.Id, ct)
             ?? throw new NotFoundException(nameof(ServiceRecord), recordId);
 

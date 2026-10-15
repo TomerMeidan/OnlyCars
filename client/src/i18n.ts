@@ -126,15 +126,34 @@ const en = {
   diy: 'DIY',
   totalCost: 'Total cost ({{currency}})',
   tasksDone: 'Tasks done',
-  undoService: 'Undo service',
-  undoServiceOf: 'Undo service of {{date}} at {{value}} {{distUnit}}',
-  confirmUndoService: 'Undo this service? Its tasks and odometer reading go back to how they were before it.',
+  editServiceOf: 'Edit the service from {{date}} at {{value}} {{distUnit}}, {{shop}}',
+  deleteServiceOf: 'Delete the service from {{date}} at {{value}} {{distUnit}}, {{shop}}',
+  confirmDeleteService: 'Delete this service? Its tasks and odometer reading go back to how they were before it.',
+  serviceGone: 'This service was already deleted.',
+  editServiceHint: 'To change the date, odometer or tasks, delete this service and record it again.',
+  items: 'Parts and labour',
+  addPart: 'Add part',
+  addLabour: 'Add labour',
+  item: 'Item {{n}}',
+  itemField: 'Item {{n}}, {{field}}',
+  removeItem: 'Remove item {{n}}',
+  remove: 'Remove',
+  description: 'Description',
+  brand: 'Brand',
+  partNumber: 'Part number',
+  quantity: 'Quantity',
+  hours: 'Hours',
+  unitCost: 'Unit cost ({{currency}})',
+  ratePerHour: 'Rate per hour ({{currency}})',
+  labour: 'Labour',
+  totalFromItems: 'The sum of the items.',
   // Shown by the browser on the field, before any request.
   limits: {
     intervalKm: 'Enter an interval from 1 to {{maxInterval, number}} {{distUnit}}.',
     intervalTime: 'Enter a time interval of up to 20 years (243 months or 7,300 days).',
     dueSoonPercent: 'Enter a whole number from 1 to 50.',
     cost: 'Enter a cost from 0 to 1,000,000 with up to 2 decimals.',
+    quantity: 'Enter a quantity above 0 and up to 10,000 with up to 2 decimals.',
   },
   categories: {
     Oil: 'Oil', Filters: 'Filters', Brakes: 'Brakes', Tires: 'Tires', Fluids: 'Fluids',
@@ -206,6 +225,15 @@ const en = {
       alreadyVoided: 'This was already undone.',
       shopTooLong: 'Enter a shop name of up to 100 characters.',
       futureDate: "The service date can't be in the future.",
+      tooManyItems: 'A service can have up to 50 items.',
+    },
+    // {{n}} is the row as shown (index + 1).
+    serviceItem: {
+      invalidDescription: 'Item {{n}}: Enter a description of up to 100 characters.',
+      brandTooLong: 'Item {{n}}: Enter a brand of up to 100 characters.',
+      partNumberTooLong: 'Item {{n}}: Enter a part number of up to 50 characters.',
+      invalidQuantity: 'Item {{n}}: Enter a quantity above 0 and up to 10,000 with up to 2 decimals.',
+      invalidUnitCost: 'Item {{n}}: Enter a unit cost from 0 to 1,000,000 with up to 2 decimals.',
     },
     settings: {
       invalidLocale: 'Choose one of the listed languages.',
@@ -338,14 +366,33 @@ const he: typeof en = {
   diy: 'טיפול עצמי',
   totalCost: 'עלות כוללת (⁦{{currency}}⁩)',
   tasksDone: 'משימות שבוצעו',
-  undoService: 'ביטול הטיפול',
-  undoServiceOf: 'ביטול הטיפול מ־{{date}} ב־{{value}} {{distUnit}}',
-  confirmUndoService: 'לבטל את הטיפול הזה? המשימות והקילומטראז׳ יחזרו למצב שלפני הטיפול.',
+  editServiceOf: 'עריכת הטיפול מ־{{date}} ב־{{value}} {{distUnit}}, {{shop}}',
+  deleteServiceOf: 'מחיקת הטיפול מ־{{date}} ב־{{value}} {{distUnit}}, {{shop}}',
+  confirmDeleteService: 'למחוק את הטיפול הזה? המשימות והקילומטראז׳ יחזרו למצב שלפני הטיפול.',
+  serviceGone: 'הטיפול הזה כבר נמחק.',
+  editServiceHint: 'כדי לשנות את התאריך, הקילומטראז׳ או המשימות, מחקו את הטיפול ורשמו אותו מחדש.',
+  items: 'חלקים ועבודה',
+  addPart: 'הוספת חלק',
+  addLabour: 'הוספת עבודה',
+  item: 'פריט ⁦{{n}}⁩',
+  itemField: 'פריט ⁦{{n}}⁩, {{field}}',
+  removeItem: 'הסרת פריט ⁦{{n}}⁩',
+  remove: 'הסרה',
+  description: 'תיאור',
+  brand: 'יצרן',
+  partNumber: 'מק״ט',
+  quantity: 'כמות',
+  hours: 'שעות',
+  unitCost: 'מחיר ליחידה (⁦{{currency}}⁩)',
+  ratePerHour: 'תעריף לשעה (⁦{{currency}}⁩)',
+  labour: 'עבודה',
+  totalFromItems: 'סכום הפריטים.',
   limits: {
     intervalKm: 'הזינו מרווח של ⁦1⁩ עד ⁦{{maxInterval, number}}⁩ {{distUnit}}.',
     intervalTime: 'הזינו מרווח זמן של עד ⁦20⁩ שנה (⁦243⁩ חודשים או ⁦7,300⁩ ימים).',
     dueSoonPercent: 'הזינו מספר שלם בין ⁦1⁩ ל־⁦50⁩.',
     cost: 'הזינו עלות בין ⁦0⁩ ל־⁦1,000,000⁩, עם עד ⁦2⁩ ספרות אחרי הנקודה.',
+    quantity: 'הזינו כמות גדולה מ־⁦0⁩ ועד ⁦10,000⁩, עם עד ⁦2⁩ ספרות אחרי הנקודה.',
   },
   categories: {
     Oil: 'שמן', Filters: 'פילטרים', Brakes: 'בלמים', Tires: 'צמיגים', Fluids: 'נוזלים',
@@ -417,6 +464,14 @@ const he: typeof en = {
       alreadyVoided: 'זה כבר בוטל.',
       shopTooLong: 'הזינו שם מוסך של עד ⁦100⁩ תווים.',
       futureDate: 'תאריך הטיפול לא יכול להיות בעתיד.',
+      tooManyItems: 'אפשר להוסיף לטיפול עד ⁦50⁩ פריטים.',
+    },
+    serviceItem: {
+      invalidDescription: 'פריט ⁦{{n}}⁩: הזינו תיאור של עד ⁦100⁩ תווים.',
+      brandTooLong: 'פריט ⁦{{n}}⁩: הזינו יצרן של עד ⁦100⁩ תווים.',
+      partNumberTooLong: 'פריט ⁦{{n}}⁩: הזינו מק״ט של עד ⁦50⁩ תווים.',
+      invalidQuantity: 'פריט ⁦{{n}}⁩: הזינו כמות גדולה מ־⁦0⁩ ועד ⁦10,000⁩, עם עד ⁦2⁩ ספרות אחרי הנקודה.',
+      invalidUnitCost: 'פריט ⁦{{n}}⁩: הזינו מחיר ליחידה בין ⁦0⁩ ל־⁦1,000,000⁩, עם עד ⁦2⁩ ספרות אחרי הנקודה.',
     },
     settings: {
       invalidLocale: 'בחרו אחת מהשפות ברשימה.',
@@ -447,8 +502,8 @@ const applyDir = (lng: string) => {
 applyDir(i18n.resolvedLanguage ?? 'en')
 i18n.on('languageChanged', applyDir)
 
-// Translated text for any thrown error: known API codes get their own message, everything else the generic one.
-export function errorMessage(err: unknown) {
+// Translated text for any thrown error: known API codes get their own message, everything else the generic one. `n` overrides the item number (its row now).
+export function errorMessage(err: unknown, n?: number) {
   const problem = err instanceof ApiError ? err.problem : {}
   // Distance errors show only where a car is, never on Settings mid-save, so the saved unit is the one on screen.
   // shortcut: reads the unit from localStorage, so a unit changed in another tab shows here before this tab re-renders; read it from the auth context if that matters.
@@ -459,6 +514,7 @@ export function errorMessage(err: unknown) {
     previous: shown(problem.previousKm),
     next: shown(problem.nextKm),
     current: shown(problem.currentKm),
+    n: n ?? (problem.index == null ? undefined : problem.index + 1),
     maxReading: d.maxReading,
     maxInterval: d.maxInterval,
     defaultValue: i18n.t('errors.generic'),

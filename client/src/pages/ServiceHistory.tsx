@@ -1,11 +1,11 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { useEffect, useId, useRef, useState, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
-import { api, ApiError, isOrderError, localToday, type MaintenanceTask, type ServiceRecord, type Vehicle } from '../api'
+import { api, ApiError, isGoneRecord, isOrderError, itemsTotal, localToday, type MaintenanceTask, type ServiceItem, type ServiceRecord, type Vehicle } from '../api'
 import { useAuth, useDistance } from '../auth'
 import { errorMessage } from '../i18n'
 import { useRow } from '../useRow'
 
-// The form field each API error is about, so the message is tied to that field.
+// The form field each API error is about, so the message is tied to that field (item fields also by the error's row index).
 const fieldOf: Record<string, string> = {
   'serviceRecord.futureDate': 'date',
   'odometer.invalidValue': 'odometerKm',
@@ -14,16 +14,47 @@ const fieldOf: Record<string, string> = {
   'serviceRecord.invalidCost': 'totalCost',
   'serviceRecord.shopTooLong': 'shopName',
   'serviceRecord.notesTooLong': 'notes',
+  'serviceItem.invalidDescription': 'description',
+  'serviceItem.brandTooLong': 'brand',
+  'serviceItem.partNumberTooLong': 'partNumber',
+  'serviceItem.invalidQuantity': 'quantity',
+  'serviceItem.invalidUnitCost': 'unitCost',
 }
+
+const MAX_ITEMS = 50
 
 // A record's date is a calendar date; format it in UTC so the viewer's time zone can't shift the day.
 const fmtDate = (date: string, lng: string | undefined) => new Date(date).toLocaleDateString(lng, { dateStyle: 'medium', timeZone: 'UTC' })
+const money = (v: number, lng: string | undefined, currency: string | undefined) => (currency ? v.toLocaleString(lng, { style: 'currency', currency }) : v)
+const taskList = (r: ServiceRecord, lng: string | undefined) => new Intl.ListFormat(lng).format(r.tasks.map((x) => x.name))
+
+// An item row as typed. Keyed by a local counter: the server's item ids change on every save.
+type Item = { key: number; description: string; brand: string; partNumber: string; quantity: string; unitCost: string; isLabor: boolean }
+let nextKey = 0
+const toItem = (i: ServiceItem | null, isLabor = false): Item => ({
+  key: nextKey++,
+  description: i?.description ?? '',
+  brand: i?.brand ?? '',
+  partNumber: i?.partNumber ?? '',
+  quantity: i ? String(i.quantity) : '1',
+  unitCost: i ? String(i.unitCost) : '',
+  isLabor: i?.isLabor ?? isLabor,
+})
+
+// The browser blocks an out-of-range number or a third decimal before any request, with this message on the field.
+const limit = (message: string) => (e: FormEvent<HTMLInputElement>) => {
+  const el = e.currentTarget
+  el.setCustomValidity('')
+  el.setCustomValidity(el.validity.valid ? '' : message)
+}
 
 // The car page's service history, between the tasks and the odometer history. It loads on its own, like the tasks.
 export function ServiceHistory({ car, onChanged }: { car: Vehicle; onChanged: () => void }) {
   const { t } = useTranslation()
   const [records, setRecords] = useState<ServiceRecord[] | null>(null)
   const [error, setError] = useState<unknown>(null)
+  // "Already deleted": a row action found its record gone and reloaded the list.
+  const [gone, setGone] = useState(false)
   const form = useRow<'record'>()
   const sectionRef = useRef<HTMLElement>(null)
   // Selectors to focus after the next reload, the first that matches; the h2 if none does.
@@ -31,7 +62,7 @@ export function ServiceHistory({ car, onChanged }: { car: Vehicle; onChanged: ()
   const path = `/vehicles/${encodeURIComponent(car.id)}/service-records`
   const readOnly = car.isArchived
 
-  // Reloads whenever the car does: after a save or Undo here, and after Mark done or its Undo in the tasks. Old rows stay up meanwhile.
+  // Reloads whenever the car does: after a save or Delete here, and after Mark done or its Undo in the tasks. Old rows stay up meanwhile.
   useEffect(() => {
     let live = true
     api<ServiceRecord[]>(path).then(
@@ -50,28 +81,33 @@ export function ServiceHistory({ car, onChanged }: { car: Vehicle; onChanged: ()
     ;(target ?? section.querySelector<HTMLElement>('h2'))?.focus()
   }, [records])
 
+  const changed = () => { setGone(false); onChanged() }
+  // The tasks and odometer may have moved too (deleted elsewhere), so everything reloads, as after a Delete.
+  const onGone = () => { focusNext.current = []; setGone(true); onChanged() }
+
   return (
     <section className="card" aria-labelledby="service-history" ref={sectionRef}>
       <div className="row">
         <h2 id="service-history" tabIndex={-1}>{t('serviceHistory')}</h2>
         {!readOnly && form.mode === 'view' && (
-          <button className="add" ref={form.opener('record')} onClick={() => form.open('record')}>{t('recordService')}</button>
+          <button className="add" ref={form.opener('record')} onClick={() => { setGone(false); form.open('record') }}>{t('recordService')}</button>
         )}
       </div>
 
       {form.mode === 'record' && (
         <RecordForm
           car={car}
-          path={path}
+          url={path}
           row={form}
           onSaved={(record) => {
-            focusNext.current = [`li[data-id="${record.id}"] button.undo-service`]
+            focusNext.current = [`li[data-id="${record.id}"] button.edit-service`]
             form.close()
-            onChanged()
+            changed()
           }}
         />
       )}
 
+      {gone && <p className="muted" role="status">{t('serviceGone')}</p>}
       {error != null && <p className="error" role="alert">{errorMessage(error)}</p>}
       {!records ? (
         error == null && <p className="muted" role="status">{t('loading')}</p>
@@ -82,14 +118,17 @@ export function ServiceHistory({ car, onChanged }: { car: Vehicle; onChanged: ()
           {records.map((r, i) => (
             <ServiceRow
               key={r.id}
+              car={car}
               record={r}
               url={`${path}/${encodeURIComponent(r.id)}`}
               readOnly={readOnly}
-              onUndone={() => {
+              onEdited={(record) => { setGone(false); setRecords((rs) => rs && rs.map((x) => (x.id === record.id ? record : x))) }}
+              onDeleted={() => {
                 // The next older row, then the newest, then the h2.
-                focusNext.current = [`.services > li:nth-child(${i + 1}) button.undo-service`, '.services > li button.undo-service']
-                onChanged()
+                focusNext.current = [`.services > li:nth-child(${i + 1}) button.delete-service`, '.services > li button.delete-service']
+                changed()
               }}
+              onGone={onGone}
             />
           ))}
         </ol>
@@ -98,85 +137,209 @@ export function ServiceHistory({ car, onChanged }: { car: Vehicle; onChanged: ()
   )
 }
 
-function RecordForm({ car, path, row, onSaved }: {
+// Record a service (no record) or edit one: shop, cost, notes and items; the date, odometer and tasks only as text.
+function RecordForm({ car, url, row, record, onSaved, onGone }: {
   car: Vehicle
-  path: string
-  row: ReturnType<typeof useRow<'record'>>
+  url: string // the list's path to record, the record's to edit
+  row: { busy: boolean; error: unknown; run: ReturnType<typeof useRow>['run']; open: (m: 'view') => void }
+  record?: ServiceRecord
   onSaved: (record: ServiceRecord) => void
+  onGone?: () => void
 }) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
+  const lng = i18n.resolvedLanguage
   const { user } = useAuth()
   const d = useDistance()
-  const { busy, error, run, open } = row
+  const id = useId()
+  const { busy, run, open } = row
+  // A gone record reloads the list instead, so its error never shows here.
+  const error = isGoneRecord(row.error) ? null : row.error
   const [tasks, setTasks] = useState<MaintenanceTask[] | null>(null)
   const [tasksError, setTasksError] = useState<unknown>(null)
   const [needsConfirm, setNeedsConfirm] = useState(false)
   const [confirmCorrection, setConfirmCorrection] = useState(false)
+  const [items, setItems] = useState(() => record?.items.map((i) => toItem(i)) ?? [])
+  // The row the last item error was about, by key, so it stays on that row when others are removed; gone with its row.
+  const [errKey, setErrKey] = useState<number>()
+  // The item row whose description to focus after the next items change; -1 is Add part.
+  const focusItem = useRef<number | null>(null)
+  const formRef = useRef<HTMLFormElement>(null)
   const startKm = d.value(car.currentOdometerKm)
 
   useEffect(() => {
+    if (record) return
     api<MaintenanceTask[]>(`/vehicles/${encodeURIComponent(car.id)}/tasks`).then(setTasks, setTasksError)
-  }, [car.id])
+  }, [car.id, record])
+
+  useEffect(() => {
+    const i = focusItem.current
+    focusItem.current = null
+    const form = formRef.current
+    if (i == null || !form) return
+    form.querySelector<HTMLElement>(i < 0 ? 'button.add-part' : `.item:nth-of-type(${i + 1}) input`)?.focus()
+  }, [items])
 
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault()
     const f = new FormData(e.currentTarget)
-    const cost = f.get('totalCost')
-    const body = {
-      date: f.get('date'),
-      // The car's odometer, left as shown, is sent back as its exact km.
-      // So is a neighbour the last error named, typed back as shown.
-      odometerKm: d.toKm(Number(f.get('odometerKm')), car.currentOdometerKm,
-        error instanceof ApiError ? error.problem.previousKm : undefined, error instanceof ApiError ? error.problem.nextKm : undefined),
+    const cost = f.get('totalCost') // absent while items set the total
+    const edits = {
       shopName: f.get('shopName'),
-      totalCost: cost === '' ? null : Number(cost),
+      totalCost: cost ? Number(cost) : null,
       notes: f.get('notes'),
-      taskIds: f.getAll('taskIds'),
-      confirmCorrection: needsConfirm && confirmCorrection,
+      items: items.map((i) => ({
+        description: i.description,
+        brand: i.brand,
+        partNumber: i.partNumber,
+        quantity: Number(i.quantity),
+        unitCost: Number(i.unitCost),
+        isLabor: i.isLabor,
+      })),
     }
-    const err = await run(async () => onSaved((await api<{ record: ServiceRecord }>(path, 'POST', body)).record), (e.nativeEvent as SubmitEvent).submitter)
-    if (err) setNeedsConfirm(isOrderError(err))
+    const submitter = (e.nativeEvent as SubmitEvent).submitter
+    const err = record
+      ? await run(async () => onSaved(await api<ServiceRecord>(url, 'PUT', edits)), submitter)
+      : await run(async () => onSaved((await api<{ record: ServiceRecord }>(url, 'POST', {
+        ...edits,
+        date: f.get('date'),
+        // The car's odometer, left as shown, is sent back as its exact km.
+        // So is a neighbour the last error named, typed back as shown.
+        odometerKm: d.toKm(Number(f.get('odometerKm')), car.currentOdometerKm,
+          error instanceof ApiError ? error.problem.previousKm : undefined, error instanceof ApiError ? error.problem.nextKm : undefined),
+        taskIds: f.getAll('taskIds'),
+        confirmCorrection: needsConfirm && confirmCorrection,
+      })).record), submitter)
+    if (isGoneRecord(err)) onGone?.()
+    else if (err) {
+      setNeedsConfirm(isOrderError(err))
+      setErrKey(err instanceof ApiError && err.problem.index != null ? items[err.problem.index]?.key : undefined)
+    }
   }
 
-  const bad = error instanceof ApiError ? fieldOf[error.problem.code ?? ''] : undefined
-  // aria-describedby for a field: its hint, and the error when it is about this field.
-  const tie = (name: string, hint?: string) => {
-    const ids = [hint, bad === name && 'service-error'].filter(Boolean).join(' ')
-    return { 'aria-invalid': bad === name || undefined, 'aria-describedby': ids || undefined }
+  const problem = error instanceof ApiError ? error.problem : undefined
+  const bad = fieldOf[problem?.code ?? '']
+  const errorId = `${id}error`
+  // aria-describedby for a field: its hint, and the error when it is about this field (and this item row, for item fields).
+  const tie = (name: string, hint?: string, itemKey?: number) => {
+    const hit = bad === name && itemKey === (problem?.index == null ? undefined : errKey)
+    const ids = [hint, hit && errorId].filter(Boolean).join(' ')
+    return { 'aria-invalid': hit || undefined, 'aria-describedby': ids || undefined }
   }
+  // The date-order error sits under the odometer field, an item error on its row, the rest above Save.
+  // An item error names its row by where it is now, not where it was when sent.
+  const errRow = items.findIndex((x) => x.key === errKey)
+  const alert = error != null && <p className="error" role="alert" id={errorId}>{errorMessage(error, errRow < 0 ? undefined : errRow + 1)}</p>
+  const errorAt = isOrderError(error) ? 'odometer' : problem?.index == null ? 'end' : errKey
   const enabled = tasks?.filter((task) => task.isEnabled)
+  const total = itemsTotal(items.map((i) => ({ quantity: Number(i.quantity) || 0, unitCost: Number(i.unitCost) || 0 })))
+  const currency = user?.currency
+  const setItem = (i: number, patch: Partial<Item>) => setItems((xs) => xs.map((x, j) => (j === i ? { ...x, ...patch } : x)))
+  const add = (isLabor: boolean) => { focusItem.current = items.length; setItems([...items, toItem(null, isLabor)]) }
+  // Focus goes to the next row, then the previous one, then Add part.
+  const remove = (i: number) => { focusItem.current = i < items.length - 1 ? i : i - 1; setItems(items.filter((_, j) => j !== i)) }
 
   return (
-    <form className="inline-form" onSubmit={submit} onKeyDown={(e) => !busy && e.key === 'Escape' && open('view')}>
-      <label>
-        {t('readingDate')}
-        <input name="date" type="date" required max={localToday()} defaultValue={localToday()} autoFocus {...tie('date')} />
-      </label>
-      <label>
-        {t('serviceOdometer', d.vars)}
-        <input name="odometerKm" type="number" inputMode="numeric" {...d.readingInput} max={Math.max(d.maxReading, startKm)} required defaultValue={startKm} {...tie('odometerKm')} />
-      </label>
+    <form className="inline-form" ref={formRef} onSubmit={submit} onKeyDown={(e) => !busy && e.key === 'Escape' && open('view')}>
+      {record ? (
+        <>
+          <p>
+            <time dateTime={record.date}>{fmtDate(record.date, lng)}</time> · <bdi>{d.fmt(record.odometerKm)}</bdi> {d.vars.distUnit}
+            {record.tasks.length > 0 && <> · {taskList(record, lng)}</>}
+          </p>
+          <p className="muted">{t('editServiceHint')}</p>
+        </>
+      ) : (
+        <>
+          <label>
+            {t('readingDate')}
+            <input name="date" type="date" required max={localToday()} defaultValue={localToday()} autoFocus {...tie('date')} />
+          </label>
+          <label>
+            {t('serviceOdometer', d.vars)}
+            <input name="odometerKm" type="number" inputMode="numeric" {...d.readingInput} max={Math.max(d.maxReading, startKm)} required defaultValue={startKm} {...tie('odometerKm')} />
+          </label>
+          {errorAt === 'odometer' && alert}
+          {needsConfirm && (
+            <label className="inline">
+              <input type="checkbox" checked={confirmCorrection} onChange={(e) => setConfirmCorrection(e.target.checked)} aria-describedby={errorAt === 'odometer' ? errorId : undefined} />
+              {t('confirmCorrection')}
+            </label>
+          )}
+        </>
+      )}
       <label className="wide">
         {t('shop')}
-        <input name="shopName" maxLength={100} {...tie('shopName', 'shop-hint')} />
+        <input name="shopName" maxLength={100} defaultValue={record?.shopName ?? ''} autoFocus={!!record} {...tie('shopName', `${id}shop`)} />
         {/* Read as the field's description, not as part of its name. */}
-        <span id="shop-hint" className="muted" aria-hidden="true">{t('shopHint')}</span>
+        <span id={`${id}shop`} className="muted" aria-hidden="true">{t('shopHint')}</span>
       </label>
-      <label>
-        {t('totalCost', { currency: user?.currency })}
-        <input name="totalCost" type="number" inputMode="decimal" min={0} max={1_000_000} step={0.01} {...tie('totalCost')}
-          // The browser blocks an out-of-range cost or a third decimal before any request, with this message on the field.
-          onInput={(e) => {
-            const el = e.currentTarget
-            el.setCustomValidity('')
-            el.setCustomValidity(el.validity.valid ? '' : t('limits.cost'))
-          }} />
-      </label>
+
+      <div className="items" role="group" aria-label={t('items')}>
+        {items.map((it, i) => {
+          const n = i + 1
+          const named = (field: string) => ({ 'aria-label': t('itemField', { n, field }) })
+          const quantity = it.isLabor ? t('hours') : t('quantity')
+          const unitCost = it.isLabor ? t('ratePerHour', { currency }) : t('unitCost', { currency })
+          return (
+            <fieldset className="item" key={it.key}>
+              <legend>{t('item', { n })}{it.isLabor && <> · {t('labour')}</>}</legend>
+              <label className="wide">
+                {t('description')}
+                <input dir="auto" required maxLength={100} value={it.description} onChange={(e) => setItem(i, { description: e.target.value })}
+                  {...named(t('description'))} {...tie('description', undefined, it.key)} />
+              </label>
+              {!it.isLabor && (
+                <>
+                  <label>
+                    {t('brand')}
+                    <input dir="auto" maxLength={100} value={it.brand} onChange={(e) => setItem(i, { brand: e.target.value })} {...named(t('brand'))} {...tie('brand', undefined, it.key)} />
+                  </label>
+                  <label>
+                    {t('partNumber')}
+                    <input dir="auto" maxLength={50} value={it.partNumber} onChange={(e) => setItem(i, { partNumber: e.target.value })} {...named(t('partNumber'))} {...tie('partNumber', undefined, it.key)} />
+                  </label>
+                </>
+              )}
+              <label>
+                {quantity}
+                <input type="number" inputMode="decimal" required min={0.01} max={10_000} step={0.01} value={it.quantity} onInput={limit(t('limits.quantity'))}
+                  onChange={(e) => setItem(i, { quantity: e.target.value })} {...named(quantity)} {...tie('quantity', undefined, it.key)} />
+              </label>
+              <label>
+                {unitCost}
+                <input type="number" inputMode="decimal" required min={0} max={1_000_000} step={0.01} value={it.unitCost} onInput={limit(t('limits.cost'))}
+                  onChange={(e) => setItem(i, { unitCost: e.target.value })} {...named(unitCost)} {...tie('unitCost', undefined, it.key)} />
+              </label>
+              <button type="button" className="link" aria-label={t('removeItem', { n })} disabled={busy} onClick={() => remove(i)}>{t('remove')}</button>
+              {errorAt === it.key && alert}
+            </fieldset>
+          )
+        })}
+        <div className="actions">
+          <button type="button" className="link add-part" disabled={busy || items.length >= MAX_ITEMS} onClick={() => add(false)}>{t('addPart')}</button>
+          <button type="button" className="link" disabled={busy || items.length >= MAX_ITEMS} onClick={() => add(true)}>{t('addLabour')}</button>
+        </div>
+      </div>
+
+      {/* With items the total is their sum, computed as the server does; keyed so the typed field starts fresh. */}
+      {items.length > 0 ? (
+        <label key="sum">
+          {t('totalCost', { currency })}
+          <input readOnly value={money(total, lng, currency)} {...tie('totalCost', `${id}sum`)} />
+          <span id={`${id}sum`} className="muted" aria-hidden="true">{t('totalFromItems')}</span>
+        </label>
+      ) : (
+        <label key="typed">
+          {t('totalCost', { currency })}
+          <input name="totalCost" type="number" inputMode="decimal" min={0} max={1_000_000} step={0.01} defaultValue={record?.totalCost ?? ''}
+            onInput={limit(t('limits.cost'))} {...tie('totalCost')} />
+        </label>
+      )}
       <label className="wide">
         {t('notes')}
-        <textarea name="notes" maxLength={1000} rows={2} {...tie('notes')} />
+        <textarea name="notes" maxLength={1000} rows={2} defaultValue={record?.notes ?? ''} {...tie('notes')} />
       </label>
-      {tasksError != null ? (
+      {!record && (tasksError != null ? (
         <p className="error" role="alert">{errorMessage(tasksError)}</p>
       ) : !enabled ? (
         <p className="muted" role="status">{t('loading')}</p>
@@ -190,14 +353,8 @@ function RecordForm({ car, path, row, onSaved }: {
             </label>
           ))}
         </fieldset>
-      )}
-      {error != null && <p className="error" role="alert" id="service-error">{errorMessage(error)}</p>}
-      {needsConfirm && (
-        <label className="inline">
-          <input type="checkbox" checked={confirmCorrection} onChange={(e) => setConfirmCorrection(e.target.checked)} />
-          {t('confirmCorrection')}
-        </label>
-      )}
+      ))}
+      {errorAt === 'end' && alert}
       <div className="actions">
         <button disabled={busy}>{t('save')}</button>
         <button type="button" className="link" disabled={busy} onClick={() => open('view')}>{t('cancel')}</button>
@@ -206,21 +363,39 @@ function RecordForm({ car, path, row, onSaved }: {
   )
 }
 
-function ServiceRow({ record: r, url, readOnly, onUndone }: {
+function ServiceRow({ car, record: r, url, readOnly, onEdited, onDeleted, onGone }: {
+  car: Vehicle
   record: ServiceRecord
   url: string
   readOnly: boolean
-  onUndone: () => void
+  onEdited: (record: ServiceRecord) => void
+  onDeleted: () => void
+  onGone: () => void
 }) {
   const { t, i18n } = useTranslation()
   const { user } = useAuth()
   const d = useDistance()
-  // After Undo the section refocuses (close()); Cancel and Escape go back to the row's Undo.
-  const { mode, open, close, busy, error, run, opener } = useRow<'undo'>()
-  // Voided: Undo stays disabled until the reload drops the row.
+  const id = useId()
+  // After Delete the section refocuses (close()); after Save, Cancel and Escape, focus goes back to the button that opened the mode.
+  const row = useRow<'edit' | 'delete'>()
+  const { mode, open, close, busy, error, run, opener } = row
+  // Deleted: Delete stays disabled until the reload drops the row.
   const [voided, setVoided] = useState(false)
   const lng = i18n.resolvedLanguage
   const date = fmtDate(r.date, lng)
+  // Each action is named by date, odometer and shop, and described by the row's cost and tasks (MVP3-A QA Low 1).
+  const vars = { date, value: d.fmt(r.odometerKm), ...d.vars, shop: r.shopName ?? t('diy') }
+  const describedBy = [r.totalCost != null && `${id}cost`, r.tasks.length > 0 && `${id}tasks`].filter(Boolean).join(' ') || undefined
+
+  if (mode === 'edit') {
+    return (
+      <li data-id={r.id}>
+        {/* Closed too, in case the reload still lists the record. */}
+        <RecordForm car={car} url={url} row={row} record={r} onGone={() => { close(); onGone() }}
+          onSaved={(saved) => { onEdited(saved); open('view') }} />
+      </li>
+    )
+  }
 
   return (
     <li data-id={r.id}>
@@ -231,26 +406,44 @@ function ServiceRow({ record: r, url, readOnly, onUndone }: {
       <p>
         {/* Free text in either language; dir="auto" isolates it from the page direction. */}
         {r.shopName ? <span dir="auto">{r.shopName}</span> : t('diy')}
-        {r.totalCost != null && user && (
-          <> · <bdi>{r.totalCost.toLocaleString(lng, { style: 'currency', currency: user.currency })}</bdi></>
-        )}
+        {r.totalCost != null && user && <> · <bdi id={`${id}cost`}>{money(r.totalCost, lng, user.currency)}</bdi></>}
       </p>
-      {r.tasks.length > 0 && <p className="muted">{new Intl.ListFormat(lng).format(r.tasks.map((x) => x.name))}</p>}
+      {r.tasks.length > 0 && <p className="muted" id={`${id}tasks`}>{taskList(r, lng)}</p>}
       {r.notes && <p className="notes" dir="auto">{r.notes}</p>}
+      {r.items.length > 0 && (
+        <ul className="service-items">
+          {r.items.map((it) => (
+            <li key={it.id}>
+              <span dir="auto">{it.description}</span>
+              {it.brand && <span dir="auto" className="muted">{it.brand}</span>}
+              {it.partNumber && <span dir="auto" className="muted">{it.partNumber}</span>}
+              {/* Each value isolated on its own, so the amount reads like the row total in RTL. */}
+              <span className="amount"><bdi>{it.quantity.toLocaleString(lng)}</bdi> × <bdi>{money(it.unitCost, lng, user?.currency)}</bdi></span>
+              {it.isLabor && <span className="badge">{t('labour')}</span>}
+            </li>
+          ))}
+        </ul>
+      )}
 
       {!readOnly && mode === 'view' && (
         <div className="actions">
-          <button className="link undo-service" aria-label={t('undoServiceOf', { date, value: d.fmt(r.odometerKm), ...d.vars })} disabled={voided} ref={opener('undo')} onClick={() => open('undo')}>{t('undoService')}</button>
+          <button className="link edit-service" aria-label={t('editServiceOf', vars)} aria-describedby={describedBy} disabled={voided}
+            ref={opener('edit')} onClick={() => open('edit')}>{t('edit')}</button>
+          <button className="link delete-service" aria-label={t('deleteServiceOf', vars)} aria-describedby={describedBy} disabled={voided}
+            ref={opener('delete')} onClick={() => open('delete')}>{t('delete')}</button>
         </div>
       )}
-      {mode === 'undo' && (
+      {mode === 'delete' && (
         <div className="inline-form" onKeyDown={(e) => !busy && e.key === 'Escape' && open('view')}>
-          <p>{t('confirmUndoService')}</p>
-          {error != null && <p className="error" role="alert">{errorMessage(error)}</p>}
+          <p>{t('confirmDeleteService')}</p>
+          {error != null && !isGoneRecord(error) && <p className="error" role="alert">{errorMessage(error)}</p>}
           <div className="actions">
-            <button className="danger" disabled={busy}
-              onClick={(e) => run(async () => { await api(`${url}/void`, 'POST'); setVoided(true); close(); onUndone() }, e.currentTarget)}>
-              {t('undoService')}
+            <button className="danger" disabled={busy || voided}
+              onClick={async (e) => {
+                const err = await run(async () => { await api(`${url}/void`, 'POST'); setVoided(true); close(); onDeleted() }, e.currentTarget)
+                if (isGoneRecord(err)) { setVoided(true); onGone() }
+              }}>
+              {t('delete')}
             </button>
             <button type="button" className="link" disabled={busy} onClick={() => open('view')} autoFocus>{t('cancel')}</button>
           </div>

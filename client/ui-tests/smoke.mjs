@@ -275,8 +275,8 @@ for (const s of setups) {
 
   // MVP3-A: service history.
   const SV = he
-    ? { empty: 'עדיין לא נרשמו טיפולים.', record: 'רישום טיפול', diy: 'טיפול עצמי', undoOf: 'ביטול הטיפול מ־', legend: 'משימות שבוצעו', hint: 'השאירו ריק לטיפול עצמי.', future: 'תאריך הטיפול לא יכול להיות בעתיד.', km: 'ק״מ', generic: 'משהו השתבש. נסו שוב.', odoLabel: 'קילומטראז׳ במיילים', at59500: 'ב־59,500 ק״מ', at59000: 'ב־59,000 ק״מ' }
-    : { empty: 'No services recorded yet.', record: 'Record a service', diy: 'DIY', undoOf: 'Undo service of ', legend: 'Tasks done', hint: 'Leave empty for DIY.', future: "The service date can't be in the future.", km: 'km', generic: 'Something went wrong. Please try again.', odoLabel: 'Odometer in miles', at59500: 'at 59,500 km', at59000: 'at 59,000 km' }
+    ? { items: 'חלקים ועבודה', empty: 'עדיין לא נרשמו טיפולים.', record: 'רישום טיפול', diy: 'טיפול עצמי', editOf: 'עריכת הטיפול מ־', deleteOf: 'מחיקת הטיפול מ־', gone: 'הטיפול הזה כבר נמחק.', editHint: 'כדי לשנות את התאריך, הקילומטראז׳ או המשימות, מחקו את הטיפול ורשמו אותו מחדש.', labour: 'עבודה', item2Qty: 'פריט 2: הזינו כמות גדולה מ־0 ועד 10,000, עם עד 2 ספרות אחרי הנקודה.', item2Hours: 'פריט 2, שעות', item1Part: 'פריט 1, מק״ט', legend: 'משימות שבוצעו', hint: 'השאירו ריק לטיפול עצמי.', future: 'תאריך הטיפול לא יכול להיות בעתיד.', km: 'ק״מ', generic: 'משהו השתבש. נסו שוב.', odoLabel: 'קילומטראז׳ במיילים', at59500: 'ב־59,500 ק״מ', at59000: 'ב־59,000 ק״מ' }
+    : { items: 'Parts and labour', empty: 'No services recorded yet.', record: 'Record a service', diy: 'DIY', editOf: 'Edit the service from ', deleteOf: 'Delete the service from ', gone: 'This service was already deleted.', editHint: 'To change the date, odometer or tasks, delete this service and record it again.', labour: 'Labour', item2Qty: 'Item 2: Enter a quantity above 0 and up to 10,000 with up to 2 decimals.', item2Hours: 'Item 2, Hours', item1Part: 'Item 1, Part number', legend: 'Tasks done', hint: 'Leave empty for DIY.', future: "The service date can't be in the future.", km: 'km', generic: 'Something went wrong. Please try again.', odoLabel: 'Odometer in miles', at59500: 'at 59,500 km', at59000: 'at 59,000 km' }
   const services = page.locator('section[aria-labelledby=service-history]')
   const serviceItems = () => services.locator('.services > li')
   const recordForm = services.locator('form')
@@ -831,7 +831,7 @@ for (const s of setups) {
     await recordForm.waitFor({ state: 'detached' })
     await focusIs('section[aria-labelledby=service-history] button.add', 'after Escape')
     await recordBtn.click()
-    await recordForm.locator('button.link').click()
+    await recordForm.locator(':scope > .actions button.link').click()
     await focusIs('section[aria-labelledby=service-history] button.add', 'after Cancel')
     await recordBtn.click()
     const longShop = 'Garage' + 'X'.repeat(94)
@@ -858,14 +858,16 @@ for (const s of setups) {
     const body = r.request().postDataJSON()
     if (r.status() !== 201 || body.date !== today || body.odometerKm !== 59500 || body.totalCost !== 250.5 || body.taskIds.length !== 2 || body.confirmCorrection !== false) throw new Error(`${r.status()} ${JSON.stringify(body)}`)
     garageId = (await r.json()).record.id
-    await focusIs(`li[data-id="${garageId}"] button.undo-service`, 'after Save')
+    await focusIs(`li[data-id="${garageId}"] button.edit-service`, 'after Save')
     const top = serviceItems().first()
     if ((await top.getAttribute('data-id')) !== garageId) throw new Error('new record not at the top')
     const text = plain(await top.textContent())
     for (const want of [longShop, '250.50', 'Oil', 'Brakes', '59,500', notes]) if (!text.includes(want)) throw new Error(`record lacks "${want.slice(0, 20)}"`)
-    // Named by date and odometer, so two services on one day differ.
-    const undoName = await top.locator('button.undo-service').getAttribute('aria-label')
-    if (!undoName.startsWith(SV.undoOf) || !undoName.endsWith(` ${SV.at59500}`)) throw new Error(`Undo name "${undoName}"`)
+    // Named by date, odometer and shop, so two services on one day differ.
+    for (const [sel, of] of [['button.edit-service', SV.editOf], ['button.delete-service', SV.deleteOf]]) {
+      const name = await top.locator(sel).getAttribute('aria-label')
+      if (!name.startsWith(of) || !name.endsWith(` ${SV.at59500}, ${longShop}`)) throw new Error(`action name "${name}"`)
+    }
     // Both tasks done at 59,500, and the odometer and its history follow, without a reload.
     await odometerIs('59500')
     await badgeIs('Oil', ST.Ok)
@@ -914,6 +916,22 @@ for (const s of setups) {
     if (!msg.includes(`${problem.nextKm.toLocaleString('en')} ${SV.km}`)) throw new Error(`order error "${msg}"`)
     noLatin(msg, 'order error')
     if ((await odo.getAttribute('aria-invalid')) !== 'true') throw new Error('error not tied to the odometer')
+    // MVP3-B criterion 11: the error and its confirm box sit right under the odometer field and stay tied to it, here and on desktop.
+    if (!(await odo.getAttribute('aria-describedby')).split(' ').includes(await alert.getAttribute('id'))) throw new Error('order error not in the odometer\'s aria-describedby')
+    const confirmBox = recordForm.locator(':scope > label.inline')
+    await confirmBox.waitFor()
+    const underOdometer = async (what) => {
+      if ((await odo.evaluate((el) => el.closest('label').nextElementSibling?.getAttribute('role'))) !== 'alert') throw new Error(`${what}: the error doesn't follow the odometer field`)
+      const [field, err, box] = await Promise.all([odo, alert, confirmBox].map((l) => l.boundingBox()))
+      const gap = err.y - (field.y + field.height)
+      if (gap < 0 || gap > 40 || box.y < err.y + err.height - 1) throw new Error(`${what}: error ${gap}px under the odometer, box at ${box.y}`)
+    }
+    await underOdometer('390px')
+    if (!he) {
+      await page.setViewportSize({ width: 1280, height: 800 })
+      await underOdometer('desktop')
+      await page.setViewportSize({ width: 390, height: 844 })
+    }
     await recordForm.locator(':scope > label.inline input[type=checkbox]').check()
     res = page.waitForResponse((r) => isRecordPost(r.request()))
     await save.click()
@@ -921,53 +939,258 @@ for (const s of setups) {
     if (r.status() !== 201 || r.request().postDataJSON().confirmCorrection !== true) throw new Error(`${r.status()} ${r.request().postData()}`)
     backdatedId = (await r.json()).record.id
     // Older than the rest, it is listed last; Coolant keeps its later last done.
-    await focusIs(`li[data-id="${backdatedId}"] button.undo-service`, 'after a backdated save')
+    await focusIs(`li[data-id="${backdatedId}"] button.edit-service`, 'after a backdated save')
     if ((await serviceItems().last().getAttribute('data-id')) !== backdatedId) throw new Error('backdated record not last')
     if (!plain(await taskRow('Coolant').textContent()).includes(SV.at59000)) throw new Error(`Coolant moved: ${plain(await taskRow('Coolant').textContent())}`)
     await odometerIs('59500')
     await noOverflow('the backdated record')
   })
-  await step('undo-service-from-history', async () => {
-    const row = services.locator(`li[data-id="${garageId}"]`)
-    const undo = `li[data-id="${garageId}"] button.undo-service`
-    // A confirm step, as for Delete: Cancel focused, Escape back to Undo.
-    await row.locator('button.undo-service').click()
-    await focusIs(`li[data-id="${garageId}"] .inline-form button.link`, 'Undo confirm open')
-    const confirm = row.locator('button.danger')
-    await tall(confirm, 'confirm Undo')
-    await noOverflow('the Undo confirm open')
+  // MVP3-B at 390px: line items, Edit and Delete. So far: the garage record (59,500 today), the backdated one, and the resets.
+  const carId = () => new URL(page.url()).pathname.split('/')[2]
+  // Deletes a record as another tab would, through the API.
+  const voidElsewhere = async (id) => {
+    const token = await page.evaluate(() => localStorage.getItem('token'))
+    const r = await page.request.post(`${BASE}/api/vehicles/${carId()}/service-records/${id}/void`, { headers: { Authorization: `Bearer ${token}` } })
+    if (!r.ok()) throw new Error(`void elsewhere: ${r.status()}`)
+  }
+  // Drops one forced or expected failure (a service-records response with this status) from the report.
+  const forgetExpected = (status) => {
+    const i = run.badResponses.findIndex((r) => r.startsWith(`${status} `) && r.includes('/service-records'))
+    if (i >= 0) run.badResponses.splice(i, 1)
+    const j = run.consoleErrors.findIndex((e) => e.includes(`status of ${status}`))
+    if (j >= 0) run.consoleErrors.splice(j, 1)
+  }
+  const itemRows = (form) => form.locator('fieldset.item')
+  const itemInput = (form, i, n) => itemRows(form).nth(i).locator('input').nth(n)
+  // Each row's first label is its description.
+  const descSel = (i) => `section[aria-labelledby=service-history] form fieldset.item:nth-of-type(${i + 1}) > label:first-of-type input`
+  const sumField = (form) => form.locator('input[readonly]')
+  const costDigits = async (row) => digitsOnly(await row.locator(':scope > p').first().locator('bdi').textContent())
+  const describedText = (btn) => btn.evaluate((b) => (b.getAttribute('aria-describedby') ?? '').split(' ').filter(Boolean).map((id) => document.getElementById(id)?.textContent ?? '(missing)').join(' | '))
+  let itemsId
+  await step('record-service-items', async () => {
+    await page.setViewportSize({ width: 390, height: 844 })
+    await recordBtn.click()
+    const addPart = recordForm.locator('button.add-part')
+    const addLabour = recordForm.locator('.items > .actions button:not(.add-part)')
+    await recordForm.locator('input[name=odometerKm]').fill('59500')
+    await recordForm.locator('input[name=shopName]').fill('Garage Cohen')
+    // Criterion 16: focus after Add and Remove (the next row, then the previous, then Add part).
+    await addPart.click()
+    await focusIs(descSel(0), 'after Add part')
+    await addLabour.click()
+    await focusIs(descSel(1), 'after Add labour')
+    if ((await recordForm.locator('input[name=totalCost]').count()) || !(await sumField(recordForm).count())) throw new Error('total still typed with items')
+    await addPart.click()
+    await itemRows(recordForm).nth(2).locator('button').click()
+    await focusIs(descSel(1), 'after removing the last row (the previous row)')
+    await itemRows(recordForm).nth(0).locator('button').click()
+    await focusIs(descSel(0), 'after removing row 1 (the next row)')
+    await itemRows(recordForm).nth(0).locator('button').click()
+    await focusIs('section[aria-labelledby=service-history] form button.add-part', 'after removing the only row')
+    if (!(await recordForm.locator('input[name=totalCost]').count())) throw new Error('total not typed again without items')
+    // The items block is a group named "Parts and labour".
+    if ((await recordForm.locator('.items[role=group]').getAttribute('aria-label')) !== SV.items) throw new Error('items group name')
+    // An item error stays on the row it was about when an earlier row is removed, and goes with that row.
+    for (const n of [0, 1, 2]) { await addPart.click(); await itemInput(recordForm, n, 0).fill(`Part ${n + 1}`); await itemInput(recordForm, n, 4).fill('10') }
+    await page.route('**/service-records', (r) => r.fulfill({ status: 400, contentType: 'application/json', body: JSON.stringify({ code: 'serviceItem.invalidQuantity', index: 1 }) }), { times: 1 })
+    await recordForm.locator('button:not(.link)').click()
+    await itemRows(recordForm).nth(1).locator('[role=alert]').waitFor()
+    forgetExpected(400)
+    await itemRows(recordForm).nth(0).locator('button').click()
+    const stayed = itemRows(recordForm).nth(0)
+    // It names the row by its number now (Item 1), not the one sent (Item 2).
+    if (plain(await stayed.locator('[role=alert]').textContent()) !== SV.item2Qty.replace('2', '1')) throw new Error(`renumbered item error "${await stayed.locator('[role=alert]').textContent()}"`)
+    if ((await itemInput(recordForm, 0, 0).inputValue()) !== 'Part 2' || (await stayed.locator('[role=alert]').count()) !== 1 || (await recordForm.locator('[role=alert]').count()) !== 1) throw new Error('item error moved off its row')
+    if ((await itemInput(recordForm, 0, 3).getAttribute('aria-describedby')) !== (await stayed.locator('[role=alert]').getAttribute('id'))) throw new Error('item error not tied to its row after a removal')
+    await stayed.locator('button').click()
+    if ((await recordForm.locator('[role=alert]').count()) || (await recordForm.locator('[aria-invalid]').count())) throw new Error('item error outlived its row')
+    await itemRows(recordForm).nth(0).locator('button').click()
+    // Criterion 5: a part and a labour row, with the live total while typing.
+    const longDesc = 'Oil filter ' + 'Y'.repeat(89)
+    const longPart = 'W712/75-' + 'X'.repeat(42)
+    await addPart.click()
+    for (const [n, v] of [[0, longDesc], [1, 'Mann'], [2, longPart], [3, '2'], [4, '45.5']]) await itemInput(recordForm, 0, n).fill(v)
+    if (digitsOnly(await sumField(recordForm).inputValue()) !== '9100') throw new Error(`live total ${await sumField(recordForm).inputValue()}`)
+    await addLabour.click()
+    for (const [n, v] of [[0, 'Labour'], [1, '1.5'], [2, '200']]) await itemInput(recordForm, 1, n).fill(v)
+    if (digitsOnly(await sumField(recordForm).inputValue()) !== '39100') throw new Error(`live total ${await sumField(recordForm).inputValue()}`)
+    // A labour row has no brand or part number; every field is named with its row.
+    if ((await itemRows(recordForm).nth(1).locator('input').count()) !== 3) throw new Error('labour row fields')
+    if (plain(await itemInput(recordForm, 1, 1).getAttribute('aria-label')) !== SV.item2Hours) throw new Error(`hours name "${await itemInput(recordForm, 1, 1).getAttribute('aria-label')}"`)
+    if (plain(await itemInput(recordForm, 0, 2).getAttribute('aria-label')) !== SV.item1Part) throw new Error('part number name')
+    if (!plain(await itemRows(recordForm).nth(1).locator('legend').textContent()).includes(SV.labour)) throw new Error('labour legend')
+    noLatin(plain((await recordForm.locator('fieldset.item label').allTextContents()).join()).replace(new RegExp(registered.user.currency, 'g'), ''), 'item labels')
+    await noOverflow('item rows with a long description and part number')
+    await sweep('the record form with item rows')
+    // Criterion 10: an item error from the server shows on its row, naming it; every typed value stays.
+    const itemValues = () => itemRows(recordForm).evaluateAll((fs) => fs.map((f) => [...f.querySelectorAll('input')].map((i) => i.value)))
+    const typed = JSON.stringify([await itemValues(), await formValues()])
+    await page.route('**/service-records', (r) => r.fulfill({ status: 400, contentType: 'application/json', body: JSON.stringify({ code: 'serviceItem.invalidQuantity', index: 1 }) }), { times: 1 })
+    const save = recordForm.locator('button:not(.link)')
+    await save.click()
+    const itemAlert = itemRows(recordForm).nth(1).locator('[role=alert]')
+    await itemAlert.waitFor()
+    if (plain(await itemAlert.textContent()) !== SV.item2Qty) throw new Error(`item error "${await itemAlert.textContent()}"`)
+    const hours = itemInput(recordForm, 1, 1)
+    if ((await hours.getAttribute('aria-invalid')) !== 'true' || (await hours.getAttribute('aria-describedby')) !== (await itemAlert.getAttribute('id'))) throw new Error('item error not tied to its field')
+    if ((await recordForm.locator('[role=alert]').count()) !== 1) throw new Error('the item error is shown twice')
+    if (JSON.stringify([await itemValues(), await formValues()]) !== typed) throw new Error('values lost')
+    forgetExpected(400)
+    const res = page.waitForResponse((r) => isRecordPost(r.request()))
+    await save.click()
+    const r = await res
+    const body = r.request().postDataJSON()
+    const rec = (await r.json()).record
+    if (r.status() !== 201 || body.items.length !== 2 || !body.items[1].isLabor || rec.items[1].partNumber !== null || body.totalCost !== null || rec.totalCost !== 391) throw new Error(`${r.status()} ${JSON.stringify(body)}`)
+    itemsId = rec.id
+    await focusIs(`li[data-id="${itemsId}"] button.edit-service`, 'after saving with items')
+    // The row shows both items and the total in the user's currency, without a reload.
+    const row = services.locator(`li[data-id="${itemsId}"]`)
+    const lines = row.locator('.service-items li')
+    if ((await lines.count()) !== 2) throw new Error(`${await lines.count()} item lines`)
+    const part = plain(await lines.nth(0).textContent())
+    for (const want of [longDesc, 'Mann', longPart]) if (!part.includes(want)) throw new Error(`part line lacks "${want.slice(0, 12)}"`)
+    const partAmount = await lines.nth(0).locator('.amount').textContent()
+    if (digitsOnly(partAmount) !== '24550') throw new Error(`part amount ${partAmount}`)
+    if (digitsOnly(await lines.nth(1).locator('.amount').textContent()) !== '1520000' || (await lines.nth(1).locator('.badge').textContent()) !== SV.labour) throw new Error(`labour line ${plain(await lines.nth(1).textContent())}`)
+    const sign = new Intl.NumberFormat(s.lng, { style: 'currency', currency: registered.user.currency }).formatToParts(1).find((p) => p.type === 'currency').value
+    if (!partAmount.includes(sign)) throw new Error(`amount "${partAmount}" without "${sign}"`)
+    if ((await costDigits(row)) !== '39100') throw new Error(`total ${await costDigits(row)}`)
+    await noOverflow('a history row with long items')
+    if (!(await page.evaluate(() => window.noReload))) throw new Error('the page reloaded')
+  })
+  await step('edit-service', async () => {
+    const row = services.locator(`li[data-id="${itemsId}"]`)
+    const form = row.locator('form')
+    const editBtn = `li[data-id="${itemsId}"] button.edit-service`
+    // Criterion 12: same date and odometer, different shops, different names; each action described by its row's cost and tasks.
+    const names = await services.locator(`li[data-id="${itemsId}"] .actions button, li[data-id="${garageId}"] .actions button`).evaluateAll((bs) => bs.map((b) => b.getAttribute('aria-label')))
+    if (names.length !== 4 || new Set(names).size !== 4) throw new Error(`names ${JSON.stringify(names)}`)
+    for (const b of await services.locator('.services > li .actions button').all()) {
+      const described = await describedText(b)
+      if (!described || described.includes('(missing)')) throw new Error(`"${await b.getAttribute('aria-label')}" described by "${described}"`)
+    }
+    const garageDesc = plain(await describedText(services.locator(`li[data-id="${garageId}"] button.delete-service`)))
+    if (!garageDesc.includes('250.50') || !garageDesc.includes('Oil') || !digitsOnly(await describedText(row.locator('button.edit-service'))).includes('39100')) throw new Error(`described by "${garageDesc}"`)
+    // Criterion 6: filled in, with the date, odometer and tasks as text and the hint.
+    await row.locator('button.edit-service').click()
+    await focusIs(`li[data-id="${itemsId}"] form input[name=shopName]`, 'Edit open')
+    if (await form.locator('input[name=date], input[name=odometerKm], input[name=taskIds]').count()) throw new Error('date, odometer or tasks editable')
+    const text = plain(await form.textContent())
+    if (!text.includes(SV.editHint) || !text.includes('59,500')) throw new Error(`edit form text "${text.slice(0, 120)}"`)
+    if ((await form.locator('input[name=shopName]').inputValue()) !== 'Garage Cohen' || (await itemRows(form).count()) !== 2 || (await itemInput(form, 0, 3).inputValue()) !== '2') throw new Error('edit form not filled in')
+    await noOverflow('the edit form')
+    await sweep('the edit form open')
+    // Escape and Cancel discard the changes, with focus back on the row's Edit.
+    await form.locator('input[name=shopName]').fill('Changed')
     await page.keyboard.press('Escape')
-    await focusIs(undo, 'after Escape on the Undo confirm')
-    // A failed undo keeps the row, with the error on it and focus back on the confirm button.
-    await row.locator('button.undo-service').click()
+    await focusIs(editBtn, 'after Escape on Edit')
+    await row.locator('button.edit-service').click()
+    if ((await form.locator('input[name=shopName]').inputValue()) !== 'Garage Cohen') throw new Error('Escape kept the change')
+    await itemRows(form).nth(0).locator('button').click()
+    await form.locator(':scope > .actions button.link').click()
+    await focusIs(editBtn, 'after Cancel on Edit')
+    if ((await row.locator('.service-items li').count()) !== 2) throw new Error('Cancel kept the removed item')
+    // Save updates the row in place: shop, notes, items and the recomputed total.
+    await row.locator('button.edit-service').click()
+    await form.locator('input[name=shopName]').fill('Cohen and Sons')
+    await form.locator('textarea[name=notes]').fill('Filter swapped')
+    await itemInput(form, 0, 3).fill('3')
+    if (digitsOnly(await sumField(form).inputValue()) !== '43650') throw new Error(`live total ${await sumField(form).inputValue()}`)
+    const isPut = (r) => r.request().method() === 'PUT'
+    let put = page.waitForResponse(isPut)
+    await form.locator('button:not(.link)').click()
+    let pr = await put
+    if (pr.status() !== 200 || pr.request().postDataJSON().items.length !== 2) throw new Error(`${pr.status()} ${pr.request().postData()}`)
+    await focusIs(editBtn, 'after saving the edit')
+    const after = plain(await row.textContent())
+    for (const want of ['Cohen and Sons', 'Filter swapped']) if (!after.includes(want)) throw new Error(`row lacks "${want}"`)
+    if ((await costDigits(row)) !== '43650') throw new Error(`total ${await costDigits(row)}`)
+    // Criterion 7: removing every item makes the total typed again, and the typed total is saved.
+    await row.locator('button.edit-service').click()
+    await itemRows(form).nth(0).locator('button').click()
+    await itemRows(form).nth(0).locator('button').click()
+    await form.locator('input[name=totalCost]').fill('80')
+    put = page.waitForResponse(isPut)
+    await form.locator('button:not(.link)').click()
+    pr = await put
+    if (pr.status() !== 200 || pr.request().postDataJSON().items.length !== 0 || pr.request().postDataJSON().totalCost !== 80 || (await pr.json()).totalCost !== 80) throw new Error(`${pr.status()} ${pr.request().postData()}`)
+    await focusIs(editBtn, 'after saving without items')
+    if ((await costDigits(row)) !== '8000' || (await row.locator('.service-items').count())) throw new Error('row not updated to 80 without items')
+    // QA Low 3: a (mocked) gone on Save whose record still comes back closes the edit form under the note.
+    await row.locator('button.edit-service').click()
+    await page.route('**/service-records/*', (r) => (r.request().method() === 'PUT'
+      ? r.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ code: 'serviceRecord.notFound' }) }) : r.fallback()), { times: 1 })
+    await form.locator('button:not(.link)').click()
+    await services.locator('p[role=status]', { hasText: SV.gone }).waitFor()
+    await row.locator('button.edit-service').waitFor()
+    if (await row.locator('form').count()) throw new Error('edit form stayed open under the gone note')
+    forgetExpected(404)
+    // Criterion 9 (Edit): deleted in another tab, then saved here; the history reloads with the note and the row drops.
+    await row.locator('button.edit-service').click()
+    await voidElsewhere(itemsId)
+    await form.locator('input[name=shopName]').fill('Too late')
+    await form.locator('button:not(.link)').click()
+    await services.locator('p[role=status]', { hasText: SV.gone }).waitFor()
+    await row.waitFor({ state: 'detached' })
+    if (await services.locator('.error').count()) throw new Error('an error shown with the note')
+    await focusIs('#service-history', 'after editing a deleted record')
+    forgetExpected(409)
+    if (!(await page.evaluate(() => window.noReload))) throw new Error('the page reloaded')
+  })
+  await step('delete-service', async () => {
+    const row = services.locator(`li[data-id="${garageId}"]`)
+    const del = `li[data-id="${garageId}"] button.delete-service`
+    // A confirm step: Cancel focused, Escape back to Delete.
+    await row.locator('button.delete-service').click()
+    await focusIs(`li[data-id="${garageId}"] .inline-form button.link`, 'Delete confirm open')
+    const confirm = row.locator('button.danger')
+    await tall(confirm, 'confirm Delete')
+    await noOverflow('the Delete confirm open')
+    await page.keyboard.press('Escape')
+    await focusIs(del, 'after Escape on the Delete confirm')
+    // A failed delete keeps the row, with the error on it and focus back on the confirm button.
+    await row.locator('button.delete-service').click()
     await page.route('**/void', (r) => r.fulfill({ status: 500, contentType: 'application/json', body: '{}' }), { times: 1 })
     await confirm.click()
     await row.locator('[role=alert]').waitFor()
-    if ((await row.locator('[role=alert]').textContent()) !== SV.generic) throw new Error('undo error')
-    await focusIs(`li[data-id="${garageId}"] button.danger`, 'after a failed undo')
+    if ((await row.locator('[role=alert]').textContent()) !== SV.generic) throw new Error('delete error')
+    await focusIs(`li[data-id="${garageId}"] button.danger`, 'after a failed delete')
     forget500()
     await confirm.click()
     await row.waitFor({ state: 'detached' })
-    await focusIs('.services > li:first-child button.undo-service', 'after Undo (the next older row)')
+    await focusIs('.services > li:first-child button.delete-service', 'after Delete (the next older row)')
     // Oil and Brakes go back, and so do the odometer and its history, without a reload.
     await odometerIs('59000')
     await badgeIs('Oil', ST.Overdue)
     if (!plain(await taskRow('Brakes').textContent()).includes(SV.at59000)) throw new Error('Brakes not back')
     if (digitsOnly(await page.locator('.history li .value').first().textContent()).startsWith('59500')) throw new Error('Service reading still shown')
-    // Undoing the oldest row moves focus to the newest.
-    await services.locator(`li[data-id="${backdatedId}"] button.undo-service`).click()
+    // Deleting the oldest row moves focus to the newest.
+    await services.locator(`li[data-id="${backdatedId}"] button.delete-service`).click()
     await services.locator(`li[data-id="${backdatedId}"] button.danger`).click()
     await services.locator(`li[data-id="${backdatedId}"]`).waitFor({ state: 'detached' })
-    await focusIs('.services > li:first-child button.undo-service', 'after undoing the oldest row')
-    // Review 1: undoing a Mark done from the history also ends its Undo bar in the tasks (it would answer 409).
+    await focusIs('.services > li:first-child button.delete-service', 'after deleting the oldest row')
+    // MVP3-A review 1: deleting a Mark done from the history also ends its Undo bar in the tasks (it would answer 409).
     const reset = page.waitForResponse((r) => r.request().method() === 'POST' && r.url().endsWith('/reset'))
     await tasks.locator(`button[aria-label="${RS.done}Oil"]`).click()
     const resetId = (await (await reset).json()).serviceRecordId
     await taskRow('Oil').locator('.undo').waitFor()
-    await services.locator(`li[data-id="${resetId}"] button.undo-service`).click()
+    await services.locator(`li[data-id="${resetId}"] button.delete-service`).click()
     await services.locator(`li[data-id="${resetId}"] button.danger`).click()
     await services.locator(`li[data-id="${resetId}"]`).waitFor({ state: 'detached' })
-    if (await tasks.locator('.undo').count()) throw new Error('tasks Undo bar outlived the history Undo')
+    if (await tasks.locator('.undo').count()) throw new Error('tasks Undo bar outlived the history Delete')
+    // Criterion 9 (Delete): deleted in another tab; the (mocked) 404 reloads the history with the note and the row drops.
+    const topId = await serviceItems().first().getAttribute('data-id')
+    const top = services.locator(`li[data-id="${topId}"]`)
+    await top.locator('button.delete-service').click()
+    await voidElsewhere(topId)
+    await page.route('**/void', (r) => r.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ code: 'serviceRecord.notFound' }) }), { times: 1 })
+    await top.locator('button.danger').click()
+    await services.locator('p[role=status]', { hasText: SV.gone }).waitFor()
+    await top.waitFor({ state: 'detached' })
+    if (await services.locator('.error').count()) throw new Error('an error shown with the note')
+    forgetExpected(404)
     if (!(await page.evaluate(() => window.noReload))) throw new Error('the page reloaded')
     await page.setViewportSize(s.viewport)
   })
@@ -1419,9 +1642,11 @@ for (const s of setups) {
     await taskRow(TK.belt).waitFor()
     const controls = await tasks.locator('button, input, select').count()
     if (controls) throw new Error(`${controls} controls on an archived car's tasks`)
-    // MVP3-A criterion 11: the history is shown, without Record or Undo.
-    await serviceItems().first().waitFor()
-    if (await services.locator('button, input').count()) throw new Error('Record or Undo on an archived car')
+    // MVP3-A criterion 11 and MVP3-B criterion 13: the history and its items are shown, without Record, Edit or Delete.
+    await apiCall('POST', `/vehicles/${carId()}/service-records`, { date: await localDate(), odometerKm: 59000, items: [{ description: 'Wiper', quantity: 2, unitCost: 30 }] })
+    await page.reload()
+    await services.locator('.service-items li', { hasText: 'Wiper' }).waitFor()
+    if (await services.locator('button, input').count()) throw new Error('Record, Edit or Delete on an archived car')
     await page.click('main > a.back')
     await page.locator('a[href="/cars/new"]').waitFor() // the list hides archived cars again
   })

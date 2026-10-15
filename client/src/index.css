@@ -239,3 +239,13 @@ h2 a { margin-block: -0.5625rem; }
 /* Car detail: service history, newest first */
 .services .value { font: 600 1.35rem/1.2 var(--gauge); font-variant-numeric: tabular-nums; }
 .services .notes { white-space: pre-line; } /* keeps the user's line breaks; long words wrap through body's overflow-wrap */
+
+/* Service line items: a bordered block per row in the form, a wrapping line per item in the history */
+.inline-form > .items { flex-basis: 100%; display: grid; gap: 0.75rem; }
+.item { margin: 0; padding: 0.5rem 0.75rem 0.75rem; min-width: 0; border: 1px solid var(--line); border-radius: 8px; display: flex; flex-wrap: wrap; align-items: end; gap: 0.5rem 0.75rem; }
+.item > label { flex: 1 1 9rem; }
+.item > label.wide, .item > p { flex-basis: 100%; }
+.inline-form input[readonly] { background: var(--bg); } /* the item sum: shown, not typed */
+.service-items { list-style: none; padding: 0; margin: 0; display: grid; gap: 0.25rem; }
+.service-items li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 0.75rem; }
+.service-items bdi { font-variant-numeric: tabular-nums; }
