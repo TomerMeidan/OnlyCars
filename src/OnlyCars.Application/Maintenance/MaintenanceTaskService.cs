@@ -161,6 +161,64 @@ public class MaintenanceTaskService(IAppDbContext db, VehicleService vehicleServ
         return records.Select(ToDto).ToList();
     }
 
+    public const int MaxSearchLength = 100;
+    public const int MaxPageSize = 100;
+
+    /// <summary>
+    /// Non-voided records of all the caller's cars (archived included), filtered with AND, newest first by
+    /// (date, odometer, creation time). Another user's vehicleId or taskId just matches nothing, so no id is confirmed.
+    /// </summary>
+    public async Task<ServiceRecordPageDto> SearchRecordsAsync(Guid userId, Guid? vehicleId, Guid? taskId, DateOnly? from, DateOnly? to,
+        string? q, int skip, int take, CancellationToken ct = default)
+    {
+        if (from > to)
+        {
+            throw new ValidationFailedException("serviceRecord.invalidDateRange", "The start date must not be after the end date.");
+        }
+        var term = string.IsNullOrWhiteSpace(q) ? null : q.Trim();
+        if (term?.Length > MaxSearchLength)
+        {
+            throw new ValidationFailedException("serviceRecord.searchTooLong", $"The search can be up to {MaxSearchLength} characters.");
+        }
+        if (skip < 0 || take < 1 || take > MaxPageSize)
+        {
+            throw new ValidationFailedException("serviceRecord.invalidPaging", $"Skip must be 0 or more and take 1 to {MaxPageSize}.");
+        }
+
+        var query = db.ServiceRecords.Where(r => r.Vehicle!.UserId == userId && !r.IsVoided);
+        if (vehicleId is { } v) query = query.Where(r => r.VehicleId == v);
+        if (taskId is { } t) query = query.Where(r => r.Tasks.Any(j => j.MaintenanceTaskId == t));
+        if (from is { } f) query = query.Where(r => r.Date >= f);
+        if (to is { } u) query = query.Where(r => r.Date <= u);
+        if (term is not null)
+        {
+            // shortcut: unindexed LIKE '%term%' scans the user's records, fine at personal-app scale; add full-text search if it gets slow.
+            // ToLower on both sides keeps it case-insensitive on any collation (and on the case-sensitive InMemory test provider).
+            var lower = term.ToLower();
+            query = query.Where(r =>
+                (r.ShopName != null && r.ShopName.ToLower().Contains(lower)) ||
+                (r.Notes != null && r.Notes.ToLower().Contains(lower)) ||
+                r.Items.Any(i => i.Description.ToLower().Contains(lower) ||
+                    (i.Brand != null && i.Brand.ToLower().Contains(lower)) ||
+                    (i.PartNumber != null && i.PartNumber.ToLower().Contains(lower))));
+        }
+
+        var totalCount = await query.CountAsync(ct);
+        var totalCost = await query.SumAsync(r => r.TotalCost ?? 0, ct);
+        var page = await query
+            .Include(r => r.Tasks).ThenInclude(j => j.MaintenanceTask)
+            .Include(r => r.Items)
+            .AsSplitQuery()
+            .OrderByDescending(r => r.Date)
+            .ThenByDescending(r => r.OdometerKm)
+            .ThenByDescending(r => r.CreatedAt)
+            .ThenBy(r => r.Id) // unique tie-break so pages never overlap or skip a row
+            .Skip(skip).Take(take)
+            .ToListAsync(ct);
+
+        return new(page.Select(ToDto).ToList(), totalCount, totalCost);
+    }
+
     /// <summary>
     /// Records a past (or today's) service: the record, one join row per task with its old LastDone* snapshot, LastDone*
     /// moved only when the record is at least as recent (decisions.md), and a Service reading under the manual date-order
@@ -477,7 +535,8 @@ public class MaintenanceTaskService(IAppDbContext db, VehicleService vehicleServ
         r.Tasks.Where(j => j.MaintenanceTask is not null).Select(j => j.MaintenanceTask!)
             .OrderBy(t => t.Name).Select(t => new ServiceRecordTaskDto(t.Id, t.Name, t.Category)).ToList(),
         r.Items.OrderBy(i => i.SortOrder)
-            .Select(i => new ServiceItemDto(i.Id, i.Description, i.Brand, i.PartNumber, i.Quantity, i.UnitCost, i.IsLabor)).ToList());
+            .Select(i => new ServiceItemDto(i.Id, i.Description, i.Brand, i.PartNumber, i.Quantity, i.UnitCost, i.IsLabor)).ToList(),
+        r.VehicleId);
 
     // Scoped to the owned vehicle, so another car's task id is simply not found.
     private async Task<MaintenanceTask> FindAsync(Guid vehicleId, Guid taskId, CancellationToken ct) =>

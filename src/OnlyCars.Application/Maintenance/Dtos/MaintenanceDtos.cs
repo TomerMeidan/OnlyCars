@@ -55,7 +55,10 @@ public record ServiceRecordTaskDto(Guid Id, string Name, TaskCategory Category);
 
 // A null ShopName is DIY; a null TotalCost was skipped. Tasks are the linked tasks that still exist.
 public record ServiceRecordDto(Guid Id, DateOnly Date, decimal OdometerKm, string? ShopName, decimal? TotalCost, string? Notes,
-    List<ServiceRecordTaskDto> Tasks, List<ServiceItemDto> Items);
+    List<ServiceRecordTaskDto> Tasks, List<ServiceItemDto> Items, Guid VehicleId);
+
+// One page of GET /api/service-records; TotalCount and TotalCost (null costs as 0) cover every match, not just the page.
+public record ServiceRecordPageDto(List<ServiceRecordDto> Items, int TotalCount, decimal TotalCost);
 
 // In the user's order. On a labour row Quantity is hours.
 public record ServiceItemDto(Guid Id, string Description, string? Brand, string? PartNumber, decimal Quantity, decimal UnitCost, bool IsLabor);
