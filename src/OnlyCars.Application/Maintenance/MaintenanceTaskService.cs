@@ -359,6 +359,7 @@ public class MaintenanceTaskService(IAppDbContext db, VehicleService vehicleServ
                 (task.LastDoneDate, task.LastDoneOdometerKm) = FallBack(self, links);
                 task.UpdatedAt = now;
             }
+            Repoint(self, links, oldKey, (self.PreviousLastDoneDate, self.PreviousLastDoneOdometerKm), now);
             db.ServiceRecordTasks.Remove(self);
             record.Tasks.Remove(self);
         }
@@ -379,6 +380,7 @@ public class MaintenanceTaskService(IAppDbContext db, VehicleService vehicleServ
                     (task.LastDoneDate, task.LastDoneOdometerKm) = newKey;
                 }
                 if ((task.LastDoneDate, task.LastDoneOdometerKm) != current) task.UpdatedAt = now;
+                Repoint(self, links, oldKey, newKey, now);
             }
         }
 
@@ -509,6 +511,18 @@ public class MaintenanceTaskService(IAppDbContext db, VehicleService vehicleServ
 
         var latest = own.Select(j => j.ServiceRecord!).Where(r => !r.IsVoided).MaxBy(r => (r.Date, r.OdometerKm, r.CreatedAt));
         return latest is not null && (latest.Date, latest.OdometerKm).CompareTo(baseValue) > 0 ? (latest.Date, latest.OdometerKm) : baseValue;
+    }
+
+    // Keeps the snapshot chain FallBack follows by (date, km): the task's other links whose snapshot is this record's old values
+    // now point at its new values (moved) or at its own snapshot (task removed).
+    private static void Repoint(ServiceRecordTask self, List<ServiceRecordTask> links, (DateOnly, decimal) from, (DateOnly, decimal) to, DateTimeOffset now)
+    {
+        foreach (var j in links.Where(j => j.MaintenanceTaskId == self.MaintenanceTaskId && j != self
+                     && (j.PreviousLastDoneDate, j.PreviousLastDoneOdometerKm) == from))
+        {
+            (j.PreviousLastDoneDate, j.PreviousLastDoneOdometerKm) = to;
+            j.UpdatedAt = now;
+        }
     }
 
     private static void ValidateCost(decimal? cost)

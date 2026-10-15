@@ -36,6 +36,7 @@ Same shape as POST's response; on POST `tasks` is still only the linked tasks. A
 - **Removed task:** if its last done equals the record's old (date, km), it falls back by the "Void recompute, corrected" rule for that task; the link is deleted.
 - **Added task:** a link with a snapshot of the task's current last done; its last done moves to the record only if the record is at least as recent (by date, then km).
 - **Kept task, when date or odometer changed:** if its last done equals the record's old (date, km), it becomes the later of the void-rule fallback and the record's new (date, km); otherwise it moves only if the new values are at least as recent.
+- **Snapshot chain:** other records' links of the same task whose snapshot equals this record's old (date, km) are re-pointed: to this record's own snapshot when the task is removed, to the new (date, km) when it is kept and moved. So voiding the records later still restores the original last done, in any order. Internal only; no response change.
 - Records made by Mark done are edited the same way.
 
 ### Order of checks (first failure wins; nothing is saved on any error)

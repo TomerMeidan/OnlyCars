@@ -303,6 +303,35 @@ public class ServiceRecordEditTests
         Assert.Equal((Today.AddDays(-20), 48_000m), await LastDoneAsync(oil));
     }
 
+    // Review High: B's snapshot is A's old values; editing A must keep the chain, so voiding both, in either order, restores the original.
+    [Theory]
+    [InlineData("moveBeforeB", true)]
+    [InlineData("moveBeforeB", false)]
+    [InlineData("moveAfterB", true)]
+    [InlineData("moveAfterB", false)]
+    [InlineData("remove", true)]
+    [InlineData("remove", false)]
+    public async Task EditedRecord_KeepsTheSnapshotChain_SoVoidingBothRestoresTheOriginal(string edit, bool voidAFirst)
+    {
+        var car = await CreateCarAsync();
+        var oil = await CreateTaskAsync(car);
+        var a = await RecordAsync(car, 100, 45_000, oil);
+        var b = await RecordAsync(car, 50, 47_000, oil);
+
+        await (edit switch
+        {
+            "moveBeforeB" => EditAsync(car, a, Today.AddDays(-80), 46_000),
+            "moveAfterB" => EditAsync(car, a, Today.AddDays(-30), 48_000),
+            _ => EditAsync(car, a, taskIds: [])
+        });
+
+        foreach (var record in voidAFirst ? new[] { a, b } : [b, a])
+        {
+            await tasks.VoidAsync(userId, car, record);
+        }
+        Assert.Equal((OriginalDate, 40_000m), await LastDoneAsync(oil));
+    }
+
     // --- Criterion 4: errors save nothing ---
 
     [Fact]
