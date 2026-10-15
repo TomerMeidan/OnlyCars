@@ -2,7 +2,7 @@
 
 One line per requirement in `docs/spec.md`. Updated after every ticket is signed off. Evidence and details are in `docs/requirements-status.md`.
 
-**Last updated:** 2026-10-15, MVP3-D signed off (edit a service's date, odometer and tasks); LOW-1 (a batch of small fixes) next, then the dashboard (MVP4-A)
+**Last updated:** 2026-10-15, LOW-1 signed off (a batch of small fixes to service history); the dashboard (MVP4-A) next
 **Progress:** 21 of 50 required items done, 5 partly done, 24 not started. The 7 optional items are not counted.
 
 Legend:
@@ -21,7 +21,7 @@ Legend:
 - [x] **Step 1: Accounts, cars, odometer.** Done (MVP1-A, B and C signed off), apart from the gaps marked below. Settings signed off: language, theme and currency (SET-1), and km or miles (SET-2).
 - [x] **Step 2: Maintenance tasks, templates, Reset.** Done (MVP2-A, B and C signed off).
 - [~] **Step 3: Service history with costs** MVP3-A, B, C and D signed off (history list, record a past service with parts and labour, edit everything including date, odometer and tasks, delete, filter and search on the Service history page). 🔨 Now: LOW-1 (a batch of small fixes). *Missing: attachments (waits for Cloudflare R2).*
-- [ ] **Step 4: Dashboard with due and overdue status** (MVP4-A, after LOW-1)
+- [ ] **Step 4: Dashboard with due and overdue status** 🔨 Next: MVP4-A (overdue and due-soon counts, this month's spend, each car's next tasks with Mark done and quick odometer entry)
 - [ ] **Step 5: Checklists, then tires, then reports and notifications**
 - [x] **Before going online: SEC-1** (limit login attempts, account lockout, constant-time login). Signed off.
 
@@ -84,9 +84,9 @@ Legend:
 - [ ] Snooze, and a configurable lead time
 
 ## 10. Dashboard
-- [ ] All cars at a glance, next due items sorted by urgency
-- [ ] Overdue count and monthly spend summary
-- [ ] Quick actions: update odometer, reset a task, start a checklist
+- [ ] All cars at a glance, next due items sorted by urgency 🔨
+- [ ] Overdue count and monthly spend summary 🔨
+- [ ] Quick actions: update odometer, reset a task, start a checklist 🔨 *(MVP4-A covers odometer and reset; "start a checklist" waits for checklists)*
 
 ## 12. Non-Functional
 - [x] Email/password login *(optional Google login: not started)*
@@ -108,5 +108,5 @@ Legend:
 
 ## Waiting on the owner
 - [ ] Create a Cloudflare R2 bucket and access key. This blocks car photos and receipts.
-- [ ] Review the delegated decisions in `docs/decisions.md`, especially the 12 starter task intervals, the task status rules (when a task counts as "Due soon" or "Overdue"), the Reset and Undo rules (a one-tap reset counts as DIY; Undo only for the latest reset of a task), the settings rules (changing the currency does not convert old amounts; only ILS, USD, EUR and GBP), the km/miles rules (converted template intervals such as 6,214 mi rather than round mile values; the unit is not asked at sign-up; the Hebrew label "קילומטראז׳" kept in miles), the service history rules (undone records are hidden; an old service never moves a task's last done backwards; Undo works on any record, in any order; a corrected later-dated service at a lower odometer moves last done to that lower reading), the line item rules (the total becomes the sum of the items whenever there are items), the search rules (a separate Service history page for all cars, read-only, with edit and delete staying on the car page; the search doesn't look in task names), and the edit rules for MVP3-D (changing a service's date, odometer or tasks moves the car's odometer and the tasks' last done; a service can't be moved to another car).
+- [ ] Review the delegated decisions in `docs/decisions.md`, especially the 12 starter task intervals, the task status rules (when a task counts as "Due soon" or "Overdue"), the Reset and Undo rules (a one-tap reset counts as DIY; Undo only for the latest reset of a task), the settings rules (changing the currency does not convert old amounts; only ILS, USD, EUR and GBP), the km/miles rules (converted template intervals such as 6,214 mi rather than round mile values; the unit is not asked at sign-up; the Hebrew label "קילומטראז׳" kept in miles), the service history rules (undone records are hidden; an old service never moves a task's last done backwards; Undo works on any record, in any order; a corrected later-dated service at a lower odometer moves last done to that lower reading), the line item rules (the total becomes the sum of the items whenever there are items), the search rules (a separate Service history page for all cars, read-only, with edit and delete staying on the car page; the search doesn't look in task names), and the edit rules for MVP3-D (changing a service's date, odometer or tasks moves the car's odometer and the tasks' last done; a service can't be moved to another car), two readings on the same day now ordered by value (the higher one counts as later), and the dashboard rules (home page `/`; this month's spend includes archived cars so it matches the Service history page; one-tap Mark done without cost or notes).
 - [ ] Create an Azure account, when it's time to deploy. You said not yet, so no deployment work is planned until you say so.

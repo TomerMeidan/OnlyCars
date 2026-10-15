@@ -312,8 +312,8 @@ for (const s of setups) {
 
   // MVP3-A: service history.
   const SV = he
-    ? { items: 'חלקים ועבודה', empty: 'עדיין לא נרשמו טיפולים.', record: 'רישום טיפול', diy: 'טיפול עצמי', editOf: 'עריכת הטיפול מ־', deleteOf: 'מחיקת הטיפול מ־', gone: 'הטיפול הזה כבר נמחק.', editHint: 'כדי לשנות את התאריך, הקילומטראז׳ או המשימות, מחקו את הטיפול ורשמו אותו מחדש.', labour: 'עבודה', item2Qty: 'פריט 2: הזינו כמות גדולה מ־0 ועד 10,000, עם עד 2 ספרות אחרי הנקודה.', item2Hours: 'פריט 2, שעות', item1Part: 'פריט 1, מק״ט', legend: 'משימות שבוצעו', hint: 'השאירו ריק לטיפול עצמי.', future: 'תאריך הטיפול לא יכול להיות בעתיד.', km: 'ק״מ', generic: 'משהו השתבש. נסו שוב.', odoLabel: 'קילומטראז׳ במיילים', at59500: 'ב־59,500 ק״מ', at59000: 'ב־59,000 ק״מ' }
-    : { items: 'Parts and labour', empty: 'No services recorded yet.', record: 'Record a service', diy: 'DIY', editOf: 'Edit the service from ', deleteOf: 'Delete the service from ', gone: 'This service was already deleted.', editHint: 'To change the date, odometer or tasks, delete this service and record it again.', labour: 'Labour', item2Qty: 'Item 2: Enter a quantity above 0 and up to 10,000 with up to 2 decimals.', item2Hours: 'Item 2, Hours', item1Part: 'Item 1, Part number', legend: 'Tasks done', hint: 'Leave empty for DIY.', future: "The service date can't be in the future.", km: 'km', generic: 'Something went wrong. Please try again.', odoLabel: 'Odometer in miles', at59500: 'at 59,500 km', at59000: 'at 59,000 km' }
+    ? { items: 'חלקים ועבודה', empty: 'עדיין לא נרשמו טיפולים.', record: 'רישום טיפול', diy: 'טיפול עצמי', editOf: 'עריכת הטיפול מ־', deleteOf: 'מחיקת הטיפול מ־', gone: 'הטיפול הזה כבר נמחק.', editHint: 'כדי לשנות את התאריך, הקילומטראז׳ או המשימות, מחקו את הטיפול ורשמו אותו מחדש.', labour: 'עבודה', item2Qty: 'פריט 2: הזינו כמות בין 0.01 ל־10,000, עם עד 2 ספרות אחרי הנקודה.', taskGone: 'המשימה לא נמצאה.', item2Hours: 'פריט 2, שעות', item1Part: 'פריט 1, מק״ט', legend: 'משימות שבוצעו', hint: 'השאירו ריק לטיפול עצמי.', future: 'תאריך הטיפול לא יכול להיות בעתיד.', km: 'ק״מ', generic: 'משהו השתבש. נסו שוב.', odoLabel: 'קילומטראז׳ במיילים', at59500: 'ב־59,500 ק״מ', at59000: 'ב־59,000 ק״מ' }
+    : { items: 'Parts and labour', empty: 'No services recorded yet.', record: 'Record a service', diy: 'DIY', editOf: 'Edit the service from ', deleteOf: 'Delete the service from ', gone: 'This service was already deleted.', editHint: 'To change the date, odometer or tasks, delete this service and record it again.', labour: 'Labour', item2Qty: 'Item 2: Enter a quantity above 0 and up to 10,000 with up to 2 decimals.', taskGone: 'This task was not found.', item2Hours: 'Item 2, Hours', item1Part: 'Item 1, Part number', legend: 'Tasks done', hint: 'Leave empty for DIY.', future: "The service date can't be in the future.", km: 'km', generic: 'Something went wrong. Please try again.', odoLabel: 'Odometer in miles', at59500: 'at 59,500 km', at59000: 'at 59,000 km' }
   const services = page.locator('section[aria-labelledby=service-history]')
   const serviceItems = () => services.locator('.services > li')
   const recordForm = services.locator('form')
@@ -928,6 +928,8 @@ for (const s of setups) {
     await date.fill(await day(1))
     await save.click()
     if (!(await date.evaluate((el) => el.validity.rangeOverflow))) throw new Error('future date not blocked')
+    // LOW-1 L7: the field's message is translated, as the odometer's is.
+    if ((await date.evaluate((el) => el.validationMessage)) !== SV.future) throw new Error(`date message "${await date.evaluate((el) => el.validationMessage)}"`)
     await page.waitForTimeout(300)
     page.off('request', count)
     if (posts) throw new Error(`${posts} POSTs for a future date`)
@@ -1258,6 +1260,8 @@ for (const s of setups) {
     const save = form.locator(':scope > .actions button:not(.link)')
     await row.locator('button.edit-service').click()
     await focusIs(`li[data-id="${id}"] form input[name=date]`, 'Edit open')
+    // LOW-1 L9: Record a service is hidden while a row's Edit form is open.
+    await recordBtn.waitFor({ state: 'detached', timeout: 2000 }).catch(() => { throw new Error('Record a service shown during Edit') })
     if ((await date.inputValue()) !== (await day(0)) || (await odo.inputValue()) !== String(cur + 1000)) throw new Error('not filled in')
     await form.locator('input[name=taskIds]').first().waitFor()
     if (!(await form.getByRole('checkbox', { name: 'Brakes', exact: true }).isChecked()) || (await form.getByRole('checkbox', { name: 'Oil', exact: true }).isChecked())) throw new Error('task boxes not as linked')
@@ -1270,6 +1274,8 @@ for (const s of setups) {
     await date.fill(await day(1))
     await save.click()
     if (!(await date.evaluate((el) => el.validity.rangeOverflow))) throw new Error('future date not blocked')
+    // LOW-1 L7: the field's message is translated, as the odometer's is.
+    if ((await date.evaluate((el) => el.validationMessage)) !== SV.future) throw new Error(`date message "${await date.evaluate((el) => el.validationMessage)}"`)
     await date.fill(await day(0))
     await odo.fill('20000000')
     await save.click()
@@ -1291,6 +1297,7 @@ for (const s of setups) {
     let body = pr.request().postDataJSON()
     if (pr.status() !== 200 || body.odometerKm !== cur + 800 || body.date !== (await day(0)) || body.taskIds.length !== 1) throw new Error(`${pr.status()} ${pr.request().postData()}`)
     await focusIs(editBtn, 'after saving the odometer')
+    await recordBtn.waitFor({ timeout: 2000 })
     await odometerIs(String(cur + 800))
     if (!digitsOnly(await row.locator('.value').textContent()).startsWith(String(cur + 800))) throw new Error('row odometer')
     if (!(await page.locator('.history li', { hasText: RS.service }).filter({ hasText: (cur + 800).toLocaleString('en') }).count())) throw new Error('Service reading not moved')
@@ -1333,6 +1340,34 @@ for (const s of setups) {
     // Criterion 8: unticking Brakes makes it fall back; ticking Oil moves it to this, the most recent record.
     const row = services.locator(`li[data-id="${id}"]`)
     const form = row.locator('form')
+    const editBtn = `li[data-id="${id}"] button.edit-service`
+    // LOW-1 L9: Record a service comes back after Escape and Cancel, with focus on Edit (MVP1-C).
+    await row.locator('button.edit-service').click()
+    await form.locator('input[name=taskIds]').first().waitFor()
+    await recordBtn.waitFor({ state: 'detached', timeout: 2000 }).catch(() => { throw new Error('Record a service shown during Edit') })
+    await page.keyboard.press('Escape')
+    await focusIs(editBtn, 'after Escape')
+    await recordBtn.waitFor({ timeout: 2000 })
+    await row.locator('button.edit-service').click()
+    await form.locator(':scope > .actions button.link').click()
+    await focusIs(editBtn, 'after Cancel')
+    await recordBtn.waitFor({ timeout: 2000 })
+    // LOW-1 L8: maintenanceTask.notFound (mocked: Oil was deleted meanwhile) reloads the tasks, keeping the form and its other input.
+    await row.locator('button.edit-service').click()
+    await form.getByRole('checkbox', { name: 'Brakes', exact: true }).uncheck()
+    await form.getByRole('checkbox', { name: 'Oil', exact: true }).check()
+    await form.locator('input[name=shopName]').fill('Kept shop')
+    await page.route('**/service-records/*', (r) => (r.request().method() === 'PUT' ? r.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ code: 'maintenanceTask.notFound' }) }) : r.fallback()), { times: 1 })
+    const reload = page.waitForRequest((q) => q.method() === 'GET' && q.url().endsWith(`/vehicles/${carId()}/tasks`))
+    await page.route(`**/vehicles/${carId()}/tasks`, async (r) => { const res = await r.fetch(); await r.fulfill({ response: res, json: (await res.json()).filter((x) => x.name !== 'Oil') }) }, { times: 1 })
+    await form.locator(':scope > .actions button:not(.link)').click()
+    await reload
+    await form.getByRole('checkbox', { name: 'Oil', exact: true }).waitFor({ state: 'detached' })
+    if ((await form.locator('[role=alert]').textContent()) !== SV.taskGone) throw new Error(`notFound error "${await form.locator('[role=alert]').textContent()}"`)
+    if ((await form.locator('input[name=shopName]').inputValue()) !== 'Kept shop' || (await form.getByRole('checkbox', { name: 'Brakes', exact: true }).isChecked())) throw new Error('notFound lost the input')
+    forgetExpected(404)
+    await form.locator(':scope > .actions button.link').click()
+    await focusIs(editBtn, 'after Cancel')
     await row.locator('button.edit-service').click()
     await form.getByRole('checkbox', { name: 'Brakes', exact: true }).uncheck()
     await form.getByRole('checkbox', { name: 'Oil', exact: true }).check()
@@ -1858,6 +1893,8 @@ for (const s of setups) {
     await arrivedAt(HS.title)
     // Criterion 5: every car's records, newest first, with the count and total of all matches.
     await summaryIs(histAll.totalCount, histAll.totalCost)
+    // LOW-1 L3: the Hebrew total sits in a first-strong isolate, as a row's <bdi> amount.
+    if (he && !(await histStatus.textContent()).includes(`\u2068${await moneyText(histAll.totalCost)}\u2069`)) throw new Error('summary total not isolated like a row amount')
     if (histAll.totalCount <= 50 || histAll.totalCount > 100) throw new Error(`${histAll.totalCount} records`)
     await histRows.nth(49).waitFor()
     if ((await histRows.count()) !== 50) throw new Error(`${await histRows.count()} rows on the first page`)
@@ -1921,6 +1958,22 @@ for (const s of setups) {
     await page.waitForURL((u) => u.searchParams.get('vehicleId') === corolla)
     await page.waitForFunction(() => !document.querySelectorAll('main .filters select')[1]?.value, null, { timeout: 2000 }).catch(() => {}) // the URL changes before React renders
     if (params().taskId || (await taskFilter.inputValue()) !== '') throw new Error('task not reset with the car')
+    // LOW-1 L4: at 390px the archived car's name and tag fit the select (the arrow takes about 24px).
+    const room = await carFilter.evaluate((el) => {
+      const cs = getComputedStyle(el), span = document.createElement('span')
+      span.style.cssText = `font: ${cs.font}; white-space: pre; position: absolute`
+      span.textContent = el.selectedOptions[0].text
+      document.body.append(span)
+      const left = el.clientWidth - parseFloat(cs.paddingInlineStart) - parseFloat(cs.paddingInlineEnd) - 24 - span.offsetWidth
+      span.remove()
+      return left
+    })
+    if (room < 0) throw new Error(`archived car name cut by ${-room}px`)
+    // LOW-1 L2: at 1280px no filter sits alone on a row.
+    await page.setViewportSize({ width: 1280, height: 800 })
+    const tops = await filterBar.locator(':scope > label:not(.wide)').evaluateAll((ls) => ls.map((l) => Math.round(l.getBoundingClientRect().top)))
+    if (tops.some((t) => tops.filter((u) => u === t).length < 2)) throw new Error(`a filter alone on its row: ${tops}`)
+    await page.setViewportSize({ width: 390, height: 844 })
     // Criterion 9: Back restores the car, the task and their results.
     await page.goBack()
     await summaryIs(1, 45.5)
@@ -1988,6 +2041,8 @@ for (const s of setups) {
     const loadAlert = page.locator('main .card [role=alert]')
     await loadAlert.waitFor()
     if ((await loadAlert.textContent()) !== HS.generic || (await histRows.count()) !== 1) throw new Error('a failed reload lost the rows or the error')
+    // LOW-1 L1: the stale rows' count and total don't show beside the new filter.
+    if (await histStatus.textContent()) throw new Error(`stale summary "${plain(await histStatus.textContent())}"`)
     forgetExpected(500)
     await page.getByRole('button', { name: HS.retry, exact: true }).click()
     await summaryIs(3, 445.5)
@@ -2014,16 +2069,17 @@ for (const s of setups) {
     await summaryIs(53, civicAll.totalCost)
     if ((await carFilter.inputValue()) !== civicId) throw new Error('car not selected')
     // Review: a car that isn't the user's drops from the URL, with its task, instead of filtering under All cars.
-    // Its tasks request, sent before the cars load, answers 404 (logged once); wait for that to forget it.
-    const tasks404 = page.waitForEvent('console', (m) => m.text().includes('status of 404'))
+    // LOW-1 L5: no tasks request for it, so no tasks error.
+    let taskGets = 0
+    const countTasks = (q) => q.url().includes('/tasks') && taskGets++
+    page.on('request', countTasks)
     await page.goto(`${BASE}/history?vehicleId=${crypto.randomUUID()}&taskId=${civicTaskId}&q=a`)
     await page.waitForURL((u) => !u.searchParams.has('vehicleId'))
     if (!same(params(), { q: 'a' }) || (await carFilter.inputValue()) !== '') throw new Error(`URL ${page.url()}`)
-    await tasks404
-    await page.waitForLoadState('networkidle') // StrictMode may send it twice
-    const before = run.badResponses.length
-    run.badResponses = run.badResponses.filter((r) => !(r.startsWith('404 GET') && r.includes('/tasks')))
-    for (let n = before - run.badResponses.length; n > 0; n--) run.consoleErrors.splice(run.consoleErrors.findLastIndex((e) => e.includes('status of 404')), 1)
+    await page.waitForLoadState('networkidle')
+    page.off('request', countTasks)
+    if (taskGets) throw new Error(`${taskGets} tasks requests for an unknown car`)
+    if (await filterBar.locator('[role=alert]').count()) throw new Error('an error for an unknown car')
     await page.setViewportSize(s.viewport)
   })
   await step('switch-language', async () => {

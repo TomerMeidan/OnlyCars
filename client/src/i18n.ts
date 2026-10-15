@@ -418,9 +418,10 @@ const he: typeof en = {
   search: 'חיפוש',
   searchHint: 'מוסך, הערות, חלקים או מק״טים.',
   clearFilters: 'ניקוי הסינון',
-  historySummary_one: 'טיפול אחד, סה״כ ⁦{{total}}⁩',
-  historySummary_two: 'שני טיפולים, סה״כ ⁦{{total}}⁩',
-  historySummary_other: '⁦{{count, number}}⁩ טיפולים, סה״כ ⁦{{total}}⁩',
+  // The total in a first-strong isolate, as the rows' <bdi>, so the currency sits where it does in a row.
+  historySummary_one: 'טיפול אחד, סה״כ ⁨{{total}}⁩',
+  historySummary_two: 'שני טיפולים, סה״כ ⁨{{total}}⁩',
+  historySummary_other: '⁦{{count, number}}⁩ טיפולים, סה״כ ⁨{{total}}⁩',
   noMatches: 'אין טיפולים שתואמים לסינון.',
   showMore: 'הצגת עוד',
   retry: 'נסו שוב',
@@ -429,7 +430,7 @@ const he: typeof en = {
     intervalTime: 'הזינו מרווח זמן של עד ⁦20⁩ שנה (⁦243⁩ חודשים או ⁦7,300⁩ ימים).',
     dueSoonPercent: 'הזינו מספר שלם בין ⁦1⁩ ל־⁦50⁩.',
     cost: 'הזינו עלות בין ⁦0⁩ ל־⁦1,000,000⁩, עם עד ⁦2⁩ ספרות אחרי הנקודה.',
-    quantity: 'הזינו כמות גדולה מ־⁦0⁩ ועד ⁦10,000⁩, עם עד ⁦2⁩ ספרות אחרי הנקודה.',
+    quantity: 'הזינו כמות בין ⁦0.01⁩ ל־⁦10,000⁩, עם עד ⁦2⁩ ספרות אחרי הנקודה.',
   },
   categories: {
     Oil: 'שמן', Filters: 'פילטרים', Brakes: 'בלמים', Tires: 'צמיגים', Fluids: 'נוזלים',
@@ -510,7 +511,7 @@ const he: typeof en = {
       invalidDescription: 'פריט ⁦{{n}}⁩: הזינו תיאור של עד ⁦100⁩ תווים.',
       brandTooLong: 'פריט ⁦{{n}}⁩: הזינו יצרן של עד ⁦100⁩ תווים.',
       partNumberTooLong: 'פריט ⁦{{n}}⁩: הזינו מק״ט של עד ⁦50⁩ תווים.',
-      invalidQuantity: 'פריט ⁦{{n}}⁩: הזינו כמות גדולה מ־⁦0⁩ ועד ⁦10,000⁩, עם עד ⁦2⁩ ספרות אחרי הנקודה.',
+      invalidQuantity: 'פריט ⁦{{n}}⁩: הזינו כמות בין ⁦0.01⁩ ל־⁦10,000⁩, עם עד ⁦2⁩ ספרות אחרי הנקודה.',
       invalidUnitCost: 'פריט ⁦{{n}}⁩: הזינו מחיר ליחידה בין ⁦0⁩ ל־⁦1,000,000⁩, עם עד ⁦2⁩ ספרות אחרי הנקודה.',
     },
     settings: {

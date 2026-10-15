@@ -84,15 +84,17 @@ export default function HistoryPage() {
     if (cars && vehicleId && !cars.some((c) => c.id === vehicleId)) update({ vehicleId: '', taskId: '' }, true)
   }, [cars, vehicleId]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Only once the car is known: an unknown id is dropped from the URL instead (above).
+  const known = !!cars?.some((c) => c.id === vehicleId)
   useEffect(() => {
-    if (!vehicleId) return
+    if (!known) return
     let live = true
     api<MaintenanceTask[]>(`/vehicles/${encodeURIComponent(vehicleId)}/tasks`).then(
       (ts) => live && setTaskList({ vehicleId, tasks: ts }),
       (error) => live && setTaskList({ vehicleId, error }),
     )
     return () => { live = false }
-  }, [vehicleId])
+  }, [vehicleId, known])
 
   useEffect(() => {
     if (text.trim() === q.trim() || searchBad) return
@@ -133,6 +135,8 @@ export default function HistoryPage() {
     return { 'aria-invalid': !!msg || undefined, 'aria-describedby': ids || undefined }
   }
 
+  // After a failed or blocked filter change the old rows stay, but their count and total would read as the new filter's.
+  const stale = blocked || failed?.skip === 0
   const retry = failed && !field && (
     <div className="row">
       <p className="error" role="alert">{errorMessage(failed.err)}</p>
@@ -188,8 +192,8 @@ export default function HistoryPage() {
       </div>
 
       <div className="card">
-        <p className={page ? undefined : 'muted'} role="status">
-          {!page
+        <p className={page && !stale ? undefined : 'muted'} role="status">
+          {!page || stale
             ? busy && t('loading')
             : page.totalCount === 0
               ? t(query ? 'noMatches' : 'noServices')
@@ -213,7 +217,7 @@ export default function HistoryPage() {
           </ol>
         )}
         {/* A failed Show more shows its error where the button was, not above thousands of rows. */}
-        {failed?.skip && retry ? retry : page && page.items.length < page.totalCount && (
+        {failed?.skip && retry ? retry : !stale && page && page.items.length < page.totalCount && (
           <button type="button" className="more" aria-disabled={busy} onClick={() => { if (!busy) { setActing(true); load(page.items.length) } }}>{t('showMore')}</button>
         )}
       </div>

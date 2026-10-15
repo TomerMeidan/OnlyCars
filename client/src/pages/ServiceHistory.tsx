@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from 'react'
+import { useEffect, useId, useLayoutEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 import { api, ApiError, isGoneRecord, isOrderError, itemsTotal, localToday, type MaintenanceTask, type ServiceItem, type ServiceRecord, type Vehicle } from '../api'
@@ -56,6 +56,8 @@ export function ServiceHistory({ car, onChanged }: { car: Vehicle; onChanged: ()
   // "Already deleted": a row action found its record gone and reloaded the list.
   const [gone, setGone] = useState(false)
   const form = useRow<'record'>()
+  // Rows with their Edit form open; Record a service is hidden meanwhile, as while its own form is open.
+  const [editing, setEditing] = useState(0)
   const sectionRef = useRef<HTMLElement>(null)
   // Selectors to focus after the next reload, the first that matches; the h2 if none does.
   const focusNext = useRef<string[] | null>(null)
@@ -91,7 +93,7 @@ export function ServiceHistory({ car, onChanged }: { car: Vehicle; onChanged: ()
         <h2 id="service-history" tabIndex={-1}>{t('serviceHistory')}</h2>
         <div className="actions">
           <Link to={`/history?vehicleId=${encodeURIComponent(car.id)}`}>{t('searchAllHistory')}</Link>
-          {!readOnly && form.mode === 'view' && (
+          {!readOnly && form.mode === 'view' && !editing && (
             <button className="add" ref={form.opener('record')} onClick={() => { setGone(false); form.open('record') }}>{t('recordService')}</button>
           )}
         </div>
@@ -137,6 +139,7 @@ export function ServiceHistory({ car, onChanged }: { car: Vehicle; onChanged: ()
                 changed()
               }}
               onGone={onGone}
+              onEditing={(n) => setEditing((x) => x + n)}
             />
           ))}
         </ol>
@@ -176,9 +179,8 @@ function RecordForm({ car, url, row, record, onSaved, onGone }: {
   const startStored = record?.odometerKm ?? car.currentOdometerKm
   const startKm = d.value(startStored)
 
-  useEffect(() => {
-    api<MaintenanceTask[]>(`/vehicles/${encodeURIComponent(car.id)}/tasks`).then(setTasks, setTasksError)
-  }, [car.id])
+  const loadTasks = () => api<MaintenanceTask[]>(`/vehicles/${encodeURIComponent(car.id)}/tasks`).then(setTasks, setTasksError)
+  useEffect(() => { loadTasks() }, [car.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const i = focusItem.current
@@ -220,6 +222,8 @@ function RecordForm({ car, url, row, record, onSaved, onGone }: {
     })).record), submitter)
     if (isGoneRecord(err)) onGone?.()
     else if (err) {
+      // A ticked task was deleted meanwhile: reload the list so its checkbox goes; the other ticks stay (keyed by task id).
+      if (err instanceof ApiError && err.problem.code === 'maintenanceTask.notFound') loadTasks()
       setNeedsConfirm(isOrderError(err))
       setErrKey(err instanceof ApiError && err.problem.index != null ? items[err.problem.index]?.key : undefined)
     }
@@ -247,13 +251,15 @@ function RecordForm({ car, url, row, record, onSaved, onGone }: {
   const setItem = (i: number, patch: Partial<Item>) => setItems((xs) => xs.map((x, j) => (j === i ? { ...x, ...patch } : x)))
   const add = (isLabor: boolean) => { focusItem.current = items.length; setItems([...items, toItem(null, isLabor)]) }
   // Focus goes to the next row, then the previous one, then Add part.
+  // The translated message on a future date instead of the browser's; the server's own check stays.
+  const future = (e: FormEvent<HTMLInputElement>) => e.currentTarget.setCustomValidity(e.currentTarget.validity.rangeOverflow ? t('errors.serviceRecord.futureDate') : '')
   const remove = (i: number) => { focusItem.current = i < items.length - 1 ? i : i - 1; setItems(items.filter((_, j) => j !== i)) }
 
   return (
     <form className="inline-form" ref={formRef} onSubmit={submit} onKeyDown={(e) => !busy && e.key === 'Escape' && open('view')}>
       <label>
         {t('readingDate')}
-        <input name="date" type="date" required max={localToday()} defaultValue={record?.date.slice(0, 10) ?? localToday()} autoFocus {...tie('date')} />
+        <input name="date" type="date" required max={localToday()} onInput={future} defaultValue={record?.date.slice(0, 10) ?? localToday()} autoFocus {...tie('date')} />
       </label>
       <label>
         {t('serviceOdometer', d.vars)}
@@ -363,7 +369,7 @@ function RecordForm({ car, url, row, record, onSaved, onGone }: {
 }
 
 // Also the rows of /history, read-only, with the car's name and tag as `head`.
-export function ServiceRow({ car, record: r, url, readOnly, onEdited, onDeleted, onGone, head }: {
+export function ServiceRow({ car, record: r, url, readOnly, onEdited, onDeleted, onGone, onEditing, head }: {
   car: Vehicle
   record: ServiceRecord
   head?: ReactNode
@@ -372,6 +378,7 @@ export function ServiceRow({ car, record: r, url, readOnly, onEdited, onDeleted,
   onEdited: (record: ServiceRecord) => void
   onDeleted: () => void
   onGone: () => void
+  onEditing?: (n: 1 | -1) => void
 }) {
   const { t, i18n } = useTranslation()
   const { user } = useAuth()
@@ -382,6 +389,12 @@ export function ServiceRow({ car, record: r, url, readOnly, onEdited, onDeleted,
   const { mode, open, close, busy, error, run, opener } = row
   // Deleted: Delete stays disabled until the reload drops the row.
   const [voided, setVoided] = useState(false)
+  // Counted up while the Edit form is open, and down when it closes or the row goes; before paint, so Record a service never flashes.
+  useLayoutEffect(() => {
+    if (mode !== 'edit') return
+    onEditing?.(1)
+    return () => onEditing?.(-1)
+  }, [mode]) // eslint-disable-line react-hooks/exhaustive-deps
   const lng = i18n.resolvedLanguage
   const date = fmtDate(r.date, lng)
   // Each action is named by date, odometer and shop, and described by the row's cost and tasks (MVP3-A QA Low 1).

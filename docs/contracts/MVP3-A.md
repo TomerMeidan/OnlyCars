@@ -56,6 +56,8 @@ Order of checks (the first failure wins; nothing is saved on any error):
 | `odometer.lowerThanPrevious` | 400 | `previousKm` (km) | Without `confirmCorrection`, below the reading before `date` |
 | `odometer.higherThanNext` | 400 | `nextKm` (km) | Without `confirmCorrection`, above the reading after `date` |
 
+**Date order on the same date (added in LOW-1; describes existing behaviour):** readings are ordered by `(readingDate, time the reading was first saved)`. Two readings on the same date are ordered by when each was first saved, **not by value**. The one saved earlier counts as "previous" and the one saved later as "next". A new reading (from a new record or a new manual reading) is saved now, so every existing reading on its date counts as before it. Its value must therefore be at least that of the most recently saved of them. Only the nearest reading on each side is checked. The same rule applies to `POST .../odometer` and `PUT .../odometer/{id}`; an edited reading keeps its original save time (`OdometerService.Validate`). **Mismatch:** the LOW-1 ticket says "the higher one counts as next", but the code does not order by value. Per the ticket, the code is unchanged.
+
 ## Changed
 
 ### `POST /api/vehicles/{vehicleId}/service-records/{recordId}/void`

@@ -265,7 +265,7 @@ for (const s of setups.filter((x) => !process.env.ONLY || x.name.includes(proces
     const resp = await res
     await idle()
     page.off('request', countGet)
-    return { filled, focusOpen, afterEsc, reopenedShop, afterCancel, live, putStatus: resp.status(), savedTotal: (await resp.json()).totalCost, reloadsAfterEdit: gets,
+    return { filled, focusOpen, afterEsc, reopenedShop, afterCancel, live, putStatus: resp.status(), savedTotal: (await resp.json()).record.totalCost, reloadsAfterEdit: gets,
       focusAfterSave: await active(), rowText: plain(await row.textContent()), ...sh, savedShot: (await shot('10-edit-saved')).shot }
   })
 

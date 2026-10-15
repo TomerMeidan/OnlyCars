@@ -255,4 +255,6 @@ h2 a { margin-block: -0.5625rem; }
 /* Service history page: the filters stack at 390px; each row starts with its car */
 .filters { align-items: start; } /* the task hint must not push the car select down */
 .filters select { width: 100%; }
+/* The selects pair up or stack, and so do the dates, so no field is left alone on a row and a car's name fits at 390px. */
+.filters.inline-form > label:has(select) { flex-basis: 14rem; }
 .services a.car { font-weight: 600; }
