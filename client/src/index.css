@@ -140,7 +140,7 @@ main {
 label { display: grid; gap: 0.3rem; font-size: 0.95rem; color: var(--muted); }
 label.inline { display: flex; align-items: center; gap: 0.5rem; color: var(--ink); }
 
-input, select, button, .button {
+input, select, textarea, button, .button {
   font: inherit;
   min-height: 2.75rem;
   padding: 0.5rem 0.75rem;
@@ -149,7 +149,7 @@ input, select, button, .button {
   background: var(--surface);
   color: var(--ink);
 }
-input:focus-visible, select:focus-visible { border-color: var(--ink); }
+input:focus-visible, select:focus-visible, textarea:focus-visible { border-color: var(--ink); }
 label.inline input { min-height: auto; accent-color: var(--ink); }
 
 button, .button {
@@ -193,7 +193,8 @@ button.link {
 .history bdi { direction: ltr; }
 .inline-form { flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: end; gap: 0.5rem 0.75rem; }
 .inline-form > label:not(.inline) { flex: 1 1 9rem; }
-.inline-form input:not([type='checkbox']) { width: 100%; }
+.inline-form input:not([type='checkbox']), .inline-form textarea { width: 100%; }
+.inline-form textarea { resize: vertical; }
 .inline-form > p, .inline-form > label.inline { flex-basis: 100%; }
 .inline-form > label.wide { flex-basis: 100%; }
 .inline-form > .pair { flex: 1 1 14rem; display: flex; align-items: end; gap: 0.5rem; }
@@ -240,3 +241,6 @@ h2 a { margin-block: -0.5625rem; }
 .back { justify-self: start; padding-block: 0.625rem; }
 .back:focus-visible { outline: none; }
 .back:focus-visible span { outline: 2px solid var(--ink); outline-offset: 2px; }
+
+/* After a reset: "Marked as done." and Undo, on that row */
+.undo { display: flex; flex-wrap: wrap; align-items: center; gap: 0 1rem; padding-inline: 0.75rem; border-inline-start: 3px solid var(--amber); }

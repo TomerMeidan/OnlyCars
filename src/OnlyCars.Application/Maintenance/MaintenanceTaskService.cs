@@ -184,7 +184,8 @@ public class MaintenanceTaskService(IAppDbContext db, VehicleService vehicleServ
         var hasLater = await db.ServiceRecordTasks.AnyAsync(j => taskIds.Contains(j.MaintenanceTaskId)
             && j.ServiceRecordId != record.Id
             && !j.ServiceRecord!.IsVoided
-            && (j.ServiceRecord.Date > record.Date || j.ServiceRecord.Date == record.Date && j.ServiceRecord.CreatedAt > record.CreatedAt), ct);
+            // Creation order, not Date: snapshots chain in the order resets were made, and dates can go backwards (±1 day slack).
+            && j.ServiceRecord.CreatedAt > record.CreatedAt, ct);
         if (hasLater)
         {
             throw new ConflictException("serviceRecord.notLatest", "A later reset of this task must be undone first.");

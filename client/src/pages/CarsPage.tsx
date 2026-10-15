@@ -2,7 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { errorMessage } from '../i18n'
 import { Link } from 'react-router-dom'
-import { api, isOrderError, type Vehicle } from '../api'
+import { api, isOrderError, localToday, type Vehicle } from '../api'
 import { usePage } from '../usePage'
 
 export default function CarsPage() {
@@ -82,7 +82,7 @@ export function OdometerQuickEntry({ car, onSaved }: { car: Vehicle; onSaved: ()
     setError(null)
     try {
       // A ticked box that is hidden again must not confirm a later reading.
-      await api(`/vehicles/${car.id}/odometer`, 'POST', { valueKm: Number(value), confirmCorrection: needsConfirm && confirmCorrection })
+      await api(`/vehicles/${car.id}/odometer`, 'POST', { valueKm: Number(value), readingDate: localToday(), confirmCorrection: needsConfirm && confirmCorrection })
       setValue('')
       setNeedsConfirm(false)
       setConfirmCorrection(false)

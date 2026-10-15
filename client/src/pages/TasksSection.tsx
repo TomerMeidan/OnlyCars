@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from 'react'
 import { Trans, useTranslation } from 'react-i18next'
+import { useAuth } from '../auth'
 import { api, ApiError, localToday, taskCategories, type MaintenanceTask, type TaskCategory, type TaskStatus, type TaskTemplate, type Vehicle } from '../api'
 import { errorMessage } from '../i18n'
 
@@ -32,7 +33,7 @@ function Remaining({ km, days }: { km: number | null; days: number | null }) {
   const { t, i18n } = useTranslation()
   const late = (km ?? 0) < 0 || (days ?? 0) < 0
   const parts: ReactNode[] = []
-  if (km != null && km < 0 === late) parts.push(<><bdi>{Math.ceil(Math.abs(km)).toLocaleString(i18n.resolvedLanguage)}</bdi> {t('km')}</>)
+  if (km != null && km < 0 === late) parts.push(<><bdi>{Math.ceil(Math.abs(km)).toLocaleString(i18n.resolvedLanguage)}</bdi>{'\u00a0'}{t('km')}</>)
   if (days != null && days < 0 === late) {
     const d = Math.abs(days)
     parts.push(d < 60
@@ -44,7 +45,7 @@ function Remaining({ km, days }: { km: number | null; days: number | null }) {
 }
 
 // The Maintenance section of the car page. It loads on its own, so a failure here leaves the rest of the page usable.
-export function TasksSection({ car }: { car: Vehicle }) {
+export function TasksSection({ car, onOdometerChanged }: { car: Vehicle; onOdometerChanged: () => void }) {
   const { t, i18n } = useTranslation()
   const [tasks, setTasks] = useState<MaintenanceTask[] | null>(null)
   const [templates, setTemplates] = useState<TaskTemplate[]>([])
@@ -54,6 +55,8 @@ export function TasksSection({ car }: { car: Vehicle }) {
   const edits = useRef(0)
   // 'pick' is the template picker; an object is the add form (template null for a custom task).
   const [adding, setAdding] = useState<null | 'pick' | { template: TaskTemplate | null }>(null)
+  // The last reset, undoable from its row until the next action in this section.
+  const [undo, setUndo] = useState<{ taskId: string; recordId: string } | null>(null)
   const sectionRef = useRef<HTMLElement>(null)
   // A selector inside the section to focus after the next render; the h2 if it matches nothing.
   const focusNext = useRef<string | null>(null)
@@ -93,6 +96,18 @@ export function TasksSection({ car }: { car: Vehicle }) {
     edits.current++
     setTasks((ts) => [...(ts ?? []).filter((x) => x.id !== task.id), task])
   }
+  const reset = async (url: string, body: object) => {
+    const r = await api<{ serviceRecordId: string; task: MaintenanceTask }>(`${url}/reset`, 'POST', { date: localToday(), ...body })
+    saved(r.task, '.undo button')
+    setUndo({ taskId: r.task.id, recordId: r.serviceRecordId })
+    onOdometerChanged()
+  }
+  const undoReset = async () => {
+    const restored = await api<MaintenanceTask[]>(`/vehicles/${encodeURIComponent(car.id)}/service-records/${encodeURIComponent(undo!.recordId)}/void`, 'POST')
+    restored.forEach((task) => saved(task, 'button.done'))
+    setUndo(null)
+    onOdometerChanged()
+  }
   const closeAdd = () => {
     focusNext.current = 'button.add'
     setAdding(null)
@@ -125,7 +140,9 @@ export function TasksSection({ car }: { car: Vehicle }) {
   }
 
   return (
-    <section className="card" aria-labelledby="maintenance" ref={sectionRef}>
+    // Any button or toggle here, except the Undo bar's own, ends the chance to undo. Bubble phase: clearing it in capture swallowed the Enabled checkbox's first change.
+    <section className="card" aria-labelledby="maintenance" ref={sectionRef}
+      onClick={(e) => (e.target as Element).closest('button, input') && !(e.target as Element).closest('.undo') && setUndo(null)}>
       <div className="row">
         <h2 id="maintenance" tabIndex={-1}>{t('maintenance')}</h2>
         {!readOnly && tasks && !adding && <button className="add" onClick={() => setAdding('pick')}>{t('addTask')}</button>}
@@ -155,10 +172,9 @@ export function TasksSection({ car }: { car: Vehicle }) {
       )}
       {addForm}
 
-      {error != null ? (
-        <p className="error" role="alert">{errorMessage(error)}</p>
-      ) : !sorted ? (
-        <p className="muted" role="status">{t('loading')}</p>
+      {error != null && <p className="error" role="alert">{errorMessage(error)}</p>}
+      {!sorted ? (
+        error == null && <p className="muted" role="status">{t('loading')}</p>
       ) : sorted.length === 0 ? (
         <p className="muted">{t('noTasks')}</p>
       ) : (
@@ -170,6 +186,8 @@ export function TasksSection({ car }: { car: Vehicle }) {
               url={`${path}/${encodeURIComponent(task.id)}`}
               readOnly={readOnly}
               onSaved={saved}
+              onReset={(body) => reset(`${path}/${encodeURIComponent(task.id)}`, body)}
+              onUndo={undo?.taskId === task.id ? undoReset : undefined}
               onDeleted={() => {
                 // The row that takes this one's place, or the h2 if it was the last.
                 focusNext.current = `.tasks > li:nth-child(${i + 1}) button.edit`
@@ -281,22 +299,27 @@ function TaskForm({ initial, onSubmit, onCancel }: {
   )
 }
 
-function TaskRow({ task, url, readOnly, onSaved, onDeleted }: {
+function TaskRow({ task, url, readOnly, onSaved, onDeleted, onReset, onUndo }: {
   task: MaintenanceTask
   url: string
   readOnly: boolean
   onSaved: (task: MaintenanceTask, focus?: string) => void
   onDeleted: () => void
+  onReset: (body: { cost?: number; notes?: string }) => Promise<void>
+  // Set while this row shows the Undo bar.
+  onUndo?: () => Promise<void>
 }) {
   const { t, i18n } = useTranslation()
-  const [mode, setMode] = useState<'view' | 'edit' | 'delete'>('view')
+  const { user } = useAuth()
+  const [mode, setMode] = useState<'view' | 'edit' | 'delete' | 'cost'>('view')
   // The opener, refocused when Cancel or Escape returns the row to view. After Save or Delete the section refocuses instead.
   const returnTo = useRef<typeof mode>('view')
   const editRef = useRef<HTMLButtonElement>(null)
   const deleteRef = useRef<HTMLButtonElement>(null)
+  const costRef = useRef<HTMLButtonElement>(null)
   useEffect(() => {
     if (mode !== 'view') return
-    ;(returnTo.current === 'edit' ? editRef : returnTo.current === 'delete' ? deleteRef : null)?.current?.focus()
+    ;({ edit: editRef, delete: deleteRef, cost: costRef, view: null }[returnTo.current])?.current?.focus()
     returnTo.current = 'view'
   }, [mode])
   const [busy, setBusy] = useState(false)
@@ -311,16 +334,36 @@ function TaskRow({ task, url, readOnly, onSaved, onDeleted }: {
     setError(null)
   }
 
-  async function run(request: () => Promise<void>) {
+  // A button disabled while its request runs loses focus; after a failure it gets it back once enabled again.
+  const retry = useRef<HTMLElement | null>(null)
+  useEffect(() => {
+    if (busy) return
+    retry.current?.focus()
+    retry.current = null
+  }, [busy])
+
+  async function run(request: () => Promise<void>, retryFrom?: HTMLElement | null) {
     setBusy(true)
     setError(null)
     try {
       await request()
     } catch (err) {
       setError(err)
+      retry.current = retryFrom ?? null
     } finally {
       setBusy(false)
     }
+  }
+
+  async function submitCost(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault()
+    const f = new FormData(e.currentTarget)
+    const cost = f.get('cost') === '' ? undefined : Number(f.get('cost'))
+    await run(async () => {
+      await onReset({ cost, notes: String(f.get('notes')) })
+      returnTo.current = 'view'
+      setMode('view')
+    }, (e.nativeEvent as SubmitEvent).submitter)
   }
 
   const errorText = error != null && <p className="error" role="alert">{errorMessage(error)}</p>
@@ -362,8 +405,21 @@ function TaskRow({ task, url, readOnly, onSaved, onDeleted }: {
         />
       </p>
 
+      {onUndo && mode === 'view' && (
+        <div className="undo" role="status">
+          {/* Focus lands on Undo in the same render as the bar, so Undo also carries the message. */}
+          <span id={`undo-${task.id}`}>{t('markedDone')}</span>
+          <button className="link" aria-describedby={`undo-${task.id}`} disabled={busy} onClick={(e) => run(onUndo, e.currentTarget)}>{t('undo')}</button>
+        </div>
+      )}
       {!readOnly && mode === 'view' && (
         <div className="actions">
+          {task.isEnabled && (
+            <>
+              <button className="done" aria-label={t('markDoneTask', { name })} disabled={busy} onClick={(e) => run(() => onReset({}), e.currentTarget)}>{t('markDone')}</button>
+              <button className="link" aria-label={t('addCostNotesTask', { name })} ref={costRef} onClick={() => open('cost')}>{t('addCostNotes')}</button>
+            </>
+          )}
           <button className="link edit" aria-label={t('editTask', { name })} ref={editRef} onClick={() => open('edit')}>{t('edit')}</button>
           <label className="inline">
             <input
@@ -391,6 +447,30 @@ function TaskRow({ task, url, readOnly, onSaved, onDeleted }: {
             onSaved(saved)
           }}
         />
+      )}
+
+      {mode === 'cost' && (
+        <form className="inline-form" onSubmit={submitCost} onKeyDown={(e) => !busy && e.key === 'Escape' && open('view')}
+          // The browser blocks an out-of-range cost or a third decimal before any request, with this message on the field.
+          onInput={(e) => {
+            const el = e.currentTarget.elements.namedItem('cost') as HTMLInputElement
+            el.setCustomValidity('')
+            el.setCustomValidity(el.validity.valid ? '' : t('limits.cost'))
+          }}>
+          <label>
+            {t('cost', { currency: user?.currency })}
+            <input name="cost" type="number" inputMode="decimal" min={0} max={1_000_000} step={0.01} autoFocus />
+          </label>
+          <label className="wide">
+            {t('notes')}
+            <textarea name="notes" maxLength={1000} rows={2} />
+          </label>
+          {errorText}
+          <div className="actions">
+            <button disabled={busy}>{t('markDone')}</button>
+            <button type="button" className="link" disabled={busy} onClick={() => open('view')}>{t('cancel')}</button>
+          </div>
+        </form>
       )}
 
       {mode === 'delete' && (

@@ -44,7 +44,7 @@ Order of checks: `vehicle.notFound`, `serviceRecord.notFound`, `serviceRecord.al
 | `serviceRecord.notesTooLong` | 400 | none | `notes` over 1,000 characters after trimming |
 | `serviceRecord.notFound` | 404 | none | The record isn't on this car (also another user's record). Another user's car is `vehicle.notFound` |
 | `serviceRecord.alreadyVoided` | 409 | none | The record was already undone |
-| `serviceRecord.notLatest` | 409 | none | A later non-voided reset (by date, then creation time) exists for a task this record reset |
+| `serviceRecord.notLatest` | 409 | none | A non-voided reset created later (by creation time, not `date`) exists for a task this record reset |
 
 ## Examples
 ```

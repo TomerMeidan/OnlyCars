@@ -35,7 +35,6 @@ public class MaintenanceTasksController(MaintenanceTaskService taskService) : Co
         return NoContent();
     }
 
-    // An empty body is allowed: it's a one-tap reset.
     [HttpPost("vehicles/{vehicleId:guid}/tasks/{taskId:guid}/reset")]
     public async Task<ActionResult<ResetTaskResponse>> Reset(Guid vehicleId, Guid taskId,
         [FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Allow)] ResetTaskRequest? request, CancellationToken ct) =>

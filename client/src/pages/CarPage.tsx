@@ -73,7 +73,7 @@ export default function CarPage() {
         {!car.isArchived && <OdometerQuickEntry car={car} onSaved={load} />}
       </div>
 
-      <TasksSection car={car} />
+      <TasksSection car={car} onOdometerChanged={load} />
 
       <section className="card" aria-labelledby="odometer-history" ref={historyRef}>
         <h2 id="odometer-history" tabIndex={-1}>{t('odometerHistory')}</h2>

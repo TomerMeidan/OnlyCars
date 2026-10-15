@@ -145,7 +145,12 @@ for (const s of setups) {
     await page.fill('.quick input[type=number]', '61250')
     // Hold the POST briefly so the in-flight state is observable: a second tap must not add a second reading.
     await page.route('**/odometer', async (r) => { await page.waitForTimeout(500); await r.continue() }, { times: 1 })
+    const sent = page.waitForRequest((r) => r.method() === 'POST' && r.url().endsWith('/odometer'))
     await page.click('.quick button')
+    // The quick-add dates the reading with the user's local date.
+    const readingDate = (await sent).postDataJSON().readingDate
+    const today = await page.evaluate(() => new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10))
+    if (readingDate !== today) throw new Error(`quick-add readingDate ${readingDate}, want ${today}`)
     if (!(await page.locator('.quick button').isDisabled())) throw new Error('Update button not disabled while saving')
     await page.waitForFunction(() => document.querySelector('.odometer')?.getAttribute('aria-label')?.replace(/\D/g, '') === '61250')
     const label = await odometer()
@@ -532,6 +537,9 @@ for (const s of setups) {
     await page.unroute('**/api/vehicles/*/tasks')
     const longest = plain(await taskRow('Longest').textContent())
     if (!longest.includes(he ? 'באיחור של 1,000,000 ק״מ וגם כ־243 חודשים' : 'Overdue by 1,000,000 km and about 243 months')) throw new Error(`longest "${longest}"`)
+    // MVP2-B Low 2: a non-breaking space keeps each number with its unit word.
+    const raw = await taskRow('Longest').textContent()
+    if (!raw.includes('1,000,000 ') || !raw.includes('243 ')) throw new Error(`no non-breaking spaces in "${raw}"`)
     await noOverflow('status rows and the longest remaining line')
     await sweep('car page with status rows')
   })
@@ -591,6 +599,167 @@ for (const s of setups) {
     await taskBtn(TK.edit, 'Brakes').click()
     if ((await form.locator('input[name=dueSoonPercent]').inputValue()) !== '20') throw new Error('edit form not at the stored 20')
     await page.keyboard.press('Escape')
+  })
+  // MVP2-C: Mark done and Undo, at 390px wide in both setups. The odometer is at 59,000.
+  const RS = he
+    ? { done: 'סימון כבוצע: ', cost: 'הוספת עלות או הערות: ', marked: 'סומן כבוצע.', service: 'טיפול', generic: 'משהו השתבש. נסו שוב.', costMsg: 'הזינו עלות בין 0 ל־1,000,000, עם עד 2 ספרות אחרי הנקודה.', oilLeft: 'עוד 10,000 ק״מ', oilLate: 'באיחור של 1,000 ק״מ', oilAt: 'ב־48,000 ק״מ' }
+    : { done: 'Mark done: ', cost: 'Add cost or notes: ', marked: 'Marked as done.', service: 'Service', generic: 'Something went wrong. Please try again.', costMsg: 'Enter a cost from 0 to 1,000,000 with up to 2 decimals.', oilLeft: '10,000 km left', oilLate: 'Overdue by 1,000 km', oilAt: 'at 48,000 km' }
+  const localDate = () => page.evaluate(() => new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10))
+  const serviceRows = () => page.locator('.history li').filter({ hasText: RS.service })
+  const isReset = (r) => r.method() === 'POST' && r.url().endsWith('/reset')
+  const forget500 = () => {
+    run.badResponses = run.badResponses.filter((r) => !r.startsWith('500 ')) // the forced failure
+    run.consoleErrors = run.consoleErrors.filter((e) => !e.includes('500'))
+  }
+  await step('reset-task', async () => {
+    await page.setViewportSize({ width: 390, height: 844 })
+    if (await taskRow(TK.belt).locator('button.done').count()) throw new Error('Mark done on a disabled task')
+    if (await taskBtn(RS.cost, TK.belt).count()) throw new Error('Add cost or notes on a disabled task')
+    // A failed reset: the translated error on the row, the rows kept, focus back on Mark done.
+    await page.route('**/reset', (r) => r.fulfill({ status: 500, contentType: 'application/json', body: '{}' }), { times: 1 })
+    await taskBtn(RS.done, 'Oil').click()
+    const alert = await taskRow('Oil').locator('[role=alert]').textContent()
+    if (alert !== RS.generic) throw new Error(`reset error "${alert}"`)
+    await focusIs(`button[aria-label="${RS.done}Oil"]`, 'after a failed reset')
+    if ((await taskNames()).length !== 6) throw new Error(`rows after a failed reset: ${await taskNames()}`)
+    forget500()
+    // Criterion 14: a double tap while the first request is held makes one reset.
+    let posts = 0
+    const count = (r) => isReset(r) && posts++
+    page.on('request', count)
+    await page.route('**/reset', async (r) => { await page.waitForTimeout(500); await r.continue() }, { times: 1 })
+    const res = page.waitForResponse((r) => isReset(r.request()))
+    await taskBtn(RS.done, 'Oil').click()
+    if (!(await taskBtn(RS.done, 'Oil').isDisabled())) throw new Error('Mark done not disabled while saving')
+    await taskBtn(RS.done, 'Oil').click({ force: true }).catch(() => {})
+    const body = (await res).request().postDataJSON()
+    if (body.date !== (await localDate())) throw new Error(`reset date ${body.date}`)
+    await badgeIs('Oil', ST.Ok)
+    await page.waitForTimeout(300)
+    page.off('request', count)
+    if (posts !== 1) throw new Error(`${posts} reset POSTs for a double tap`)
+    // Criterion 10: OK with a full km left and an empty bar, re-sorted, Undo focused, a Service reading without Edit or Delete.
+    const text = plain(await taskRow('Oil').textContent())
+    if (!text.includes(RS.oilLeft)) throw new Error(`Oil "${text}"`)
+    if ((await taskRow('Oil').getByRole('progressbar').getAttribute('aria-valuenow')) !== '0') throw new Error('bar not empty')
+    const want = ['Coolant', 'Brakes', '9k service', '10k service', 'Oil', TK.belt]
+    if ((await taskNames()).join() !== want.join()) throw new Error(`order ${await taskNames()}`)
+    const bar = taskRow('Oil').getByRole('status')
+    if (!plain(await bar.textContent()).startsWith(RS.marked)) throw new Error(`bar "${await bar.textContent()}"`)
+    await focusIs('.tasks .undo button', 'after Mark done')
+    // Focus moves to Undo in the same render as the bar, so Undo is described by the message too.
+    const described = await page.evaluate(() => document.getElementById(document.activeElement.getAttribute('aria-describedby') ?? '')?.textContent)
+    if (described !== RS.marked) throw new Error(`Undo described by "${described}"`)
+    await serviceRows().first().waitFor()
+    if (!digitsOnly(await serviceRows().first().locator('.value').textContent()).startsWith('59000')) throw new Error('Service reading value')
+    if (await serviceRows().locator('button').count()) throw new Error('Service reading has Edit or Delete')
+    await noOverflow('the Undo bar')
+    await sweep('car page with the Undo bar')
+  })
+  await step('undo-reset', async () => {
+    // A failed undo keeps the bar, shows the error on the row, and focus stays on Undo.
+    await page.route('**/void', (r) => r.fulfill({ status: 500, contentType: 'application/json', body: '{}' }), { times: 1 })
+    await taskRow('Oil').locator('.undo button').click()
+    const alert = await taskRow('Oil').locator('[role=alert]').textContent()
+    if (alert !== RS.generic) throw new Error(`undo error "${alert}"`)
+    if (!(await taskRow('Oil').locator('.undo').isVisible())) throw new Error('bar gone after a failed undo')
+    await focusIs('.tasks .undo button', 'after a failed undo')
+    forget500()
+    await taskRow('Oil').locator('.undo button').click()
+    await badgeIs('Oil', ST.Overdue)
+    const text = plain(await taskRow('Oil').textContent())
+    if (!text.includes(RS.oilLate) || !text.includes(RS.oilAt)) throw new Error(`Oil "${text}"`)
+    if ((await taskNames())[0] !== 'Oil') throw new Error(`order ${await taskNames()}`)
+    if (await tasks.locator('.undo').count()) throw new Error('bar still shown')
+    await focusIs(`button[aria-label="${RS.done}Oil"]`, 'after Undo')
+    await serviceRows().first().waitFor({ state: 'detached' })
+  })
+  await step('reset-with-cost', async () => {
+    const opener = `button[aria-label="${RS.cost}Brakes"]`
+    const form = taskRow('Brakes').locator('form')
+    // Escape and Cancel close the form with focus back on its opener.
+    await taskBtn(RS.cost, 'Brakes').click()
+    await focusIs('form input[name=cost]', 'cost form open')
+    await page.keyboard.press('Escape')
+    await form.waitFor({ state: 'detached' })
+    await focusIs(opener, 'after Escape')
+    await taskBtn(RS.cost, 'Brakes').click()
+    await form.locator('button.link').click()
+    await focusIs(opener, 'after Cancel')
+    await taskBtn(RS.cost, 'Brakes').click()
+    const label = plain(await form.locator('label').first().textContent())
+    if (!label.includes(registered.user.currency)) throw new Error(`cost label "${label}"`)
+    await noOverflow('the cost form open')
+    await sweep('car page with the cost form open')
+    // Blocked on the client with the message on the field.
+    let posts = 0
+    const count = (r) => isReset(r) && posts++
+    page.on('request', count)
+    for (const v of ['-1', '1000000.01', '1.234']) {
+      await form.locator('input[name=cost]').fill(v)
+      await form.locator('button:not(.link)').click()
+      const shown = await form.locator('input[name=cost]').evaluate((el) => el.validationMessage)
+      if (plain(shown) !== RS.costMsg) throw new Error(`cost ${v}: "${shown}"`)
+    }
+    await page.waitForTimeout(300)
+    page.off('request', count)
+    if (posts) throw new Error(`${posts} reset POSTs for blocked costs`)
+    await form.locator('input[name=cost]').fill('120.50')
+    await form.locator('textarea[name=notes]').fill('  Castrol 5W-30 ')
+    // A failed reset keeps the form, shows the error, and puts focus back on the form's Mark done.
+    await page.route('**/reset', (r) => r.fulfill({ status: 500, contentType: 'application/json', body: '{}' }), { times: 1 })
+    await form.locator('button:not(.link)').click()
+    const failed = await form.locator('[role=alert]').textContent()
+    if (failed !== RS.generic) throw new Error(`cost form error "${failed}"`)
+    await focusIs('.tasks form button:not(.link)', 'after a failed reset from the form')
+    forget500()
+    const res = page.waitForResponse((r) => isReset(r.request()))
+    await form.locator('button:not(.link)').click()
+    const r = await res
+    const body = r.request().postDataJSON()
+    if (r.status() !== 201 || body.cost !== 120.5 || body.notes !== '  Castrol 5W-30 ' || body.date !== (await localDate())) throw new Error(`${r.status()} ${JSON.stringify(body)}`)
+    const saved = await r.json()
+    if (!saved.serviceRecordId || saved.task.lastDoneOdometerKm !== 59000 || saved.task.status !== 'Ok') throw new Error(`response ${JSON.stringify(saved)}`)
+    await badgeIs('Brakes', ST.Ok)
+    await focusIs('.tasks .undo button', 'after Mark done from the form')
+    // Criterion 12: any other action in the section removes the bar without undoing.
+    await taskBtn(TK.edit, '9k service').click()
+    await page.keyboard.press('Escape')
+    if (await tasks.locator('.undo').count()) throw new Error('bar still shown after Edit')
+    await page.waitForTimeout(300)
+    await badgeIs('Brakes', ST.Ok)
+    if ((await serviceRows().count()) !== 1) throw new Error(`${await serviceRows().count()} Service readings`)
+  })
+  await step('toggle-clears-undo', async () => {
+    // With the Undo bar showing, the first tap on another task's Enabled both removes the bar and toggles.
+    await taskBtn(RS.done, '9k service').click()
+    await focusIs('.tasks .undo button', 'after Mark done')
+    const res = page.waitForResponse((r) => r.request().method() === 'PUT')
+    await tasks.getByRole('checkbox', { name: TK.on + '10k service' }).uncheck()
+    if ((await res).request().postDataJSON().isEnabled !== false) throw new Error('PUT did not disable')
+    await taskRow('10k service').locator('.badge', { hasText: TK.off }).waitFor()
+    if (await tasks.locator('.undo').count()) throw new Error('bar still shown after the toggle')
+    await tasks.getByRole('checkbox', { name: TK.on + '10k service' }).check()
+    await taskRow('10k service').locator('.badge', { hasText: TK.off }).waitFor({ state: 'detached' })
+  })
+  await step('tasks-reload-error-keeps-rows', async () => {
+    // Low 1: a reset reloads the car and then the tasks; that reload fails, and the rows stay with the error above them.
+    await page.route('**/api/vehicles/*/tasks', (r) => r.fulfill({ status: 500, contentType: 'application/json', body: '{}' }))
+    const failed = page.waitForResponse((r) => r.url().endsWith('/tasks') && r.status() === 500)
+    await taskBtn(RS.done, 'Coolant').click()
+    await failed
+    const alert = tasks.locator(':scope > p.error[role=alert]')
+    await alert.waitFor()
+    await page.unroute('**/api/vehicles/*/tasks')
+    if ((await alert.textContent()) !== RS.generic) throw new Error(`alert "${await alert.textContent()}"`)
+    if ((await taskNames()).length !== 6) throw new Error(`rows ${await taskNames()}`)
+    const above = await alert.evaluate((p) => !!(p.compareDocumentPosition(p.parentElement.querySelector('.tasks')) & Node.DOCUMENT_POSITION_FOLLOWING))
+    if (!above) throw new Error('error not above the rows')
+    await badgeIs('Coolant', ST.Ok)
+    forget500()
+    await page.reload()
+    await taskRow('Coolant').waitFor()
+    await page.setViewportSize(s.viewport)
   })
   await step('other-users-car-not-found', async () => {
     // A second user's car, created through the API, must not be visible to this user.

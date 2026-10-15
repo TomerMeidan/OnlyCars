@@ -280,6 +280,24 @@ public class ServiceRecordTests
     }
 
     [Fact]
+    public async Task Void_LatestIsByCreationOrder_EvenWhenTheLaterResetHasAnEarlierDate()
+    {
+        var car = await CreateCarAsync();
+        var task = await CreateTaskAsync(car);
+        var a = await ResetAsync(car, task.Id, Today.AddDays(1));
+        var b = await ResetAsync(car, task.Id, Today);
+
+        var notLatest = await Assert.ThrowsAsync<ConflictException>(() => tasks.VoidAsync(userId, car, a.ServiceRecordId));
+        Assert.Equal("serviceRecord.notLatest", notLatest.Code);
+
+        var afterB = Assert.Single(await tasks.VoidAsync(userId, car, b.ServiceRecordId));
+        Assert.Equal((50_000m, Today.AddDays(1)), (afterB.LastDoneOdometerKm, afterB.LastDoneDate));
+
+        var afterA = Assert.Single(await tasks.VoidAsync(userId, car, a.ServiceRecordId));
+        Assert.Equal((40_000m, OriginalDate), (afterA.LastDoneOdometerKm, afterA.LastDoneDate));
+    }
+
+    [Fact]
     public async Task Void_OtherUsersRecord_IsNotFound_AndChangesNothing()
     {
         var otherUser = Guid.NewGuid();

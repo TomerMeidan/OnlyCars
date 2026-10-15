@@ -1,22 +1,28 @@
 # OnlyCars: Requirements Status
 
-**Audit date:** 2026-10-15 (fifth audit, sign-off of MVP2-B, commits `2fc5531`, `68ea634`, `7728d51`)
-**Overall:** MVP step 1 is complete apart from car photos (blocked on R2) and the settings screen. MVP step 2 is two-thirds done: tasks can be added, edited, turned off and deleted (MVP2-A), and each one now shows its status, remaining km and days and a progress bar, sorted by urgency, with a per-task due-soon threshold (MVP2-B). Reset and Undo (MVP2-C) are the last part of step 2. The SEC-1 deploy gate is passed.
+**Audit date:** 2026-10-15 (sixth audit, sign-off of MVP2-C: backend commit `7d9012d`, plus the frontend and review fixes, which are not committed yet on `main`)
+**Overall:** MVP steps 1 and 2 are complete for the MVP. Step 1 still lacks car photos (blocked on R2) and the settings screen. Step 2 closed with MVP2-C: one tap marks a task as done, with optional cost and notes. That restarts its countdown, creates a service record and logs a "Service" odometer reading, and the user can undo it straight away. Next is the settings screen (SET-1, then SET-2), then step 3, service history.
 
 | Status | Count |
 |---|---|
-| Done | 12 |
+| Done | 14 |
 | API only | 0 |
-| Partial | 7 |
-| Missing | 31 |
+| Partial | 8 |
+| Missing | 28 |
 | Deferred | 7 |
 | **Total** | **57** |
 
-How this was checked (fifth audit):
-- Both dev servers were already running. The API process started at 23:10:14 on 2026-10-14 and no `src/` file changed after that, so the live API runs MVP2-B's code. I didn't restart anything.
-- `dotnet test`, built into a scratch artifacts folder because the running API locks `src/*/bin`: 136 of 136 passed (109 before MVP2-B).
-- `client/ui-tests/smoke.mjs`: exit code 0, 37 steps with screenshots in each setup (desktop-light-en and mobile-dark-he), plus the `templates-error` shot. The only 4xx responses were the expected ones: 400s for a lower odometer reading (add and edit) and an invalid task, and 404s for another user's car. I read `mobile-dark-he-27-task-status-order.png` (Hebrew, RTL, dark: Overdue, Due soon, OK, then Disabled; bars fill from the right; "9k service" before "10k service"; the longest overdue line fits at 390px) and `desktop-light-en-29-task-due-soon-percent.png` (Brakes with 1,500 of 10,000 km left shows Due soon after its threshold went to 20%).
-- Reviews and QA, which I did not re-run: code review approved with nits, all fixed (the should-fix, a templates error cleared by a tasks load, now has the smoke step `templates-error`); the Hebrew review changed one string; UI QA passed every criterion area, including the 1,000 / 1,001 / 0 / -1 km boundaries, contrast in both themes and 390px. Its three Lows are decided in decisions.md ("MVP2-B QA Lows").
+How this was checked (sixth audit):
+- Both dev servers were already running. The API process started at 07:30:39 on 2026-10-15, after the last `src/` change at 07:28:50, so the live API runs the latest code, including the uncommitted `notLatest` fix. I didn't restart anything.
+- `dotnet test`, built into a scratch artifacts folder because the running API locks `src/*/bin`: 158 of 158 passed (136 before MVP2-C).
+- `client/ui-tests/smoke.mjs`: exit code 0, and all 42 steps `ok` in each setup (desktop-light-en and mobile-dark-he). The only 4xx responses were the expected ones: 400s for a lower odometer reading and an invalid task, and 404s for another user's car. I read two screenshots:
+  - `mobile-dark-he-30-reset-task.png` (Hebrew, RTL, dark): Oil went from Overdue to OK with "עוד 10,000 ק״מ" and an empty bar. The Undo bar "סומן כבוצע. ביטול הסימון" shows on that row, and the history has a "טיפול" (Service) reading with no Edit or Delete.
+  - `desktop-light-en-32-reset-with-cost.png`: both buttons are on every enabled row, and neither is on the disabled Timing belt.
+- `client/ui-tests/qa-mvp2c.mjs`: exit code 0 in both setups, with no console errors and no unexpected responses (12 resets and 8 voids per setup). It confirms that disabled tasks and archived cars have no Mark done or cost buttons, and that the car list's quick-add sends the local date. Its only finding is the existing 24px "Show archived" label, decided in decisions.md ("MVP2-C QA notes").
+- Reviews and QA, which I did not re-run:
+  - Code review fixes: focus after a failed cost-form reset; `aria-describedby` on Undo; `notLatest` ranked by creation time only (decision of 2026-10-15).
+  - Hebrew review: no changes.
+  - UI QA: passed. Its Medium (the first Enabled-checkbox tap was swallowed while the Undo bar showed) is fixed, and the smoke step `toggle-clears-undo` covers it.
 - The notes from earlier audits are in git history.
 
 ---
@@ -35,7 +41,7 @@ How this was checked (fifth audit):
 | Requirement | Status | Evidence | What's missing |
 |---|---|---|---|
 | Manual odometer updates (quick-entry button on the dashboard) | **Partial** | The quick entry on each car card works, including the lower-reading check and the correction checkbox (`CarsPage.tsx:69-114`, `OdometerService.cs:30-65`). Tests: `OdometerServiceTests.cs`. Smoke steps `odometer-*` pass. The lower-reading error is now translated and shows the current reading (`odometer.lowerThanCurrent`, `i18n.ts:64-67`; Hebrew in `mobile-dark-he-05-odometer-lower-rejected.png`). | Quick entry is now also on the car page (`CarPage.tsx:50`), and the date-order rules apply (`odometer.lowerThanPrevious` / `higherThanNext`). Still missing: (1) there is no dashboard yet (see section 10); (2) quick entry always saves today; backdating goes through Edit, which is acceptable for now. |
-| Auto-log the odometer whenever a service is recorded | **Missing** | Only the `OdometerSource.Service` enum value exists (`Enums.cs:35`). | Depends on service records (MVP step 3). |
+| Auto-log the odometer whenever a service is recorded | **Partial** | Every reset logs a `Source = Service` reading linked to its record (`OdometerReading.ServiceRecordId`, `MaintenanceTaskService.cs:99`). Undo removes it (`:171`). Tests: `ServiceRecordTests.cs` (13 tests). Browser: smoke `reset-task` and `undo-reset` (`mobile-dark-he-30-reset-task.png`, which shows the "Service" reading in the history). | Covers only the one-tap reset. A full service record with its own date and odometer comes in step 3. |
 | Optional: estimated average km/day, used to predict when tasks come due | **Partial** | `AvgKmPerDay` is computed (`OdometerService.cs:72-99`, test at `OdometerServiceTests.cs:91`) and shown on the card (`CarsPage.tsx:50-52`). | Nothing uses it for predictions yet. Tasks exist now, but a predicted due date is out of MVP2-B (decisions.md); it goes with the dashboard or later. |
 | Unit setting (km/miles), with the currency set per user | **Partial** | Currency is chosen at sign-up from ILS/USD/EUR/GBP, defaulting by UI language (`AuthPage.tsx:12-13,52`), validated and saved (`AuthService.cs:17,36-49`), and returned in `user.currency`. Smoke step `register-currency`; QA criteria 21-23. | No way to change the currency after sign-up. No km/mi setting: the UI always shows "km" and never converts. Both need a settings screen. |
 
@@ -53,9 +59,9 @@ How this was checked (fifth audit):
 
 | Requirement | Status | Evidence | What's missing |
 |---|---|---|---|
-| Remaining km/days, progress bar, status (OK, Due soon, Overdue) | **Done** | API: one pure function, `TaskStatusCalculator.Compute(task, currentOdometerKm, today)` (`src/OnlyCars.Application/Maintenance/TaskStatusCalculator.cs:13`), used for every task DTO (`MaintenanceTaskService.cs:156-158`); contract `docs/contracts/MVP2-B.md`. Tests: `TaskStatusCalculatorTests.cs` (10 tests with a fixed date, covering the boundaries) and `MaintenanceTaskServiceTests.cs`. UI: a text badge (`TasksSection.tsx:332`), `role="progressbar"` (`:340`), the remaining and overdue line (`Remaining`, `:31`), the urgency sort with a numeric name compare (`:16,89`), status colour tokens for light and dark (`index.css:14-16,40-42,212-214`), strings in en and he (`i18n.ts:94-98,258-262`). Browser: smoke steps `task-status-order`, `task-status-after-odometer` and `task-due-soon-percent` in both setups (`mobile-dark-he-27-task-status-order.png`). UI QA passed. | Nothing for this bullet. Two known Lows are fixed in MVP2-C: a failed reload hides the rows, and "about 243 / months" can wrap on English mobile. A predicted due date from km/day is a later ticket. |
-| Reset / Mark as done (records odometer and date, restarts the countdown, creates a history entry with optional cost and notes) | **Missing** | none | Everything. **MVP2-C (next ticket).** |
-| Undo for accidental resets | **Missing** | none | Everything. **MVP2-C.** |
+| Remaining km/days, progress bar, status (OK, Due soon, Overdue) | **Done** | API: one pure function, `TaskStatusCalculator.Compute(task, currentOdometerKm, today)` (`src/OnlyCars.Application/Maintenance/TaskStatusCalculator.cs:13`), used for every task DTO (`MaintenanceTaskService.cs:156-158`); contract `docs/contracts/MVP2-B.md`. Tests: `TaskStatusCalculatorTests.cs` (10 tests with a fixed date, covering the boundaries) and `MaintenanceTaskServiceTests.cs`. UI: a text badge (`TasksSection.tsx:332`), `role="progressbar"` (`:340`), the remaining and overdue line (`Remaining`, `:31`), the urgency sort with a numeric name compare (`:16,89`), status colour tokens for light and dark (`index.css:14-16,40-42,212-214`), strings in en and he (`i18n.ts:94-98,258-262`). Browser: smoke steps `task-status-order`, `task-status-after-odometer` and `task-due-soon-percent` in both setups (`mobile-dark-he-27-task-status-order.png`). UI QA passed. | Nothing for this bullet. MVP2-B's two Lows are fixed in MVP2-C: a failed reload keeps the rows (smoke `tasks-reload-error-keeps-rows`), and the unit words are joined with non-breaking spaces. A predicted due date from km/day is a later ticket. |
+| Reset / Mark as done (records odometer and date, restarts the countdown, creates a history entry with optional cost and notes) | **Done** | API: `POST .../tasks/{taskId}/reset` (`MaintenanceTasksController.cs:38-41`, `MaintenanceTaskService.cs:99`). It creates `ServiceRecord` (DIY, nullable cost) and `ServiceRecordTask` with an undo snapshot, sets `LastDone*` and logs a Service reading, all in one save. Schema: `ServiceRecordConfiguration.cs`, migration `20261015041218_AddServiceRecords.cs`. Contract: `docs/contracts/MVP2-C.md`. Tests: `ServiceRecordTests.cs` (13) and `MaintenanceSchemaTests.cs` (deleting a task keeps the record). UI: "Mark done" and "Add cost or notes" on enabled tasks of active cars; it sends the local date (`TasksSection.tsx:99-104`) and reloads the car and history (`CarPage.tsx:76`). Strings in en and he (`i18n.ts:101-108,282-289`). Browser: smoke `reset-task` and `reset-with-cost` in both setups, plus the QA script. | Nothing for the MVP. Backdated services and one record for several tasks come with step 3, per the ticket. |
+| Undo for accidental resets | **Done** | API: `POST .../service-records/{recordId}/void` (`MaintenanceTasksController.cs:43-45`, `MaintenanceTaskService.cs:171`). Only the latest reset by creation time can be undone (`:184-188`); otherwise it returns 409 `serviceRecord.notLatest`. Tests: `ServiceRecordTests.cs`, including `Void_LatestIsByCreationOrder_EvenWhenTheLaterResetHasAnEarlierDate`. UI: a `role="status"` Undo bar with `aria-describedby` (`TasksSection.tsx:408-412`). It has no timer and closes on the next action in the section (`:143-145`). Browser: smoke `undo-reset` and `toggle-clears-undo` in both setups (`mobile-dark-he-31-undo-reset.png`). | Undo after leaving the page comes with step 3's service history, which uses the same endpoint. |
 | Configurable "due soon" threshold | **Done** | `dueSoonPercent` on POST and PUT, 1 to 50, default 10, kept when PUT omits it, error `task.invalidDueSoonPercent` (`MaintenanceTaskService.cs:53,77,127-130`). Tests in `MaintenanceTaskServiceTests.cs`, including a toggle with the old body shape keeping 25. UI: the "Due soon when this much is left" field with client validation (`TasksSection.tsx:207,227,261-263`), sent from `bodyOf` (`:13-14`). Browser: smoke `task-due-soon-percent` (`desktop-light-en-29-task-due-soon-percent.png`). | Nothing. Percent only, as decisions.md says; no absolute "500 km" option. |
 
 ## 5. Service Records
@@ -147,7 +153,8 @@ How this was checked (fifth audit):
 - Fixed (MVP1-C): a car's starting odometer uses the same 0 to 10,000,000 range and returns `odometer.invalidValue` (`VehicleService.cs:32-34`).
 - Done: `TaskTemplate` (plus a `Key`, a deviation recorded in decisions.md) and `MaintenanceTask` have all spec fields. The index on MaintenanceTask(VehicleId, IsEnabled) is at `MaintenanceTaskConfiguration.cs:25`. The interval check constraint is on both tables (`MaintenanceTaskConfiguration.cs:27`, `TaskTemplateConfiguration.cs:18`). Vehicle to task cascades on delete (`MaintenanceTaskConfiguration.cs:17`), and template to task is restricted (`:23`).
 - MVP2-B added no schema; `DueSoonPercent` is now read and written through the API, and status is computed on read, never stored, as Part 2 requires.
-- Not started: `ServiceRecord`, `ServiceRecordTask` (MVP2-C) and the rest of Part 2.
+- Done (MVP2-C): `ServiceRecord` and `ServiceRecordTask`, with the index on ServiceRecord(VehicleId, Date DESC). There are three recorded deviations: `ServiceRecordTask.PreviousLastDone*` (the Undo snapshot), `OdometerReading.ServiceRecordId`, and a nullable `TotalCost`. Deleting a task keeps its records and their readings (`MaintenanceSchemaTests.cs`, on SQL Server).
+- Not started: `ServiceItem`, `Attachment` (step 3) and the rest of Part 2.
 - Not started: `VehicleShare` (optional).
 
 ---
@@ -156,19 +163,20 @@ How this was checked (fifth audit):
 
 | Step | State |
 |---|---|
-| 1. Auth, cars, odometer | **Complete for the MVP; MVP1-A, MVP1-B and MVP1-C signed off.** Working end to end in EN and HE: register (with currency) and login; add, edit, archive and unarchive cars, with the starting odometer capped at 0 to 10,000,000 km; quick odometer entry on the list and the car page; edit and delete readings with date-order rules and recompute; focus and page titles on every route. Remaining: car photo (blocked until the R2 credentials exist) and the settings screen for km/mi and currency (after step 2; it blocks nothing). |
-| 2. Tasks, templates, km/time intervals, Reset | **In progress: MVP2-A and MVP2-B signed off.** Spec section 3 is done, and so are spec 4.1 (status, remaining, progress bar) and 4.4 (due-soon threshold). Left: MVP2-C, Reset and Undo (spec 4.2 and 4.3), which closes step 2. |
-| Deploy gate | **SEC-1 signed off.** Auth rate limits, account lockout, constant-time login, the 8 KB auth body limit and clean 400s are in. Nothing else blocks a first deploy except the owner's Azure account. |
-| 3. Service history with costs | Not started. MVP2-C creates a minimal `ServiceRecord`; step 3 builds the full history on it. |
-| 4. Dashboard with due/overdue status | Not started. The per-task status it needs exists now (MVP2-B). |
+| 1. Auth, cars, odometer | **Complete for the MVP. MVP1-A, MVP1-B and MVP1-C are signed off.** Working end to end in EN and HE: register (with currency) and login; add, edit, archive and unarchive cars; quick odometer entry on the list and the car page (both now send the local date); edit and delete readings with the date-order rules and recompute; focus and page titles on every route. Remaining: the car photo (blocked until the R2 credentials exist) and the settings screen, which is next (SET-1, then SET-2). |
+| 2. Tasks, templates, km/time intervals, Reset | **Complete. MVP2-A, MVP2-B and MVP2-C are signed off.** All of spec sections 3 and 4 is done: tasks and templates, status with remaining km and days and a progress bar, the due-soon threshold, one-tap Mark done with optional cost and notes, and Undo. |
+| Deploy gate | **SEC-1 signed off.** Nothing else blocks a first deploy except the owner's Azure account. |
+| 3. Service history with costs | Not started. MVP2-C created `ServiceRecord` and `ServiceRecordTask` and the void endpoint; step 3 adds the history list, the full record form (date, odometer, shop, line items) and edit and delete. |
+| 4. Dashboard with due/overdue status | Not started. The per-task status and the reset endpoint it needs both exist. |
 | 5. Checklists, tires, reports, notifications | Not started |
 
 ## Ticket queue
 
 | Order | Ticket | Who | State |
 |---|---|---|---|
-| 1 | MVP2-C: Reset / Mark as done, and Undo (plus MVP2-B QA Lows 1 and 2) | BE, then FE | **Next** (written below) |
-| 2 | Settings screen (km/mi, currency, theme, locale) | BE, then FE | Not written. After step 2, per decisions.md. |
+| 1 | SET-1: Settings screen, part 1: language, theme, currency (plus MVP2-C QA note (a)) | BE, then FE | **Next** (written below) |
+| 2 | SET-2: Distance unit (km/mi), converted on display and input | BE, then FE | Not written |
+| 3 | MVP3-A: Service history list and the full service record form (spec section 5) | BE, then FE | Not written |
 
 ## Signed-off tickets
 
@@ -186,113 +194,97 @@ How this was checked (fifth audit):
   - Evidence: 136 of 136 tests (10 new calculator tests, plus service tests for the DTO fields, `dueSoonPercent` validation and keep-on-PUT); smoke 37 of 37 in both setups, with new steps `task-status-order`, `task-status-after-odometer`, `task-due-soon-percent` and `templates-error`; code review approved, with all nits fixed; Hebrew review done; UI QA passed every criterion area, including the threshold boundaries, the sort, status following odometer add/edit/delete without a reload, contrast in both themes, the RTL fill and 390px.
   - MVP2-A Lows (a), (c) and (d) are fixed and verified here.
   - QA's three Lows are decided in decisions.md ("MVP2-B QA Lows"): 1 (rows vanish on a failed reload) and 2 (the "about 243 / months" wrap) are folded into MVP2-C, and 3 (`aria-valuetext` above 100%) is accepted.
+- **MVP2-C (backend commit `7d9012d`; the frontend and review fixes are not committed yet): signed off 2026-10-15.** All 19 criteria met.
+  - Evidence: 158 of 158 tests, 22 more than before, mostly in `ServiceRecordTests.cs` and `MaintenanceSchemaTests.cs`. Smoke passed 42 of 42 in both setups, with the new steps `reset-task`, `undo-reset`, `reset-with-cost`, `toggle-clears-undo` and `tasks-reload-error-keeps-rows`. `qa-mvp2c.mjs` passed in both setups. Code review fixes are in; the Hebrew review needed no changes; UI QA passed, and its Medium is fixed and covered by smoke.
+  - MVP2-B Lows 1 and 2 are fixed here. QA's notes (a) to (c) are decided in decisions.md ("MVP2-C QA notes"): (a) is fixed in SET-1, and (b) and (c) are accepted.
+  - The car list's quick-add now sends the local date (decision 2026-10-15).
 
 ## Next ticket
 
-### MVP2-C: Reset / Mark as done, and Undo
+### SET-1: Settings screen, part 1 (language, theme, currency)
 
-**Goal:** On a car's page, a user taps "Mark done" on a task to record that it was done today at the car's current odometer, which restarts its countdown. They can add a cost and notes if they want, and undo a mistaken tap straight away.
+**Goal:** A signed-in user opens Settings from the header and changes their language, light or dark theme, and currency. Each change applies at once and is still there after logging in on another device.
 
-**Spec:** section 4, bullets 2 ("Reset / Mark as done": records odometer and date, restarts the countdown, creates a history entry with optional cost and notes, skippable) and 3 ("Undo for accidental resets"). Part 2: "How Reset works", the Undo paragraph, `ServiceRecord`, `ServiceRecordTask`, and the index on ServiceRecord(VehicleId, Date DESC). Spec 2.2 ("auto-log the odometer whenever a service is recorded") starts here: a reset logs a `Service` reading.
+**Spec:** section 2, bullet 4 ("currency set per user"; the km/mi half is SET-2); section 12, "Light and dark mode" (the in-app switch) and "Hebrew and English UI" (saving `User.Locale`). Part 2: `User.Currency`, `User.Locale`, `User.Theme`. All three columns already exist and are returned in `UserDto` (`AuthDtos.cs:10`), but nothing writes them after sign-up.
 
-**Binding decisions** (`docs/decisions.md`, 2026-10-15):
-- Reset / Mark as done: current odometer and today only, with no odometer or date field. The client sends its local date, and the server accepts UTC today ±1 day. Cost (0 to 1,000,000, 2 decimals) and notes (up to 1,000 characters) are optional. `ShopName` is null (DIY), and `TotalCost` is null when skipped. The service reading skips the date-order checks. The server does not block disabled tasks or archived cars; the UI doesn't offer Reset there.
-- Undo: restores `LastDone*` from a snapshot on `ServiceRecordTask`. Only the most recent non-voided reset of each linked task can be undone. The linked reading is deleted, or turned into a manual reading if it's the car's only reading. In the UI, Undo stays on the row until the next action in the tasks section or leaving the page, with no timer.
-- Deleting a task with resets: allowed. The join rows go; the records and readings stay.
-- MVP2-B QA Lows 1 and 2 are fixed in this ticket.
-
-**Deviations from spec Part 2** (covered by the decisions above): `ServiceRecordTask` gains `PreviousLastDoneOdometerKm` and `PreviousLastDoneDate` (the snapshot for Undo). `OdometerReading` gains a nullable `ServiceRecordId`, so Undo can find and remove the reading its reset logged. `ServiceRecord.TotalCost` is nullable.
+**Binding decisions** (`docs/decisions.md`, 2026-10-15, "Settings screen scope and split" and "Settings rules, SET-1"):
+- The page is `/settings`, linked from the header. Each control saves when it changes; there is no Save button.
+- Theme is System, Light or Dark, and defaults to System. It is applied before first paint from the cached user.
+- Currency is one of ILS, USD, EUR or GBP. Changing it only relabels amounts; stored costs are not converted, and the page says so.
+- Language: when signed in, `User.Locale` wins. It is applied at login, and the header switch also saves it. Signed out, the app behaves as today. Register saves the language the form was shown in.
+- A failed save puts the control back to its old value and shows a translated error.
+- MVP2-C QA note (a): the car list's "Show archived" label becomes at least 44px tall.
 
 **Scope**
 
-*Backend (backend-engineer). Runs first. Publish the contract in `docs/contracts/MVP2-C.md`, extending `MVP2-A.md` and `MVP2-B.md`.*
-- **Entities and migration:**
-  - `ServiceRecord`: `VehicleId`, `Date` (DateOnly), `OdometerKm` (decimal(12,2), like readings), `ShopName` (nullable, max 100), `TotalCost` (decimal(12,2), nullable), `Notes` (nullable, max 1,000), `IsVoided` (default false), plus `Id`, `CreatedAt` and `UpdatedAt`. Index on (VehicleId, Date DESC).
-  - `ServiceRecordTask`: `ServiceRecordId`, `MaintenanceTaskId`, `PreviousLastDoneOdometerKm`, `PreviousLastDoneDate`. Unique on (ServiceRecordId, MaintenanceTaskId), indexed on MaintenanceTaskId.
-  - `OdometerReading.ServiceRecordId` (nullable FK).
-  - **Watch SQL Server's "multiple cascade paths" error.** Vehicle cascades to both tasks and records, so only one path into `ServiceRecordTask` and into `OdometerReading.ServiceRecordId` may cascade. Suggestion: ServiceRecord to ServiceRecordTask cascades; MaintenanceTask to ServiceRecordTask is `NoAction`, with the join rows removed in `MaintenanceTaskService.DeleteAsync`; ServiceRecord to OdometerReading is `NoAction` (records are never hard-deleted in this ticket). Add a schema test like `MaintenanceSchemaTests.cs` that deleting a task with a reset keeps the record.
-- **Reset**, in one `SaveChanges`: load the owned car and the task (404s as today); validate; create the record (`Date` = the request date or UTC today, `OdometerKm` = `vehicle.CurrentOdometerKm`, `TotalCost`, `Notes` trimmed with empty saved as null, `ShopName` null); create the join row with the task's current `LastDone*` as the snapshot; set the task's `LastDoneOdometerKm` to the current odometer and `LastDoneDate` to the date; add the reading (`Source = Service`, linked to the record); run the existing odometer recompute (it is `private static` in `OdometerService.cs:165`, so share it rather than copy it).
-- **Undo (void):** load the owned car and the record on that car (otherwise 404 `serviceRecord.notFound`, which also covers another user's record). 409 `serviceRecord.alreadyVoided` if it's already voided. For each linked task, 409 `serviceRecord.notLatest` if another non-voided record for that task is later by (Date, CreatedAt). Otherwise set `IsVoided`, restore each linked task's `LastDone*` from the snapshot, delete the linked reading (or, if it's the car's only reading, set it to `Manual` and clear `ServiceRecordId`), and recompute. One `SaveChanges`.
-- **API contract outline:**
+*Backend (backend-engineer). Runs first. Publish the contract in `docs/contracts/SET-1.md`.*
+- `GET /api/me` returns **200** `UserDto` for the caller.
+- `PUT /api/me/settings` takes `{ locale?, theme?, currency? }`, with locale En or He, theme System, Light or Dark, and currency ILS, USD, EUR or GBP. A missing field is left unchanged. It returns **200** `UserDto`. Use the same enum casing as the current `UserDto` JSON, and write that casing in the contract.
+- Errors, each 400 with no extensions: `settings.invalidLocale` and `settings.invalidTheme`. An invalid currency reuses the code and the currency list that register already uses; don't add a second list.
+- Register: an optional `locale` in the body, saved to `User.Locale`. An invalid value returns `settings.invalidLocale`. When it's missing, the default stays En.
+- Both endpoints require auth. A missing or invalid token returns 401, as for every other endpoint.
+- Leave `DistanceUnit` alone. It is in `UserDto` already, and SET-2 adds it to settings.
 
-  | Endpoint / change | Detail |
-  |---|---|
-  | `POST /api/vehicles/{vehicleId}/tasks/{taskId}/reset` | Body, all optional (an empty body or `{}` is a one-tap reset): `{ date?: "YYYY-MM-DD" \| null, cost?: number \| null, notes?: string \| null }`. Returns **201** `{ serviceRecordId, task: MaintenanceTaskDto }`. The task already has its new `lastDone*`, `status`, `remaining*` and `progress`. |
-  | `POST /api/vehicles/{vehicleId}/service-records/{recordId}/void` | No body. Returns **200** `MaintenanceTaskDto[]`: the linked tasks after the restore (an empty array if the task was deleted since). |
-  | `serviceRecord.invalidDate` | 400, no extensions: `date` is more than 1 day away from UTC today, before or after. |
-  | `serviceRecord.invalidCost` | 400, no extensions: `cost` is below 0, above 1,000,000, or has more than 2 decimals. |
-  | `serviceRecord.notesTooLong` | 400, no extensions: `notes` is over 1,000 characters after trimming. |
-  | `serviceRecord.notFound` | 404: the record isn't on this car, or the car isn't the caller's. |
-  | `serviceRecord.alreadyVoided` | 409, no extensions. |
-  | `serviceRecord.notLatest` | 409, no extensions: a later non-voided reset exists for a linked task. |
-  | Unchanged | `MaintenanceTaskDto`. There is no GET for service records yet (step 3). The odometer history now includes `Source = "Service"` readings, which already return 409 `odometer.notManual` on PUT and DELETE. |
-
-  Validation order for reset: `vehicle.notFound`, `maintenanceTask.notFound`, `serviceRecord.invalidDate`, `serviceRecord.invalidCost`, `serviceRecord.notesTooLong`.
-
-*Frontend (frontend-engineer). Builds against `docs/contracts/MVP2-C.md`.*
-- **Task row** (`TasksSection.tsx`, `TaskRow`), for enabled tasks on active cars only:
-  - A **"Mark done"** button ("סמן כבוצע"; the Hebrew reviewer may adjust it). One tap posts `{ date: localToday() }`. The button is disabled while the request is in flight, so a double tap makes one record.
-  - An **"Add cost or notes"** button that opens an inline form with Cost (number, step 0.01, labelled with the user's currency code from `user.currency`) and Notes (textarea, `maxLength` 1,000), plus "Mark done" and Cancel. Escape and Cancel close it and return focus to the opener (MVP1-C rule). Both fields are optional. Cost is checked on the client (0 to 1,000,000, at most 2 decimals), with a translated message on the field, before any request.
-- **After a reset:** replace the row with `task` from the response (the list re-sorts, so the row usually moves down), and call a new `onOdometerChanged` prop from `CarPage` that runs its existing `load()`. That reloads the car and the history (a new "Service" reading appears, without Edit or Delete) and, through the existing `[path, car]` effect, the task list.
-- **Undo bar** on that row: "Marked as done." with an **Undo** button, in a `role="status"` region so screen readers announce it. Focus moves to the Undo button in the row's new position. The bar stays until the next action anywhere in the tasks section (another Mark done, Edit, toggle, Delete, Add task) or leaving the page. Only one bar shows at a time. Undo posts the void, replaces the rows from the response, calls `onOdometerChanged`, removes the bar, and moves focus to that row's "Mark done" button. An Undo error shows translated on the row, and the bar stays so the user can retry.
-- **Low 1:** when a task reload fails and rows are already showing, keep the rows and show the translated load error above them. Only a first load with no rows shows the error alone.
-- **Low 2:** a non-breaking space between the number and the unit word in the remaining and overdue strings (`aboutMonths_*` and the km and days forms), in `en` and `he`, so "about 243 months" never breaks inside.
-- **Strings** in `en` and `he`: Mark done, Add cost or notes, Cost, Notes, Marked as done, Undo, the cost error, and `errors.serviceRecord.*` for all six new codes.
+*Frontend (frontend-engineer). Builds against `docs/contracts/SET-1.md`.*
+- **Header** (`App.tsx:16-24`): a "Settings" link for signed-in users. The language switch, when signed in, changes the language and saves `locale`, and if the save fails it shows a translated error and switches back.
+- **`/settings` page** (`client/src/pages/SettingsPage.tsx`), with its title "Settings · OnlyCars" and focus on the `h1` (the MVP1-C rules):
+  - Language: a radio group, Hebrew or English. It switches the UI at once.
+  - Theme: a radio group, System, Light or Dark.
+  - Currency: a select of the four codes, with a hint under it: "Changing the currency doesn't convert amounts you've already entered."
+  - Each control saves on change and is disabled while saving. On success the cached user in `auth.tsx` (localStorage `USER_KEY`) is updated, and a short `role="status"` message "Saved" appears. On failure the control goes back to its old value, and a translated error shows next to it.
+  - Loading: the page reads from the cached user, so there is no spinner. It also calls `GET /api/me` once and updates the cache if anything differs, for example after a change on another device.
+- **Theme:** the CSS today is `@media (prefers-color-scheme: dark)` on `:root` (`index.css:21,27-28`). Add a `data-theme` attribute (light or dark) on `<html>` that wins over the media query, with `color-scheme` to match. System removes the attribute. Set it in `main.tsx` from the cached user before React renders, so there is no flash.
+- **Locale on login:** after login, if `user.locale` differs from the UI language, switch to it. Register sends the current UI language as `locale`.
+- **Cost label:** the cost field in `TasksSection` already reads `user.currency`, so it follows the new value without a reload.
+- **QA note (a):** the "Show archived" checkbox label on the car list (`CarsPage.tsx:34-35`) is at least 44px tall.
+- **Strings** in `en` and `he`: Settings, Language, Theme, System, Light, Dark, Currency, the currency hint, Saved, and `errors.settings.*`.
 
 **Acceptance criteria**
 
-*Reset*
-1. [BE] Service tests: a one-tap reset creates one non-voided record with the car's current odometer, UTC today, and null cost, notes and shop; one join row whose snapshot equals the task's old `LastDone*`; the task's `LastDone*` set to the current odometer and the date; and one `Service` reading with that value and date, linked to the record. The returned task has a restarted `status`, `remaining*` and `progress` (for example, Overdue becomes Ok with `remainingKm` equal to `IntervalKm`).
-2. [BE] A reset with `cost` 120.5 and `notes` "  Castrol 5W-30 " saves 120.50 and the trimmed notes; notes of only spaces save null.
-3. [BE] A `date` of UTC today -2 or +2 returns 400 `serviceRecord.invalidDate`; -1 and +1 are accepted. Cost -1, 1,000,000.01 and 1.234 return 400 `serviceRecord.invalidCost`. Notes of 1,001 characters return 400 `serviceRecord.notesTooLong`. Each failure saves nothing (no record, no reading, task unchanged).
-4. [BE] Another user's car or task, or a task on a different car, returns 404 and saves nothing.
-5. [BE] The service reading doesn't trip the date-order checks: reset works when the car's latest reading is dated tomorrow (the UTC slack), and the car's current odometer is unchanged afterwards.
+*API*
+1. [BE] `GET /api/me` returns the caller's `UserDto`, and 401 without a token.
+2. [BE] `PUT /api/me/settings` with only `theme` Dark changes the theme and leaves locale and currency unchanged. With all three fields it changes all three. Both return the updated `UserDto`.
+3. [BE] An invalid locale, theme or currency returns 400 with its code and saves nothing, even when the other fields in the body are valid.
+4. [BE] Register with locale He saves He; without `locale` it saves En; with an invalid locale it returns 400 `settings.invalidLocale` and creates no user. Login returns the saved locale, theme and currency.
+5. [BE] Service tests cover criteria 1 to 4, and one user's change does not affect another user's settings.
 
-*Undo*
-6. [BE] Void restores the task's `LastDone*` from the snapshot, sets `IsVoided`, deletes the linked reading, recomputes the car's odometer and average, and returns the linked tasks with their restored status.
-7. [BE] Two resets, A then B, on one task: voiding A returns 409 `serviceRecord.notLatest` and changes nothing; voiding B restores A's values; then voiding A restores the original values. Voiding twice returns 409 `serviceRecord.alreadyVoided`. Another user's record returns 404.
-8. [BE] If the reset's reading has become the car's only reading, void keeps it as a `Manual` reading with no `ServiceRecordId`, and the car's odometer is unchanged.
-9. [BE] Deleting a task that has a reset returns 204, removes the join row, and keeps the record and its reading (schema test on SQL Server).
+*Settings page*
 
-*Car page*
-
-10. [BE+FE] Tapping "Mark done" on an Overdue task turns its row OK with a full "N km left" line and an empty bar, re-sorts the list, shows the Undo bar with focus on Undo, and adds a "Service" reading to the odometer history (with no Edit or Delete), all without a page reload.
-11. [BE+FE] "Add cost or notes" with cost 120.50 and notes saves the reset (the smoke step checks it through the API response). Cost -1, 1,000,000.01 and 1.234 are blocked on the client with a translated message on the field, and no request is sent. Escape and Cancel close the form with focus back on its opener.
-12. [BE+FE] Undo returns the row to its previous status, last-done line and position, removes the "Service" reading from the history, removes the bar, and puts focus on that row's "Mark done". Any other action in the tasks section removes the bar without undoing.
-13. [FE] "Mark done" and "Add cost or notes" don't appear on disabled tasks or on archived cars.
-14. [FE] Double-tapping "Mark done" creates exactly one reset (the button is disabled while in flight).
-15. [FE] Errors: a failed reset or undo shows the translated error on that row and keeps the rows; a failed undo also keeps the bar. A failed task reload with rows showing keeps the rows and shows the load error above them (Low 1).
+6. [BE+FE] Changing the theme to Dark makes the app dark at once, with the OS in light mode. After a reload it is still dark, with no light flash (screenshot right after load). Light forces light with the OS in dark mode. System follows the OS again.
+7. [BE+FE] Changing the language on the settings page or with the header switch flips the UI and `dir` at once. After logging out, switching the signed-out UI to the other language and logging in again, the saved language is applied.
+8. [BE+FE] Changing the currency to USD saves it, and the "Add cost or notes" form on a car page then shows "Cost (USD)" with no reload. The hint about not converting amounts is visible under the field.
+9. [FE] A failed save (mocked 500) puts the control back to its previous value and shows the translated error next to it, and the page stays usable. While a save is in flight, that control is disabled.
+10. [FE] The Settings link appears only when signed in. `/settings` when signed out goes to `/login`, as other routes do.
 
 *Every screen*
 
-16. [FE] Hebrew and RTL: every new string exists in `en` and `he`; the Undo bar, the buttons and the cost field lay out correctly in RTL; amounts and dates stay left-to-right in `<bdi>`.
-17. [FE] Mobile: at 390px wide there is no horizontal overflow with the two buttons, the inline form and the Undo bar, in both languages. Tap targets are at least 44px tall. "about 243 months" doesn't break inside on English or Hebrew mobile (Low 2).
-18. [FE] Accessibility: the Undo bar is announced (`role="status"`); every button has a visible text label; focus follows criteria 10 to 12; the MVP1-C focus rules are unchanged elsewhere.
-19. [BE+FE] Tests: `dotnet test` passes with new tests for criteria 1 to 9. `smoke.mjs` gains steps `reset-task` (criterion 10), `reset-with-cost` (11), `undo-reset` (12) and `tasks-reload-error-keeps-rows` (Low 1, with the reload failure mocked), and they pass in both setups along with every existing step.
+11. [FE] Hebrew and RTL: every new string exists in `en` and `he`; the radio groups and the select lay out correctly in RTL; currency codes are in `<bdi>`.
+12. [FE] Mobile: at 390px wide there is no horizontal overflow on `/settings`, in both languages and both forced themes. Every radio, select and link, and the car list's "Show archived" label, is at least 44px tall (QA note (a)).
+13. [FE] Accessibility: each group is a `fieldset` with a `legend`; "Saved" and errors are announced (`role="status"` and `role="alert"`); the forced dark and light themes keep text contrast at least 4.5:1 (the existing tokens).
+14. [BE+FE] Tests: `dotnet test` passes, with new tests for criteria 1 to 5. `smoke.mjs` gains the steps `settings-theme` (6), `settings-language` (7), `settings-currency` (8) and `settings-save-fails` (9, mocked). They pass in both setups, along with every existing step.
 
 **Out of scope**
-- A service history list, viewing or editing records, line items, attachments and shop names (step 3, spec section 5).
-- Backdated resets or a different odometer value: these come with step 3's service record form.
-- One record resetting several tasks (the model allows it; the UI comes in step 3).
-- Undo after leaving the page: in step 3, from the service history, using the same void endpoint.
-- Reset from the car list or a dashboard (step 4).
-- Server-side blocking of writes on archived cars (the UI is read-only, as for every other write today).
-- Miles and changing the currency (settings screen).
+- Km/mi (SET-2): the unit setting, and converting distances on display and input.
+- Converting stored amounts when the currency changes.
+- Changing the email or password, and delete-account and data export (section 12; a later ticket).
+- Currencies beyond the four at sign-up.
 
-**Open questions:** none blocking; every rule is in decisions.md. For the owner to review: the Hebrew button labels, and whether a one-tap reset should count as DIY (`ShopName` null) in later cost reports.
+**Open questions:** none blocking. Every rule is in decisions.md. For the owner to review: whether changing the currency should eventually offer to convert old amounts, and whether more currencies are wanted.
 
 ---
 
-### Later (not scheduled before step 2 ends)
-- **Settings screen:** km/mi with conversion on display, currency change, a theme toggle (`User.Theme`), and saving `User.Locale`.
+### Later
+- **SET-2, distance unit:** km/mi, with conversion on display and input (odometer, readings, task intervals, remaining). Values are still stored in km.
+- **MVP3-A, service history:** a list per car, the full record form (date, odometer, shop or DIY, cost, notes), and void or edit from the history.
 - **Car photo upload:** blocked until the owner creates the Cloudflare R2 credentials.
 - **Predicted due date** from `AvgKmPerDay` (spec 2.3): with the dashboard (step 4) or later.
 
 ## Changed since last audit
-- **Signed off:** MVP2-B (commits `2fc5531`, `68ea634`, `7728d51`).
-- **Section 4:** "Remaining km/days, progress bar, status" and "Configurable due-soon threshold" went from Missing to **Done**. Reset and Undo now point to MVP2-C.
-- **Section 3:** the "whichever comes first" and enable/disable notes are closed (MVP2-B made status visible and fixed the stale-error Low).
-- **Counts:** Done went from 10 to 12, and Missing from 33 to 31.
-- **New decisions** (`docs/decisions.md`, 2026-10-15): MVP2-B QA Lows (1 and 2 fixed in MVP2-C, 3 accepted), Reset rules, Undo rules, and deleting a task with resets.
-- **MVP2-C** is written in full, replacing the outline. The MVP2-B ticket text was removed from this file; it is in git history up to `7728d51`.
-- **Tests:** `dotnet test` grew from 109 to 136 tests, and the smoke suite from 33 to 37 steps per setup.
+- **Signed off:** MVP2-C. The backend is in `7d9012d`; the frontend and review fixes are not committed yet.
+- **Section 4:** "Reset / Mark as done" and "Undo" went from Missing to **Done**. All of section 4 is now done.
+- **Section 2:** "Auto-log the odometer whenever a service is recorded" went from Missing to **Partial**: resets log a Service reading, and the full service record comes in step 3.
+- **Counts:** Done went from 12 to 14, Partial from 7 to 8, and Missing from 31 to 28.
+- **MVP step 2 is complete.**
+- **New decisions** (`docs/decisions.md`, 2026-10-15): MVP2-C QA notes ((a) is fixed in SET-1; (b) and (c) are accepted), the settings screen scope and split, and the settings rules for SET-1.
+- **Next ticket:** SET-1, written in full. The MVP2-C ticket text is in git history up to `7d9012d`.
+- **Tests:** `dotnet test` grew from 136 to 158 tests, and the smoke suite from 37 to 42 steps per setup.
