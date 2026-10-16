@@ -116,7 +116,8 @@ export interface Dashboard {
   month: string // YYYY-MM
   monthTotalCost: number
   monthServiceCount: number
-  vehicles: { id: string; overdueCount: number; dueSoonCount: number; tasks: DashboardTask[] }[]
+  // checklists: the car's enabled ones, most urgent first (manual only last, with no status)
+  vehicles: { id: string; overdueCount: number; dueSoonCount: number; tasks: DashboardTask[]; checklists: VehicleChecklist[] }[]
 }
 export type DashboardTask = MaintenanceTask & { status: TaskStatus }
 
@@ -155,6 +156,59 @@ export interface ChecklistTemplate {
   itemCount: number
   items: ChecklistTemplateItem[] // in the saved order
 }
+
+// A template on a car (MVP5-B). Both intervals null is manual only; status and the remaining values are null when manual only or off.
+// lastRun* are the attach values until a run is saved. The server lists them most urgent first.
+export interface VehicleChecklist {
+  id: string
+  vehicleId: string
+  templateId: string
+  name: string
+  itemCount: number
+  intervalKm: number | null
+  intervalDays: number | null
+  isEnabled: boolean
+  lastRunDate: string
+  lastRunOdometerKm: number
+  runCount: number
+  status: TaskStatus | null
+  remainingKm: number | null
+  remainingDays: number | null
+  progress: number | null
+}
+
+// Label, type, unit and range are snapshots from run time.
+export interface ChecklistRunItem {
+  id: string
+  templateItemId: string | null
+  label: string
+  type: ChecklistItemType
+  unit: string | null
+  minValue: number | null
+  maxValue: number | null
+  boolValue: boolean | null
+  numberValue: number | null
+  textValue: string | null
+  isFlagged: boolean
+}
+
+export interface ChecklistRun {
+  id: string
+  vehicleChecklistId: string
+  runAt: string
+  odometerKm: number
+  notes: string | null
+  flaggedCount: number
+  items: ChecklistRunItem[]
+}
+
+// The server's automatic flag, live on the run form: Not OK, or a number outside the range (the bounds themselves are inside).
+export const autoFlag = (i: Pick<ChecklistRunItem, 'boolValue' | 'numberValue' | 'minValue' | 'maxValue'>): 'notOk' | 'below' | 'above' | null =>
+  i.boolValue === false ? 'notOk'
+    : i.numberValue == null ? null
+    : i.minValue != null && i.numberValue < i.minValue ? 'below'
+    : i.maxValue != null && i.numberValue > i.maxValue ? 'above'
+    : null
 
 // ProblemDetails from the API; `code` is translated by errorMessage() in i18n.ts.
 export interface Problem {
@@ -224,6 +278,8 @@ export const isGuid = (s: string | undefined) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a
 
 // The API's answer for a car that doesn't exist, used without a request when the route id can't be one.
 export const carNotFound = () => new ApiError(404, { code: 'vehicle.notFound' }, 'Not Found')
+
+export const runPath = (carId: string, checklistId: string) => `/cars/${encodeURIComponent(carId)}/checklists/${encodeURIComponent(checklistId)}/run`
 
 // The user's calendar date, for date fields' max and defaults.
 export function localToday() {

@@ -30,6 +30,8 @@ for (const s of setups) {
   page.on('pageerror', (e) => run.consoleErrors.push(String(e)))
   page.on('response', (r) => r.status() >= 400 && run.badResponses.push(`${r.status()} ${r.request().method()} ${r.url()}`))
 
+  // Against the set viewport width: with isMobile, innerWidth grows to fit a too-wide page and hides the overflow.
+  const overflowPx = () => page.evaluate((w) => document.documentElement.scrollWidth - w, page.viewportSize().width)
   let n = 0
   async function step(name, fn) {
     const shot = `${OUT}/${s.name}-${String(++n).padStart(2, '0')}-${name}.png`
@@ -42,7 +44,7 @@ for (const s of setups) {
     await page.waitForLoadState('networkidle').catch(() => {})
     await page.screenshot({ path: shot, fullPage: true })
     // Page wider than the viewport means horizontal scrolling, a layout bug.
-    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)
+    const overflow = await overflowPx()
     if (overflow > 0) run.steps.at(-1).horizontalOverflowPx = overflow
   }
 
@@ -89,7 +91,7 @@ for (const s of setups) {
     if (small.length) throw new Error(`${what} under 44px: ${JSON.stringify(small)}`)
   }
   async function noOverflow(what) {
-    const px = await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)
+    const px = await overflowPx()
     if (px > 0) throw new Error(`${px}px horizontal overflow with ${what}`)
   }
 
@@ -350,9 +352,9 @@ for (const s of setups) {
   await step('tasks-empty-and-picker', async () => {
     await page.setViewportSize({ width: 390, height: 844 })
     await tasks.locator('p.muted').filter({ hasText: he ? 'עדיין אין משימות תחזוקה.' : 'No maintenance tasks yet.' }).waitFor()
-    // The section sits above the odometer history.
+    // Maintenance first, then Checklists (MVP5-B), the service history and the odometer history.
     const order = await page.evaluate(() => [...document.querySelectorAll('main section h2')].map((h) => h.id).join())
-    if (order !== 'maintenance,service-history,odometer-history') throw new Error(`sections: ${order}`)
+    if (order !== 'maintenance,checklists,service-history,odometer-history') throw new Error(`sections: ${order}`)
     await tasks.getByRole('button', { name: TK.add }).click()
     const options = await tasks.locator('.picker li button').allTextContents()
     if (options.length !== 13) throw new Error(`${options.length} picker options`)
@@ -2567,6 +2569,288 @@ for (const s of setups) {
     await page.reload()
     await page.getByText(CL.empty, { exact: true }).waitFor()
     await page.setViewportSize(s.viewport)
+  })
+  // MVP5-B: checklists on a car (Dash car), runs, run history, the dashboard's Start a checklist, and a template in use.
+  const CK = he
+    ? { add: 'הוספת רשימת בדיקה', none: 'עדיין אין רשימות בדיקה לרכב הזה.', noTemplates: 'עדיין אין לך רשימות בדיקה. אפשר ליצור רשימה בדף רשימות הבדיקה.',
+        allAttached: 'כל רשימות הבדיקה שלך כבר משויכות לרכב הזה. אפשר ליצור רשימה נוספת.', manual: 'ידני בלבד', ok: 'תקין', off: 'לא פעילה',
+        left: 'עוד 5,000 ק״מ או 30 ימים', notRun: 'עדיין לא בוצעה', runOf: (n) => `ביצוע ${n}`, editOf: (n) => `עריכה של ${n}`, removeOf: (n) => `הסרה של ${n} מהרכב`,
+        title: (n, c) => `⁨${n}⁩ לרכב ⁨${c}⁩`, notOk: 'לא תקין', notOkReason: 'סומן כבעיה: לא תקין', below: 'סומן כבעיה: מתחת ל־2 bar', range: 'טווח 2 עד 2.6 bar',
+        field: (l, f) => `${l}: ${f}`, flag: 'סימון כבעיה', value: 'ערך', saved3: 'הבדיקה נשמרה. סומנו 3 בעיות.', history: (n) => `היסטוריה (${n})`, flagged3: '3 בעיות',
+        hasRuns: 'כבר בוצעו בדיקות לפי הרשימה הזו, ולכן אי אפשר להסיר אותה. במקום זה אפשר להשבית אותה.', confirmRun: 'למחוק את הבדיקה הזו? גם קריאת הקילומטראז׳ שלה תימחק.',
+        lower: 'הקריאה נמוכה מהקריאה שלפניה', start: 'ביצוע רשימת בדיקה', startOf: (n) => `ביצוע רשימת בדיקה: ${n}`,
+        inUse: 'רשימת הבדיקה משויכת לרכב, ולכן אי אפשר למחוק אותה. קודם הסירו אותה מהרכב.',
+        item2: 'פריט 2: הערך לא מתאים לפריט.', changed: 'רשימת הבדיקה השתנתה מאז שפתחתם אותה.', future: 'התאריך לא יכול להיות בעתיד.' }
+    : { add: 'Add a checklist', none: 'No checklists on this car yet.', noTemplates: 'You have no checklists yet. Create one on the Checklists page.',
+        allAttached: 'All your checklists are already on this car. Create another one.', manual: 'Manual only', ok: 'OK', off: 'Disabled',
+        left: '5,000 km or 30 days left', notRun: 'Not run yet', runOf: (n) => `Run ${n}`, editOf: (n) => `Edit ${n}`, removeOf: (n) => `Remove ${n} from this car`,
+        title: (n, c) => `${n} for ${c}`, notOk: 'Not OK', notOkReason: 'Flagged: Not OK', below: 'Flagged: below 2 bar', range: 'Range 2 to 2.6 bar',
+        field: (l, f) => `${l}: ${f}`, flag: 'Flag', value: 'Value', saved3: 'Run saved. 3 items flagged.', history: (n) => `History (${n})`, flagged3: '3 flagged',
+        hasRuns: "This checklist has runs, so it can't be removed. Turn it off instead.", confirmRun: 'Delete this run? Its odometer reading is deleted with it.',
+        lower: 'This reading is lower than the reading before it', start: 'Start a checklist', startOf: (n) => `Start a checklist: ${n}`,
+        inUse: "This checklist is on a car, so it can't be deleted. Remove it from the car first.",
+        item2: "Item 2: This value doesn't fit the item.", changed: 'This checklist has changed since you opened it.', future: "The date can't be in the future." }
+  const ckSec = page.locator('section[aria-labelledby=checklists]')
+  const ckRow = (name) => ckSec.locator('.car-checklists > li').filter({ has: page.locator('.name', { hasText: new RegExp(`^${name}$`) }) })
+  const ckForm = ckSec.locator('form')
+  // Hebrew names carry bidi isolates around free text, so these compare the name without them.
+  async function named(loc, name) {
+    await loc.waitFor()
+    if (plain(await loc.getAttribute('aria-label')) !== name) throw new Error(`name "${await loc.getAttribute('aria-label')}", want "${name}"`)
+    return loc
+  }
+  const runForm = page.locator('main form')
+  const runItem = (i) => runForm.locator('fieldset.item').nth(i)
+  const forgetCk = (status, part) => {
+    run.badResponses = run.badResponses.filter((r) => !(r.startsWith(`${status} `) && r.includes(part)))
+    run.consoleErrors = run.consoleErrors.filter((e) => !e.includes(`status of ${status}`))
+  }
+  const ckCarPath = () => `/cars/${dashCarId}`
+  let monthlyTpl, monthlyId
+  await step('checklist-attach', async () => {
+    await page.goto(`${BASE}${ckCarPath()}`)
+    // Empty states: none on the car, and no templates yet, with a link to /checklists. Escape goes back to Add a checklist.
+    await ckSec.getByText(CK.none, { exact: true }).waitFor()
+    await ckSec.getByRole('button', { name: CK.add, exact: true }).click()
+    const empty = ckSec.locator('.inline-form p')
+    await empty.waitFor()
+    if (plain(await empty.textContent()) !== CK.noTemplates || !(await empty.locator('a[href="/checklists"]').count())) throw new Error(`no templates "${await empty.textContent()}"`)
+    await page.keyboard.press('Escape')
+    await focusIs('section[aria-labelledby=checklists] button.add', 'Add a checklist after Escape')
+    monthlyTpl = await apiCall('POST', '/checklist-templates', { name: 'Monthly quick check', items: [
+      { label: 'Lights', type: 'Check' }, { label: 'Tire pressure', type: 'Number', unit: 'bar', minValue: 2, maxValue: 2.6 }, { label: 'Notes', type: 'Text' }] })
+    await apiCall('POST', '/checklist-templates', { name: 'Pre-road-trip', items: [{ label: 'Spare tire', type: 'Check' }] })
+    await page.reload()
+    // Criterion 6: Monthly quick check every 5,000 km or 30 days; focus goes to its new Run.
+    await ckSec.getByRole('button', { name: CK.add, exact: true }).click()
+    await focusIs('section[aria-labelledby=checklists] select[name=templateId]', 'the checklist picker')
+    await ckForm.locator('select[name=templateId]').selectOption({ label: 'Monthly quick check' })
+    await ckForm.locator('input[name=intervalKm]').fill('5000')
+    await ckForm.locator('input[name=intervalTime]').fill('30')
+    await ckForm.locator('select[name=intervalUnit]').selectOption('days')
+    let res = page.waitForResponse((r) => r.url().endsWith(`/vehicles/${dashCarId}/checklists`) && r.request().method() === 'POST')
+    await ckForm.locator('> .actions > button:not(.link)').click()
+    const attached = await (await res).json()
+    monthlyId = attached.id
+    if (attached.intervalKm !== 5000 || attached.intervalDays !== 30 || (await res).request().postDataJSON().date !== (await localDate())) throw new Error(JSON.stringify(attached))
+    await focusIs(`li[data-id="${monthlyId}"] a.run`, 'Run after attaching')
+    const monthly = ckRow('Monthly quick check')
+    if (plain(await monthly.locator('.badge.status').textContent()) !== CK.ok) throw new Error('no OK badge')
+    if (!plain(await monthly.textContent()).includes(CK.left)) throw new Error(`row "${plain(await monthly.textContent())}"`)
+    if (!plain(await monthly.textContent()).includes(CK.notRun)) throw new Error('last run shown before any run')
+    // The second, manual only: no badge. The picker no longer offers the first.
+    await ckSec.getByRole('button', { name: CK.add, exact: true }).click()
+    if ((await ckForm.locator('select[name=templateId] option').allTextContents()).join() !== 'Pre-road-trip') throw new Error('an attached template is offered')
+    res = page.waitForResponse((r) => r.url().endsWith(`/vehicles/${dashCarId}/checklists`) && r.request().method() === 'POST')
+    await ckForm.locator('> .actions > button:not(.link)').click()
+    const manual = await (await res).json()
+    await focusIs(`li[data-id="${manual.id}"] a.run`, 'Run after attaching manual only')
+    const trip = ckRow('Pre-road-trip')
+    if (await trip.locator('.badge.status').count()) throw new Error('a badge on manual only')
+    if (!plain(await trip.textContent()).includes(CK.manual)) throw new Error('manual only not shown')
+    // With every template attached, Add says so.
+    await ckSec.getByRole('button', { name: CK.add, exact: true }).click()
+    await ckSec.getByText(CK.allAttached.split('. ')[0] + '.', { exact: false }).waitFor()
+    await page.keyboard.press('Escape')
+    // Editing turns it off without a reload: no status, a Disabled badge, no Run; focus back on Edit. Then on again.
+    for (const on of [false, true]) {
+      await monthly.getByRole('button', { name: CK.editOf('Monthly quick check'), exact: true }).click()
+      if ((await ckForm.locator('input[name=intervalTime]').inputValue()) !== '1' || (await ckForm.locator('select[name=intervalUnit]').inputValue()) !== 'months') throw new Error('30 days not shown as 1 month')
+      await ckForm.locator('input[name=isEnabled]').setChecked(on)
+      await ckForm.locator('> .actions > button:not(.link)').click()
+      await focusIs(`li[data-id="${monthlyId}"] button.edit`, 'Edit after saving')
+      if ((await monthly.locator('.badge.status').count()) !== (on ? 1 : 0) || (await monthly.locator('a.run').count()) !== (on ? 1 : 0)) throw new Error(`enabled ${on}: status or Run`)
+      if (!on && !plain(await monthly.textContent()).includes(CK.off)) throw new Error('no Disabled badge')
+    }
+    await page.setViewportSize({ width: 390, height: 844 })
+    await noOverflow('the checklists section')
+    await sweep('the checklists section')
+    await tall(monthly.locator('details > summary'), 'History')
+    await page.screenshot({ path: `${OUT}/${s.name}-checklists-on-car.png`, fullPage: true })
+    await page.setViewportSize(s.viewport)
+  })
+  await step('checklist-run', async () => {
+    const before = (await apiCall('GET', `/vehicles/${dashCarId}`)).currentOdometerKm
+    await (await named(ckRow('Monthly quick check').locator('a.run'), CK.runOf('Monthly quick check'))).click()
+    await arrivedAt(CK.title('Monthly quick check', 'Dash car'))
+    if ((await runForm.locator('input[name=runAt]').inputValue()) !== (await localDate())) throw new Error('date is not today')
+    if ((await runForm.locator('input[name=odometerKm]').inputValue()) !== '') throw new Error('odometer prefilled')
+    // Criterion 7: Not OK flags Lights; 1.8 flags Tire pressure as typed, with the reason tied to the field; Notes flagged by hand.
+    const notOk = runItem(0).locator('input[type=radio]').nth(1)
+    if (plain(await notOk.getAttribute('aria-label')) !== CK.field('Lights', CK.notOk)) throw new Error(`radio name "${await notOk.getAttribute('aria-label')}"`)
+    await notOk.check()
+    if (plain(await runItem(0).locator('p.flag').textContent()) !== CK.notOkReason) throw new Error('Not OK reason')
+    const value = runItem(1).locator('input[type=number]')
+    if (plain(await runItem(1).locator('.muted').textContent()) !== CK.range) throw new Error(`range "${await runItem(1).locator('.muted').textContent()}"`)
+    await value.pressSequentially('1.8')
+    const reason = runItem(1).locator('p.flag')
+    if (plain(await reason.textContent()) !== CK.below) throw new Error(`reason "${await reason.textContent()}"`)
+    if (!(await value.getAttribute('aria-describedby')).includes(await reason.getAttribute('id'))) throw new Error('reason not tied to the value')
+    const autoFlag = runItem(1).locator('input[type=checkbox]')
+    if (!(await autoFlag.isChecked()) || !(await autoFlag.isDisabled())) throw new Error('auto flag not shown as fixed')
+    await value.fill('2')
+    if (await reason.count()) throw new Error('2.0 (the min) flagged')
+    await value.fill('1.8')
+    await runItem(2).locator('textarea').fill('Scratch')
+    const hand = runItem(2).locator('input[type=checkbox]')
+    if (plain(await hand.getAttribute('aria-label')) !== CK.field('Notes', CK.flag)) throw new Error('flag name')
+    await hand.check()
+    await runForm.locator('textarea[name=notes]').fill('Before the trip')
+    // A lower odometer asks for a correction under the field; everything typed stays.
+    await runForm.locator('input[name=odometerKm]').fill('40000')
+    await runForm.locator('> .actions > button:not(.link)').click()
+    const orderAlert = runForm.locator('> [role=alert]')
+    await orderAlert.waitFor()
+    if (!plain(await orderAlert.textContent()).startsWith(CK.lower)) throw new Error(`order error "${await orderAlert.textContent()}"`)
+    await runForm.locator('> label.inline input[type=checkbox]').waitFor()
+    forgetCk(400, '/runs')
+    // A failed save keeps everything, with a translated error.
+    await runForm.locator('input[name=odometerKm]').fill(String(before + 500))
+    await page.route('**/runs', (r) => r.fulfill({ status: 500, contentType: 'application/json', body: '{}' }), { times: 1 })
+    await runForm.locator('> .actions > button:not(.link)').click()
+    await runForm.locator('[role=alert]', { hasText: HS.generic }).waitFor()
+    forget500()
+    if ((await value.inputValue()) !== '1.8' || !(await notOk.isChecked()) || !(await hand.isChecked())) throw new Error('answers lost after a failed save')
+    // An item error shows inside its item, with the value marked invalid; a changed checklist shows above Save.
+    const fail = (body) => page.route('**/runs', (r) => r.fulfill({ status: 400, contentType: 'application/json', body: JSON.stringify(body) }), { times: 1 })
+    await fail({ code: 'checklistItem.invalidValue', index: 1 })
+    await runForm.locator('> .actions > button:not(.link)').click()
+    const itemAlert = runItem(1).locator('[role=alert]')
+    await itemAlert.waitFor()
+    if (!plain(await itemAlert.textContent()).startsWith(CK.item2)) throw new Error(`item error "${await itemAlert.textContent()}"`)
+    if ((await value.getAttribute('aria-invalid')) !== 'true') throw new Error('the item value is not marked invalid')
+    await fail({ code: 'checklistRun.itemsChanged' })
+    await runForm.locator('> .actions > button:not(.link)').click()
+    const changed = runForm.locator('> [role=alert]')
+    await changed.waitFor()
+    if (!plain(await changed.textContent()).startsWith(CK.changed) || !(await changed.evaluate((el) => el.nextElementSibling.matches('.actions')))) throw new Error(`itemsChanged "${await changed.textContent()}"`)
+    forgetCk(400, '/runs')
+    // A future date is stopped in the browser, with the translated message.
+    const runAt = runForm.locator('input[name=runAt]')
+    let posted = false
+    const onPost = (r) => { if (r.url().endsWith('/runs') && r.method() === 'POST') posted = true }
+    page.on('request', onPost)
+    await runAt.fill(await page.evaluate(() => new Date(Date.now() + 86400000 - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10)))
+    await runForm.locator('> .actions > button:not(.link)').click()
+    const msg = await runAt.evaluate((el) => el.validationMessage)
+    page.off('request', onPost)
+    if (msg !== CK.future || posted) throw new Error(`future date: "${msg}", posted ${posted}`)
+    await runAt.fill(await localDate())
+    await page.setViewportSize({ width: 390, height: 844 })
+    await noOverflow('the run form')
+    await sweep('the run form')
+    for (const r of [notOk, hand]) await tall(r.locator('xpath=..'), 'an item control')
+    const [dir, align] = await value.evaluate((el) => [getComputedStyle(el).direction, getComputedStyle(el).textAlign])
+    if (dir !== 'ltr' || align !== (he ? 'right' : 'start')) throw new Error(`value direction ${dir} ${align}`)
+    await page.screenshot({ path: `${OUT}/${s.name}-checklist-run-form.png`, fullPage: true })
+    await page.setViewportSize(s.viewport)
+    const res = page.waitForResponse((r) => r.url().endsWith('/runs') && r.request().method() === 'POST')
+    await runForm.locator('> .actions > button:not(.link)').click()
+    const body = (await res).request().postDataJSON()
+    if (body.items[0].numberValue !== undefined || body.items[1].numberValue !== 1.8 || body.items[1].boolValue !== undefined || body.items[2].isFlagged !== true) throw new Error(JSON.stringify(body))
+    // Back on the car: the status line, focus on that Run, the new odometer and last run.
+    await page.waitForURL((u) => u.pathname === ckCarPath())
+    const status = ckSec.locator('[role=status]', { hasText: CK.saved3.slice(0, 6) })
+    await status.waitFor()
+    if (plain(await status.textContent()) !== CK.saved3) throw new Error(`status "${await status.textContent()}"`)
+    await focusIs(`li[data-id="${monthlyId}"] a.run`, 'Run after saving a run')
+    if (digitsOnly(await odometer()) !== String(before + 500)) throw new Error(`odometer ${await odometer()}`)
+    // Back doesn't reopen the saved run form (a second save would make a duplicate run).
+    await page.goBack()
+    await page.waitForLoadState('networkidle')
+    if (new URL(page.url()).pathname !== ckCarPath() || (await page.locator('fieldset.item').count())) throw new Error(`Back went to ${page.url()}`)
+    const monthly = ckRow('Monthly quick check')
+    if (plain(await monthly.textContent()).includes(CK.notRun)) throw new Error('last run not updated')
+    // After a reload it is all still there, without the status line.
+    await page.reload()
+    await monthly.waitFor()
+    if (plain(await monthly.locator('details > summary').first().textContent()) !== CK.history(1)) throw new Error('history count')
+    if (digitsOnly(await odometer()) !== String(before + 500)) throw new Error('odometer after reload')
+    if (await ckSec.locator('[role=status]', { hasText: CK.saved3.slice(0, 6) }).count()) throw new Error('the status line came back after a reload')
+  })
+  await step('checklist-run-history', async () => {
+    // The template item is renamed; the run keeps the label it had.
+    await apiCall('PUT', `/checklist-templates/${monthlyTpl.id}`, { name: 'Monthly quick check', items: monthlyTpl.items.map((i) => ({ ...i, label: i.label === 'Tire pressure' ? 'Tyre pressure' : i.label })) })
+    await page.reload()
+    const monthly = ckRow('Monthly quick check')
+    await monthly.locator('details.run-history > summary').click()
+    const runRow = monthly.locator('.run-list > li')
+    await runRow.waitFor()
+    if (!plain(await runRow.locator('summary').textContent()).includes(CK.flagged3) || !(await runRow.textContent()).includes('Before the trip')) throw new Error(`run "${plain(await runRow.textContent())}"`)
+    await runRow.locator('summary').click()
+    const items = (await runRow.locator('.run-items > li').allTextContents()).map(plain)
+    if (items.length !== 3 || !(items[1].startsWith('Tire pressure') && items[1].includes('1.8 bar')) || !items.every((x) => x.endsWith(he ? 'סומן כבעיה' : 'Flagged'))) throw new Error(`items ${JSON.stringify(items)}`)
+    // Remove with runs: the translated hasRuns message, and the row stays.
+    await (await named(monthly.locator(':scope > .actions button:not(.edit)'), CK.removeOf('Monthly quick check'))).click()
+    await monthly.locator('button.danger').click()
+    const alert = monthly.locator('[role=alert]')
+    await alert.waitFor()
+    if (plain(await alert.textContent()) !== CK.hasRuns) throw new Error(`remove error "${await alert.textContent()}"`)
+    forgetCk(409, '/vehicle-checklists/')
+    await page.keyboard.press('Escape')
+    // Delete the run: the red confirm; Escape goes back to Delete; then the odometer goes back and focus moves to the history.
+    await runRow.locator('button.delete-run').click()
+    await runRow.getByText(CK.confirmRun, { exact: true }).waitFor()
+    await page.setViewportSize({ width: 390, height: 844 })
+    await noOverflow('the run history')
+    await sweep('the run history')
+    await page.screenshot({ path: `${OUT}/${s.name}-checklist-run-history.png`, fullPage: true })
+    await page.setViewportSize(s.viewport)
+    await page.keyboard.press('Escape')
+    await focusIs(`li[data-id="${monthlyId}"] button.delete-run`, 'Delete after Escape')
+    const before = digitsOnly(await odometer())
+    await runRow.locator('button.delete-run').click()
+    await runRow.locator('button.danger').click()
+    await runRow.waitFor({ state: 'detached' })
+    await focusIs(`li[data-id="${monthlyId}"] details.run-history > summary`, 'History after deleting the last run')
+    await page.waitForFunction((b) => document.querySelector('.odometer').getAttribute('aria-label').replace(/\D/g, '') !== b, before, { timeout: 5000 })
+    await page.waitForFunction(([id, w]) => document.querySelector(`li[data-id="${id}"] details.run-history > summary`).textContent.replace(/[⁦-⁩]/g, '') === w, [monthlyId, CK.history(0)], { timeout: 5000 })
+  })
+  await step('dashboard-start-checklist', async () => {
+    // Criterion 9: two enabled checklists open a list, most urgent first; Escape goes back to the button.
+    await page.click('header a.brand')
+    await arrivedAt(T.dashboard)
+    const start = dashCar().getByRole('button', { name: CK.start, exact: true })
+    await start.click()
+    const links = dashCar().locator('.picker a')
+    if ((await links.allTextContents()).map(plain).join('|') !== `Monthly quick check${CK.ok}|Pre-road-trip`) throw new Error(`list ${(await links.allTextContents()).join('|')}`)
+    await focusIs('.cars .picker a', 'the first checklist')
+    await page.setViewportSize({ width: 390, height: 844 })
+    await noOverflow('the checklist list on a card')
+    await sweep('the checklist list on a card')
+    await page.screenshot({ path: `${OUT}/${s.name}-dashboard-start-checklist.png`, fullPage: true })
+    await page.setViewportSize(s.viewport)
+    await page.keyboard.press('Escape')
+    await focusIs(`.cars > li[data-id="${dashCarId}"] .actions button.link`, 'Start a checklist after Escape')
+    await start.click()
+    await links.nth(1).click()
+    await arrivedAt(CK.title('Pre-road-trip', 'Dash car'))
+    // Cancel goes back where it came from.
+    await runForm.locator('> .actions > button.link').click()
+    await arrivedAt(T.dashboard)
+    // With one enabled checklist, it opens the run page directly. Not on cars without checklists.
+    await apiCall('PUT', `/vehicle-checklists/${monthlyId}`, { intervalKm: 5000, intervalDays: 30, isEnabled: false })
+    await page.reload()
+    await (await named(dashCar().locator('.actions a[href$="/run"]'), CK.startOf('Pre-road-trip'))).click()
+    await arrivedAt(CK.title('Pre-road-trip', 'Dash car'))
+    await page.goBack()
+    await dashCar().waitFor()
+    const others = page.locator('.cars > li').filter({ hasNot: page.getByRole('link', { name: 'Dash car', exact: true }) })
+    if (await others.getByText(CK.start).count()) throw new Error('Start a checklist on a car without checklists')
+  })
+  await step('checklist-template-in-use', async () => {
+    // Deleting a template that is on a car: the translated inUse message on its row, which stays.
+    await page.click('header nav a[href="/checklists"]')
+    await arrivedAt(CL.title)
+    const row = clRow('Monthly quick check')
+    await row.getByRole('button', { name: `${CL.del}Monthly quick check`, exact: true }).click()
+    await row.locator('button.danger').click()
+    const alert = row.locator('[role=alert]')
+    await alert.waitFor()
+    if (plain(await alert.textContent()) !== CK.inUse) throw new Error(`in use "${await alert.textContent()}"`)
+    forgetCk(409, '/checklist-templates/')
+    await page.reload()
+    await clRow('Monthly quick check').waitFor()
   })
   await step('switch-language', async () => {
     const before = await page.getAttribute('html', 'dir')

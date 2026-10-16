@@ -20,3 +20,15 @@ test('no items, and the caps stay exact', () => {
   assert.equal(itemsTotal([{ quantity: 10_000, unitCost: 1_000_000 }]), 10_000_000_000)
   assert.equal(itemsTotal([{ quantity: 9_999.99, unitCost: 999_999.99 }]), 9_999_989_900) // exactly 9,999,989,900.0001
 })
+
+// MVP5-B: the run form's live flag must match the server's (docs/contracts/MVP5-B.md): the bounds themselves are inside.
+import { autoFlag } from '../src/api.ts'
+const n = (numberValue, minValue = 2, maxValue = 2.6) => autoFlag({ boolValue: null, numberValue, minValue, maxValue })
+
+test('auto flag: Not OK, and numbers outside the range', () => {
+  assert.equal(autoFlag({ boolValue: false, numberValue: null, minValue: null, maxValue: null }), 'notOk')
+  assert.equal(autoFlag({ boolValue: true, numberValue: null, minValue: null, maxValue: null }), null)
+  assert.equal(autoFlag({ boolValue: null, numberValue: null, minValue: 2, maxValue: 3 }), null)
+  assert.deepEqual([n(1.99), n(2), n(2.6), n(2.61), n(1.8)], ['below', null, null, 'above', 'below'])
+  assert.deepEqual([n(-5, null, 0), n(5, null, 0), n(-5, 0, null)], [null, 'above', 'below'])
+})

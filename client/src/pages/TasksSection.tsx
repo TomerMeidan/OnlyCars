@@ -3,12 +3,9 @@ import { Trans, useTranslation } from 'react-i18next'
 import { useAuth, useDistance } from '../auth'
 import { api, ApiError, byUrgency, localToday, taskCategories, type MaintenanceTask, type TaskCategory, type TaskStatus, type TaskTemplate, type Vehicle } from '../api'
 import { errorMessage } from '../i18n'
+import { splitDays, unitDays, type Unit } from '../units'
 import { useRow } from '../useRow'
 
-type Unit = 'days' | 'months' | 'years'
-const unitDays: Record<Unit, number> = { days: 1, months: 30, years: 365 }
-// Shown in the largest unit that divides evenly: 365 is 1 year, 180 is 6 months, 45 is 45 days.
-const splitDays = (d: number): [number, Unit] => (d % 365 === 0 ? [d / 365, 'years'] : d % 30 === 0 ? [d / 30, 'months'] : [d, 'days'])
 
 type TaskBody = Pick<MaintenanceTask, 'name' | 'category' | 'intervalKm' | 'intervalDays' | 'dueSoonPercent' | 'lastDoneOdometerKm' | 'lastDoneDate'>
 // PUT is a full replace, so every save sends all of these.
@@ -22,7 +19,7 @@ export function StatusBadge({ status }: { status: TaskStatus }) {
 }
 
 // "Every 10,000 km or 1 year", "Every 2 years", "Every 60,000 km".
-function Interval({ km, days }: { km: number | null; days: number | null }) {
+export function Interval({ km, days }: { km: number | null; days: number | null }) {
   const { t } = useTranslation()
   const d = useDistance()
   const parts: ReactNode[] = []
@@ -32,6 +29,28 @@ function Interval({ km, days }: { km: number | null; days: number | null }) {
     parts.push(<Trans i18nKey={`duration.${unit}`} count={n} components={{ n: <bdi /> }} />)
   }
   return <>{t('every')} {parts[0]}{parts[1] && <> {t('or')} {parts[1]}</>}</>
+}
+
+// The progress bar and the remaining line of a task or checklist with a status.
+export function Due({ name, progress, km, days }: { name: string; progress: number; km: number | null; days: number | null }) {
+  const { t } = useTranslation()
+  const percent = Math.round(Math.min(progress, 1) * 100)
+  return (
+    <>
+      <div
+        className="bar"
+        role="progressbar"
+        aria-label={t('used', { name, percent: Math.round(progress * 100) })}
+        aria-valuenow={percent}
+        aria-valuetext={`${Math.round(progress * 100)}%`}
+        aria-valuemin={0}
+        aria-valuemax={100}
+      >
+        <div style={{ inlineSize: `${percent}%` }} />
+      </div>
+      <p><Remaining km={km} days={days} /></p>
+    </>
+  )
 }
 
 // "1,200 km or 40 days left", "about 4 months left", "Overdue by 300 km and 12 days". Once overdue, only the overdue parts show.
@@ -347,7 +366,6 @@ function TaskRow({ task, url, currentKm, readOnly, onSaved, onDeleted, onReset, 
   const { mode, open, close, busy, error, run, opener } = useRow<'edit' | 'delete' | 'cost'>()
   const lng = i18n.resolvedLanguage
   const name = task.name
-  const percent = Math.round(Math.min(task.progress ?? 0, 1) * 100)
 
   async function submitCost(e: FormEvent<HTMLFormElement>) {
     e.preventDefault()
@@ -369,22 +387,7 @@ function TaskRow({ task, url, currentKm, readOnly, onSaved, onDeleted, onReset, 
         <span className="badge">{t(`categories.${task.category}`)}</span>
         {!task.isEnabled && <span className="badge">{t('disabled')}</span>}
       </div>
-      {task.status && (
-        <>
-          <div
-            className="bar"
-            role="progressbar"
-            aria-label={t('used', { name, percent: Math.round(task.progress! * 100) })}
-            aria-valuenow={percent}
-            aria-valuetext={`${Math.round(task.progress! * 100)}%`}
-            aria-valuemin={0}
-            aria-valuemax={100}
-          >
-            <div style={{ inlineSize: `${percent}%` }} />
-          </div>
-          <p><Remaining km={task.remainingKm} days={task.remainingDays} /></p>
-        </>
-      )}
+      {task.status && <Due name={name} progress={task.progress!} km={task.remainingKm} days={task.remainingDays} />}
       <p className="muted"><Interval km={task.intervalKm} days={task.intervalDays} /></p>
       <p className="muted">
         {/* LastDoneDate is a calendar date; format it in UTC so the viewer's time zone can't shift the day. */}

@@ -1,7 +1,8 @@
-import { useEffect, useId, useRef, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { api, ApiError, checklistItemTypes, limit, type ChecklistItemType, type ChecklistTemplate } from '../api'
 import { errorMessage } from '../i18n'
+import { useItemErrors } from '../useItemErrors'
 import { usePage } from '../usePage'
 import { useRow } from '../useRow'
 
@@ -152,22 +153,11 @@ function TemplateForm({ row, template, onSaved }: {
   onSaved: (tp: ChecklistTemplate) => void
 }) {
   const { t } = useTranslation()
-  const id = useId()
   const { busy, error, run, open } = row
   const [items, setItems] = useState<Item[]>(() => template?.items.map((i) => ({
     key: nextKey++, id: i.id, label: i.label, type: i.type, unit: i.unit ?? '', min: i.minValue == null ? '' : String(i.minValue), max: i.maxValue == null ? '' : String(i.maxValue),
   })) ?? [])
-  // The row the last item error was about, by key, so it stays on that row while others move; gone with its row.
-  const [errKey, setErrKey] = useState<number>()
-  // A selector inside the form to focus after the next items change.
-  const focusItem = useRef<string | null>(null)
-  const formRef = useRef<HTMLFormElement>(null)
-
-  useEffect(() => {
-    const sel = focusItem.current
-    focusItem.current = null
-    if (sel) formRef.current?.querySelector<HTMLElement>(sel)?.focus()
-  }, [items])
+  const { formRef, errorId, bad, itemKey, n, focus, failed, tie } = useItemErrors(items, error, fieldOf)
 
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault()
@@ -178,38 +168,28 @@ function TemplateForm({ row, template, onSaved }: {
     }
     const url = template ? `/checklist-templates/${encodeURIComponent(template.id)}` : '/checklist-templates'
     const err = await run(async () => onSaved(await api<ChecklistTemplate>(url, template ? 'PUT' : 'POST', body)), (e.nativeEvent as SubmitEvent).submitter)
-    if (err) setErrKey(err instanceof ApiError && err.problem.index != null ? items[err.problem.index]?.key : undefined)
+    if (err) failed(err)
   }
 
-  const problem = error instanceof ApiError ? error.problem : undefined
-  const bad = fieldOf[problem?.code ?? '']
-  const errorId = `${id}error`
-  // aria-invalid and aria-describedby when the error is about this field (and this item row, for item fields).
-  const tie = (name: string, itemKey?: number) => {
-    const hit = bad === name && itemKey === (problem?.index == null ? undefined : errKey)
-    return hit ? { 'aria-invalid': true, 'aria-describedby': errorId } : {}
-  }
-  // An item error names its row by where it is now, not where it was when sent.
-  const errRow = items.findIndex((x) => x.key === errKey)
-  const alert = error != null && <p className="error" role="alert" id={errorId}>{errorMessage(error, errRow < 0 ? undefined : errRow + 1)}</p>
-  const errorAt = problem?.index != null ? errKey : bad === 'name' ? 'name' : 'end'
+  const alert = error != null && <p className="error" role="alert" id={errorId}>{errorMessage(error, n)}</p>
+  const errorAt = itemKey ?? (bad === 'name' ? 'name' : 'end')
 
   const setItem = (i: number, patch: Partial<Item>) => setItems((xs) => xs.map((x, j) => (j === i ? { ...x, ...patch } : x)))
   const rowSel = (i: number) => `.item:nth-of-type(${i + 1})`
   const add = () => {
-    focusItem.current = `${rowSel(items.length)} input`
+    focus(`${rowSel(items.length)} input`)
     setItems([...items, { key: nextKey++, id: null, label: '', type: 'Check', unit: '', min: '', max: '' }])
   }
   // Focus goes to the next row, then the previous one, then Add item.
   const remove = (i: number) => {
-    focusItem.current = items.length === 1 ? 'button.add-item' : `${rowSel(i < items.length - 1 ? i : i - 1)} input`
+    focus(items.length === 1 ? 'button.add-item' : `${rowSel(i < items.length - 1 ? i : i - 1)} input`)
     setItems(items.filter((_, j) => j !== i))
   }
   // Focus follows the moved row: the same button, or the other one once it reaches the end.
   const move = (i: number, by: -1 | 1) => {
     const to = i + by
     const atEnd = to === 0 || to === items.length - 1
-    focusItem.current = `${rowSel(to)} button.${(by < 0) !== atEnd ? 'up' : 'down'}`
+    focus(`${rowSel(to)} button.${(by < 0) !== atEnd ? 'up' : 'down'}`)
     const xs = [...items]
     ;[xs[i], xs[to]] = [xs[to], xs[i]]
     setItems(xs)
@@ -240,13 +220,13 @@ function TemplateForm({ row, template, onSaved }: {
               <label className="wide">
                 {t('taskName')}
                 <input dir="auto" maxLength={100} value={it.label} onChange={(e) => setItem(i, { label: e.target.value })}
-                  {...need(t('errors.checklistItem.invalidLabel', { n }))} {...named(t('taskName'))} {...tie('label', it.key)} />
+                  {...need(t('errors.checklistItem.invalidLabel', { n }))} {...named(t('taskName'))} {...tie('label', undefined, it.key)} />
               </label>
               <label className="wide">
                 {t('itemType')}
                 {/* Leaving Number clears its unit, min and max. */}
                 <select value={it.type} onChange={(e) => setItem(i, { type: e.target.value as ChecklistItemType, ...(e.target.value !== 'Number' && { unit: '', min: '', max: '' }) })}
-                  {...named(t('itemType'))} {...tie('type', it.key)}>
+                  {...named(t('itemType'))} {...tie('type', undefined, it.key)}>
                   {checklistItemTypes.map((x) => <option key={x} value={x}>{t(`itemTypes.${x}`)}</option>)}
                 </select>
               </label>
@@ -254,18 +234,18 @@ function TemplateForm({ row, template, onSaved }: {
                 <>
                   <label className="num">
                     {t('unit')}
-                    <input dir="auto" maxLength={20} value={it.unit} onChange={(e) => setItem(i, { unit: e.target.value })} {...named(t('unit'))} {...tie('unit', it.key)} />
+                    <input dir="auto" maxLength={20} value={it.unit} onChange={(e) => setItem(i, { unit: e.target.value })} {...named(t('unit'))} {...tie('unit', undefined, it.key)} />
                   </label>
                   {/* No inputMode: the decimal keypad has no minus sign on some phones. dir="ltr" keeps the minus before the number in Hebrew. */}
                   <label className="num">
                     {t('minValue')}
                     <input type="number" dir="ltr" min={-1_000_000} max={1_000_000} step={0.01} value={it.min} onInput={range}
-                      onChange={(e) => setItem(i, { min: e.target.value })} {...named(t('minValue'))} {...tie('range', it.key)} />
+                      onChange={(e) => setItem(i, { min: e.target.value })} {...named(t('minValue'))} {...tie('range', undefined, it.key)} />
                   </label>
                   <label className="num">
                     {t('maxValue')}
                     <input type="number" dir="ltr" min={-1_000_000} max={1_000_000} step={0.01} value={it.max} onInput={range}
-                      onChange={(e) => setItem(i, { max: e.target.value })} {...named(t('maxValue'))} {...tie('range', it.key)} />
+                      onChange={(e) => setItem(i, { max: e.target.value })} {...named(t('maxValue'))} {...tie('range', undefined, it.key)} />
                   </label>
                 </>
               )}

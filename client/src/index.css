@@ -180,7 +180,7 @@ button.link {
 .history bdi, .services .value bdi { direction: ltr; }
 .inline-form { flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: end; gap: 0.5rem 0.75rem; }
 .inline-form > label:not(.inline) { flex: 1 1 9rem; }
-.inline-form input:not([type='checkbox']), .inline-form textarea { width: 100%; }
+.inline-form input:not([type='checkbox'], [type='radio']), .inline-form textarea, .inline-form label > select { width: 100%; } /* also keeps a long option name from widening the page */
 .inline-form textarea { resize: vertical; }
 .inline-form > p, .inline-form > label.inline { flex-basis: 100%; }
 .inline-form > label.wide { flex-basis: 100%; }
@@ -207,7 +207,7 @@ button.danger { background: var(--danger); border-color: var(--danger); color: #
 .pct { display: flex; align-items: center; gap: 0.4rem; color: var(--ink); }
 .picker { display: grid; gap: 0.75rem; }
 .picker ul { display: grid; gap: 0.5rem; }
-.picker li button {
+.picker li button, .picker li a.button {
   width: 100%;
   justify-content: space-between;
   flex-wrap: wrap;
@@ -279,3 +279,19 @@ h2 a { margin-block: -0.5625rem; }
 /* Signed numbers are typed LTR; in Hebrew they still sit on the start (right) side like the other inputs. */
 [dir='rtl'] input[dir='ltr'] { text-align: right; }
 button.move { min-inline-size: 2.75rem; padding-inline: 0; color: var(--ink); background: var(--surface); border-color: var(--line); }
+
+/* Checklists on a car (MVP5-B): the run history and each run open in place; a summary is a 44px tap target */
+details > summary { padding-block: 0.625rem; cursor: pointer; }
+.run-list, .run-items { list-style: none; padding: 0; margin: 0; }
+.run-list > li { display: grid; gap: 0.25rem; padding-block-end: 0.25rem; border-block-start: 1px solid var(--line); }
+.run-list .value bdi { direction: ltr; font-variant-numeric: tabular-nums; }
+.run-list .notes { white-space: pre-line; }
+.run-items { display: grid; gap: 0.25rem; padding-block-end: 0.5rem; padding-inline-start: 1rem; }
+.run-items li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 0.75rem; }
+.flag { color: var(--fault); font-weight: 600; }
+
+/* The run form: OK / Not OK side by side, the flag on its own line, a flagged item outlined */
+.item > .choice { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 0 1.5rem; }
+.item > label.inline { flex-basis: 100%; }
+.item.flagged { border-color: var(--fault); }
+.pct > span { flex-shrink: 0; } /* a unit beside its number never breaks mid-word */

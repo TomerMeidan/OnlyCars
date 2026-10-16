@@ -7,10 +7,11 @@ import { useDistance } from '../auth'
 import { usePage } from '../usePage'
 import { useRow } from '../useRow'
 import { Odometer, OdometerQuickEntry } from './CarsPage'
+import { ChecklistsSection } from './ChecklistsSection'
 import { ServiceHistory } from './ServiceHistory'
 import { TasksSection, type TaskUndo } from './TasksSection'
 
-// Car detail page: maintenance tasks, then the service history, then the odometer history.
+// Car detail page: maintenance tasks, checklists, the service history, then the odometer history.
 export default function CarPage() {
   const { t } = useTranslation()
   const d = useDistance()
@@ -80,6 +81,7 @@ export default function CarPage() {
       </div>
 
       <TasksSection car={car} undo={undo} setUndo={setUndo} onOdometerChanged={load} />
+      <ChecklistsSection car={car} onChanged={load} />
       <ServiceHistory car={car} onChanged={() => { setUndo(null); load() }} />
 
       <section className="card" aria-labelledby="odometer-history" ref={historyRef}>
@@ -113,7 +115,8 @@ export default function CarPage() {
 }
 
 // Error state of a car route: the message is the h1 (titled without its full stop), under the back link.
-export function CarError({ error }: { error: unknown }) {
+// With onRetry (a failure worth retrying), Retry keeps focus while it retries (aria-disabled while `retrying`).
+export function CarError({ error, onRetry, retrying }: { error: unknown; onRetry?: () => void; retrying?: boolean }) {
   const { t } = useTranslation()
   const message = errorMessage(error)
   usePage(message.replace(/\.$/, ''))
@@ -121,6 +124,7 @@ export function CarError({ error }: { error: unknown }) {
     <>
       <Link to="/" className="back"><span>{t('backToCars')}</span></Link>
       <div role="alert"><h1 className="error" tabIndex={-1}>{message}</h1></div>
+      {onRetry && <div className="actions"><button aria-disabled={retrying} onClick={() => !retrying && onRetry()}>{t('retry')}</button></div>}
     </>
   )
 }

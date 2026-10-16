@@ -25,6 +25,12 @@ export function toKm(value: number, unit: DistanceUnit, ...keepKm: (number | nul
   return Math.round(value * KM_PER_MI)
 }
 
+// Time intervals are entered in days, months (30 days) or years (365 days) and stored as days.
+export type Unit = 'days' | 'months' | 'years'
+export const unitDays: Record<Unit, number> = { days: 1, months: 30, years: 365 }
+// Shown in the largest unit that divides evenly: 365 is 1 year, 180 is 6 months, 45 is 45 days.
+export const splitDays = (d: number): [number, Unit] => (d % 365 === 0 ? [d / 365, 'years'] : d % 30 === 0 ? [d / 30, 'months'] : [d, 'days'])
+
 // Everything a screen needs for one unit and language. `vars` fills {{distUnit}} ("mi", after a number) and {{distUnits}} ("miles", in labels).
 // (Not {{unit}}: i18next hands that name to Intl.NumberFormat as its unit option, which breaks {{x, number}}.)
 export function distance(unit: DistanceUnit, t: TFunction, lng: string | undefined) {

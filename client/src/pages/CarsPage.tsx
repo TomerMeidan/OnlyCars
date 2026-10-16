@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type FormEvent } from 're
 import { useTranslation } from 'react-i18next'
 import { errorMessage, money } from '../i18n'
 import { Link } from 'react-router-dom'
-import { api, byUrgency, isOrderError, localToday, type Dashboard, type DashboardTask, type Vehicle } from '../api'
+import { api, byUrgency, isOrderError, localToday, runPath, type Dashboard, type DashboardTask, type Vehicle, type VehicleChecklist } from '../api'
 import { useAuth, useDistance } from '../auth'
 import { usePage } from '../usePage'
 import { useRow } from '../useRow'
@@ -157,6 +157,7 @@ export default function CarsPage() {
                     </div>
                   </>
                 )}
+                {dash.checklists.length > 0 && <StartChecklist carId={car.id} checklists={dash.checklists} />}
               </>
             )}
             <CarActions car={car} onArchived={() => load()} />
@@ -195,6 +196,39 @@ function DashTask({ task, onReset, onUndo }: { task: DashboardTask; onReset: () 
       {onUndo && <UndoBar taskId={task.id} busy={busy} onClick={(e) => run(onUndo, e.currentTarget)} />}
       {error != null && <p className="error" role="alert">{errorMessage(error)}</p>}
     </li>
+  )
+}
+
+// The car's enabled checklists, most urgent first (the server's order): one opens its run page, several open a list to pick from.
+function StartChecklist({ carId, checklists }: { carId: string; checklists: VehicleChecklist[] }) {
+  const { t } = useTranslation()
+  // Cancel and Escape go back to Start a checklist.
+  const { mode, open, opener } = useRow<'pick'>()
+  // The first checklist takes focus as the list opens.
+  const first = useRef<HTMLAnchorElement>(null)
+  useEffect(() => { if (mode === 'pick') first.current?.focus() }, [mode])
+  if (checklists.length === 1) {
+    const c = checklists[0]
+    return <div className="actions"><Link to={runPath(carId, c.id)} aria-label={t('startChecklistOf', { name: c.name })}>{t('startChecklist')}</Link></div>
+  }
+  if (mode === 'view') return <div className="actions"><button className="link" ref={opener('pick')} onClick={() => open('pick')}>{t('startChecklist')}</button></div>
+  return (
+    <div className="picker" role="group" aria-labelledby={`pick-${carId}`} onKeyDown={(e) => e.key === 'Escape' && open('view')}>
+      <p id={`pick-${carId}`}>{t('chooseChecklist')}</p>
+      <ul>
+        {checklists.map((c, i) => (
+          <li key={c.id} className={c.status ? `status-${c.status}` : undefined}>
+            <Link className="button" to={runPath(carId, c.id)} ref={i === 0 ? first : undefined}>
+              <span dir="auto">{c.name}</span>
+              {c.status && <StatusBadge status={c.status} />}
+            </Link>
+          </li>
+        ))}
+      </ul>
+      <div className="actions">
+        <button type="button" className="link" onClick={() => open('view')}>{t('cancel')}</button>
+      </div>
+    </div>
   )
 }
 

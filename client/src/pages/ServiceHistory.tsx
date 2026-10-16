@@ -3,7 +3,8 @@ import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 import { api, ApiError, isGoneRecord, isOrderError, itemsTotal, limit, localToday, type MaintenanceTask, type ServiceItem, type ServiceRecord, type Vehicle } from '../api'
 import { useAuth, useDistance } from '../auth'
-import { errorMessage, money } from '../i18n'
+import { errorMessage, fmtDate, money } from '../i18n'
+import { useItemErrors } from '../useItemErrors'
 import { useRow } from '../useRow'
 
 // The form field each API error is about, so the message is tied to that field (item fields also by the error's row index).
@@ -24,8 +25,6 @@ const fieldOf: Record<string, string> = {
 
 const MAX_ITEMS = 50
 
-// A record's date is a calendar date; format it in UTC so the viewer's time zone can't shift the day.
-const fmtDate = (date: string, lng: string | undefined) => new Date(date).toLocaleDateString(lng, { dateStyle: 'medium', timeZone: 'UTC' })
 const taskList = (r: ServiceRecord, lng: string | undefined) => new Intl.ListFormat(lng).format(r.tasks.map((x) => x.name))
 
 // An item row as typed. Keyed by a local counter: the server's item ids change on every save.
@@ -166,25 +165,13 @@ function RecordForm({ car, url, row, record, onSaved, onGone, onTaskGone }: {
   const [needsConfirm, setNeedsConfirm] = useState(false)
   const [confirmCorrection, setConfirmCorrection] = useState(false)
   const [items, setItems] = useState(() => record?.items.map((i) => toItem(i)) ?? [])
-  // The row the last item error was about, by key, so it stays on that row when others are removed; gone with its row.
-  const [errKey, setErrKey] = useState<number>()
-  // The item row whose description to focus after the next items change; -1 is Add part.
-  const focusItem = useRef<number | null>(null)
-  const formRef = useRef<HTMLFormElement>(null)
+  const { formRef, errorId, itemKey, n, focus, failed, tie } = useItemErrors(items, error, fieldOf)
   // The odometer field starts at the record's value when editing, at the car's when recording.
   const startStored = record?.odometerKm ?? car.currentOdometerKm
   const startKm = d.value(startStored)
 
   const loadTasks = () => api<MaintenanceTask[]>(`/vehicles/${encodeURIComponent(car.id)}/tasks`).then(setTasks, setTasksError)
   useEffect(() => { loadTasks() }, [car.id]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  useEffect(() => {
-    const i = focusItem.current
-    focusItem.current = null
-    const form = formRef.current
-    if (i == null || !form) return
-    form.querySelector<HTMLElement>(i < 0 ? 'button.add-part' : `.item:nth-of-type(${i + 1}) input`)?.focus()
-  }, [items])
 
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault()
@@ -221,37 +208,27 @@ function RecordForm({ car, url, row, record, onSaved, onGone, onTaskGone }: {
       // A ticked task was deleted meanwhile: reload the list so its checkbox goes; the other ticks stay (keyed by task id).
       if (err instanceof ApiError && err.problem.code === 'maintenanceTask.notFound') { loadTasks(); onTaskGone?.() }
       setNeedsConfirm(isOrderError(err))
-      setErrKey(err instanceof ApiError && err.problem.index != null ? items[err.problem.index]?.key : undefined)
+      failed(err)
     }
   }
 
-  const problem = error instanceof ApiError ? error.problem : undefined
-  const bad = fieldOf[problem?.code ?? '']
-  const errorId = `${id}error`
-  // aria-describedby for a field: its hint, and the error when it is about this field (and this item row, for item fields).
-  const tie = (name: string, hint?: string, itemKey?: number) => {
-    const hit = bad === name && itemKey === (problem?.index == null ? undefined : errKey)
-    const ids = [hint, hit && errorId].filter(Boolean).join(' ')
-    return { 'aria-invalid': hit || undefined, 'aria-describedby': ids || undefined }
-  }
   // The date-order error sits under the odometer field, an item error on its row, the rest above Save.
-  // An item error names its row by where it is now, not where it was when sent.
-  const errRow = items.findIndex((x) => x.key === errKey)
   const alert = error != null && (
-    <p className="error" role="alert" id={errorId}>{problem?.code === 'maintenanceTask.notFound' ? t('taskGone') : errorMessage(error, errRow < 0 ? undefined : errRow + 1)}</p>
+    <p className="error" role="alert" id={errorId}>{error instanceof ApiError && error.problem.code === 'maintenanceTask.notFound' ? t('taskGone') : errorMessage(error, n)}</p>
   )
-  const errorAt = isOrderError(error) ? 'odometer' : problem?.index == null ? 'end' : errKey
+  const errorAt = isOrderError(error) ? 'odometer' : itemKey ?? 'end'
   // A disabled task stays listed while the record is linked to it, so saving doesn't unlink it.
   const linked = new Set(record?.tasks.map((x) => x.id))
   const shown = tasks?.filter((task) => task.isEnabled || linked.has(task.id))
   const total = itemsTotal(items.map((i) => ({ quantity: Number(i.quantity) || 0, unitCost: Number(i.unitCost) || 0 })))
   const currency = user?.currency
   const setItem = (i: number, patch: Partial<Item>) => setItems((xs) => xs.map((x, j) => (j === i ? { ...x, ...patch } : x)))
-  const add = (isLabor: boolean) => { focusItem.current = items.length; setItems([...items, toItem(null, isLabor)]) }
+  const rowSel = (i: number) => `.item:nth-of-type(${i + 1}) input`
+  const add = (isLabor: boolean) => { focus(rowSel(items.length)); setItems([...items, toItem(null, isLabor)]) }
   // The translated message on a future date instead of the browser's; the server's own check stays.
   const future = (e: FormEvent<HTMLInputElement>) => e.currentTarget.setCustomValidity(e.currentTarget.validity.rangeOverflow ? t('errors.serviceRecord.futureDate') : '')
   // Focus goes to the next row, then the previous one, then Add part.
-  const remove = (i: number) => { focusItem.current = i < items.length - 1 ? i : i - 1; setItems(items.filter((_, j) => j !== i)) }
+  const remove = (i: number) => { focus(i < items.length - 1 ? rowSel(i) : i > 0 ? rowSel(i - 1) : 'button.add-part'); setItems(items.filter((_, j) => j !== i)) }
 
   return (
     <form className="inline-form" ref={formRef} onSubmit={submit} onKeyDown={(e) => !busy && e.key === 'Escape' && open('view')}>

@@ -9,6 +9,7 @@ import CarFormPage from './pages/CarFormPage'
 import CarsPage from './pages/CarsPage'
 import ChecklistsPage from './pages/ChecklistsPage'
 import HistoryPage from './pages/HistoryPage'
+import RunPage from './pages/RunPage'
 import SettingsPage from './pages/SettingsPage'
 
 export default function App() {
@@ -50,6 +51,7 @@ export default function App() {
             <Route path="/cars/new" element={<CarFormPage />} />
             <Route path="/cars/:id" element={<CarPage />} />
             <Route path="/cars/:id/edit" element={<CarFormPage />} />
+            <Route path="/cars/:id/checklists/:checklistId/run" element={<RunPage />} />
             <Route path="/history" element={<HistoryPage />} />
             <Route path="/checklists" element={<ChecklistsPage />} />
             <Route path="/settings" element={<SettingsPage />} />
