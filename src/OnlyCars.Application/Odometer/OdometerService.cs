@@ -121,11 +121,7 @@ public class OdometerService(IAppDbContext db, VehicleService vehicleService)
             throw new ValidationFailedException("odometer.invalidValue", $"The reading can't be above {OdometerReading.MaxValueKm} km.");
         }
 
-        // One day of slack: just after midnight in Israel, the user's today is still tomorrow in UTC.
-        if (date > DateOnly.FromDateTime(DateTime.UtcNow).AddDays(1))
-        {
-            throw new ValidationFailedException("odometer.futureDate", "The reading date can't be in the future.");
-        }
+        ValidateDate(date);
 
         if (confirmCorrection)
         {
@@ -155,6 +151,18 @@ public class OdometerService(IAppDbContext db, VehicleService vehicleService)
             {
                 Extensions = { ["nextKm"] = next.ValueKm }
             };
+        }
+    }
+
+    /// <summary>A reading date the client sends: from 1900-01-01 to the client's today.</summary>
+    internal static void ValidateDate(DateOnly date)
+    {
+        DateRules.RejectTooEarly(date);
+
+        // One day of slack: just after midnight in Israel, the user's today is still tomorrow in UTC.
+        if (date > DateOnly.FromDateTime(DateTime.UtcNow).AddDays(1))
+        {
+            throw new ValidationFailedException("odometer.futureDate", "The reading date can't be in the future.");
         }
     }
 

@@ -50,6 +50,16 @@ public class GlobalExceptionHandlerTests
     }
 
     [Fact]
+    public async Task ConcurrencyException_Returns409_ConcurrencyConflict_WithoutEfDetails()
+    {
+        var (status, body) = await HandleAsync(new Microsoft.EntityFrameworkCore.DbUpdateConcurrencyException("expected to affect 1 row(s)"));
+
+        Assert.Equal(409, status);
+        Assert.Equal("concurrency.conflict", body.GetProperty("code").GetString());
+        Assert.DoesNotContain("row(s)", body.GetProperty("detail").GetString());
+    }
+
+    [Fact]
     public async Task NotFound_HasEntityCode()
     {
         var (status, body) = await HandleAsync(new NotFoundException("Vehicle", Guid.Empty));

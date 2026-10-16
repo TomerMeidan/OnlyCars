@@ -10,6 +10,7 @@ using Microsoft.Extensions.DependencyInjection;
 using OnlyCars.Api.Common;
 using OnlyCars.Api.Controllers;
 using OnlyCars.Api.Middleware;
+using OnlyCars.Application.Issues.Dtos;
 using OnlyCars.Application.Vehicles.Dtos;
 
 namespace OnlyCars.Tests;
@@ -33,15 +34,18 @@ public class RequestLimitsTests
             ["RateLimiting:FailedLoginLimit"] = failedLoginLimit.ToString(),
         });
         builder.Services.AddControllers()
+            .AddJsonOptions(ApiJson.Configure) // same as Program.cs
             .AddApplicationPart(typeof(RequestLimitsTests).Assembly)
             .ConfigureApiBehaviorOptions(o => o.InvalidModelStateResponseFactory = GlobalExceptionHandler.InvalidModelStateResponse);
         // Same as Program.cs.
         builder.Services.AddProblemDetails(o => o.CustomizeProblemDetails = c =>
             c.ProblemDetails.Extensions.TryAdd("code", GlobalExceptionHandler.FallbackCode(c.ProblemDetails.Status)));
         builder.Services.AddRequestLimits(builder.Configuration);
+        builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
         builder.Services.AddCors(o => o.AddPolicy("test", p => p.WithOrigins("http://client.test")));
 
         var app = builder.Build();
+        app.UseExceptionHandler(_ => { });
         app.UseRequestLimits("test"); // the same call as Program.cs
         app.MapPost("/api/auth/login", () => "ok").RequireRateLimiting(RequestLimits.AuthPolicy);
         app.MapPost("/api/auth/register", () => "ok").RequireRateLimiting(RequestLimits.AuthPolicy);
@@ -141,12 +145,53 @@ public class RequestLimitsTests
         Assert.Equal("http.400", body.GetProperty("code").GetString());
         Assert.Equal("Invalid value.", body.GetProperty("errors").GetProperty("year")[0].GetString());
     }
+
+    // L65: names bind, numbers (defined or not) are a plain http.400 on every enum field.
+    [Theory]
+    [InlineData("/test/vehicles", """{"nickname":"A","fuelType":"Petrol"}""", HttpStatusCode.OK)]
+    [InlineData("/test/vehicles", """{"nickname":"A","fuelType":99}""", HttpStatusCode.BadRequest)]
+    [InlineData("/test/vehicles", """{"nickname":"A","fuelType":0}""", HttpStatusCode.BadRequest)]
+    [InlineData("/test/vehicles", """{"nickname":"A","fuelType":"99"}""", HttpStatusCode.BadRequest)]
+    [InlineData("/test/issues", """{"title":"A","status":"Done"}""", HttpStatusCode.OK)]
+    [InlineData("/test/issues", """{"title":"A","status":2}""", HttpStatusCode.BadRequest)]
+    public async Task EnumValues_BindByNameOnly(string path, string json, HttpStatusCode expected)
+    {
+        var (app, client) = await StartAsync();
+        await using var _ = app;
+
+        var response = await client.PostAsync(path, new StringContent(json, Encoding.UTF8, "application/json"));
+
+        Assert.Equal(expected, response.StatusCode);
+        if (expected == HttpStatusCode.BadRequest)
+        {
+            Assert.Equal("http.400", JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement.GetProperty("code").GetString());
+        }
+    }
+
+    // L37 and L62: the app-wide 64 KB body limit, on any endpoint.
+    [Fact]
+    public async Task BodyOver64KB_Is413_WithCode_AtTheLimitIsFine()
+    {
+        var (app, client) = await StartAsync();
+        await using var _ = app;
+        string Body(long size) => "{\"nickname\":\"" + new string('a', (int)size - 15) + "\"}";
+
+        var atLimit = await client.PostAsync("/test/vehicles", new StringContent(Body(RequestLimits.MaxBodyBytes), Encoding.UTF8, "application/json"));
+        var over = await client.PostAsync("/test/vehicles", new StringContent(Body(RequestLimits.MaxBodyBytes + 1), Encoding.UTF8, "application/json"));
+
+        Assert.Equal(HttpStatusCode.OK, atLimit.StatusCode);
+        Assert.Equal(HttpStatusCode.RequestEntityTooLarge, over.StatusCode);
+        Assert.Equal("http.413", JsonDocument.Parse(await over.Content.ReadAsStringAsync()).RootElement.GetProperty("code").GetString());
+    }
 }
 
 [ApiController]
-[Route("test/vehicles")]
+[Route("test")]
 public class ModelBindingTestController : ControllerBase
 {
-    [HttpPost]
+    [HttpPost("vehicles")]
     public IActionResult Create(CreateVehicleRequest request) => Ok();
+
+    [HttpPost("issues")]
+    public IActionResult Update(UpdateIssueRequest request) => Ok();
 }

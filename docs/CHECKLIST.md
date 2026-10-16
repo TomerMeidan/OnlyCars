@@ -2,7 +2,7 @@
 
 One line per requirement in `docs/spec.md`. Updated after every ticket is signed off. Evidence and details are in `docs/requirements-status.md`.
 
-**Last updated:** 2026-10-16, MVP5-C signed off without browser QA (a flagged checklist item becomes a to-do; To-dos on the car page; open to-do count on the dashboard). Next: LOW-3, the batch of small fixes.
+**Last updated:** 2026-10-16, LOW-3 backend built (numeric enums rejected app-wide, 64 KB body limit, runs list capped at 200, concurrency 409s, `date.tooEarly`, a new car's first reading takes the client's date; contract in `docs/contracts/LOW-3.md`). Next: LOW-3 frontend.
 **Progress:** 30 of 50 required items done, 5 partly done, 15 not started. The 7 optional items are not counted.
 
 Legend:

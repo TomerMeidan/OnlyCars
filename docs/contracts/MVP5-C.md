@@ -64,7 +64,7 @@ All use the existing ProblemDetails shape with `code`. Checks run in the order l
 | `issue.invalidSource` | 400 | Create: the run item is the caller's but not flagged, or on another of their cars |
 | `issue.duplicate` | 409 | Create: the run item already has a to-do (also when two creates race: one gets 201, the other 409) |
 | `issue.limitReached` | 400 | Create: the car already has 500 to-dos (open and done) |
-| `issue.invalidStatus` | 400 | PUT: `status` is a number that isn't Open (0) or Done (1), such as `2` (checked before the date) |
+| ~~`issue.invalidStatus`~~ | 400 | **Removed in LOW-3** (L65): a numeric `status` (any number) is now rejected at binding as a plain 400 `http.400`; see `docs/contracts/LOW-3.md` |
 | `issue.invalidDate` | 400 | PUT: Done without `resolvedAt`, or `resolvedAt` before 2000-01-01 |
 | `issue.futureDate` | 400 | PUT: Done with `resolvedAt` after the server's UTC today + 1 day |
 | `http.400` | 400 | Malformed JSON, a non-guid id or an unknown `status` name (model binding, `errors` has field names) |

@@ -23,7 +23,6 @@ public class VehicleChecklistConfiguration : IEntityTypeConfiguration<VehicleChe
             .OnDelete(DeleteBehavior.NoAction);
 
         builder.HasIndex(c => new { c.VehicleId, c.TemplateId }).IsUnique();
-        builder.HasIndex(c => c.TemplateId);
         // No interval check constraint: both null is "manual only" (decisions.md).
     }
 }

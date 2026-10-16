@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Infrastructure;
 using Microsoft.AspNetCore.Mvc.ModelBinding;
+using Microsoft.EntityFrameworkCore;
 using OnlyCars.Application.Common.Exceptions;
 
 namespace OnlyCars.Api.Middleware;
@@ -10,6 +11,12 @@ public class GlobalExceptionHandler(ILogger<GlobalExceptionHandler> logger) : IE
 {
     public async ValueTask<bool> TryHandleAsync(HttpContext httpContext, Exception exception, CancellationToken cancellationToken)
     {
+        // Another request changed or deleted the same rows first (a concurrency token, or a row already gone).
+        if (exception is DbUpdateConcurrencyException)
+        {
+            exception = new ConflictException("concurrency.conflict", "This was changed at the same time somewhere else. Reload and try again.");
+        }
+
         var (statusCode, title) = exception switch
         {
             NotFoundException => (StatusCodes.Status404NotFound, "Not found"),
@@ -17,7 +24,7 @@ public class GlobalExceptionHandler(ILogger<GlobalExceptionHandler> logger) : IE
             ValidationFailedException => (StatusCodes.Status400BadRequest, "Validation failed"),
             UnauthorizedException or UnauthorizedAccessException => (StatusCodes.Status401Unauthorized, "Unauthorized"),
             TooManyRequestsException => (StatusCodes.Status429TooManyRequests, "Too many requests"),
-            BadHttpRequestException bad => (bad.StatusCode, "Bad request"), // e.g. 413 from [RequestSizeLimit]
+            BadHttpRequestException bad => (bad.StatusCode, "Bad request"), // e.g. 413 from the body size limit
             _ => (StatusCodes.Status500InternalServerError, "Unexpected error")
         };
 

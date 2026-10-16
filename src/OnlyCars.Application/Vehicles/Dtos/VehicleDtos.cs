@@ -29,7 +29,8 @@ public record CreateVehicleRequest(
     DateOnly? PurchaseDate,
     decimal? PurchasePrice,
     string? PhotoUrl,
-    decimal? InitialOdometerKm);
+    decimal? InitialOdometerKm,
+    DateOnly? ReadingDate = null); // the first reading's date: the client's local today, like quick-add
 
 public record UpdateVehicleRequest(
     string Nickname,

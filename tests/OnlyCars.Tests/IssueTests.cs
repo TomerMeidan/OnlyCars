@@ -1,8 +1,6 @@
-using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Storage;
-using OnlyCars.Api.Controllers;
 using OnlyCars.Application.Checklists;
 using OnlyCars.Application.Checklists.Dtos;
 using OnlyCars.Application.Common.Exceptions;
@@ -311,7 +309,6 @@ public class IssueTests
         Assert.Equal("issue.invalidDate", await CodeAsync(() => SetAsync(i, IssueStatus.Done, null)));
         Assert.Equal("issue.invalidDate", await CodeAsync(() => SetAsync(i, IssueStatus.Done, new DateOnly(1999, 12, 31))));
         Assert.Equal("issue.futureDate", await CodeAsync(() => SetAsync(i, IssueStatus.Done, Today.AddDays(2))));
-        Assert.Equal("issue.invalidStatus", await CodeAsync(() => SetAsync(i, (IssueStatus)2, Today)));
         Assert.Equal(IssueStatus.Open, (await db.Issues.SingleAsync()).Status);
 
         Assert.Equal(new DateOnly(2000, 1, 1), (await SetAsync(i, IssueStatus.Done, new DateOnly(2000, 1, 1))).ResolvedAt);
@@ -356,13 +353,6 @@ public class IssueTests
 
         Assert.Equal([(car, 2), (none, 0)], dash.Vehicles.Select(v => (v.Id, v.OpenIssueCount)).OrderBy(v => v.Item2 == 0));
         Assert.Equal((0, 0), (dash.OverdueCount, dash.DueSoonCount));
-    }
-
-    [Fact]
-    public void Controller_LimitsTheRequestSize()
-    {
-        var attribute = typeof(IssuesController).GetCustomAttributes(typeof(RequestSizeLimitAttribute), true).Single();
-        Assert.NotNull(attribute);
     }
 
     /// <summary>Simulates another request saving first: runs <c>race</c> once with the source id, then fails this save like the unique index.</summary>

@@ -82,12 +82,6 @@ public class IssueService(IAppDbContext db, VehicleService vehicleService)
         var (title, description) = Validate(request.Title, request.Description);
 
         var status = request.Status ?? issue.Status;
-        // JsonStringEnumConverter also binds numbers, so an undefined one like 2 would reach the database.
-        if (!Enum.IsDefined(status))
-        {
-            throw new ValidationFailedException("issue.invalidStatus", "The status must be Open or Done.");
-        }
-
         DateOnly? resolvedAt = null;
         if (status == IssueStatus.Done)
         {

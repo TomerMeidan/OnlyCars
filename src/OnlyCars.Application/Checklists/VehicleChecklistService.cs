@@ -14,6 +14,7 @@ namespace OnlyCars.Application.Checklists;
 /// <summary>Checklists attached to cars and their runs (MVP5-B, decisions.md "Checklist run rules, MVP5-B").</summary>
 public class VehicleChecklistService(IAppDbContext db, VehicleService vehicleService)
 {
+    // shortcut: no GET /api/vehicle-checklists/{id}; the run page loads this whole list, fine at a few checklists per car, add it if lists grow.
     public async Task<List<VehicleChecklistDto>> ListAsync(Guid userId, Guid vehicleId, CancellationToken ct = default)
     {
         await vehicleService.FindOwnedAsync(userId, vehicleId, ct);
@@ -41,11 +42,9 @@ public class VehicleChecklistService(IAppDbContext db, VehicleService vehicleSer
             throw new NotFoundException(nameof(ChecklistTemplate), templateId);
         }
 
-        // shortcut: two simultaneous attaches of one template both pass this check and the unique index fails the second with a 500;
-        // fine for a single user, catch the DbUpdateException if it is ever seen.
         if (await db.VehicleChecklists.AnyAsync(c => c.VehicleId == vehicle.Id && c.TemplateId == templateId, ct))
         {
-            throw new ConflictException("vehicleChecklist.duplicate", "This checklist is already on this car.");
+            throw Duplicate();
         }
 
         var checklist = new VehicleChecklist
@@ -60,9 +59,25 @@ public class VehicleChecklistService(IAppDbContext db, VehicleService vehicleSer
             StartOdometerKm = vehicle.CurrentOdometerKm
         };
         db.VehicleChecklists.Add(checklist);
-        await db.SaveChangesAsync(ct);
+        try
+        {
+            await db.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateException)
+        {
+            // A simultaneous attach of the same template won the unique index (L51).
+            if (await db.VehicleChecklists.AnyAsync(c => c.VehicleId == vehicle.Id && c.TemplateId == templateId && c.Id != checklist.Id, ct))
+            {
+                throw Duplicate();
+            }
+
+            throw;
+        }
+
         return await DtoAsync(checklist.Id, ct);
     }
+
+    private static ConflictException Duplicate() => new("vehicleChecklist.duplicate", "This checklist is already on this car.");
 
     public async Task<VehicleChecklistDto> UpdateAsync(Guid userId, Guid id, UpdateVehicleChecklistRequest request, CancellationToken ct = default)
     {
@@ -90,6 +105,8 @@ public class VehicleChecklistService(IAppDbContext db, VehicleService vehicleSer
         await db.SaveChangesAsync(ct);
     }
 
+    public const int MaxRunsListed = 200;
+
     /// <summary>Newest first: RunAt, then creation time.</summary>
     public async Task<List<ChecklistRunDto>> ListRunsAsync(Guid userId, Guid id, CancellationToken ct = default)
     {
@@ -97,6 +114,8 @@ public class VehicleChecklistService(IAppDbContext db, VehicleService vehicleSer
         var runs = await db.ChecklistRuns.Include(r => r.Items)
             .Where(r => r.VehicleChecklistId == checklist.Id)
             .OrderByDescending(r => r.RunAt).ThenByDescending(r => r.CreatedAt)
+            // shortcut: newest 200 runs only, no paging (decisions.md, LOW-3); page it if a car ever needs older runs on screen.
+            .Take(MaxRunsListed)
             .ToListAsync(ct);
         var issues = await db.Issues.Where(i => i.SourceRunItem!.Run!.VehicleChecklistId == checklist.Id)
             .ToDictionaryAsync(i => i.SourceRunItemId!.Value, i => i.Id, ct);
@@ -116,6 +135,7 @@ public class VehicleChecklistService(IAppDbContext db, VehicleService vehicleSer
         // Same one day of slack as readings and service records: the client sends its local date.
         var today = TodayUtc();
         var runAt = request.RunAt ?? today;
+        DateRules.RejectTooEarly(runAt);
         if (runAt > today.AddDays(1))
         {
             throw new ValidationFailedException("checklistRun.futureDate", "The run date can't be in the future.");

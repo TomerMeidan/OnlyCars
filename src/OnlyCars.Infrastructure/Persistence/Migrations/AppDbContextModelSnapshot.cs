@@ -136,6 +136,7 @@ namespace OnlyCars.Infrastructure.Persistence.Migrations
                         .HasColumnType("nvarchar(100)");
 
                     b.Property<DateTimeOffset>("UpdatedAt")
+                        .IsConcurrencyToken()
                         .HasColumnType("datetimeoffset");
 
                     b.Property<Guid>("UserId")
@@ -399,6 +400,7 @@ namespace OnlyCars.Infrastructure.Persistence.Migrations
                         .HasColumnType("date");
 
                     b.Property<bool>("IsVoided")
+                        .IsConcurrencyToken()
                         .HasColumnType("bit");
 
                     b.Property<string>("Notes")

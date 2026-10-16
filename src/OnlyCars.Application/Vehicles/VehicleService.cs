@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using OnlyCars.Application.Common;
 using OnlyCars.Application.Common.Exceptions;
+using OnlyCars.Application.Odometer;
 using OnlyCars.Application.Vehicles.Dtos;
 using OnlyCars.Domain;
 using OnlyCars.Domain.Entities;
@@ -32,6 +33,12 @@ public class VehicleService(IAppDbContext db)
         if (request.InitialOdometerKm is < 0 or > OdometerReading.MaxValueKm)
         {
             throw new ValidationFailedException("odometer.invalidValue", $"The starting odometer must be between 0 and {OdometerReading.MaxValueKm} km.");
+        }
+
+        var readingDate = request.ReadingDate ?? DateOnly.FromDateTime(DateTime.UtcNow);
+        if (request.InitialOdometerKm is not null)
+        {
+            OdometerService.ValidateDate(readingDate);
         }
 
         if (!string.IsNullOrWhiteSpace(request.Vin))
@@ -68,7 +75,7 @@ public class VehicleService(IAppDbContext db)
                 VehicleId = vehicle.Id,
                 Vehicle = vehicle,
                 ValueKm = initial,
-                ReadingDate = DateOnly.FromDateTime(DateTime.UtcNow),
+                ReadingDate = readingDate,
                 Source = OdometerSource.Manual
             });
         }

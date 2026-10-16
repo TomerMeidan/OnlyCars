@@ -9,6 +9,8 @@ public class ChecklistTemplateConfiguration : IEntityTypeConfiguration<Checklist
     public void Configure(EntityTypeBuilder<ChecklistTemplate> builder)
     {
         builder.Property(t => t.Name).IsRequired().HasMaxLength(ChecklistTemplate.MaxNameLength);
+        // Every edit sets UpdatedAt, so of two simultaneous edits the second matches no row and is a 409 concurrency.conflict (L38).
+        builder.Property(t => t.UpdatedAt).IsConcurrencyToken();
 
         builder.HasOne(t => t.User)
             .WithMany()

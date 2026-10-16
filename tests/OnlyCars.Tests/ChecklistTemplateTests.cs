@@ -278,6 +278,14 @@ public class ChecklistTemplateTests
     }
 
     [Fact]
+    public async Task WhitespaceOnlyUnit_OnACheckItem_IsNoUnit()
+    {
+        var created = await CreateAsync("T", null, new ChecklistTemplateItemRequest(null, "L", "Check", "   ", null, null));
+
+        Assert.Null(Assert.Single(created.Items).Unit);
+    }
+
+    [Fact]
     public async Task FailedValidation_OnUpdate_ChangesNothing()
     {
         var created = await CreateAsync("T", null, Check("A"), Text("B"));

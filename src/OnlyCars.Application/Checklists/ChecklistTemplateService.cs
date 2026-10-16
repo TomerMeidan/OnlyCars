@@ -32,6 +32,7 @@ public class ChecklistTemplateService(IAppDbContext db)
             throw ItemError("checklistItem.invalidId", "The item doesn't belong to this checklist.", withId.Index);
         }
 
+        // shortcut: simultaneous creates at 99 can both pass and pass the cap by a few (accepted, LOW-3); add a lock if the cap ever matters.
         if (await db.ChecklistTemplates.CountAsync(t => t.UserId == userId, ct) >= ChecklistTemplate.MaxTemplatesPerUser)
         {
             throw new ValidationFailedException("checklistTemplate.tooMany",

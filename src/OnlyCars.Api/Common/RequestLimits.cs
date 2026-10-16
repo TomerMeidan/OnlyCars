@@ -1,7 +1,9 @@
 using System.Net;
 using System.Net.Sockets;
 using System.Threading.RateLimiting;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.HttpOverrides;
+using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using OnlyCars.Application.Auth;
@@ -13,6 +15,9 @@ public static class RequestLimits
 {
     /// <summary>Applied to login and register, which share one bucket per IP.</summary>
     public const string AuthPolicy = "auth";
+
+    /// <summary>App-wide request body limit (L37): a larger body is a 413 <c>http.413</c>. Auth keeps its smaller attribute.</summary>
+    public const long MaxBodyBytes = 65_536;
 
     // shortcut: rate-limit counters live in this process's memory (reset on restart, not shared between instances),
     // fine for one App Service instance; move to a shared store (Redis) if the API scales out.
@@ -27,6 +32,10 @@ public static class RequestLimits
                 }.All(v => v > 0), "Every RateLimiting value must be positive.")
             .ValidateOnStart();
         var limits = section.Get<RateLimitOptions>() ?? new RateLimitOptions();
+
+        // IIS in-process (a Windows App Service) ignores the Kestrel limit, so set both.
+        services.Configure<KestrelServerOptions>(o => o.Limits.MaxRequestBodySize = MaxBodyBytes);
+        services.Configure<IISServerOptions>(o => o.MaxRequestBodySize = MaxBodyBytes);
 
         // App Service's front ends append the client IP to X-Forwarded-For and have no fixed addresses, so trust any
         // proxy. ForwardLimit stays 1: only the rightmost entry (added by Azure) is used, not ones a client sent.

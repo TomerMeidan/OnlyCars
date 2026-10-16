@@ -13,7 +13,7 @@ var builder = WebApplication.CreateBuilder(args);
 const string ClientCorsPolicy = "ClientCors";
 
 builder.Services.AddControllers()
-    .AddJsonOptions(o => o.JsonSerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter()))
+    .AddJsonOptions(ApiJson.Configure)
     .ConfigureApiBehaviorOptions(o => o.InvalidModelStateResponseFactory = GlobalExceptionHandler.InvalidModelStateResponse);
 builder.Services.AddOpenApi();
 builder.Services.AddEndpointsApiExplorer();

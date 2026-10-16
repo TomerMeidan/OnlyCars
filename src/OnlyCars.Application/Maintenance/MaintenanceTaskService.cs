@@ -527,7 +527,16 @@ public class MaintenanceTaskService(IAppDbContext db, VehicleService vehicleServ
         }
         OdometerService.Recompute(vehicle, readings);
 
-        await db.SaveChangesAsync(ct);
+        try
+        {
+            await db.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            // A simultaneous void saved first (IsVoided is a concurrency token).
+            throw new ConflictException("serviceRecord.alreadyVoided", "This service record is already undone.");
+        }
+
         var today = TodayUtc();
         return tasks.Select(t => ToDto(t, vehicle, today)).ToList();
     }
