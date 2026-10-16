@@ -64,3 +64,9 @@ public enum ChecklistItemType
     Number,
     Text
 }
+
+public enum IssueStatus
+{
+    Open,
+    Done
+}

@@ -194,6 +194,53 @@ namespace OnlyCars.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("OnlyCars.Domain.Entities.Issue", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<DateOnly?>("ResolvedAt")
+                        .HasColumnType("date");
+
+                    b.Property<Guid?>("SourceRunItemId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid>("VehicleId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SourceRunItemId")
+                        .IsUnique()
+                        .HasFilter("[SourceRunItemId] IS NOT NULL");
+
+                    b.HasIndex("VehicleId");
+
+                    b.ToTable("Issues", t =>
+                        {
+                            t.HasCheckConstraint("CK_Issues_ResolvedAt", "([Status] = 0 AND [ResolvedAt] IS NULL) OR ([Status] = 1 AND [ResolvedAt] IS NOT NULL)");
+                        });
+                });
+
             modelBuilder.Entity("OnlyCars.Domain.Entities.MaintenanceTask", b =>
                 {
                     b.Property<Guid>("Id")
@@ -806,6 +853,24 @@ namespace OnlyCars.Infrastructure.Persistence.Migrations
                         .IsRequired();
 
                     b.Navigation("Template");
+                });
+
+            modelBuilder.Entity("OnlyCars.Domain.Entities.Issue", b =>
+                {
+                    b.HasOne("OnlyCars.Domain.Entities.ChecklistRunItem", "SourceRunItem")
+                        .WithMany()
+                        .HasForeignKey("SourceRunItemId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("OnlyCars.Domain.Entities.Vehicle", "Vehicle")
+                        .WithMany()
+                        .HasForeignKey("VehicleId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("SourceRunItem");
+
+                    b.Navigation("Vehicle");
                 });
 
             modelBuilder.Entity("OnlyCars.Domain.Entities.MaintenanceTask", b =>

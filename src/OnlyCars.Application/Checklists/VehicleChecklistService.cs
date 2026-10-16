@@ -98,7 +98,9 @@ public class VehicleChecklistService(IAppDbContext db, VehicleService vehicleSer
             .Where(r => r.VehicleChecklistId == checklist.Id)
             .OrderByDescending(r => r.RunAt).ThenByDescending(r => r.CreatedAt)
             .ToListAsync(ct);
-        return runs.Select(ToDto).ToList();
+        var issues = await db.Issues.Where(i => i.SourceRunItem!.Run!.VehicleChecklistId == checklist.Id)
+            .ToDictionaryAsync(i => i.SourceRunItemId!.Value, i => i.Id, ct);
+        return runs.Select(r => ToDto(r, issues)).ToList();
     }
 
     /// <summary>
@@ -165,7 +167,7 @@ public class VehicleChecklistService(IAppDbContext db, VehicleService vehicleSer
         }
 
         await db.SaveChangesAsync(ct);
-        return new(ToDto(run), await DtoAsync(checklist.Id, ct));
+        return new(ToDto(run, new Dictionary<Guid, Guid>()), await DtoAsync(checklist.Id, ct));
     }
 
     /// <summary>
@@ -183,6 +185,13 @@ public class VehicleChecklistService(IAppDbContext db, VehicleService vehicleSer
         var now = DateTimeOffset.UtcNow;
 
         db.ChecklistRuns.Remove(run);
+
+        // The to-do link doesn't cascade (SQL Server's one-path rule): the run's to-dos stay, without their source.
+        foreach (var issue in await db.Issues.Where(i => i.SourceRunItem!.RunId == run.Id).ToListAsync(ct))
+        {
+            issue.SourceRunItemId = null;
+            issue.UpdatedAt = now;
+        }
 
         if (run.OdometerReadingId is { } readingId)
         {
@@ -326,10 +335,11 @@ public class VehicleChecklistService(IAppDbContext db, VehicleService vehicleSer
             c.LastRunOdometerKm, runCount, s.Status, s.RemainingKm, s.RemainingDays, s.Progress);
     }
 
-    private static ChecklistRunDto ToDto(ChecklistRun r) => new(r.Id, r.VehicleChecklistId, r.RunAt, r.OdometerKm, r.OdometerReadingId, r.Notes,
+    private static ChecklistRunDto ToDto(ChecklistRun r, Dictionary<Guid, Guid> issueByItem) => new(r.Id, r.VehicleChecklistId, r.RunAt,
+        r.OdometerKm, r.OdometerReadingId, r.Notes,
         r.Items.Count(i => i.IsFlagged),
         r.Items.OrderBy(i => i.SortOrder)
             .Select(i => new ChecklistRunItemDto(i.Id, i.TemplateItemId, i.LabelSnapshot, i.Type, i.Unit, i.MinValue, i.MaxValue,
-                i.BoolValue, i.NumberValue, i.TextValue, i.IsFlagged))
+                i.BoolValue, i.NumberValue, i.TextValue, i.IsFlagged, issueByItem.TryGetValue(i.Id, out var issueId) ? issueId : null))
             .ToList());
 }

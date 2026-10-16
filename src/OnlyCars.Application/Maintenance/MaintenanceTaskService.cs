@@ -225,7 +225,7 @@ public class MaintenanceTaskService(IAppDbContext db, VehicleService vehicleServ
     /// <summary>
     /// Statuses of the enabled tasks of the caller's active cars (server UTC date, as on GET .../tasks), and the month's spend
     /// with the same filter as the history search from the first of the month to <paramref name="today"/>, and each active car's enabled
-    /// checklists. Five queries.
+    /// checklists and open to-do counts. Six queries.
     /// </summary>
     public async Task<DashboardDto> DashboardAsync(Guid userId, DateOnly? today, CancellationToken ct = default)
     {
@@ -248,6 +248,8 @@ public class MaintenanceTaskService(IAppDbContext db, VehicleService vehicleServ
             .ToListAsync(ct)).ToLookup(t => t.VehicleId);
         var checklists = (await VehicleChecklistService.QueryAsync(db,
             c => c.Vehicle!.UserId == userId && !c.Vehicle.IsArchived && c.IsEnabled, ct)).ToLookup(c => c.VehicleId);
+        var openIssues = await db.Issues.Where(i => i.Vehicle!.UserId == userId && !i.Vehicle.IsArchived && i.Status == IssueStatus.Open)
+            .GroupBy(i => i.VehicleId).Select(g => new { g.Key, Count = g.Count() }).ToDictionaryAsync(g => g.Key, g => g.Count, ct);
 
         var cards = vehicles.Select(v =>
             {
@@ -255,7 +257,8 @@ public class MaintenanceTaskService(IAppDbContext db, VehicleService vehicleServ
                     .OrderByDescending(t => t.Status).ThenByDescending(t => t.Progress).ThenBy(t => t.Name, StringComparer.InvariantCulture)
                     .ToList();
                 return new DashboardVehicleDto(v.Id, v.Nickname, v.Make, v.Model, v.Year, v.CurrentOdometerKm,
-                    list.Count(t => t.Status == DueStatus.Overdue), list.Count(t => t.Status == DueStatus.DueSoon), list, checklists[v.Id].ToList());
+                    list.Count(t => t.Status == DueStatus.Overdue), list.Count(t => t.Status == DueStatus.DueSoon), list, checklists[v.Id].ToList(),
+                    openIssues.GetValueOrDefault(v.Id));
             })
             .OrderBy(c => c.Tasks.Count == 0)
             .ThenByDescending(c => c.Tasks.FirstOrDefault()?.Status)

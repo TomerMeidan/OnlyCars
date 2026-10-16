@@ -27,8 +27,9 @@ public record AttachChecklistRequest(Guid? TemplateId, int? IntervalKm, int? Int
 public record UpdateVehicleChecklistRequest(int? IntervalKm, int? IntervalDays, bool? IsEnabled);
 
 // Label, Type, Unit, MinValue and MaxValue are as they were at run time; TemplateItemId is null once the template item is deleted.
+// IssueId is the to-do created from this item (MVP5-C), null when none.
 public record ChecklistRunItemDto(Guid Id, Guid? TemplateItemId, string Label, ChecklistItemType Type, string? Unit, decimal? MinValue,
-    decimal? MaxValue, bool? BoolValue, decimal? NumberValue, string? TextValue, bool IsFlagged);
+    decimal? MaxValue, bool? BoolValue, decimal? NumberValue, string? TextValue, bool IsFlagged, Guid? IssueId);
 
 // OdometerReadingId is the Checklist reading the run logged, null when no odometer was entered (OdometerKm is then the car's odometer).
 public record ChecklistRunDto(Guid Id, Guid VehicleChecklistId, DateOnly RunAt, decimal OdometerKm, Guid? OdometerReadingId, string? Notes,
