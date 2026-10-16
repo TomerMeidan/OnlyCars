@@ -1,12 +1,13 @@
 import { useEffect, useId, useRef, useState, type FormEvent } from 'react'
 import { Trans, useTranslation } from 'react-i18next'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
-import { api, ApiError, localToday, runPath, type ChecklistRun, type ChecklistRunItem, type ChecklistTemplate, type Vehicle, type VehicleChecklist } from '../api'
+import { api, ApiError, localToday, runPath, type ChecklistRun, type ChecklistRunItem, type Issue, type ChecklistTemplate, type Vehicle, type VehicleChecklist } from '../api'
 import { useDistance } from '../auth'
 import { errorMessage, fmtDate } from '../i18n'
 import { useRow } from '../useRow'
 import { splitDays, unitDays, type Unit } from '../units'
 import { Due, Interval, StatusBadge } from './TasksSection'
+import { focusIssue, IssueForm } from './IssuesSection'
 
 // The server's cap on a checklist's time interval (10 years).
 const MAX_DAYS = 3650
@@ -15,7 +16,8 @@ const MAX_DAYS = 3650
 export type RunReturn = { ran: string; flagged?: number }
 
 // The car page's checklists, after Maintenance. It loads on its own, like the tasks.
-export function ChecklistsSection({ car, onChanged }: { car: Vehicle; onChanged: () => void }) {
+// onIssuesChanged: a to-do was created from a flagged run item.
+export function ChecklistsSection({ car, onChanged, onIssuesChanged }: { car: Vehicle; onChanged: () => void; onIssuesChanged: () => void }) {
   const { t } = useTranslation()
   const location = useLocation()
   const navigate = useNavigate()
@@ -124,6 +126,7 @@ export function ChecklistsSection({ car, onChanged }: { car: Vehicle; onChanged:
               // The row that takes this one's place, then the first, then Add a checklist.
               onRemoved={() => reload([`.car-checklists > li:nth-child(${i + 1}) button.edit`, '.car-checklists > li button.edit', 'button.add'])}
               onRunsChanged={onChanged}
+              onIssuesChanged={onIssuesChanged}
             />
           ))}
         </ul>
@@ -216,7 +219,7 @@ function ScheduleForm({ row, templates, checklist, onSubmit }: {
   )
 }
 
-function ChecklistRow({ car, checklist: c, readOnly, describedBy, onEdited, onRemoved, onRunsChanged }: {
+function ChecklistRow({ car, checklist: c, readOnly, describedBy, onEdited, onRemoved, onRunsChanged, onIssuesChanged }: {
   car: Vehicle
   checklist: VehicleChecklist
   readOnly: boolean
@@ -224,6 +227,7 @@ function ChecklistRow({ car, checklist: c, readOnly, describedBy, onEdited, onRe
   onEdited: () => void
   onRemoved: () => void
   onRunsChanged: () => void
+  onIssuesChanged: () => void
 }) {
   const { t, i18n } = useTranslation()
   // After Save or Remove the section refocuses (close()); Cancel and Escape go back to the opener.
@@ -278,16 +282,24 @@ function ChecklistRow({ car, checklist: c, readOnly, describedBy, onEdited, onRe
           </div>
         </div>
       )}
-      <RunHistory checklist={c} readOnly={readOnly} onChanged={onRunsChanged} />
+      <RunHistory carId={car.id} checklist={c} readOnly={readOnly} onChanged={onRunsChanged} onIssuesChanged={onIssuesChanged} />
     </li>
   )
 }
 
 // "History (3)", collapsed; the runs load the first time it opens.
-function RunHistory({ checklist: c, readOnly, onChanged }: { checklist: VehicleChecklist; readOnly: boolean; onChanged: () => void }) {
+function RunHistory({ carId, checklist: c, readOnly, onChanged, onIssuesChanged }: {
+  carId: string
+  checklist: VehicleChecklist
+  readOnly: boolean
+  onChanged: () => void
+  onIssuesChanged: () => void
+}) {
   const { t } = useTranslation()
   const [runs, setRuns] = useState<ChecklistRun[] | null>(null)
   const [error, setError] = useState<unknown>(null)
+  // Why the runs reloaded: a to-do already created, or a run deleted, in another tab.
+  const [note, setNote] = useState<string | null>(null)
   const [retrying, setRetrying] = useState(false)
   const ref = useRef<HTMLDetailsElement>(null)
   // Selectors to focus after the next change of the runs, the first that matches; the summary if none does.
@@ -309,6 +321,7 @@ function RunHistory({ checklist: c, readOnly, onChanged }: { checklist: VehicleC
   return (
     <details className="run-history" ref={ref} onToggle={(e) => e.currentTarget.open && !runs && load()}>
       <summary>{t('runHistory', { n: c.runCount })}</summary>
+      {note && <p role="status">{note}</p>}
       {error != null && (
         <div className="row">
           <p className="error" role="alert">{errorMessage(error)}</p>
@@ -327,7 +340,14 @@ function RunHistory({ checklist: c, readOnly, onChanged }: { checklist: VehicleC
       ) : (
         <ol className="run-list">
           {runs.map((r, i) => (
-            <RunRow key={r.id} run={r} readOnly={readOnly} onDeleted={() => {
+            <RunRow key={r.id} run={r} carId={carId} checklistName={c.name} readOnly={readOnly} onIssue={(itemId, issueId, err) => {
+              // Created (here or in another tab): focus on its "To-do created"; its to-do deleted elsewhere: on Create to-do.
+              focusNext.current = [`.run-items > li[data-id="${itemId}"] button.to-issue`, `.run-items > li[data-id="${itemId}"] button.create-issue`]
+              setNote(err == null ? null : errorMessage(err))
+              if (issueId) setRuns((rs) => rs && rs.map((x) => x.id !== r.id ? x : { ...x, items: x.items.map((it) => it.id === itemId ? { ...it, issueId } : it) }))
+              else load()
+              onIssuesChanged()
+            }} onDeleted={() => {
               // The next older run, then the newest, then the summary (decisions.md, MVP1-C).
               focusNext.current = [`.run-list > li:nth-child(${i + 1}) button.delete-run`, '.run-list > li button.delete-run']
               setRuns((rs) => rs && rs.filter((x) => x.id !== r.id))
@@ -340,7 +360,14 @@ function RunHistory({ checklist: c, readOnly, onChanged }: { checklist: VehicleC
   )
 }
 
-function RunRow({ run: r, readOnly, onDeleted }: { run: ChecklistRun; readOnly: boolean; onDeleted: () => void }) {
+function RunRow({ run: r, carId, checklistName, readOnly, onIssue, onDeleted }: {
+  run: ChecklistRun
+  carId: string
+  checklistName: string
+  readOnly: boolean
+  onIssue: ItemIssueProps['onIssue']
+  onDeleted: () => void
+}) {
   const { t, i18n } = useTranslation()
   const d = useDistance()
   const { mode, open, close, busy, error, run, opener } = useRow<'delete'>()
@@ -355,10 +382,11 @@ function RunRow({ run: r, readOnly, onDeleted }: { run: ChecklistRun; readOnly: 
         </summary>
         <ul className="run-items">
           {r.items.map((it) => (
-            <li key={it.id}>
+            <li key={it.id} data-id={it.id}>
               <span dir="auto">{it.label}</span>
               <RunValue item={it} />
               {it.isFlagged && <span className="flag">{t('flagged.hand')}</span>}
+              {it.isFlagged && <ItemIssue item={it} run={r} carId={carId} checklistName={checklistName} readOnly={readOnly} onIssue={onIssue} />}
             </li>
           ))}
         </ul>
@@ -385,6 +413,51 @@ function RunRow({ run: r, readOnly, onDeleted }: { run: ChecklistRun; readOnly: 
         </div>
       )}
     </li>
+  )
+}
+
+type ItemIssueProps = {
+  item: ChecklistRunItem
+  run: ChecklistRun
+  carId: string
+  checklistName: string
+  readOnly: boolean
+  // After a create (the new to-do's id), a stale item (the error that says why), or a to-do no longer on the page (neither).
+  onIssue: (itemId: string, issueId?: string, err?: unknown) => void
+}
+
+// A flagged item's Create to-do, prefilled from the item and its run; once created, "To-do created" moves focus to that to-do.
+function ItemIssue({ item: it, run: r, carId, checklistName, readOnly, onIssue }: ItemIssueProps) {
+  const { t, i18n } = useTranslation()
+  const lng = i18n.resolvedLanguage
+  const row = useRow<'create'>()
+  const label = it.label
+
+  if (it.issueId) {
+    const id = it.issueId
+    return <button className="link to-issue" aria-label={t('issueCreatedOf', { label })} onClick={() => focusIssue(id) || onIssue(it.id)}>{t('issueCreated')}</button>
+  }
+  if (readOnly) return null
+  if (row.mode === 'view') {
+    return <button className="link create-issue" aria-label={t('createIssueOf', { label })} ref={row.opener('create')} onClick={() => row.open('create')}>{t('createIssue')}</button>
+  }
+  const value = it.type === 'Check' ? (it.boolValue == null ? t('unanswered') : t(it.boolValue ? 'ok' : 'notOk'))
+    : it.type === 'Text' ? it.textValue ?? t('unanswered')
+    : it.numberValue == null ? t('unanswered')
+    : [it.numberValue.toLocaleString(lng), it.unit].filter(Boolean).join(' ')
+  return (
+    <IssueForm row={row} initial={{ title: label, description: t('issueFromRun', { value, name: checklistName, date: fmtDate(r.runAt, lng) }) }} onSubmit={async (body) => {
+      try {
+        const x = await api<Issue>(`/vehicles/${encodeURIComponent(carId)}/issues`, 'POST', { ...body, sourceRunItemId: it.id })
+        row.close()
+        onIssue(it.id, x.id)
+      } catch (err) {
+        // Created in another tab, or the run deleted there: the history reloads to show it.
+        if (!(err instanceof ApiError && ['issue.duplicate', 'checklistRunItem.notFound'].includes(err.problem.code ?? ''))) throw err
+        row.close()
+        onIssue(it.id, undefined, err)
+      }
+    }} />
   )
 }
 

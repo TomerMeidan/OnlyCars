@@ -158,6 +158,9 @@ export default function CarsPage() {
                   </>
                 )}
                 {dash.checklists.length > 0 && <StartChecklist carId={car.id} checklists={dash.checklists} />}
+                {dash.openIssueCount > 0 && (
+                  <div className="actions"><Link to={`/cars/${car.id}`}>{t('openIssues', { count: dash.openIssueCount })}</Link></div>
+                )}
               </>
             )}
             <CarActions car={car} onArchived={() => load()} />

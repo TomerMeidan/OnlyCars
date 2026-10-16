@@ -1,20 +1,21 @@
 # OnlyCars: Requirements Status
 
-**Audit date:** 2026-10-16 (seventeenth audit, short sign-off of MVP5-B, running a checklist on a car; backend committed in `baeac80`, frontend not committed yet)
-**Overall:** MVP steps 1 to 4 are complete apart from the car photo and attachments (both blocked on R2). Step 5: checklist templates, schedules on cars, runs with flags, run history and the dashboard's "Start a checklist" are done; photos on runs wait for R2. Next: MVP5-C (a flagged item becomes a to-do). No deployment tickets until the owner asks.
+**Audit date:** 2026-10-16 (eighteenth audit, short sign-off of MVP5-C, a flagged checklist item becomes a to-do; backend committed in `c232d4f`, frontend and fixes not committed yet)
+**Overall:** MVP steps 1 to 4 are complete apart from the car photo and attachments (both blocked on R2). Step 5: checklists are done apart from photos on runs (R2), including flagged items becoming per-car to-dos. Tires, reports and notifications are not started. Next: LOW-3 (the Low backlog). No deployment tickets until the owner asks.
 
 | Status | Count |
 |---|---|
-| Done | 29 |
+| Done | 30 |
 | API only | 0 |
-| Partial | 5 |
-| Missing | 16 |
-| Deferred | 7 |
+| Partial | 6 |
+| Missing | 15 |
+| Deferred | 6 |
 | **Total** | **57** |
 
-How this was checked (seventeenth audit, short sign-off of MVP5-B per decisions.md "Faster pipeline (owner)"; I re-ran no test suites and no browser scripts):
-- Reported by other agents, not re-run by me: `dotnet test` 400 of 400; frontend build and lint clean; `items.test.mjs` 4 of 4; smoke 73 of 73 in all 4 setups (`SMOKE_ALL=1 UI_TZ=UTC`, logout included) with the new `checklist-attach`, `checklist-run`, `checklist-run-history`, `dashboard-start-checklist` and `checklist-template-in-use` steps; security review with no High or Medium; code review approved; the Hebrew reviewer changed `vehicleChecklist.notFound` and `hasRuns`; QA passed in 4 setups (miles included). The fix round fixed 4 Mediums: Back after saving a run reopened a blank form (now a replace navigation); the run form's item errors, `itemsChanged` and future date are now in smoke (API errors mocked); a long template name in the attach select overflowed at 390px (selects in inline-form labels are now full width, and the smoke overflow check uses the viewport width); logging out during an in-flight settings save left the user half logged out (`auth.tsx` `saveSettings`, an older bug and the cause of the flaky Hebrew logout in L49).
-- I checked in code: the endpoints (`src/OnlyCars.Api/Controllers/VehicleChecklistsController.cs`), the car page section (`client/src/pages/ChecklistsSection.tsx:18`, run history `:287`), the run page and its route (`client/src/pages/RunPage.tsx:32`, `client/src/App.tsx:54`), Start a checklist (`client/src/pages/CarsPage.tsx:160,203`), the tests (`tests/OnlyCars.Tests/ChecklistRunTests.cs`) and the smoke steps (`client/ui-tests/smoke.mjs:2610,2672,2771,2809,2841`).
+How this was checked (eighteenth audit, short sign-off of MVP5-C per decisions.md "Faster pipeline (owner)"; I re-ran no test suites and no browser scripts):
+- Reported by other agents, not re-run by me: `dotnet test` 422 of 422; client build clean; lint 0 errors (one new warning, L63); code review with no High, user scoping verified on every issue endpoint; one Medium fixed (a numeric undefined `status` on `PUT /api/issues/{id}` now returns 400 `issue.invalidStatus`, `src/OnlyCars.Application/Issues/IssueService.cs:85-88`, with a test, an en/he string and a contract row); the Hebrew reviewer reworded `errors.issue.limitReached`.
+- **No browser QA.** The owner stopped the ui-tester and said no ui-tester jobs until they say otherwise (decisions.md, "No ui-tester jobs (owner)"). MVP5-C shipped without a QA pass. The smoke steps were written (`client/ui-tests/smoke.mjs:2796` `issue-from-flag`, `:2850` `issue-manual`, `:2999` `dashboard-open-issues`), but no smoke result was reported to me.
+- I checked in code: the endpoints (`src/OnlyCars.Api/Controllers/IssuesController.cs:15-27`, `[RequestSizeLimit(65_536)]` at `:12`), the service (`src/OnlyCars.Application/Issues/IssueService.cs`), the migration (`src/OnlyCars.Infrastructure/Persistence/Migrations/20261016031303_AddIssues.cs`), the tests (`tests/OnlyCars.Tests/IssueTests.cs`), the To-dos section (`client/src/pages/IssuesSection.tsx`, on the car page at `client/src/pages/CarPage.tsx:87`), Create to-do in the run history (`client/src/pages/ChecklistsSection.tsx:429-442`) and the dashboard count (`client/src/pages/CarsPage.tsx:161-162`).
 - The notes from earlier audits are in git history.
 
 ## 1. Vehicles
@@ -82,7 +83,7 @@ How this was checked (seventeenth audit, short sign-off of MVP5-B per decisions.
 | Items: checkbox, numeric or text | **Done** | MVP5-A: Check, Number (unit, min, max) and Text items, reorder with up and down buttons, in-place update keeping item ids (`ChecklistTemplateService.cs:32,62`); smoke `checklist-create`, `checklist-edit` (`smoke.mjs:2418,2498`); Hebrew strings (`i18n.ts:609`) | none |
 | Per-checklist schedule: by km, by time, or manual only | **Done** | MVP5-B: `VehicleChecklist` with optional `IntervalKm`/`IntervalDays` (both empty is manual only), status as tasks with 10% due soon (`VehicleChecklistsController.cs`, `ChecklistRunTests.cs`); the Checklists section on `/cars/:id` with Add, Edit (intervals, on/off) and Remove (`ChecklistsSection.tsx:18,138`); smoke `checklist-attach` (`smoke.mjs:2610`) in 4 setups | none |
 | Run a checklist: tick items, add notes or photos, flag issues | **Partial** | MVP5-B: the run page (`RunPage.tsx:32`) with OK / Not OK, numbers, text, hand flags, live auto flags with the reason, notes, and an odometer under the date-order rules; flags computed on the server; smoke `checklist-run` (`smoke.mjs:2672`) | Photos (wait for R2) |
-| Failed items can create a to-do or a maintenance task | **Missing** | none | Everything. Next: MVP5-C (a flagged item becomes a to-do) |
+| Failed items can create a to-do or a maintenance task | **Done** (no browser QA) | MVP5-C: a flagged item in the run history gets Create to-do, prefilled and editable (`client/src/pages/ChecklistsSection.tsx:429-442`); one to-do per run item, also under a race (409 `issue.duplicate`); run delete keeps the to-do and clears its source (`IssueService.cs`, `IssueTests.cs`). Smoke step `issue-from-flag` (`smoke.mjs:2796`). A to-do, not a maintenance task, as decided (decisions.md, "Flagged checklist items, MVP5-C"). | Verified from code and reported tests only; no browser QA (owner stopped the ui-tester). A stale "To-do created" after its to-do is deleted on the same page (L60). |
 | Run history per car | **Done** | MVP5-B: collapsed history per checklist on `/cars/:id`, newest first; each run expands to its label snapshots, values and flags; Delete with confirm and recompute (`ChecklistsSection.tsx:287,343`); smoke `checklist-run-history` (`smoke.mjs:2771`) | none |
 
 ## 8. Costs and Reports
@@ -115,7 +116,7 @@ How this was checked (seventeenth audit, short sign-off of MVP5-B per decisions.
 | Requirement | Status | Evidence | What's missing |
 |---|---|---|---|
 | Fuel log and consumption tracking | **Deferred** | none | Optional |
-| Issue / to-do list | **Deferred** | none | Optional. MVP5-C builds a minimal per-car to-do list (`Issue`) as the target for flagged checklist items (decisions.md, "Flagged checklist items, MVP5-C"). |
+| Issue / to-do list | **Partial** | MVP5-C: a per-car To-dos section on `/cars/:id` (add, edit, Done, Reopen, delete; `client/src/pages/IssuesSection.tsx`), "N open to-dos" on each dashboard card (`CarsPage.tsx:161-162`), API `IssuesController.cs:15-27`. No browser QA. | Optional. No to-do page across all cars; no due date, priority or cost on a to-do. Not planned. |
 | Shared access (partner or family) | **Deferred** | none | Optional |
 | Garage directory | **Deferred** | none | Optional |
 | Parts and warranty tracking | **Deferred** | none | Optional |
@@ -146,6 +147,7 @@ How this was checked (seventeenth audit, short sign-off of MVP5-B per decisions.
 - Done (MVP2-C): `ServiceRecord` and `ServiceRecordTask`, with the index on ServiceRecord(VehicleId, Date DESC). There are three recorded deviations: `ServiceRecordTask.PreviousLastDone*` (the Undo snapshot), `OdometerReading.ServiceRecordId`, and a nullable `TotalCost`. Deleting a task keeps its records and their readings (`MaintenanceSchemaTests.cs`, on SQL Server).
 - MVP3-A added no schema: records with their own date and odometer use the MVP2-C tables, and `serviceRecord.notLatest` is retired.
 - Done (MVP3-B): `ServiceItem` with all spec fields plus `SortOrder` and `CreatedAt`, cascading from `ServiceRecord` (`ServiceRecordConfiguration.cs:50`).
+- Done (MVP5-C): `Issue` with the Part 2 fields, a filtered unique index on `SourceRunItemId`, and the source cleared (not cascaded) when a run is deleted (`20261016031303_AddIssues.cs`).
 - Not started: `Attachment` (blocked on R2) and the rest of Part 2.
 - Not started: `VehicleShare` (optional).
 
@@ -160,15 +162,14 @@ How this was checked (seventeenth audit, short sign-off of MVP5-B per decisions.
 | Deploy gate | **SEC-1 signed off.** Nothing else blocks a first deploy except the owner's Azure account. The owner said not to deploy yet (decisions.md, 2026-10-15, "When to deploy"), so no deployment tickets are queued. |
 | 3. Service history with costs | **Complete apart from attachments (blocked on R2). MVP3-A, MVP3-B, MVP3-C and MVP3-D are signed off.** Working end to end in EN and HE: the service history on `/cars/:id`, recording a past service (date, odometer, shop or DIY, cost, notes, several tasks, parts and labour) with the date-order rules, editing everything on a record (shop, cost, notes, items, date, odometer and tasks, with the car's odometer and the tasks' last done following), deleting any record, and a `/history` page that filters and searches all cars. LOW-1 (the first Low batch) is signed off too. |
 | 4. Dashboard with due/overdue status | **Complete. MVP4-A and LOW-2 are signed off; "Start a checklist" came with MVP5-B.** The dashboard on `/`: overdue and due-soon counts, this month's spend linking to `/history`, and per-car cards with the next 3 tasks, one-tap Mark done with Undo, quick odometer entry and Start a checklist, in EN and HE. |
-| 5. Checklists, tires, reports, notifications | **Started. MVP5-A (templates and items) and MVP5-B (schedules on cars, runs with flags, run history, Start a checklist) are signed off.** Left for checklists: MVP5-C (a flagged item becomes a to-do; decisions.md, "Flagged checklist items, MVP5-C") and photos on runs (R2). Then tires, reports and notifications. |
+| 5. Checklists, tires, reports, notifications | **Started. Checklists are done apart from photos on runs (R2): MVP5-A (templates and items), MVP5-B (schedules on cars, runs with flags, run history, Start a checklist) and MVP5-C (a flagged item becomes a per-car to-do; shipped without browser QA) are signed off.** Next: LOW-3, then tires (MVP5-D), reports and notifications. |
 
 ## Ticket queue
 
 | Order | Ticket | Who | State |
 |---|---|---|---|
-| 1 | MVP5-C: a flagged checklist item becomes a to-do (per-car to-do list) | BE, then FE | **Next** (written below) |
-| 2 | LOW-3: the Low backlog (L27 onwards) | BE and FE | After MVP5-C |
-| 3 | MVP5-D: tires (spec 6), split when written | BE, then FE | After LOW-3 |
+| 1 | LOW-3: the Low backlog (L27 to L65) | BE, then FE | **Next** (written below) |
+| 2 | MVP5-D: tires (spec 6), split when written | BE, then FE | After LOW-3 |
 
 ## Signed-off tickets
 
@@ -246,9 +247,15 @@ How this was checked (seventeenth audit, short sign-off of MVP5-B per decisions.
   - Accepted (decisions.md, "MVP5-B sign-off"): actions hidden on archived cars and Run hidden on a turned-off checklist; no way back to unanswered on a Check item; a same-day lower odometer doesn't move the last run; manual-only before turned-off; `ChecklistRunItem.SortOrder` and `runCount`; `vehicleChecklist.invalidDate`; "Every 1 month" for 30 days.
   - L43 done; L49 closed. The new Lows are L50 to L59; L37 and L48 were widened.
 
+- **MVP5-C (backend commit `c232d4f`; the frontend and fixes are not committed yet): signed off 2026-10-16, without browser QA.** Short sign-off under "Faster pipeline (owner)"; I re-ran no suites.
+  - Reported evidence: 422 of 422 tests; client build clean; lint 0 errors; code review with no High, user scoping verified on all issue endpoints; the Hebrew reviewer reworded `errors.issue.limitReached`.
+  - Fix round, 1 Medium fixed: `PUT /api/issues/{id}` with a numeric undefined `status` (such as `2`) reached the database; it now returns 400 `issue.invalidStatus` (`IssueService.cs:85-88`, test, en/he string, contract row). The same gap probably exists on every enum field (L65); LOW-3 fixes it at the root.
+  - **Not verified in a browser:** the owner stopped the ui-tester (decisions.md, "No ui-tester jobs (owner)"). AC5 to AC11 (flows, errors, Hebrew/RTL layout, 390px, 44px targets, focus) are signed off from code, review and the smoke steps the engineer wrote; no smoke result was reported to me.
+  - Accepted (decisions.md, "MVP5-C sign-off"): the new code `issue.invalidStatus`, until L65 replaces it. The new Lows are L60 to L65.
+
 ## Low issues backlog
 
-Every Low finding from QA and review lands here (decisions.md, "Faster pipeline (owner)"). They are fixed together in a batch ticket LOW-n about every 3 tickets. LOW-1 closed L1 to L12; LOW-2 closed L13 to L26 (all fixed). L43 was done inside MVP5-B and L49 closed by its fix round. LOW-3 takes what is below.
+Every Low finding from QA and review lands here (decisions.md, "Faster pipeline (owner)"). They are fixed together in a batch ticket LOW-n about every 3 tickets. LOW-1 closed L1 to L12; LOW-2 closed L13 to L26 (all fixed). L43 was done inside MVP5-B and L49 closed by its fix round. LOW-3 takes what is below (L27 to L65, apart from L43 and L49).
 
 | # | From | Issue | Area |
 |---|---|---|---|
@@ -285,70 +292,76 @@ Every Low finding from QA and review lands here (decisions.md, "Faster pipeline 
 | L57 | MVP5-B QA | Test gaps: no real (unmocked) `itemsChanged` test (edit the template while the run form is open, then save); no test that a past run older than the last run leaves the last run and status alone in the UI. | Tests |
 | L58 | MVP5-B frontend | There is no `GET /api/vehicle-checklists/{id}`; the run page loads the car's whole checklist list. Fine at today's sizes; add a `shortcut:` comment, and the endpoint if the list grows. | BE + FE |
 | L59 | MVP5-B frontend | After Save and then Back, the car page appears twice in the browser history (a side effect of the replace navigation that fixed the blank form). Make Save return with `navigate(-1)` when the run page was opened from the car page, or accept it. | FE, run page |
+| L60 | MVP5-C review | "To-do created" in the run history goes stale when that to-do is deleted on the same page: clicking it fails `focusIssue` and silently reloads (`client/src/pages/ChecklistsSection.tsx:437-438`). Show the `issueGone` note and turn the button back into Create to-do. | FE, `/cars/:id` |
+| L61 | MVP5-C review | The RunHistory note is not cleared when a run is deleted (`client/src/pages/ChecklistsSection.tsx:301`, `:351-356`). | FE, `/cars/:id` |
+| L62 | MVP5-C review | The request-size test asserts nothing (`tests/OnlyCars.Tests/IssueTests.cs:363-364`). Make it assert a 413, or delete it. | Tests |
+| L63 | MVP5-C review | New lint warning `react(only-export-components)`: `focusIssue` is exported from `client/src/pages/IssuesSection.tsx:16`. Move it to a plain module. | FE |
+| L64 | MVP5-C review | The answer-text formatting at `client/src/pages/ChecklistsSection.tsx:444-447` duplicates `RunValue`; share one helper. | FE |
+| L65 | MVP5-C review | `JsonStringEnumConverter` (`src/OnlyCars.Api/Program.cs:16`) also binds numbers, so an undefined numeric value (such as `fuelType: 99`) can reach the database on any enum field: `FuelType`, `TaskCategory`, `ChecklistItemType`, `DistanceUnit`, `Locale`, `Theme`. Only `IssueStatus` has a service check (`issue.invalidStatus`). | BE |
 
 ## Next ticket
 
-### MVP5-C: A flagged checklist item becomes a to-do
+### LOW-3: The Low backlog (L27 to L65)
 
-**Goal:** As a user, when a checklist run flags a problem (low tire pressure, a broken light), I can turn that item into a to-do on the car with one tap, see the car's open to-dos, and tick them off when fixed.
+**Goal:** As a user, the app behaves the same way everywhere: concurrent and malformed requests get a clear message instead of a server error, dates and enum values are checked, focus never drops to the page body, and the last rough edges on the dashboard, car page, checklists and run page are gone.
 
-**Spec:** section 7 bullet 5 ("Failed items can ... create a to-do or a maintenance task"); Part 2 `Issue` ("A flagged item can spawn an Issue"); this also starts section 11 "Issue / to-do list" in its smallest form; section 12 (Hebrew and English, mobile).
+**Spec:** section 12 (privacy and security, Hebrew and English, mobile-first), plus the polish of sections 7 and 10. No new feature.
 
-**Binding decisions:** decisions.md "Flagged checklist items, MVP5-C" (to-do, not a maintenance task; the rules below), "MVP5-B sign-off" (archived cars read-only on screen), "Checklist run rules, MVP5-B", "Faster pipeline (owner)", the MVP1-C focus and Escape rules, "Destructive actions and page titles", "MVP5-A sign-off" (focus after Delete).
+**Binding decisions:** decisions.md "Faster pipeline (owner)", "No ui-tester jobs (owner)", "LOW-3 choices" (every choice below), "MVP5-A sign-off" (focus after Delete), the MVP1-C focus and Escape rules, "Same-date odometer readings, revised", the quick-add local date (2026-10-15).
+
+Every row below is in the "Low issues backlog" table; read its full text there. L43 and L49 are already closed.
 
 **Scope**
 
-*Backend (backend-engineer, runs first and publishes `docs/contracts/MVP5-C.md`):*
-- Entity `Issue` (Part 2): `VehicleId`, `Title` (1 to 100, trimmed), `Description` (nullable, up to 1,000), `Status` (Open or Done), `SourceRunItemId` (nullable, unique where not null), `ResolvedAt` (date, nullable), `CreatedAt`, `UpdatedAt`. EF configuration and migration. `Vehicle` to `Issue` cascades; deleting a `ChecklistRunItem` must not delete its to-do: clear `SourceRunItemId` (in the service if SQL Server refuses the second cascade path), with a test.
-- Endpoints, all scoped to the signed-in user (another user's car, to-do or run item is a 404):
-  - `GET /api/vehicles/{vehicleId}/issues`: open first (newest created first), then done (newest `ResolvedAt` first, then newest created). Each with id, title, description, status, `resolvedAt`, `createdAt`, and when `SourceRunItemId` is set, the source: run id, run date, checklist name, label snapshot.
-  - `POST /api/vehicles/{vehicleId}/issues`: `{ title, description, sourceRunItemId }` (source optional); 201.
-  - `PUT /api/issues/{id}`: `{ title, description, status, resolvedAt }`; Done needs `resolvedAt` (the client's local date); Open clears it.
-  - `DELETE /api/issues/{id}`: 204.
-  - `GET /api/vehicle-checklists/{id}/runs`: each run item gains `issueId` (null when none).
-  - `GET /api/dashboard`: each active car gains `openIssueCount`. The summary counts stay tasks only.
-- Validation (translated codes, existing error shape): `issue.invalidTitle`, `issue.invalidDescription`, `issue.invalidSource` (the run item is not on one of this car's runs, or is not flagged), `issue.duplicate` (409, the run item already has a to-do; a simultaneous duplicate must also be a 409, not a 500), `issue.vehicleArchived` (create on an archived car), `issue.futureDate` (`resolvedAt` after today, with one day of UTC slack as `vehicleChecklist.invalidDate` has), `issue.invalidDate` (Done without `resolvedAt`, or a date before 2000-01-01), `issue.limitReached` (500 to-dos per car), `issue.notFound`. Put `[RequestSizeLimit(65_536)]` on the new controller.
-- Deleting a run keeps its to-dos and clears their source; deleting a template item leaves to-dos alone.
-- Tests in `tests/OnlyCars.Tests`: CRUD and ownership on every endpoint; each validation code at its boundary; one to-do per run item (sequential and simultaneous); an unflagged or foreign run item rejected; run delete keeps the to-do with no source; Done and reopen; the list order; `issueId` on run items; `openIssueCount` on the dashboard (done ones not counted, archived cars not listed).
+*Backend (backend-engineer, runs first; publishes `docs/contracts/LOW-3.md` listing every changed status code and the new codes):*
+- **L65 (root fix):** `new JsonStringEnumConverter(allowIntegerValues: false)` in `src/OnlyCars.Api/Program.cs:16`, so a numeric enum value anywhere is a 400 `http.400`. Remove the now-unreachable `issue.invalidStatus` check (`IssueService.cs:85-88`) and its en/he string; its test asserts `http.400` instead; update the MVP5-C contract row. First confirm the client never sends an enum as a number (grep `client/src/api.ts`).
+- **L37:** an app-wide Kestrel `MaxRequestBodySize` of 64 KB (413 `http.413`); the per-controller attributes can stay. Cap `GET /api/vehicle-checklists/{id}/runs` at the newest 200 runs, with a `shortcut:` comment (no paging).
+- **L34, L38, L51 (concurrency):** map `DbUpdateConcurrencyException` and unique-key violations to 409 in one place: L34 to `serviceRecord.alreadyVoided`, L51 to `vehicleChecklist.duplicate`, L38(b) to a new `concurrency.conflict` ("This was changed at the same time somewhere else. Reload and try again."). L38(a) (the 100-template cap passed by simultaneous creates) is accepted with a `shortcut:` comment.
+- **L50:** dates before 1900-01-01 are rejected on checklist runs, service records (create and edit) and odometer readings (create and edit), with one new shared code `date.tooEarly` (400).
+- **L36:** a new car's first reading takes the client's local date, the way quick-add does (same field name and the same future-date check), instead of the server's UTC date. The client sends it (FE part).
+- **L58:** a `shortcut:` comment only (no new endpoint).
+- **Tests:** L44 (backend half: a Check item with a whitespace-only unit), L52 (deleting a run whose reading is the car's only one), L62 (the request-size test asserts a 413), and one test per row above.
+- **Nits:** L54 (backend half: the redundant `HasIndex(TemplateId)`, which needs a migration only if EF produces one; if it does, leave the index and drop the nit).
 
-*Frontend (frontend-engineer, builds against the contract):*
-- On `/cars/:id`, a **To-dos** section after Maintenance: open to-dos, each with its title, description (if any), a "From: <checklist>, <run date>" line when it came from a run, a **Done** button, **Edit** and **Delete** (red confirm). Done to-dos sit under a collapsed "Done (n)" toggle with their resolved date and a **Reopen** button. **Add a to-do** opens an inline form (title, description). Empty state: "No open to-dos." Archived car: read-only (no Add, Done, Reopen, Edit or Delete).
-- In the run history (`ChecklistsSection.tsx`, `RunRow`), each flagged item of an expanded run gets **Create to-do**, opening an inline form prefilled with title = the item's label snapshot and description = its value with unit, the checklist name and the run date (one translated template); the user can edit both before Save. After Save the button becomes "To-do created", which moves focus to that to-do in the To-dos section. Hidden on archived cars.
-- Dashboard card: "N open to-dos" linking to `/cars/:id` when N is above 0; nothing when 0.
-- All new text in `en` and `he` in `client/src/i18n.ts`; every new error code translated.
-- Smoke steps in `client/ui-tests/smoke.mjs`: `issue-from-flag` (a run with a flagged item, Create to-do, edit the prefilled title, save, see it on the car page and the button change), `issue-manual` (add, Done, Reopen, Edit, Delete), `dashboard-open-issues`.
+*Frontend (frontend-engineer, builds against `docs/contracts/LOW-3.md`):*
+- **Dashboard `/`:** L27, L29, L30, L31, L32 (a and b: one guard for every load path during an in-flight Undo).
+- **Car page `/cars/:id`:** L28 (a `shortcut:` comment, keep as is), L33 (`useLayoutEffect`), L60 (stale "To-do created": show the `issueGone` note and turn the button back into Create to-do), L61 (clear the note on run delete), L63 (move `focusIssue` out of `IssuesSection.tsx`), L64 (one shared answer-text helper).
+- **`/checklists`:** L39 (a and b), L40 (match the server order: name, then creation time), L41, L42, L46 (`dir="auto"`), L47 (form headings "New checklist" and "Edit <name>").
+- **Run page:** L53 (a `shortcut:` comment), L55 (Date and Odometer stacked under 600px, aligned above), L59 (Save returns with `navigate(-1)` when the run page was opened from the car page; a replace navigation otherwise).
+- **App-wide:** L48 (text-link buttons at least 44px wide), L45 (the misplaced CSS comment; leave `limit()`), L54 (frontend nits), L36 (send the local date when adding a car), the new `concurrency.conflict` and `date.tooEarly` strings in `en` and `he`.
+- **Scripts and tests:** L35 and L56: delete every `client/ui-tests/qa-*.mjs` (they are in git history; smoke is the regression check while the ui-tester is stopped). L44 (smoke half) and L57 (smoke tests listed there).
 
 **Acceptance criteria**
-1. [BE] Every endpoint works as in the contract; another user's car, to-do or run item is a 404 everywhere; every validation code returns with its boundary tested; `dotnet test` passes in full.
-2. [BE] A run item has at most one to-do: a second create, also a simultaneous one, is a 409 `issue.duplicate`; an unflagged or foreign run item is `issue.invalidSource`.
-3. [BE] Deleting a run keeps its to-dos with no source; nothing else about them changes.
-4. [BE] Done sets `ResolvedAt` to the sent date; Open clears it; `openIssueCount` counts the open to-dos of active cars only.
-5. [FE] From the run history, a user expands a run with 3 flagged items, taps Create to-do on "Tire pressure", sees the title "Tire pressure" and a description like "1.8 bar, Monthly quick check, 16/10/2026", changes the title and saves; the to-do appears at the top of To-dos with its "From" line, the item shows "To-do created", and a reload keeps it all. Unflagged items have no Create to-do. After the run is deleted the to-do stays without its "From" line.
-6. [FE] A user adds a to-do by hand, marks it Done (it moves under "Done (n)" with today's local date), reopens it, edits it and deletes it with the red confirm; each change shows without a reload.
-7. [FE] Dashboard: a car with 2 open to-dos shows "2 open to-dos" linking to its page; after one is marked Done it shows 1; a car with none shows nothing.
-8. [FE] Errors and states: the empty state; loading uses the existing pattern; a failed load shows a translated error with Retry; a failed save keeps what was typed and shows the translated error next to the form; `issue.duplicate` (another tab created it) reloads the run history so the item shows "To-do created"; a 404 on a to-do action reloads the list with a short translated note.
-9. [FE] Hebrew and RTL: every new string is in `he` and approved by the Hebrew reviewer; the layout mirrors; a value with unit and a Latin title read correctly in Hebrew (`dir="auto"` on user text).
-10. [FE] Mobile and accessibility: at 390px no horizontal overflow (viewport-width check) and the forms are one column; every new control is at least 44px tall and wide; Done, Reopen, Edit, Delete and Create to-do have accessible names that include the to-do title or item label; status changes are announced (`role="status"`); dark mode works.
-11. [FE] Focus: opening an inline form focuses its first field; Escape and Cancel return to the opener; after saving a new to-do, focus goes to it (from the run history: to the "To-do created" button); after Done or Reopen, to that to-do's new button; after Delete, the decided Delete rule (next row, else the first, else Add a to-do).
-12. [BE+FE] No regressions: build and lint clean; smoke passes in all 4 setups with the three new steps; QA covers 4 setups.
+1. [BE] A numeric enum value (for example `fuelType: 99`, `status: 2`) on any endpoint returns 400 `http.400`; names still work; nothing in the client sends numbers.
+2. [BE] A body over 64 KB on any endpoint returns 413; the runs list returns at most 200 runs, newest first.
+3. [BE] Two simultaneous voids, two simultaneous attaches and two simultaneous template edits each give one success and one 409 with the codes above; no 500 in any of them (tests).
+4. [BE] A date before 1900-01-01 on a run, a service record or a reading returns 400 `date.tooEarly`; 1900-01-01 itself is accepted.
+5. [BE+FE] A car added at 00:30 local time in UTC+3 gets a first reading dated with the local date (test on the server; smoke no longer works around it).
+6. [BE] `dotnet test` passes in full, with tests for L44, L52, L62 and each row above; the L62 test asserts a 413.
+7. [FE] On the dashboard, after any action (Undo with a failed reload, archive with Show archived off, a failed archive), focus lands on a visible control, never `body`; archive can't be sent twice; a reload clears the old archive error; no stale Undo bar comes back from any load path.
+8. [FE] On the car page, clicking "To-do created" after that to-do was deleted shows the translated `issueGone` note and the item shows Create to-do again; deleting a run clears the run-history note; Undo moves focus in the same frame.
+9. [FE] On `/checklists`, deleting the last row while others remain focuses the first row's Edit; with the New form open, focus falls back to `main h1`; the order after Save matches a reload; each open form has its heading; a Latin name reads correctly in Hebrew; Edit-save on a template deleted elsewhere closes the form and removes the row.
+10. [FE] On the run page at 390px, Date and Odometer are stacked in one column; on wide screens they are aligned; after Save, a single Back returns to where the user was before the car page.
+11. [FE] Every text-link button is at least 44 by 44px (smoke checks it on each page).
+12. [FE] Hebrew and RTL: the two new error strings are in `he` and approved by the Hebrew reviewer; no layout change breaks RTL.
+13. [BE+FE] No regressions: build clean, lint 0 errors and 0 warnings, `dotnet test` passes, smoke passes in all 4 setups, and the `qa-*.mjs` files are gone.
 
-**Out of scope:** creating a maintenance task from a flagged item (the user adds one in Maintenance); creating to-dos automatically on Save; due dates, priority, cost or photos on to-dos; a to-do page across all cars; counting to-dos in the dashboard summary; notifications; the Low backlog (LOW-3 is next).
+**Out of scope:** new features; paging the runs list; a to-do page across all cars; any L-row not listed (none left); browser QA by the ui-tester (stopped by the owner).
 
-**Open questions:** none. The choices are recorded in decisions.md ("Flagged checklist items, MVP5-C").
+**Open questions:** none blocking. One for the owner, with a default in the meantime: does "no ui-tester jobs" also cover the engineers running `smoke.mjs` as their own check? Until the owner says otherwise, engineers keep running it (it is their build check, not a ui-tester job).
 
 ---
 
 ### Later
-- **LOW-3:** the Low backlog, L27 to L59 (about 30 items; split into a BE and an FE part).
-- **Tires (spec 6), then reports (spec 8), then notifications (spec 9).**
+- **Tires (spec 6), MVP5-D,** split when written; then reports (spec 8), then notifications (spec 9).
 - **Car photo upload, attachments and run photos:** blocked until the owner creates the Cloudflare R2 credentials.
 - **Predicted due date** from `AvgKmPerDay` (spec 2.3, optional).
 - **Data export and delete-account** (spec 12): must include checklists, their attachments to cars, runs and to-dos.
 
 ## Changed since last audit
-- **Signed off:** MVP5-B (backend `baeac80`; frontend not committed yet). AC12 signed off with the run page's Date and Odometer layout tracked as L55.
-- **Status changes:** spec 7 "Per-checklist schedule" and "Run history per car" are Done; "Run a checklist" is Partial (photos wait for R2); spec 10 "Quick actions" is Done. Counts: Done 29 (was 26), Partial 5 (unchanged), Missing 16 (was 19). MVP step 4 is complete.
-- **Backlog:** L50 to L59 added; L37 and L48 widened; L43 done; L49 closed.
-- **New decisions** (`docs/decisions.md`, 2026-10-16): "MVP5-B sign-off: engineers' choices" and "Flagged checklist items, MVP5-C" (a flagged item becomes a to-do, replacing "creates a maintenance task").
-- **Next ticket:** MVP5-C, written in full. The MVP5-B ticket text is in git history up to `baeac80`.
-- **Data note:** the security reviewer left two more test users (`sec-*@example.test`) with cars, templates and runs in the local dev DB; with the earlier two they stay until delete-account exists.
+- **Signed off:** MVP5-C (backend `c232d4f`; frontend and fixes not committed yet), **without browser QA**: the owner stopped the ui-tester until further notice (decisions.md, "No ui-tester jobs (owner)").
+- **Status changes:** spec 7 "Failed items can create a to-do or a maintenance task" is Done (was Missing); spec 11 "Issue / to-do list" is Partial (was Deferred; per car only). Counts: Done 30 (was 29), Partial 6 (was 5), Missing 15 (was 16), Deferred 6 (was 7).
+- **Backlog:** L60 to L65 added.
+- **New decisions** (`docs/decisions.md`, 2026-10-16): "No ui-tester jobs (owner)", "MVP5-C sign-off", "LOW-3 choices".
+- **Next ticket:** LOW-3, written in full. The MVP5-C ticket text is in git history up to `c232d4f`.
+- **Data note:** the test users left by the security reviewer (`sec-*@example.test`) stay in the local dev DB until delete-account exists.

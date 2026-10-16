@@ -311,6 +311,7 @@ public class IssueTests
         Assert.Equal("issue.invalidDate", await CodeAsync(() => SetAsync(i, IssueStatus.Done, null)));
         Assert.Equal("issue.invalidDate", await CodeAsync(() => SetAsync(i, IssueStatus.Done, new DateOnly(1999, 12, 31))));
         Assert.Equal("issue.futureDate", await CodeAsync(() => SetAsync(i, IssueStatus.Done, Today.AddDays(2))));
+        Assert.Equal("issue.invalidStatus", await CodeAsync(() => SetAsync(i, (IssueStatus)2, Today)));
         Assert.Equal(IssueStatus.Open, (await db.Issues.SingleAsync()).Status);
 
         Assert.Equal(new DateOnly(2000, 1, 1), (await SetAsync(i, IssueStatus.Done, new DateOnly(2000, 1, 1))).ResolvedAt);

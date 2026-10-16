@@ -117,7 +117,7 @@ export interface Dashboard {
   monthTotalCost: number
   monthServiceCount: number
   // checklists: the car's enabled ones, most urgent first (manual only last, with no status)
-  vehicles: { id: string; overdueCount: number; dueSoonCount: number; tasks: DashboardTask[]; checklists: VehicleChecklist[] }[]
+  vehicles: { id: string; overdueCount: number; dueSoonCount: number; tasks: DashboardTask[]; checklists: VehicleChecklist[]; openIssueCount: number }[]
 }
 export type DashboardTask = MaintenanceTask & { status: TaskStatus }
 
@@ -190,6 +190,7 @@ export interface ChecklistRunItem {
   numberValue: number | null
   textValue: string | null
   isFlagged: boolean
+  issueId: string | null // the to-do created from it (MVP5-C)
 }
 
 export interface ChecklistRun {
@@ -200,6 +201,19 @@ export interface ChecklistRun {
   notes: string | null
   flaggedCount: number
   items: ChecklistRunItem[]
+}
+
+// A to-do on a car (MVP5-C). The server lists open ones first (newest first), then done ones (newest resolvedAt first).
+export interface Issue {
+  id: string
+  vehicleId: string
+  title: string
+  description: string | null
+  status: 'Open' | 'Done'
+  resolvedAt: string | null // set only when Done
+  createdAt: string
+  // The flagged run item it came from; null when added by hand and once its run is deleted.
+  source: { runItemId: string; runId: string; runAt: string; checklistName: string; label: string } | null
 }
 
 // The server's automatic flag, live on the run form: Not OK, or a number outside the range (the bounds themselves are inside).

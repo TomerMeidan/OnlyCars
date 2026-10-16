@@ -238,6 +238,31 @@ const en = {
   startChecklist: 'Start a checklist',
   startChecklistOf: 'Start a checklist: {{name}}',
   chooseChecklist: 'Choose a checklist',
+  // MVP5-C: to-dos on a car, added by hand or created from a flagged run item.
+  todos: 'To-dos',
+  addIssue: 'Add a to-do',
+  noOpenIssues: 'No open to-dos.',
+  issueTitle: 'Title',
+  doneIssues: 'Done ({{n, number}})',
+  doneOn: 'Done on <d>{{date}}</d>',
+  issueFrom: 'From: {{name}}, {{date}}',
+  markIssueDone: 'Done',
+  markIssueDoneOf: 'Done: {{title}}',
+  reopen: 'Reopen',
+  reopenOf: 'Reopen {{title}}',
+  confirmDeleteIssue: 'Delete this to-do?',
+  issueMarkedDone: '{{title}}: marked as done.',
+  issueReopened: '{{title}}: reopened.',
+  issueGone: 'This to-do was already deleted. The list has been updated.',
+  createIssue: 'Create to-do',
+  createIssueOf: 'Create to-do: {{label}}',
+  issueCreated: 'To-do created',
+  issueCreatedOf: 'To-do created: {{label}}',
+  // The prefilled description of a to-do from a run item: its value (with unit), the checklist, the run date.
+  issueFromRun: '{{value}}, {{name}}, {{date}}',
+  openIssues_one: '{{count, number}} open to-do',
+  openIssues_two: '{{count, number}} open to-dos',
+  openIssues_other: '{{count, number}} open to-dos',
   // Shown by the browser on the field, before any request.
   limits: {
     intervalKm: 'Enter an interval from 1 to {{maxInterval, number}} {{distUnit}}.',
@@ -270,7 +295,7 @@ const en = {
   // Keyed by the API's ProblemDetails `code`; unknown codes fall back to `generic`.
   errors: {
     generic: 'Something went wrong. Please try again.',
-    http: { 429: 'Too many attempts. Try again in a few minutes.' }, // the global rate limiter
+    http: { 413: 'This is too long to save. Shorten it and try again.', 429: 'Too many attempts. Try again in a few minutes.' }, // 413: the request size limit; 429: the global rate limiter
     auth: {
       tooManyAttempts: 'Too many attempts. Try again in a few minutes.',
       invalidCredentials: 'Wrong email or password.',
@@ -362,6 +387,21 @@ const en = {
       invalidRange: 'Item {{n}}: Enter a min and max from -1,000,000 to 1,000,000 with up to 2 decimals, and a min not above the max.',
       invalidId: 'Item {{n}}: This item is no longer in this checklist. Reload the page and try again.',
       invalidValue: "Item {{n}}: This value doesn't fit the item. Enter a number from -1,000,000 to 1,000,000 with up to 2 decimals, or text of up to 500 characters.",
+    },
+    issue: {
+      notFound: 'This to-do was not found.',
+      vehicleArchived: "This car is archived, so to-dos can't be added.",
+      invalidTitle: 'Enter a title of up to 100 characters.',
+      invalidDescription: 'Enter a description of up to 1,000 characters.',
+      invalidSource: "This item can't become a to-do. Reload the page and try again.",
+      duplicate: 'This item already has a to-do.',
+      limitReached: 'A car can have up to 500 to-dos. Delete some done ones first.',
+      invalidDate: "The date must be today. Check your device's date and try again.",
+      futureDate: "The date can't be in the future.",
+      invalidStatus: "This to-do's status isn't valid. Reload the page and try again.",
+    },
+    checklistRunItem: {
+      notFound: 'This run was deleted. The history has been updated.',
     },
     settings: {
       invalidLocale: 'Choose one of the listed languages.',
@@ -609,6 +649,30 @@ const he: typeof en = {
   startChecklist: 'ביצוע רשימת בדיקה',
   startChecklistOf: 'ביצוע רשימת בדיקה: ⁨{{name}}⁩',
   chooseChecklist: 'בחירת רשימת בדיקה',
+  todos: 'מטלות',
+  addIssue: 'הוספת מטלה',
+  noOpenIssues: 'אין מטלות פתוחות.',
+  issueTitle: 'כותרת',
+  doneIssues: 'בוצעו (⁦{{n, number}}⁩)',
+  doneOn: 'בוצעה ב־<d>{{date}}</d>',
+  issueFrom: 'מקור: ⁨{{name}}⁩, {{date}}',
+  markIssueDone: 'סימון כבוצעה',
+  markIssueDoneOf: 'סימון כבוצעה: ⁨{{title}}⁩',
+  reopen: 'פתיחה מחדש',
+  reopenOf: 'פתיחה מחדש של ⁨{{title}}⁩',
+  confirmDeleteIssue: 'למחוק את המטלה הזו?',
+  issueMarkedDone: '⁨{{title}}⁩: סומנה כבוצעה.',
+  issueReopened: '⁨{{title}}⁩: נפתחה מחדש.',
+  issueGone: 'המטלה הזו כבר נמחקה, והרשימה עודכנה.',
+  createIssue: 'יצירת מטלה',
+  createIssueOf: 'יצירת מטלה: ⁨{{label}}⁩',
+  issueCreated: 'נוצרה מטלה',
+  issueCreatedOf: 'נוצרה מטלה: ⁨{{label}}⁩',
+  // Saved as the to-do's text, so no bidi isolates here; the to-do shows it with dir="auto".
+  issueFromRun: '{{value}}, {{name}}, {{date}}',
+  openIssues_one: 'מטלה פתוחה אחת',
+  openIssues_two: 'שתי מטלות פתוחות',
+  openIssues_other: '⁦{{count, number}}⁩ מטלות פתוחות',
   limits: {
     intervalKm: 'הזינו מרווח של ⁦1⁩ עד ⁦{{maxInterval, number}}⁩ {{distUnit}}.',
     intervalTime: 'הזינו מרווח זמן של עד ⁦20⁩ שנה (⁦243⁩ חודשים או ⁦7,300⁩ ימים).',
@@ -640,7 +704,7 @@ const he: typeof en = {
   // ⁦…⁩ isolate numbers so they stay left-to-right inside RTL text.
   errors: {
     generic: 'משהו השתבש. נסו שוב.',
-    http: { 429: 'יותר מדי ניסיונות. נסו שוב בעוד כמה דקות.' },
+    http: { 413: 'הטקסט ארוך מדי לשמירה. קצרו אותו ונסו שוב.', 429: 'יותר מדי ניסיונות. נסו שוב בעוד כמה דקות.' },
     auth: {
       tooManyAttempts: 'יותר מדי ניסיונות. נסו שוב בעוד כמה דקות.',
       invalidCredentials: 'האימייל או הסיסמה שגויים.',
@@ -730,6 +794,21 @@ const he: typeof en = {
       invalidRange: 'פריט ⁦{{n}}⁩: הזינו מינימום ומקסימום בין ⁦-1,000,000⁩ ל־⁦1,000,000⁩, עם עד ⁦2⁩ ספרות אחרי הנקודה. המינימום לא יכול להיות גבוה מהמקסימום.',
       invalidId: 'פריט ⁦{{n}}⁩: הפריט כבר לא נמצא ברשימת הבדיקה. רעננו את הדף ונסו שוב.',
       invalidValue: 'פריט ⁦{{n}}⁩: הערך לא מתאים לפריט. הזינו מספר בין ⁦-1,000,000⁩ ל־⁦1,000,000⁩, עם עד ⁦2⁩ ספרות אחרי הנקודה, או טקסט של עד ⁦500⁩ תווים.',
+    },
+    issue: {
+      notFound: 'המטלה לא נמצאה.',
+      vehicleArchived: 'הרכב בארכיון, ולכן אי אפשר להוסיף לו מטלות.',
+      invalidTitle: 'הזינו כותרת של עד ⁦100⁩ תווים.',
+      invalidDescription: 'הזינו תיאור של עד ⁦1,000⁩ תווים.',
+      invalidSource: 'אי אפשר ליצור מטלה מהפריט הזה. רעננו את הדף ונסו שוב.',
+      duplicate: 'כבר יש מטלה לפריט הזה.',
+      limitReached: 'אפשר לשמור עד ⁦500⁩ מטלות לרכב. מחקו קודם כמה מטלות שבוצעו.',
+      invalidDate: 'התאריך חייב להיות היום. בדקו את התאריך במכשיר ונסו שוב.',
+      futureDate: 'התאריך לא יכול להיות בעתיד.',
+      invalidStatus: 'הסטטוס של המטלה לא תקין. רעננו את הדף ונסו שוב.',
+    },
+    checklistRunItem: {
+      notFound: 'הבדיקה הזו נמחקה, וההיסטוריה עודכנה.',
     },
     settings: {
       invalidLocale: 'בחרו אחת מהשפות ברשימה.',

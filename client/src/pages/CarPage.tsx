@@ -8,10 +8,11 @@ import { usePage } from '../usePage'
 import { useRow } from '../useRow'
 import { Odometer, OdometerQuickEntry } from './CarsPage'
 import { ChecklistsSection } from './ChecklistsSection'
+import { IssuesSection } from './IssuesSection'
 import { ServiceHistory } from './ServiceHistory'
 import { TasksSection, type TaskUndo } from './TasksSection'
 
-// Car detail page: maintenance tasks, checklists, the service history, then the odometer history.
+// Car detail page: maintenance tasks, to-dos, checklists, the service history, then the odometer history.
 export default function CarPage() {
   const { t } = useTranslation()
   const d = useDistance()
@@ -28,6 +29,8 @@ export default function CarPage() {
   const historyRef = useRef<HTMLElement>(null)
   // Here so a save or Undo in the service history ends it too: it may void the very record.
   const [undo, setUndo] = useState<TaskUndo>(null)
+  // Bumped when the run history creates a to-do, so To-dos reloads.
+  const [issuesVersion, setIssuesVersion] = useState(0)
 
   const load = () =>
     Promise.all([api<Vehicle>(path), api<OdometerReading[]>(`${path}/odometer`)]).then(
@@ -81,7 +84,8 @@ export default function CarPage() {
       </div>
 
       <TasksSection car={car} undo={undo} setUndo={setUndo} onOdometerChanged={load} />
-      <ChecklistsSection car={car} onChanged={load} />
+      <IssuesSection car={car} version={issuesVersion} />
+      <ChecklistsSection car={car} onChanged={load} onIssuesChanged={() => setIssuesVersion((v) => v + 1)} />
       <ServiceHistory car={car} onChanged={() => { setUndo(null); load() }} />
 
       <section className="card" aria-labelledby="odometer-history" ref={historyRef}>

@@ -352,9 +352,9 @@ for (const s of setups) {
   await step('tasks-empty-and-picker', async () => {
     await page.setViewportSize({ width: 390, height: 844 })
     await tasks.locator('p.muted').filter({ hasText: he ? 'עדיין אין משימות תחזוקה.' : 'No maintenance tasks yet.' }).waitFor()
-    // Maintenance first, then Checklists (MVP5-B), the service history and the odometer history.
+    // Maintenance first, then To-dos (MVP5-C), Checklists (MVP5-B), the service history and the odometer history.
     const order = await page.evaluate(() => [...document.querySelectorAll('main section h2')].map((h) => h.id).join())
-    if (order !== 'maintenance,checklists,service-history,odometer-history') throw new Error(`sections: ${order}`)
+    if (order !== 'maintenance,todos,checklists,service-history,odometer-history') throw new Error(`sections: ${order}`)
     await tasks.getByRole('button', { name: TK.add }).click()
     const options = await tasks.locator('.picker li button').allTextContents()
     if (options.length !== 13) throw new Error(`${options.length} picker options`)
@@ -2768,6 +2768,161 @@ for (const s of setups) {
     if (digitsOnly(await odometer()) !== String(before + 500)) throw new Error('odometer after reload')
     if (await ckSec.locator('[role=status]', { hasText: CK.saved3.slice(0, 6) }).count()) throw new Error('the status line came back after a reload')
   })
+  // MVP5-C: Dash car's to-dos, from the run's flagged items (Lights, Tire pressure, Notes) and by hand; the dashboard's open count.
+  const IS = he
+    ? { empty: 'אין מטלות פתוחות.', create: (l) => `יצירת מטלה: ${l}`, created: (l) => `נוצרה מטלה: ${l}`, from: (n, d) => `מקור: ${n}, ${d}`,
+        done: (x) => `סימון כבוצעה: ${x}`, reopen: (x) => `פתיחה מחדש של ${x}`, edit: (x) => `עריכה של ${x}`, del: (x) => `מחיקה של ${x}`,
+        doneN: (n) => `בוצעו (${n})`, doneOn: (d) => `בוצעה ב־${d}`, markedDone: (x) => `${x}: סומנה כבוצעה.`, reopened: (x) => `${x}: נפתחה מחדש.`,
+        gone: 'המטלה הזו כבר נמחקה, והרשימה עודכנה.', duplicate: 'כבר יש מטלה לפריט הזה.', confirm: 'למחוק את המטלה הזו?',
+        open: (n) => (n === 1 ? 'מטלה פתוחה אחת' : n === 2 ? 'שתי מטלות פתוחות' : `${n} מטלות פתוחות`) }
+    : { empty: 'No open to-dos.', create: (l) => `Create to-do: ${l}`, created: (l) => `To-do created: ${l}`, from: (n, d) => `From: ${n}, ${d}`,
+        done: (x) => `Done: ${x}`, reopen: (x) => `Reopen ${x}`, edit: (x) => `Edit ${x}`, del: (x) => `Delete ${x}`,
+        doneN: (n) => `Done (${n})`, doneOn: (d) => `Done on ${d}`, markedDone: (x) => `${x}: marked as done.`, reopened: (x) => `${x}: reopened.`,
+        gone: 'This to-do was already deleted. The list has been updated.', duplicate: 'This item already has a to-do.', confirm: 'Delete this to-do?',
+        open: (n) => `${n} open to-do${n === 1 ? '' : 's'}` }
+  const isSel = 'section[aria-labelledby=todos]'
+  const isSec = page.locator(isSel)
+  const isRow = (title) => isSec.locator('.issues > li').filter({ has: page.locator('.name', { hasText: new RegExp(`^${title}$`) }) })
+  const fmtDay = (d) => page.evaluate(([d, l]) => new Date(d).toLocaleDateString(l, { dateStyle: 'medium', timeZone: 'UTC' }), [d, s.lng])
+  const isPost = (r) => r.url().endsWith(`/vehicles/${dashCarId}/issues`) && r.request().method() === 'POST'
+  const isPut = (r) => r.url().includes('/api/issues/') && r.request().method() === 'PUT'
+  const at390 = async (what, shot) => {
+    await page.setViewportSize({ width: 390, height: 844 })
+    await noOverflow(what)
+    await sweep(what)
+    await page.screenshot({ path: `${OUT}/${s.name}-${shot}.png`, fullPage: true })
+    await page.setViewportSize(s.viewport)
+  }
+  await step('issue-from-flag', async () => {
+    // Criterion 5: the empty state first; then Create to-do on Tire pressure, prefilled, with the title changed.
+    await isSec.getByText(IS.empty, { exact: true }).waitFor()
+    const monthly = ckRow('Monthly quick check')
+    await monthly.locator('details.run-history > summary').click()
+    const runRow = monthly.locator('.run-list > li')
+    await runRow.locator('summary').click()
+    const item = (label) => runRow.locator('.run-items > li').filter({ hasText: label })
+    const tire = item('Tire pressure')
+    const tireId = await tire.getAttribute('data-id')
+    const create = await named(tire.locator('button.create-issue'), IS.create('Tire pressure'))
+    await create.click()
+    const form = tire.locator('form')
+    await focusIs(`li[data-id="${tireId}"] form input[name=title]`, 'the title after Create to-do')
+    const date = await fmtDay(await localDate())
+    const desc = await form.locator('textarea[name=description]').inputValue()
+    if ((await form.locator('input[name=title]').inputValue()) !== 'Tire pressure' || desc !== `1.8 bar, Monthly quick check, ${date}`) throw new Error(`prefilled "${desc}"`)
+    await page.keyboard.press('Escape')
+    await focusIs(`li[data-id="${tireId}"] button.create-issue`, 'Create to-do after Escape')
+    await create.click()
+    await form.locator('input[name=title]').fill('Inflate the tires')
+    await at390('the Create to-do form', 'issue-from-flag-form')
+    const res = page.waitForResponse(isPost)
+    await form.locator('.actions > button:not(.link)').click()
+    const created = await (await res).json()
+    if (created.title !== 'Inflate the tires' || created.source?.runItemId !== tireId) throw new Error(JSON.stringify(created))
+    // The item shows To-do created, with focus on it; the to-do is at the top of To-dos with its From line.
+    await focusIs(`li[data-id="${tireId}"] button.to-issue`, 'To-do created after saving')
+    await named(tire.locator('button.to-issue'), IS.created('Tire pressure'))
+    const top = isSec.locator('.open-issues > li').first()
+    await top.waitFor()
+    if (plain(await top.locator('.name').textContent()) !== 'Inflate the tires' || !plain(await top.textContent()).includes(IS.from('Monthly quick check', date))) throw new Error(`to-do "${plain(await top.textContent())}"`)
+    // To-do created moves focus to that to-do.
+    await tire.locator('button.to-issue').click()
+    await focusIs(`${isSel} li[data-id="${created.id}"] button.edit`, 'the to-do after To-do created')
+    // Criterion 8: Lights got a to-do in another tab; Save reloads the history with a note, and Lights shows To-do created.
+    const lights = item('Lights')
+    const lightsId = await lights.getAttribute('data-id')
+    await lights.locator('button.create-issue').click()
+    await apiCall('POST', `/vehicles/${dashCarId}/issues`, { title: 'Lights', sourceRunItemId: lightsId })
+    await lights.locator('form .actions > button:not(.link)').click()
+    await focusIs(`li[data-id="${lightsId}"] button.to-issue`, 'To-do created after a duplicate')
+    if (plain(await monthly.locator('details.run-history > [role=status]').textContent()) !== IS.duplicate) throw new Error('no duplicate note')
+    forgetCk(409, '/issues')
+    await isRow('Lights').waitFor()
+    // A reload keeps it all; Notes (no to-do yet) still offers Create to-do.
+    await page.reload()
+    await monthly.locator('details.run-history > summary').click()
+    await runRow.locator('summary').click()
+    for (const [l, cls] of [['Tire pressure', 'to-issue'], ['Lights', 'to-issue'], ['Notes', 'create-issue']]) await item(l).locator(`button.${cls}`).waitFor()
+    await isSec.locator('.open-issues > li').nth(1).waitFor()
+    if ((await isSec.locator('.open-issues > li').count()) !== 2) throw new Error('not 2 open to-dos')
+    await at390('the run history with to-dos', 'issue-from-flag')
+  })
+  await step('issue-manual', async () => {
+    // Criterion 8: a failed load shows the translated error with Retry, which focuses the h2.
+    const fail500 = (r) => r.fulfill({ status: 500, contentType: 'application/json', body: '{}' })
+    await page.route('**/issues', (r) => (r.request().method() === 'GET' ? fail500(r) : r.fallback()))
+    await page.reload()
+    const alert = isSec.locator('[role=alert]')
+    await alert.waitFor()
+    if (plain(await alert.textContent()) !== HS.generic) throw new Error(`load error "${await alert.textContent()}"`)
+    await page.unroute('**/issues')
+    forget500()
+    await isSec.getByRole('button', { name: HS.retry, exact: true }).click()
+    await focusIs('#todos', 'the To-dos h2 after Retry')
+    // Criterion 11: Add focuses the title; Escape goes back to Add.
+    const add = isSec.locator('button.add')
+    await add.click()
+    await focusIs(`${isSel} form input[name=title]`, 'the title after Add a to-do')
+    await page.keyboard.press('Escape')
+    await focusIs(`${isSel} button.add`, 'Add a to-do after Escape')
+    await add.click()
+    const form = isSec.locator('form')
+    await form.locator('input[name=title]').fill('Wash the car')
+    await form.locator('textarea[name=description]').fill('Inside too')
+    // A failed save keeps what was typed, with the translated error by the form.
+    await page.route('**/issues', fail500, { times: 1 })
+    await form.locator('.actions > button:not(.link)').click()
+    await form.locator('[role=alert]', { hasText: HS.generic }).waitFor()
+    forget500()
+    if ((await form.locator('input[name=title]').inputValue()) !== 'Wash the car' || (await form.locator('textarea').inputValue()) !== 'Inside too') throw new Error('typed text lost')
+    await at390('the Add a to-do form', 'issue-add-form')
+    let res = page.waitForResponse(isPost)
+    await form.locator('.actions > button:not(.link)').click()
+    const x = await (await res).json()
+    await focusIs(`${isSel} li[data-id="${x.id}"] button.edit`, 'the new to-do')
+    if ((await isSec.locator('.open-issues > li').first().getAttribute('data-id')) !== x.id) throw new Error('the new to-do is not at the top')
+    const row = () => isSec.locator(`li[data-id="${x.id}"]`)
+    // Criterion 6: Done moves it under Done (1) with today's date, announced, with focus on its Reopen.
+    const today = await localDate()
+    res = page.waitForResponse(isPut)
+    await (await named(row().locator('button.done'), IS.done('Wash the car'))).click()
+    const body = (await res).request().postDataJSON()
+    if (body.status !== 'Done' || body.resolvedAt !== today || body.title !== 'Wash the car' || body.description !== 'Inside too') throw new Error(JSON.stringify(body))
+    await focusIs(`${isSel} .done-issues li[data-id="${x.id}"] button.reopen`, 'Reopen after Done')
+    if (plain(await isSec.locator('details > summary').textContent()) !== IS.doneN(1)) throw new Error('no Done (1)')
+    if (!plain(await row().textContent()).includes(IS.doneOn(await fmtDay(today)))) throw new Error(`done row "${plain(await row().textContent())}"`)
+    if (plain(await isSec.locator('> [role=status]').textContent()) !== IS.markedDone('Wash the car')) throw new Error('Done not announced')
+    await at390('the done to-dos', 'issue-done')
+    // Reopen: back in the open list, focus on its Done.
+    res = page.waitForResponse(isPut)
+    await (await named(row().locator('button.reopen'), IS.reopen('Wash the car'))).click()
+    if ((await res).request().postDataJSON().status !== 'Open') throw new Error('Reopen sent no Open')
+    await focusIs(`${isSel} .open-issues li[data-id="${x.id}"] button.done`, 'Done after Reopen')
+    if (plain(await isSec.locator('> [role=status]').textContent()) !== IS.reopened('Wash the car') || (await isSec.locator('details').count())) throw new Error('Reopen not shown')
+    // Edit: prefilled; Save renames it with focus back on Edit.
+    await (await named(row().locator('button.edit'), IS.edit('Wash the car'))).click()
+    await focusIs(`${isSel} li[data-id="${x.id}"] input[name=title]`, 'the title after Edit')
+    await row().locator('input[name=title]').fill('Wash and vacuum')
+    await row().locator('form .actions > button:not(.link)').click()
+    await focusIs(`${isSel} li[data-id="${x.id}"] button.edit`, 'Edit after saving')
+    await isRow('Wash and vacuum').waitFor()
+    // Criterion 8: deleted in another tab: Done reloads the list with a note.
+    await page.route(`**/issues/${x.id}`, (r) => r.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ code: 'issue.notFound' }) }), { times: 1 })
+    await row().locator('button.done').click()
+    await isSec.locator('> [role=status]', { hasText: IS.gone }).waitFor()
+    forgetCk(404, '/issues/')
+    // Delete: the red confirm; Escape goes back to Delete; then focus on the next row's Edit.
+    const del = await named(row().locator('.actions button:not(.done, .edit)'), IS.del('Wash and vacuum'))
+    await del.click()
+    await isSec.getByText(IS.confirm, { exact: true }).waitFor()
+    await at390('the to-do delete confirm', 'issue-delete-confirm')
+    await page.keyboard.press('Escape')
+    await focusIs(`${isSel} li[data-id="${x.id}"] .actions button:not(.done, .edit)`, 'Delete after Escape')
+    await del.click()
+    await row().locator('button.danger').click()
+    await row().waitFor({ state: 'detached' })
+    await focusIs(`${isSel} .open-issues > li:nth-child(1) button.edit`, "the next row's Edit after Delete")
+  })
   await step('checklist-run-history', async () => {
     // The template item is renamed; the run keeps the label it had.
     await apiCall('PUT', `/checklist-templates/${monthlyTpl.id}`, { name: 'Monthly quick check', items: monthlyTpl.items.map((i) => ({ ...i, label: i.label === 'Tire pressure' ? 'Tyre pressure' : i.label })) })
@@ -2779,7 +2934,7 @@ for (const s of setups) {
     if (!plain(await runRow.locator('summary').textContent()).includes(CK.flagged3) || !(await runRow.textContent()).includes('Before the trip')) throw new Error(`run "${plain(await runRow.textContent())}"`)
     await runRow.locator('summary').click()
     const items = (await runRow.locator('.run-items > li').allTextContents()).map(plain)
-    if (items.length !== 3 || !(items[1].startsWith('Tire pressure') && items[1].includes('1.8 bar')) || !items.every((x) => x.endsWith(he ? 'סומן כבעיה' : 'Flagged'))) throw new Error(`items ${JSON.stringify(items)}`)
+    if (items.length !== 3 || !(items[1].startsWith('Tire pressure') && items[1].includes('1.8 bar')) || (await runRow.locator('.run-items > li > .flag').count()) !== 3) throw new Error(`items ${JSON.stringify(items)}`)
     // Remove with runs: the translated hasRuns message, and the row stays.
     await (await named(monthly.locator(':scope > .actions button:not(.edit)'), CK.removeOf('Monthly quick check'))).click()
     await monthly.locator('button.danger').click()
@@ -2805,6 +2960,9 @@ for (const s of setups) {
     await focusIs(`li[data-id="${monthlyId}"] details.run-history > summary`, 'History after deleting the last run')
     await page.waitForFunction((b) => document.querySelector('.odometer').getAttribute('aria-label').replace(/\D/g, '') !== b, before, { timeout: 5000 })
     await page.waitForFunction(([id, w]) => document.querySelector(`li[data-id="${id}"] details.run-history > summary`).textContent.replace(/[⁦-⁩]/g, '') === w, [monthlyId, CK.history(0)], { timeout: 5000 })
+    // MVP5-C criterion 5: the run's to-dos stay, without their From line.
+    await page.waitForFunction((sel) => !document.querySelector(`${sel} .open-issues p.muted`), isSel, { timeout: 5000 })
+    if ((await isSec.locator('.open-issues > li').count()) !== 2) throw new Error('the to-dos went with the run')
   })
   await step('dashboard-start-checklist', async () => {
     // Criterion 9: two enabled checklists open a list, most urgent first; Escape goes back to the button.
@@ -2837,6 +2995,24 @@ for (const s of setups) {
     await dashCar().waitFor()
     const others = page.locator('.cars > li').filter({ hasNot: page.getByRole('link', { name: 'Dash car', exact: true }) })
     if (await others.getByText(CK.start).count()) throw new Error('Start a checklist on a car without checklists')
+  })
+  await step('dashboard-open-issues', async () => {
+    // Criterion 7: Dash car's 2 open to-dos link to its page; after one is marked done it shows 1; other cars show nothing.
+    // Already on the dashboard after dashboard-start-checklist.
+    await page.reload()
+    const link = dashCar().getByRole('link', { name: IS.open(2), exact: true })
+    await link.waitFor()
+    if ((await link.getAttribute('href')) !== `/cars/${dashCarId}`) throw new Error(`href ${await link.getAttribute('href')}`)
+    const others = page.locator('.cars > li').filter({ hasNot: page.getByRole('link', { name: 'Dash car', exact: true }) })
+    if (await others.getByText(/open to-do|מטלה פתוחה|מטלות פתוחות/).count()) throw new Error('an open to-do count on a car without to-dos')
+    await at390('the dashboard with open to-dos', 'dashboard-open-issues')
+    await link.click()
+    await arrivedAt('Dash car')
+    await isSec.locator('.open-issues > li button.done').first().click()
+    await isSec.locator('.done-issues > li').waitFor({ state: 'attached' })
+    await page.click('header a.brand')
+    await arrivedAt(T.dashboard)
+    await dashCar().getByRole('link', { name: IS.open(1), exact: true }).waitFor()
   })
   await step('checklist-template-in-use', async () => {
     // Deleting a template that is on a car: the translated inUse message on its row, which stays.

@@ -295,3 +295,7 @@ details > summary { padding-block: 0.625rem; cursor: pointer; }
 .item > label.inline { flex-basis: 100%; }
 .item.flagged { border-color: var(--fault); }
 .pct > span { flex-shrink: 0; } /* a unit beside its number never breaks mid-word */
+
+/* To-dos on a car (MVP5-C): the title, the user's line breaks kept in the description */
+.issues .name { font-weight: 600; }
+.issues .notes { white-space: pre-line; }
