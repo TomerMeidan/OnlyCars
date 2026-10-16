@@ -19,6 +19,9 @@ public interface IAppDbContext
     DbSet<ServiceItem> ServiceItems { get; }
     DbSet<ChecklistTemplate> ChecklistTemplates { get; }
     DbSet<ChecklistTemplateItem> ChecklistTemplateItems { get; }
+    DbSet<VehicleChecklist> VehicleChecklists { get; }
+    DbSet<ChecklistRun> ChecklistRuns { get; }
+    DbSet<ChecklistRunItem> ChecklistRunItems { get; }
 
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 }

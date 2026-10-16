@@ -68,6 +68,13 @@ public class ChecklistTemplateService(IAppDbContext db)
         template.UpdatedAt = now;
 
         var removed = template.Items.Where(i => !kept.Contains(i.Id)).ToList();
+        // The run item link doesn't cascade (SQL Server's one-path rule): clear it here; runs keep their snapshot.
+        var removedIds = removed.Select(i => i.Id).ToList();
+        foreach (var runItem in await db.ChecklistRunItems.Where(r => r.TemplateItemId != null && removedIds.Contains(r.TemplateItemId.Value)).ToListAsync(ct))
+        {
+            runItem.TemplateItemId = null;
+            runItem.UpdatedAt = now;
+        }
         db.ChecklistTemplateItems.RemoveRange(removed);
         removed.ForEach(i => template.Items.Remove(i));
 
@@ -91,6 +98,12 @@ public class ChecklistTemplateService(IAppDbContext db)
     public async Task DeleteAsync(Guid userId, Guid id, CancellationToken ct = default)
     {
         var template = await FindOwnedAsync(userId, id, ct);
+        // Also keeps runs safe: runs only exist under an attachment, and an attachment with runs can't be removed.
+        if (await db.VehicleChecklists.AnyAsync(c => c.TemplateId == template.Id, ct))
+        {
+            throw new ConflictException("checklistTemplate.inUse", "This checklist is attached to a car. Remove it from the car first.");
+        }
+
         db.ChecklistTemplates.Remove(template); // items cascade
         await db.SaveChangesAsync(ct);
     }
@@ -181,7 +194,7 @@ public class ChecklistTemplateService(IAppDbContext db)
         return item;
     }
 
-    private static ValidationFailedException ItemError(string code, string message, int index)
+    internal static ValidationFailedException ItemError(string code, string message, int index)
     {
         var ex = new ValidationFailedException(code, $"Item {index + 1}: {message}");
         ex.Extensions["index"] = index;

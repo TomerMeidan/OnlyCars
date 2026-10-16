@@ -1,5 +1,6 @@
 using System.Globalization;
 using Microsoft.EntityFrameworkCore;
+using OnlyCars.Application.Checklists;
 using OnlyCars.Application.Common;
 using OnlyCars.Application.Common.Exceptions;
 using OnlyCars.Application.Maintenance.Dtos;
@@ -223,7 +224,8 @@ public class MaintenanceTaskService(IAppDbContext db, VehicleService vehicleServ
 
     /// <summary>
     /// Statuses of the enabled tasks of the caller's active cars (server UTC date, as on GET .../tasks), and the month's spend
-    /// with the same filter as the history search from the first of the month to <paramref name="today"/>. Four queries.
+    /// with the same filter as the history search from the first of the month to <paramref name="today"/>, and each active car's enabled
+    /// checklists. Five queries.
     /// </summary>
     public async Task<DashboardDto> DashboardAsync(Guid userId, DateOnly? today, CancellationToken ct = default)
     {
@@ -244,6 +246,8 @@ public class MaintenanceTaskService(IAppDbContext db, VehicleService vehicleServ
         var tasks = (await db.MaintenanceTasks
             .Where(t => t.Vehicle!.UserId == userId && !t.Vehicle.IsArchived && t.IsEnabled)
             .ToListAsync(ct)).ToLookup(t => t.VehicleId);
+        var checklists = (await VehicleChecklistService.QueryAsync(db,
+            c => c.Vehicle!.UserId == userId && !c.Vehicle.IsArchived && c.IsEnabled, ct)).ToLookup(c => c.VehicleId);
 
         var cards = vehicles.Select(v =>
             {
@@ -251,7 +255,7 @@ public class MaintenanceTaskService(IAppDbContext db, VehicleService vehicleServ
                     .OrderByDescending(t => t.Status).ThenByDescending(t => t.Progress).ThenBy(t => t.Name, StringComparer.InvariantCulture)
                     .ToList();
                 return new DashboardVehicleDto(v.Id, v.Nickname, v.Make, v.Model, v.Year, v.CurrentOdometerKm,
-                    list.Count(t => t.Status == DueStatus.Overdue), list.Count(t => t.Status == DueStatus.DueSoon), list);
+                    list.Count(t => t.Status == DueStatus.Overdue), list.Count(t => t.Status == DueStatus.DueSoon), list, checklists[v.Id].ToList());
             })
             .OrderBy(c => c.Tasks.Count == 0)
             .ThenByDescending(c => c.Tasks.FirstOrDefault()?.Status)
@@ -516,17 +520,7 @@ public class MaintenanceTaskService(IAppDbContext db, VehicleService vehicleServ
         var readings = await db.OdometerReadings.Where(r => r.VehicleId == vehicle.Id).ToListAsync(ct);
         foreach (var reading in readings.Where(r => r.ServiceRecordId == record.Id).ToList())
         {
-            // Same rule as deleting a manual reading: the only reading stays, so the odometer isn't reset to 0.
-            if (readings.Count == 1)
-            {
-                reading.Source = OdometerSource.Manual;
-                reading.ServiceRecordId = null;
-                reading.UpdatedAt = now;
-                continue;
-            }
-
-            db.OdometerReadings.Remove(reading);
-            readings.Remove(reading);
+            OdometerService.RemoveLinked(db, readings, reading, now);
         }
         OdometerService.Recompute(vehicle, readings);
 

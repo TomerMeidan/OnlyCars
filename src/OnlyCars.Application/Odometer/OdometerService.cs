@@ -159,6 +159,24 @@ public class OdometerService(IAppDbContext db, VehicleService vehicleService)
     }
 
     /// <summary>
+    /// Removes a reading a record or run created. Same rule as deleting a manual reading: the car's only reading stays, turned
+    /// into a manual one, so the odometer isn't reset to 0. The caller recomputes.
+    /// </summary>
+    internal static void RemoveLinked(IAppDbContext db, List<OdometerReading> readings, OdometerReading reading, DateTimeOffset now)
+    {
+        if (readings.Count == 1)
+        {
+            reading.Source = OdometerSource.Manual;
+            reading.ServiceRecordId = null;
+            reading.UpdatedAt = now;
+            return;
+        }
+
+        db.OdometerReadings.Remove(reading);
+        readings.Remove(reading);
+    }
+
+    /// <summary>
     /// Current odometer = the last reading. Average = (last - first) / days between them; null with fewer than
     /// 2 readings, 0 days between them, or no increase.
     /// </summary>

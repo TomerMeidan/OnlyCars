@@ -1,3 +1,4 @@
+using OnlyCars.Application.Checklists.Dtos;
 using OnlyCars.Domain;
 
 namespace OnlyCars.Application.Maintenance.Dtos;
@@ -86,8 +87,9 @@ public record CreateServiceRecordRequest(
 public record CreateServiceRecordResponse(ServiceRecordDto Record, List<MaintenanceTaskDto> Tasks);
 
 // Tasks are the vehicle's enabled tasks in urgency order (Overdue, Due soon, OK; then progress descending; then name).
+// Checklists (MVP5-B) are its enabled checklists, most urgent first as on GET /api/vehicles/{id}/checklists; they never count in the totals.
 public record DashboardVehicleDto(Guid Id, string Nickname, string? Make, string? Model, int? Year, decimal CurrentOdometerKm,
-    int OverdueCount, int DueSoonCount, List<MaintenanceTaskDto> Tasks);
+    int OverdueCount, int DueSoonCount, List<MaintenanceTaskDto> Tasks, List<VehicleChecklistDto> Checklists);
 
 // Month is "YYYY-MM"; the month figures cover the first of that month to the client's today, archived cars included.
 public record DashboardDto(int OverdueCount, int DueSoonCount, string Month, decimal MonthTotalCost, int MonthServiceCount,

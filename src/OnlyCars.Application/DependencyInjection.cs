@@ -23,6 +23,7 @@ public static class DependencyInjection
         services.AddScoped<OdometerService>();
         services.AddScoped<MaintenanceTaskService>();
         services.AddScoped<ChecklistTemplateService>();
+        services.AddScoped<VehicleChecklistService>();
 
         return services;
     }

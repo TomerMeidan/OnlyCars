@@ -2,7 +2,7 @@
 
 One line per requirement in `docs/spec.md`. Updated after every ticket is signed off. Evidence and details are in `docs/requirements-status.md`.
 
-**Last updated:** 2026-10-16, MVP5-A signed off (checklist templates and items); next: MVP5-B (run a checklist on a car)
+**Last updated:** 2026-10-16, MVP5-B backend built (attach, schedule, runs and run history API, contract in `docs/contracts/MVP5-B.md`); next: MVP5-B frontend
 **Progress:** 26 of 50 required items done, 5 partly done, 19 not started. The 7 optional items are not counted.
 
 Legend:
@@ -68,9 +68,9 @@ Legend:
 - [x] Checklist templates
 - [x] Items: checkbox, number or text (numbers with a unit and an allowed range)
 - [ ] Schedule by km, by time, or manual only 🔨 *(next: MVP5-B)*
-- [ ] Run a checklist: tick items, add notes or photos, flag issues
+- [ ] Run a checklist: tick items, add notes or photos, flag issues 🔨 *(backend built in MVP5-B, without photos; the run page is next)*
 - [ ] Failed items create a to-do or a maintenance task
-- [ ] Run history per car
+- [ ] Run history per car 🔨 *(backend built in MVP5-B; the car page is next)*
 
 ## 8. Costs and Reports
 - [ ] Cost per car, per category, per month and per year

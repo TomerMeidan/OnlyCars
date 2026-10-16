@@ -5,14 +5,20 @@ namespace OnlyCars.Application.Maintenance;
 
 public record TaskStatusResult(DueStatus? Status, decimal? RemainingKm, int? RemainingDays, double? Progress);
 
-/// <summary>Pure status rules from decisions.md (MVP2-B). No clock: the caller passes today (UTC).</summary>
+/// <summary>Pure status rules from decisions.md (MVP2-B), also used by checklists (MVP5-B). No clock: the caller passes today (UTC).</summary>
 public static class TaskStatusCalculator
 {
     private static readonly TaskStatusResult None = new(null, null, null, null);
 
-    public static TaskStatusResult Compute(MaintenanceTask task, decimal currentOdometerKm, DateOnly today)
+    public static TaskStatusResult Compute(MaintenanceTask task, decimal currentOdometerKm, DateOnly today) =>
+        Compute(task.IsEnabled, task.IntervalKm, task.IntervalDays, task.DueSoonPercent, task.LastDoneOdometerKm, task.LastDoneDate,
+            currentOdometerKm, today);
+
+    // Both intervals null (a manual-only checklist) gives no status, like a disabled task.
+    public static TaskStatusResult Compute(bool isEnabled, int? intervalKm, int? intervalDays, int dueSoonPercent,
+        decimal lastDoneKm, DateOnly lastDoneDate, decimal currentOdometerKm, DateOnly today)
     {
-        if (!task.IsEnabled)
+        if (!isEnabled)
         {
             return None;
         }
@@ -22,20 +28,20 @@ public static class TaskStatusCalculator
         decimal? remainingKm = null;
         int? remainingDays = null;
 
-        if (task.IntervalKm is { } intervalKm)
+        if (intervalKm is { } km)
         {
-            var usedKm = Math.Max(0, currentOdometerKm - task.LastDoneOdometerKm);
-            remainingKm = intervalKm - usedKm;
-            status = Worse(status, StatusOf(remainingKm.Value, intervalKm, task.DueSoonPercent));
-            progress = Math.Max(progress ?? 0, (double)(usedKm / intervalKm));
+            var usedKm = Math.Max(0, currentOdometerKm - lastDoneKm);
+            remainingKm = km - usedKm;
+            status = Worse(status, StatusOf(remainingKm.Value, km, dueSoonPercent));
+            progress = Math.Max(progress ?? 0, (double)(usedKm / km));
         }
 
-        if (task.IntervalDays is { } intervalDays)
+        if (intervalDays is { } days)
         {
-            var usedDays = Math.Max(0, today.DayNumber - task.LastDoneDate.DayNumber);
-            remainingDays = intervalDays - usedDays;
-            status = Worse(status, StatusOf(remainingDays.Value, intervalDays, task.DueSoonPercent));
-            progress = Math.Max(progress ?? 0, (double)usedDays / intervalDays);
+            var usedDays = Math.Max(0, today.DayNumber - lastDoneDate.DayNumber);
+            remainingDays = days - usedDays;
+            status = Worse(status, StatusOf(remainingDays.Value, days, dueSoonPercent));
+            progress = Math.Max(progress ?? 0, (double)usedDays / days);
         }
 
         return new TaskStatusResult(status, remainingKm, remainingDays, progress);

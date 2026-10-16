@@ -1,4 +1,6 @@
 using Microsoft.EntityFrameworkCore;
+using OnlyCars.Application.Checklists;
+using OnlyCars.Application.Checklists.Dtos;
 using OnlyCars.Application.Maintenance;
 using OnlyCars.Application.Vehicles;
 using OnlyCars.Domain;
@@ -121,5 +123,37 @@ public class MaintenanceSchemaTests : IAsyncLifetime
         await db.SaveChangesAsync();
         await db.Vehicles.Where(v => v.Id == car.Id).ExecuteDeleteAsync();
         Assert.Equal(0, await db.ServiceItems.CountAsync());
+    }
+
+    [Fact]
+    public async Task Checklists_ClearTheRunItemLinkOnItemDelete_DeleteRunReadings_AndCascadeVehicleDeleteWithoutCycles()
+    {
+        // MVP5-B: the no-cascade paths (template item and reading) are handled by the services on SQL Server too.
+        var vehicles = new VehicleService(db);
+        var templates = new ChecklistTemplateService(db);
+        var checklists = new VehicleChecklistService(db, vehicles);
+        var car = await AddCarAsync();
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var t = await templates.CreateAsync(car.UserId, new ChecklistTemplateRequest("Quick", [
+            new(null, "Lights", "Check", null, null, null), new(null, "Tires", "Number", "bar", 2m, 3m)]));
+        var c = await checklists.AttachAsync(car.UserId, car.Id, new AttachChecklistRequest(t.Id, null, 30, today));
+        List<ChecklistRunItemRequest?> answers = [new(t.Items[0].Id, false, null, null), new(t.Items[1].Id, null, 2.5m, null)];
+        var run = await checklists.CreateRunAsync(car.UserId, c.Id, new CreateChecklistRunRequest(today, 1_000, null, answers));
+
+        await templates.UpdateAsync(car.UserId, t.Id, new ChecklistTemplateRequest("Quick", [new(t.Items[0].Id, "Lights", "Check", null, null, null)]));
+        db.ChangeTracker.Clear();
+        Assert.Equal(["Lights", "Tires"], (await checklists.ListRunsAsync(car.UserId, c.Id)).Single().Items.Select(i => i.Label));
+
+        await checklists.DeleteRunAsync(car.UserId, run.Run.Id);
+        db.ChangeTracker.Clear();
+        Assert.Equal(0, await db.OdometerReadings.CountAsync(r => r.VehicleId == car.Id && r.Source == OdometerSource.Checklist));
+
+        // A run with a reading and items goes with the car in one statement; the template stays.
+        await checklists.CreateRunAsync(car.UserId, c.Id, new CreateChecklistRunRequest(today, 1_000, null, [answers[0]]));
+        db.ChangeTracker.Clear();
+        await db.Vehicles.Where(v => v.Id == car.Id).ExecuteDeleteAsync();
+        Assert.Equal((0, 0, 0, 0), (await db.VehicleChecklists.CountAsync(), await db.ChecklistRuns.CountAsync(),
+            await db.ChecklistRunItems.CountAsync(), await db.OdometerReadings.CountAsync()));
+        Assert.Equal(1, await db.ChecklistTemplates.CountAsync());
     }
 }

@@ -22,6 +22,105 @@ namespace OnlyCars.Infrastructure.Persistence.Migrations
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
 
+            modelBuilder.Entity("OnlyCars.Domain.Entities.ChecklistRun", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("Notes")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<decimal>("OdometerKm")
+                        .HasColumnType("decimal(12,2)");
+
+                    b.Property<Guid?>("OdometerReadingId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateOnly>("RunAt")
+                        .HasColumnType("date");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid>("VehicleChecklistId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OdometerReadingId");
+
+                    b.HasIndex("VehicleChecklistId", "RunAt")
+                        .IsDescending(false, true);
+
+                    b.ToTable("ChecklistRuns");
+                });
+
+            modelBuilder.Entity("OnlyCars.Domain.Entities.ChecklistRunItem", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<bool?>("BoolValue")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<bool>("IsFlagged")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("LabelSnapshot")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<decimal?>("MaxValue")
+                        .HasColumnType("decimal(12,2)");
+
+                    b.Property<decimal?>("MinValue")
+                        .HasColumnType("decimal(12,2)");
+
+                    b.Property<decimal?>("NumberValue")
+                        .HasColumnType("decimal(12,2)");
+
+                    b.Property<Guid>("RunId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("int");
+
+                    b.Property<Guid?>("TemplateItemId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("TextValue")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<int>("Type")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Unit")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RunId");
+
+                    b.HasIndex("TemplateItemId");
+
+                    b.ToTable("ChecklistRunItems");
+                });
+
             modelBuilder.Entity("OnlyCars.Domain.Entities.ChecklistTemplate", b =>
                 {
                     b.Property<Guid>("Id")
@@ -602,6 +701,91 @@ namespace OnlyCars.Infrastructure.Persistence.Migrations
                     b.ToTable("Vehicles");
                 });
 
+            modelBuilder.Entity("OnlyCars.Domain.Entities.VehicleChecklist", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<int?>("IntervalDays")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("IntervalKm")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("IsEnabled")
+                        .HasColumnType("bit");
+
+                    b.Property<DateOnly>("LastRunDate")
+                        .HasColumnType("date");
+
+                    b.Property<decimal>("LastRunOdometerKm")
+                        .HasColumnType("decimal(12,2)");
+
+                    b.Property<DateOnly>("StartDate")
+                        .HasColumnType("date");
+
+                    b.Property<decimal>("StartOdometerKm")
+                        .HasColumnType("decimal(12,2)");
+
+                    b.Property<Guid>("TemplateId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid>("VehicleId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TemplateId");
+
+                    b.HasIndex("VehicleId", "TemplateId")
+                        .IsUnique();
+
+                    b.ToTable("VehicleChecklists");
+                });
+
+            modelBuilder.Entity("OnlyCars.Domain.Entities.ChecklistRun", b =>
+                {
+                    b.HasOne("OnlyCars.Domain.Entities.OdometerReading", "OdometerReading")
+                        .WithMany()
+                        .HasForeignKey("OdometerReadingId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("OnlyCars.Domain.Entities.VehicleChecklist", "VehicleChecklist")
+                        .WithMany("Runs")
+                        .HasForeignKey("VehicleChecklistId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("OdometerReading");
+
+                    b.Navigation("VehicleChecklist");
+                });
+
+            modelBuilder.Entity("OnlyCars.Domain.Entities.ChecklistRunItem", b =>
+                {
+                    b.HasOne("OnlyCars.Domain.Entities.ChecklistRun", "Run")
+                        .WithMany("Items")
+                        .HasForeignKey("RunId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("OnlyCars.Domain.Entities.ChecklistTemplateItem", "TemplateItem")
+                        .WithMany()
+                        .HasForeignKey("TemplateItemId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.Navigation("Run");
+
+                    b.Navigation("TemplateItem");
+                });
+
             modelBuilder.Entity("OnlyCars.Domain.Entities.ChecklistTemplate", b =>
                 {
                     b.HasOne("OnlyCars.Domain.Entities.User", "User")
@@ -712,6 +896,30 @@ namespace OnlyCars.Infrastructure.Persistence.Migrations
                     b.Navigation("User");
                 });
 
+            modelBuilder.Entity("OnlyCars.Domain.Entities.VehicleChecklist", b =>
+                {
+                    b.HasOne("OnlyCars.Domain.Entities.ChecklistTemplate", "Template")
+                        .WithMany()
+                        .HasForeignKey("TemplateId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.HasOne("OnlyCars.Domain.Entities.Vehicle", "Vehicle")
+                        .WithMany()
+                        .HasForeignKey("VehicleId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Template");
+
+                    b.Navigation("Vehicle");
+                });
+
+            modelBuilder.Entity("OnlyCars.Domain.Entities.ChecklistRun", b =>
+                {
+                    b.Navigation("Items");
+                });
+
             modelBuilder.Entity("OnlyCars.Domain.Entities.ChecklistTemplate", b =>
                 {
                     b.Navigation("Items");
@@ -734,6 +942,11 @@ namespace OnlyCars.Infrastructure.Persistence.Migrations
                     b.Navigation("MaintenanceTasks");
 
                     b.Navigation("OdometerReadings");
+                });
+
+            modelBuilder.Entity("OnlyCars.Domain.Entities.VehicleChecklist", b =>
+                {
+                    b.Navigation("Runs");
                 });
 #pragma warning restore 612, 618
         }

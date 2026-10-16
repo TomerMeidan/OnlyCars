@@ -20,6 +20,9 @@ public class AppDbContext : DbContext, IAppDbContext
     public DbSet<ServiceItem> ServiceItems => Set<ServiceItem>();
     public DbSet<ChecklistTemplate> ChecklistTemplates => Set<ChecklistTemplate>();
     public DbSet<ChecklistTemplateItem> ChecklistTemplateItems => Set<ChecklistTemplateItem>();
+    public DbSet<VehicleChecklist> VehicleChecklists => Set<VehicleChecklist>();
+    public DbSet<ChecklistRun> ChecklistRuns => Set<ChecklistRun>();
+    public DbSet<ChecklistRunItem> ChecklistRunItems => Set<ChecklistRunItem>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
