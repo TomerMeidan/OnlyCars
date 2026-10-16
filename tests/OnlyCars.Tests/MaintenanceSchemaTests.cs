@@ -2,6 +2,8 @@ using Microsoft.EntityFrameworkCore;
 using OnlyCars.Application.Checklists;
 using OnlyCars.Application.Checklists.Dtos;
 using OnlyCars.Application.Maintenance;
+using OnlyCars.Application.Tires;
+using OnlyCars.Application.Tires.Dtos;
 using OnlyCars.Application.Vehicles;
 using OnlyCars.Domain;
 using OnlyCars.Domain.Entities;
@@ -155,5 +157,30 @@ public class MaintenanceSchemaTests : IAsyncLifetime
         Assert.Equal((0, 0, 0, 0), (await db.VehicleChecklists.CountAsync(), await db.ChecklistRuns.CountAsync(),
             await db.ChecklistRunItems.CountAsync(), await db.OdometerReadings.CountAsync()));
         Assert.Equal(1, await db.ChecklistTemplates.CountAsync());
+    }
+
+    [Fact]
+    public async Task Tires_SwapOnSqlServer_OneOpenMountPerCarAndSet_AndUserDeleteCascades()
+    {
+        // MVP5-D: the swap closes the old mount and inserts the new one in one save, past the filtered unique indexes.
+        var vehicles = new VehicleService(db);
+        var tires = new TireService(db, vehicles);
+        var car = await AddCarAsync();
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var a = await tires.CreateAsync(car.UserId, new TireSetRequest("A", null, null, TireSeason.Summer, null, null, null));
+        var b = await tires.CreateAsync(car.UserId, new TireSetRequest("B", null, null, TireSeason.Winter, null, null, null));
+        await tires.MountAsync(car.UserId, car.Id, new MountTireSetRequest(a.Id, today, 0));
+        var swapped = await tires.MountAsync(car.UserId, car.Id, new MountTireSetRequest(b.Id, today, 10));
+        Assert.Equal((b.Id, a.Id), (swapped.Current!.TireSetId, Assert.Single(swapped.Past).TireSetId));
+        db.ChangeTracker.Clear();
+
+        // A second open mount on the car (two simultaneous mounts) is refused by the index.
+        db.TireMounts.Add(new TireMount { TireSetId = a.Id, VehicleId = car.Id, MountedAt = today });
+        await Assert.ThrowsAsync<DbUpdateException>(() => db.SaveChangesAsync());
+        db.ChangeTracker.Clear();
+
+        // Deleting the user removes cars, sets and mounts in one statement (no cascade cycle).
+        await db.Users.Where(u => u.Id == car.UserId).ExecuteDeleteAsync();
+        Assert.Equal((0, 0, 0), (await db.Vehicles.CountAsync(), await db.TireSets.CountAsync(), await db.TireMounts.CountAsync()));
     }
 }

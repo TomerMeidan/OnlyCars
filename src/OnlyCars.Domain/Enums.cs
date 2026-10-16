@@ -70,3 +70,10 @@ public enum IssueStatus
     Open,
     Done
 }
+
+public enum TireSeason
+{
+    Summer,
+    Winter,
+    AllSeason
+}

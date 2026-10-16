@@ -2,7 +2,7 @@
 
 One line per requirement in `docs/spec.md`. Updated after every ticket is signed off. Evidence and details are in `docs/requirements-status.md`.
 
-**Last updated:** 2026-10-16, LOW-3 signed off without a browser check (the whole Low backlog L27 to L65: clear 409 messages for simultaneous changes, dates before 1900 rejected, focus and layout fixes on the dashboard, car page, checklists and run page). Next: MVP5-D, tire sets and which set is on which car.
+**Last updated:** 2026-10-16, MVP5-D backend built: tire sets, which set is on which car (mount, swap, unmount) and km per set, with tests; the screens come next (frontend). Then MVP5-E, tire pressure, tread depth and rotations.
 **Progress:** 30 of 50 required items done, 5 partly done, 15 not started. The 7 optional items are not counted.
 
 Legend:

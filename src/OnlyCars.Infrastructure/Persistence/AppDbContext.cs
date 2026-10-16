@@ -24,6 +24,8 @@ public class AppDbContext : DbContext, IAppDbContext
     public DbSet<ChecklistRun> ChecklistRuns => Set<ChecklistRun>();
     public DbSet<ChecklistRunItem> ChecklistRunItems => Set<ChecklistRunItem>();
     public DbSet<Issue> Issues => Set<Issue>();
+    public DbSet<TireSet> TireSets => Set<TireSet>();
+    public DbSet<TireMount> TireMounts => Set<TireMount>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

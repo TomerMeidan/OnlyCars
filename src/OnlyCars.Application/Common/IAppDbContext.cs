@@ -23,6 +23,8 @@ public interface IAppDbContext
     DbSet<ChecklistRun> ChecklistRuns { get; }
     DbSet<ChecklistRunItem> ChecklistRunItems { get; }
     DbSet<Issue> Issues { get; }
+    DbSet<TireSet> TireSets { get; }
+    DbSet<TireMount> TireMounts { get; }
 
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 }

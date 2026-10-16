@@ -635,6 +635,107 @@ namespace OnlyCars.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("OnlyCars.Domain.Entities.TireMount", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<decimal>("MountOdometerKm")
+                        .HasColumnType("decimal(12,2)");
+
+                    b.Property<DateOnly>("MountedAt")
+                        .HasColumnType("date");
+
+                    b.Property<Guid>("TireSetId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal?>("UnmountOdometerKm")
+                        .HasColumnType("decimal(12,2)");
+
+                    b.Property<DateOnly?>("UnmountedAt")
+                        .HasColumnType("date");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid>("VehicleId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TireSetId")
+                        .IsUnique()
+                        .HasDatabaseName("IX_TireMounts_TireSetId_Open")
+                        .HasFilter("[UnmountedAt] IS NULL");
+
+                    b.HasIndex("VehicleId")
+                        .IsUnique()
+                        .HasDatabaseName("IX_TireMounts_VehicleId_Open")
+                        .HasFilter("[UnmountedAt] IS NULL");
+
+                    b.HasIndex("TireSetId", "MountedAt");
+
+                    b.HasIndex("VehicleId", "MountedAt");
+
+                    b.ToTable("TireMounts", t =>
+                        {
+                            t.HasCheckConstraint("CK_TireMounts_Unmount", "([UnmountedAt] IS NULL AND [UnmountOdometerKm] IS NULL) OR ([UnmountedAt] >= [MountedAt] AND [UnmountOdometerKm] >= [MountOdometerKm])");
+                        });
+                });
+
+            modelBuilder.Entity("OnlyCars.Domain.Entities.TireSet", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Brand")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("DotCode")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("Model")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("Notes")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<DateOnly?>("PurchaseDate")
+                        .HasColumnType("date");
+
+                    b.Property<int>("Season")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Size")
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("TireSets");
+                });
+
             modelBuilder.Entity("OnlyCars.Domain.Entities.User", b =>
                 {
                     b.Property<Guid>("Id")
@@ -952,6 +1053,36 @@ namespace OnlyCars.Infrastructure.Persistence.Migrations
                     b.Navigation("ServiceRecord");
                 });
 
+            modelBuilder.Entity("OnlyCars.Domain.Entities.TireMount", b =>
+                {
+                    b.HasOne("OnlyCars.Domain.Entities.TireSet", "TireSet")
+                        .WithMany("Mounts")
+                        .HasForeignKey("TireSetId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("OnlyCars.Domain.Entities.Vehicle", "Vehicle")
+                        .WithMany()
+                        .HasForeignKey("VehicleId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.Navigation("TireSet");
+
+                    b.Navigation("Vehicle");
+                });
+
+            modelBuilder.Entity("OnlyCars.Domain.Entities.TireSet", b =>
+                {
+                    b.HasOne("OnlyCars.Domain.Entities.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("User");
+                });
+
             modelBuilder.Entity("OnlyCars.Domain.Entities.Vehicle", b =>
                 {
                     b.HasOne("OnlyCars.Domain.Entities.User", "User")
@@ -997,6 +1128,11 @@ namespace OnlyCars.Infrastructure.Persistence.Migrations
                     b.Navigation("Items");
 
                     b.Navigation("Tasks");
+                });
+
+            modelBuilder.Entity("OnlyCars.Domain.Entities.TireSet", b =>
+                {
+                    b.Navigation("Mounts");
                 });
 
             modelBuilder.Entity("OnlyCars.Domain.Entities.User", b =>

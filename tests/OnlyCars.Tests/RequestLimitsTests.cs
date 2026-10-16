@@ -11,6 +11,7 @@ using OnlyCars.Api.Common;
 using OnlyCars.Api.Controllers;
 using OnlyCars.Api.Middleware;
 using OnlyCars.Application.Issues.Dtos;
+using OnlyCars.Application.Tires.Dtos;
 using OnlyCars.Application.Vehicles.Dtos;
 
 namespace OnlyCars.Tests;
@@ -154,6 +155,8 @@ public class RequestLimitsTests
     [InlineData("/test/vehicles", """{"nickname":"A","fuelType":"99"}""", HttpStatusCode.BadRequest)]
     [InlineData("/test/issues", """{"title":"A","status":"Done"}""", HttpStatusCode.OK)]
     [InlineData("/test/issues", """{"title":"A","status":2}""", HttpStatusCode.BadRequest)]
+    [InlineData("/test/tire-sets", """{"brand":"A","season":"AllSeason"}""", HttpStatusCode.OK)]
+    [InlineData("/test/tire-sets", """{"brand":"A","season":1}""", HttpStatusCode.BadRequest)]
     public async Task EnumValues_BindByNameOnly(string path, string json, HttpStatusCode expected)
     {
         var (app, client) = await StartAsync();
@@ -194,4 +197,7 @@ public class ModelBindingTestController : ControllerBase
 
     [HttpPost("issues")]
     public IActionResult Update(UpdateIssueRequest request) => Ok();
+
+    [HttpPost("tire-sets")]
+    public IActionResult CreateTireSet(TireSetRequest request) => Ok();
 }
