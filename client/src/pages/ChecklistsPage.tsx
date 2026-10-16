@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
-import { useTranslation } from 'react-i18next'
+import { Trans, useTranslation } from 'react-i18next'
 import { api, ApiError, checklistItemTypes, limit, type ChecklistItemType, type ChecklistTemplate } from '../api'
 import { errorMessage } from '../i18n'
 import { useItemErrors } from '../useItemErrors'
@@ -23,8 +23,9 @@ type Item = { key: number; id: string | null; label: string; type: ChecklistItem
 let nextKey = 0
 const num = (s: string) => (s === '' ? null : Number(s))
 
-// Name, then save order for equal names (stable sort), as the API lists them.
-const byName = (lng: string | undefined) => (a: ChecklistTemplate, b: ChecklistTemplate) => a.name.localeCompare(b.name, lng)
+// Name ignoring case (the database's CI collation), then creation time for equal names (a stable sort keeps the list's order), as the API lists them.
+// shortcut: a template renamed to an existing name sorts by its old place, not its creation time, and the collation can differ from the browser's on rare characters; send createdAt if that is ever reported.
+const byName = (lng: string | undefined) => (a: ChecklistTemplate, b: ChecklistTemplate) => a.name.localeCompare(b.name, lng, { sensitivity: 'accent' })
 
 // /checklists: the user's checklist templates, with an inline form to create one and one per row to edit it.
 export default function ChecklistsPage() {
@@ -77,7 +78,8 @@ export default function ChecklistsPage() {
         </div>
       )}
       {form.mode === 'new' && (
-        <section className="card" aria-label={t('newChecklist')}>
+        <section className="card" aria-labelledby="new-checklist">
+          <h2 id="new-checklist">{t('newChecklist')}</h2>
           <TemplateForm row={form} onSaved={(tp) => { form.close(); saved(tp) }} />
         </section>
       )}
@@ -89,8 +91,8 @@ export default function ChecklistsPage() {
         <ul className="card tasks checklists">
           {templates.map((tp, i) => (
             <TemplateRow key={tp.id} template={tp} onSaved={saved} onDeleted={() => {
-              // The row that takes this one's place, else New checklist.
-              focusNext.current = [`.checklists > li:nth-child(${i + 1}) button.edit`, 'main button.add']
+              // The row that takes this one's place, then the first row, then New checklist, then the h1 (the New form open).
+              focusNext.current = [`.checklists > li:nth-child(${i + 1}) button.edit`, '.checklists > li button.edit', 'main button.add', 'main h1']
               setTemplates((ts) => ts && ts.filter((x) => x.id !== tp.id))
             }} />
           ))}
@@ -111,7 +113,9 @@ function TemplateRow({ template: tp, onSaved, onDeleted }: { template: Checklist
   if (mode === 'edit') {
     return (
       <li data-id={tp.id}>
-        <TemplateForm row={row} template={tp} onSaved={(saved) => { close(); onSaved(saved) }} />
+        <h2><Trans i18nKey="editHeading" values={{ name }} components={{ n: <bdi /> }} /></h2>
+        {/* Deleted elsewhere: the form closes and the row goes, as after a Delete. */}
+        <TemplateForm row={row} template={tp} onSaved={(saved) => { close(); onSaved(saved) }} onGone={() => { close(); onDeleted() }} />
       </li>
     )
   }
@@ -147,10 +151,11 @@ function TemplateRow({ template: tp, onSaved, onDeleted }: { template: Checklist
 }
 
 // New checklist (no template) or edit one. Save sends the whole item list; Cancel and Escape discard.
-function TemplateForm({ row, template, onSaved }: {
+function TemplateForm({ row, template, onSaved, onGone }: {
   row: { busy: boolean; error: unknown; run: ReturnType<typeof useRow>['run']; open: (m: 'view') => void }
   template?: ChecklistTemplate
   onSaved: (tp: ChecklistTemplate) => void
+  onGone?: () => void
 }) {
   const { t } = useTranslation()
   const { busy, error, run, open } = row
@@ -167,7 +172,14 @@ function TemplateForm({ row, template, onSaved }: {
       items: items.map((i) => ({ id: i.id, label: i.label, type: i.type, ...(i.type === 'Number' && { unit: i.unit, minValue: num(i.min), maxValue: num(i.max) }) })),
     }
     const url = template ? `/checklist-templates/${encodeURIComponent(template.id)}` : '/checklist-templates'
-    const err = await run(async () => onSaved(await api<ChecklistTemplate>(url, template ? 'PUT' : 'POST', body)), (e.nativeEvent as SubmitEvent).submitter)
+    const err = await run(async () => {
+      try {
+        onSaved(await api<ChecklistTemplate>(url, template ? 'PUT' : 'POST', body))
+      } catch (err) {
+        if (!(onGone && err instanceof ApiError && err.problem.code === 'checklistTemplate.notFound')) throw err
+        onGone()
+      }
+    }, (e.nativeEvent as SubmitEvent).submitter)
     if (err) failed(err)
   }
 
@@ -239,12 +251,13 @@ function TemplateForm({ row, template, onSaved }: {
                   {/* No inputMode: the decimal keypad has no minus sign on some phones. dir="ltr" keeps the minus before the number in Hebrew. */}
                   <label className="num">
                     {t('minValue')}
-                    <input type="number" dir="ltr" min={-1_000_000} max={1_000_000} step={0.01} value={it.min} onInput={range}
+                    {/* onInvalid too: the message names the item's number now, not the one it had when typed. */}
+                    <input type="number" dir="ltr" min={-1_000_000} max={1_000_000} step={0.01} value={it.min} onInput={range} onInvalid={range}
                       onChange={(e) => setItem(i, { min: e.target.value })} {...named(t('minValue'))} {...tie('range', undefined, it.key)} />
                   </label>
                   <label className="num">
                     {t('maxValue')}
-                    <input type="number" dir="ltr" min={-1_000_000} max={1_000_000} step={0.01} value={it.max} onInput={range}
+                    <input type="number" dir="ltr" min={-1_000_000} max={1_000_000} step={0.01} value={it.max} onInput={range} onInvalid={range}
                       onChange={(e) => setItem(i, { max: e.target.value })} {...named(t('maxValue'))} {...tie('range', undefined, it.key)} />
                   </label>
                 </>

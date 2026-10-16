@@ -180,6 +180,7 @@ const en = {
   allTasksCount: 'All tasks ({{n, number}})',
   checklists: 'Checklists',
   newChecklist: 'New checklist',
+  editHeading: 'Edit <n>{{name}}</n>',
   noChecklists: 'No checklists yet. Create one to use on your cars.',
   itemCount_zero: 'No items',
   itemCount_one: '{{count, number}} item',
@@ -398,7 +399,6 @@ const en = {
       limitReached: 'A car can have up to 500 to-dos. Delete some done ones first.',
       invalidDate: "The date must be today. Check your device's date and try again.",
       futureDate: "The date can't be in the future.",
-      invalidStatus: "This to-do's status isn't valid. Reload the page and try again.",
     },
     checklistRunItem: {
       notFound: 'This run was deleted. The history has been updated.',
@@ -413,6 +413,12 @@ const en = {
     },
     dashboard: {
       invalidDate: "The date must be today. Check your device's date and try again.",
+    },
+    date: {
+      tooEarly: "The date can't be before {{minDate}}.",
+    },
+    concurrency: {
+      conflict: 'This was changed at the same time somewhere else. Reload and try again.',
     },
   },
 }
@@ -592,6 +598,7 @@ const he: typeof en = {
   allTasksCount: 'כל המשימות (⁦{{n, number}}⁩)',
   checklists: 'רשימות בדיקה',
   newChecklist: 'רשימת בדיקה חדשה',
+  editHeading: 'עריכה של <n>{{name}}</n>',
   noChecklists: 'עדיין אין רשימות בדיקה. צרו רשימה כדי להשתמש בה ברכבים שלכם.',
   itemCount_zero: 'אין פריטים',
   itemCount_one: 'פריט אחד',
@@ -805,7 +812,6 @@ const he: typeof en = {
       limitReached: 'אפשר לשמור עד ⁦500⁩ מטלות לרכב. מחקו קודם כמה מטלות שבוצעו.',
       invalidDate: 'התאריך חייב להיות היום. בדקו את התאריך במכשיר ונסו שוב.',
       futureDate: 'התאריך לא יכול להיות בעתיד.',
-      invalidStatus: 'הסטטוס של המטלה לא תקין. רעננו את הדף ונסו שוב.',
     },
     checklistRunItem: {
       notFound: 'הבדיקה הזו נמחקה, וההיסטוריה עודכנה.',
@@ -820,6 +826,12 @@ const he: typeof en = {
     },
     dashboard: {
       invalidDate: 'התאריך חייב להיות היום. בדקו את התאריך במכשיר ונסו שוב.',
+    },
+    date: {
+      tooEarly: 'התאריך לא יכול להיות לפני {{minDate}}.',
+    },
+    concurrency: {
+      conflict: 'הנתונים שונו במקביל במקום אחר. רעננו את הדף ונסו שוב.',
     },
   },
 }
@@ -857,6 +869,7 @@ export function errorMessage(err: unknown, n?: number) {
     n: n ?? (problem.index == null ? undefined : problem.index + 1),
     maxReading: d.maxReading,
     maxInterval: d.maxInterval,
+    minDate: problem.minDate && fmtDate(problem.minDate, i18n.resolvedLanguage),
     defaultValue: i18n.t('errors.generic'),
   })
 }

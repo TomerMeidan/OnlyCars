@@ -10,6 +10,7 @@ import { useRow } from '../useRow'
 // The form field each API error is about, so the message is tied to that field (item fields also by the error's row index).
 const fieldOf: Record<string, string> = {
   'serviceRecord.futureDate': 'date',
+  'date.tooEarly': 'date',
   'odometer.invalidValue': 'odometerKm',
   'odometer.lowerThanPrevious': 'odometerKm',
   'odometer.higherThanNext': 'odometerKm',
@@ -206,6 +207,7 @@ function RecordForm({ car, url, row, record, onSaved, onGone, onTaskGone }: {
     if (isGoneRecord(err)) onGone?.()
     else if (err) {
       // A ticked task was deleted meanwhile: reload the list so its checkbox goes; the other ticks stay (keyed by task id).
+      // shortcut: onTaskGone reloads the car, and if that reload fails the error page replaces this open form; keep the form if it is ever reported.
       if (err instanceof ApiError && err.problem.code === 'maintenanceTask.notFound') { loadTasks(); onTaskGone?.() }
       setNeedsConfirm(isOrderError(err))
       failed(err)

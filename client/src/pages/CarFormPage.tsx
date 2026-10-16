@@ -2,7 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { errorMessage } from '../i18n'
 import { useNavigate, useParams } from 'react-router-dom'
-import { api, carNotFound, fuelTypes, isGuid, type FuelType, type Vehicle, type VehicleInput } from '../api'
+import { api, carNotFound, fuelTypes, isGuid, localToday, type FuelType, type Vehicle, type VehicleInput } from '../api'
 import { useDistance } from '../auth'
 import { usePage } from '../usePage'
 import { CarError } from './CarPage'
@@ -42,7 +42,7 @@ export default function CarFormPage() {
       purchaseDate: str('purchaseDate'),
       purchasePrice: num('purchasePrice'),
       photoUrl: car?.photoUrl ?? null,
-      ...(!id && { initialOdometerKm: initialOdometer == null ? null : d.toKm(initialOdometer) }),
+      ...(!id && { initialOdometerKm: initialOdometer == null ? null : d.toKm(initialOdometer), readingDate: localToday() }),
     }
     try {
       await api(id ? `/vehicles/${encodeURIComponent(id)}` : '/vehicles', id ? 'PUT' : 'POST', body)

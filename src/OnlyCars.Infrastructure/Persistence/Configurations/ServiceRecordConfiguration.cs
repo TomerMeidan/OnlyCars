@@ -12,8 +12,8 @@ public class ServiceRecordConfiguration : IEntityTypeConfiguration<ServiceRecord
         builder.Property(r => r.TotalCost).HasColumnType("decimal(12,2)");
         builder.Property(r => r.ShopName).HasMaxLength(ServiceRecord.MaxShopNameLength);
         builder.Property(r => r.Notes).HasMaxLength(ServiceRecord.MaxNotesLength);
-        // Two simultaneous voids: the second save matches no row and becomes serviceRecord.alreadyVoided (L34).
-        builder.Property(r => r.IsVoided).IsConcurrencyToken();
+        // Every void and edit sets UpdatedAt, so whichever of two simultaneous voids/edits saves second matches no row (L34).
+        builder.Property(r => r.UpdatedAt).IsConcurrencyToken();
 
         builder.HasOne(r => r.Vehicle)
             .WithMany()

@@ -1,7 +1,7 @@
 # OnlyCars: Requirements Status
 
-**Audit date:** 2026-10-16 (eighteenth audit, short sign-off of MVP5-C, a flagged checklist item becomes a to-do; backend committed in `c232d4f`, frontend and fixes not committed yet)
-**Overall:** MVP steps 1 to 4 are complete apart from the car photo and attachments (both blocked on R2). Step 5: checklists are done apart from photos on runs (R2), including flagged items becoming per-car to-dos. Tires, reports and notifications are not started. Next: LOW-3 (the Low backlog). No deployment tickets until the owner asks.
+**Audit date:** 2026-10-16 (nineteenth audit, short sign-off of LOW-3, the Low backlog L27 to L65; backend committed in `5326e14`, frontend and fixes not committed yet)
+**Overall:** MVP steps 1 to 4 are complete apart from the car photo and attachments (both blocked on R2). Step 5: checklists are done apart from photos on runs (R2), including flagged items becoming per-car to-dos. Tires, reports and notifications are not started. LOW-3 (the Low backlog L27 to L65) is signed off. Next: tires (MVP5-D). No deployment tickets until the owner asks.
 
 | Status | Count |
 |---|---|
@@ -12,10 +12,10 @@
 | Deferred | 6 |
 | **Total** | **57** |
 
-How this was checked (eighteenth audit, short sign-off of MVP5-C per decisions.md "Faster pipeline (owner)"; I re-ran no test suites and no browser scripts):
-- Reported by other agents, not re-run by me: `dotnet test` 422 of 422; client build clean; lint 0 errors (one new warning, L63); code review with no High, user scoping verified on every issue endpoint; one Medium fixed (a numeric undefined `status` on `PUT /api/issues/{id}` now returns 400 `issue.invalidStatus`, `src/OnlyCars.Application/Issues/IssueService.cs:85-88`, with a test, an en/he string and a contract row); the Hebrew reviewer reworded `errors.issue.limitReached`.
-- **No browser QA.** The owner stopped the ui-tester and said no ui-tester jobs until they say otherwise (decisions.md, "No ui-tester jobs (owner)"). MVP5-C shipped without a QA pass. The smoke steps were written (`client/ui-tests/smoke.mjs:2796` `issue-from-flag`, `:2850` `issue-manual`, `:2999` `dashboard-open-issues`), but no smoke result was reported to me.
-- I checked in code: the endpoints (`src/OnlyCars.Api/Controllers/IssuesController.cs:15-27`, `[RequestSizeLimit(65_536)]` at `:12`), the service (`src/OnlyCars.Application/Issues/IssueService.cs`), the migration (`src/OnlyCars.Infrastructure/Persistence/Migrations/20261016031303_AddIssues.cs`), the tests (`tests/OnlyCars.Tests/IssueTests.cs`), the To-dos section (`client/src/pages/IssuesSection.tsx`, on the car page at `client/src/pages/CarPage.tsx:87`), Create to-do in the run history (`client/src/pages/ChecklistsSection.tsx:429-442`) and the dashboard count (`client/src/pages/CarsPage.tsx:161-162`).
+How this was checked (nineteenth audit, short sign-off of LOW-3 per decisions.md "Faster pipeline (owner)"; I re-ran no test suites and no browser scripts):
+- Reported by other agents, not re-run by me: `dotnet test` 440 of 440; client build clean; lint 0 errors and 0 warnings; smoke 78 of 78 (the engineer's own run); code review with no High and every row L27 to L65 addressed; 2 Mediums and 1 Low fixed in the fix round; the Hebrew reviewer reworded `concurrency.conflict`.
+- **No browser QA.** The owner stopped the ui-tester (decisions.md, "No ui-tester jobs (owner)"). LOW-3 is the second ticket shipped without a QA pass.
+- I checked in code: the service record concurrency token (`src/OnlyCars.Infrastructure/Persistence/Configurations/ServiceRecordConfiguration.cs:16`) and its empty migration, the RTL run value (`client/src/pages/ChecklistsSection.tsx:469-476`), the `date.tooEarly` field mapping (`client/src/pages/RunPage.tsx:15`, `client/src/pages/ServiceHistory.tsx:13`), and the new car form's local date (`client/src/pages/CarFormPage.tsx:45`).
 - The notes from earlier audits are in git history.
 
 ## 1. Vehicles
@@ -69,11 +69,11 @@ How this was checked (eighteenth audit, short sign-off of MVP5-C per decisions.m
 
 | Requirement | Status | Evidence | What's missing |
 |---|---|---|---|
-| Tire sets: brand, model, size, season, purchase year, DOT code | **Missing** | none | Everything (MVP step 5) |
-| Which set is mounted on which car, with mount and unmount dates | **Missing** | none | Everything |
-| Km driven per set (auto-calculated) | **Missing** | none | Everything |
-| Tire pressure log, tread depth log, rotation tracking | **Missing** | none | Everything |
-| Storage notes for the off-season set | **Missing** | none | Everything |
+| Tire sets: brand, model, size, season, purchase year, DOT code | **Missing** | none | Everything; next ticket MVP5-D |
+| Which set is mounted on which car, with mount and unmount dates | **Missing** | none | Everything; MVP5-D |
+| Km driven per set (auto-calculated) | **Missing** | none | Everything; MVP5-D |
+| Tire pressure log, tread depth log, rotation tracking | **Missing** | none | Everything; MVP5-E |
+| Storage notes for the off-season set | **Missing** | none | Everything; MVP5-D (the set's Notes) |
 
 ## 7. Custom Inspection Checklists
 
@@ -83,7 +83,7 @@ How this was checked (eighteenth audit, short sign-off of MVP5-C per decisions.m
 | Items: checkbox, numeric or text | **Done** | MVP5-A: Check, Number (unit, min, max) and Text items, reorder with up and down buttons, in-place update keeping item ids (`ChecklistTemplateService.cs:32,62`); smoke `checklist-create`, `checklist-edit` (`smoke.mjs:2418,2498`); Hebrew strings (`i18n.ts:609`) | none |
 | Per-checklist schedule: by km, by time, or manual only | **Done** | MVP5-B: `VehicleChecklist` with optional `IntervalKm`/`IntervalDays` (both empty is manual only), status as tasks with 10% due soon (`VehicleChecklistsController.cs`, `ChecklistRunTests.cs`); the Checklists section on `/cars/:id` with Add, Edit (intervals, on/off) and Remove (`ChecklistsSection.tsx:18,138`); smoke `checklist-attach` (`smoke.mjs:2610`) in 4 setups | none |
 | Run a checklist: tick items, add notes or photos, flag issues | **Partial** | MVP5-B: the run page (`RunPage.tsx:32`) with OK / Not OK, numbers, text, hand flags, live auto flags with the reason, notes, and an odometer under the date-order rules; flags computed on the server; smoke `checklist-run` (`smoke.mjs:2672`) | Photos (wait for R2) |
-| Failed items can create a to-do or a maintenance task | **Done** (no browser QA) | MVP5-C: a flagged item in the run history gets Create to-do, prefilled and editable (`client/src/pages/ChecklistsSection.tsx:429-442`); one to-do per run item, also under a race (409 `issue.duplicate`); run delete keeps the to-do and clears its source (`IssueService.cs`, `IssueTests.cs`). Smoke step `issue-from-flag` (`smoke.mjs:2796`). A to-do, not a maintenance task, as decided (decisions.md, "Flagged checklist items, MVP5-C"). | Verified from code and reported tests only; no browser QA (owner stopped the ui-tester). A stale "To-do created" after its to-do is deleted on the same page (L60). |
+| Failed items can create a to-do or a maintenance task | **Done** (no browser QA) | MVP5-C: a flagged item in the run history gets Create to-do, prefilled and editable (`client/src/pages/ChecklistsSection.tsx:429-442`); one to-do per run item, also under a race (409 `issue.duplicate`); run delete keeps the to-do and clears its source (`IssueService.cs`, `IssueTests.cs`). Smoke step `issue-from-flag` (`smoke.mjs:2796`). A to-do, not a maintenance task, as decided (decisions.md, "Flagged checklist items, MVP5-C"). | Verified from code and reported tests only; no browser QA (owner stopped the ui-tester). The stale "To-do created" after its to-do is deleted (L60) was fixed in LOW-3. |
 | Run history per car | **Done** | MVP5-B: collapsed history per checklist on `/cars/:id`, newest first; each run expands to its label snapshots, values and flags; Delete with confirm and recompute (`ChecklistsSection.tsx:287,343`); smoke `checklist-run-history` (`smoke.mjs:2771`) | none |
 
 ## 8. Costs and Reports
@@ -162,14 +162,15 @@ How this was checked (eighteenth audit, short sign-off of MVP5-C per decisions.m
 | Deploy gate | **SEC-1 signed off.** Nothing else blocks a first deploy except the owner's Azure account. The owner said not to deploy yet (decisions.md, 2026-10-15, "When to deploy"), so no deployment tickets are queued. |
 | 3. Service history with costs | **Complete apart from attachments (blocked on R2). MVP3-A, MVP3-B, MVP3-C and MVP3-D are signed off.** Working end to end in EN and HE: the service history on `/cars/:id`, recording a past service (date, odometer, shop or DIY, cost, notes, several tasks, parts and labour) with the date-order rules, editing everything on a record (shop, cost, notes, items, date, odometer and tasks, with the car's odometer and the tasks' last done following), deleting any record, and a `/history` page that filters and searches all cars. LOW-1 (the first Low batch) is signed off too. |
 | 4. Dashboard with due/overdue status | **Complete. MVP4-A and LOW-2 are signed off; "Start a checklist" came with MVP5-B.** The dashboard on `/`: overdue and due-soon counts, this month's spend linking to `/history`, and per-car cards with the next 3 tasks, one-tap Mark done with Undo, quick odometer entry and Start a checklist, in EN and HE. |
-| 5. Checklists, tires, reports, notifications | **Started. Checklists are done apart from photos on runs (R2): MVP5-A (templates and items), MVP5-B (schedules on cars, runs with flags, run history, Start a checklist) and MVP5-C (a flagged item becomes a per-car to-do; shipped without browser QA) are signed off.** Next: LOW-3, then tires (MVP5-D), reports and notifications. |
+| 5. Checklists, tires, reports, notifications | **Started. Checklists are done apart from photos on runs (R2): MVP5-A (templates and items), MVP5-B (schedules on cars, runs with flags, run history, Start a checklist) and MVP5-C (a flagged item becomes a per-car to-do; shipped without browser QA) are signed off. LOW-3 (the Low backlog) is signed off.** Next: tires (MVP5-D sets and mounts, MVP5-E pressure, tread and rotations), then reports and notifications. |
 
 ## Ticket queue
 
 | Order | Ticket | Who | State |
 |---|---|---|---|
-| 1 | LOW-3: the Low backlog (L27 to L65) | BE, then FE | **Next** (written below) |
-| 2 | MVP5-D: tires (spec 6), split when written | BE, then FE | After LOW-3 |
+| 1 | MVP5-D: tire sets, mounts and km per set (spec 6 bullets 1, 2, 3, 5) | BE, then FE | **Next** (written below) |
+| 2 | MVP5-E: tire pressure, tread depth and rotations (spec 6 bullet 4) | BE, then FE | After MVP5-D |
+| 3 | LOW-4: the Low backlog (L66 to L72) | BE, then FE | After MVP5-E |
 
 ## Signed-off tickets
 
@@ -253,115 +254,89 @@ How this was checked (eighteenth audit, short sign-off of MVP5-C per decisions.m
   - **Not verified in a browser:** the owner stopped the ui-tester (decisions.md, "No ui-tester jobs (owner)"). AC5 to AC11 (flows, errors, Hebrew/RTL layout, 390px, 44px targets, focus) are signed off from code, review and the smoke steps the engineer wrote; no smoke result was reported to me.
   - Accepted (decisions.md, "MVP5-C sign-off"): the new code `issue.invalidStatus`, until L65 replaces it. The new Lows are L60 to L65.
 
+- **LOW-3 (backend commit `5326e14`; the frontend and fixes are not committed yet): signed off 2026-10-16, without browser QA.** Short sign-off under "Faster pipeline (owner)"; I re-ran no suites. Closes L27 to L65 (L43 and L49 were closed earlier).
+  - Reported evidence: `dotnet test` 440 of 440; client build clean; lint 0 errors and 0 warnings; smoke 78 of 78 (the engineer's own run; it now asserts the number-then-unit order of run values); code review with no High and every row L27 to L65 addressed; the Hebrew reviewer reworded `concurrency.conflict`.
+  - Fix round, 2 Mediums and 1 Low fixed: (1) the service record concurrency token is now `UpdatedAt` (`src/OnlyCars.Infrastructure/Persistence/Configurations/ServiceRecordConfiguration.cs:16`), so an edit racing a void is a 409 `concurrency.conflict` and void racing void stays `serviceRecord.alreadyVoided`; empty migration `20261016081611_ServiceRecordUpdatedAtToken`, a new test. (2) The run value's number and unit order in RTL is restored with separate `bdi`s (`client/src/pages/ChecklistsSection.tsx:469-476`). (3) `date.tooEarly` is mapped to the date field on the run page (`client/src/pages/RunPage.tsx:15`) and in the service form (`client/src/pages/ServiceHistory.tsx:13`).
+  - I checked in code: the three fixes above; the new car form always sends the local date (`client/src/pages/CarFormPage.tsx:45`, `readingDate: localToday()`), so it can't hit `date.tooEarly` and needs no field mapping (answers part of the new L68).
+  - **Not verified in a browser:** the owner stopped the ui-tester. AC7 to AC12 (focus, layout at 390px, 44px text links, Hebrew/RTL) are signed off from code, review and smoke.
+  - Accepted without code (decisions.md, "LOW-3 sign-off"): the contract's 413 example has a stale title; `client/.oxlintrc.json` lists `useAuth` and `useDistance` in `allowExportNames` for two pre-existing warnings instead of moving them; a no-op service record edit bumps `UpdatedAt` (L70).
+  - The new Lows are L66 to L72.
+
 ## Low issues backlog
 
-Every Low finding from QA and review lands here (decisions.md, "Faster pipeline (owner)"). They are fixed together in a batch ticket LOW-n about every 3 tickets. LOW-1 closed L1 to L12; LOW-2 closed L13 to L26 (all fixed). L43 was done inside MVP5-B and L49 closed by its fix round. LOW-3 takes what is below (L27 to L65, apart from L43 and L49).
+Every Low finding from QA and review lands here (decisions.md, "Faster pipeline (owner)"). They are fixed together in a batch ticket LOW-n about every 3 tickets. LOW-1 closed L1 to L12, LOW-2 closed L13 to L26, LOW-3 closed L27 to L65 (those rows are in git history). Open:
 
 | # | From | Issue | Area |
 |---|---|---|---|
-| L27 | LOW-2 review | A failed dashboard reload after a successful Undo drops focus to `body`: the error branch still runs the `then` (`client/src/pages/CarsPage.tsx:36`). | FE, `/` |
-| L28 | LOW-2 review | After `taskGone`, a failed car reload replaces the whole page, including the open edit form (`ServiceHistory` `onTaskGone` calls the `CarPage` load). Keep the form, or at least add a `shortcut:` comment. | FE, `/cars/:id` |
-| L29 | LOW-2 review | A dashboard card's archive error is not cleared on reload, unlike the L24 row errors. | FE, `/` |
-| L30 | LOW-2 review | Archive can be sent twice: `onArchived` is not awaited, so the button is enabled again too early. | FE, `/` |
-| L31 | LOW-2 review (pre-existing) | Focus goes to `body` after a successful archive while Show archived is off (the card disappears). | FE, `/` |
-| L32 | LOW-2 review | (a) `CarsPage.tsx:30` needs a one-line comment saying why the `then` exists (N2). (b) Any other load that starts during an in-flight Undo can still bring back a stale Undo bar; only Show archived is handled (M1). Fix once, for every load path. | FE, `/` |
-| L33 | LOW-2 QA | Car page Undo leaves focus on `body` for one frame: `TasksSection.tsx` (~109) moves focus in `useEffect`, the dashboard in `useLayoutEffect`. Use `useLayoutEffect` there too. | FE, `/cars/:id` |
-| L34 | LOW-2 QA | Two simultaneous void requests on one service record give one 500 instead of a 409 `serviceRecord.alreadyVoided` (concurrency; no data damage). | BE |
-| L35 | LOW-2 QA | Stale QA scripts: `qa-mvp3a.mjs` clicks the removed `button.undo-service` (update or retire it); `qa-mvp4a.mjs`'s offline check aborts only one request, but StrictMode sends two (`qa-low2-offline.mjs` shows the app is fine); `qa-low2.mjs` still has a debug log. | QA scripts |
-| L36 | LOW-2 engineer | A new car's first reading is dated with the server's UTC date (`src/OnlyCars.Application/Vehicles/VehicleService.cs:71`), other readings with the client's local date, so avg km/day can be one day off near midnight (smoke works around it). Use the client's local date, as decided for quick-add (2026-10-15). | BE + FE |
-| L37 | MVP5-A + MVP5-B security | No request body size limit on the checklist endpoints; add `[RequestSizeLimit(65_536)]` as on `AuthController`. The other controllers have the same gap, and there is no app-wide `MaxRequestBodySize`: set one in Kestrel and fix them all at once. Also cap or page `GET /api/vehicle-checklists/{id}/runs` (unpaged, uncapped). | BE |
-| L38 | MVP5-A security | Concurrency on checklist templates: (a) the 100-template cap can be exceeded by simultaneous POSTs; (b) simultaneous PUTs on one template can give a 500 (`DbUpdateConcurrencyException` unmapped). Map it to a 409 with a translated code; fix together with L34. | BE |
-| L39 | MVP5-A review + decision | Focus after deleting a checklist (`ChecklistsPage.tsx:92`): (a) when the deleted row was the last one and others remain, focus the first row's Edit (decisions.md, "MVP5-A sign-off"); (b) with the New form open, `main button.add` is not there and focus drops to `body`; add `main h1` as the last fallback. | FE, `/checklists` |
-| L40 | MVP5-A review | The client's re-sort after Save may differ from the server's order (name, then creation time). Match it, or add a `shortcut:` comment. | FE, `/checklists` |
-| L41 | MVP5-A review | The browser's min/max validity message keeps an old item number after an item is moved. | FE, `/checklists` |
-| L42 | MVP5-A review | Edit-save on a template deleted elsewhere leaves a dead row: on `notFound`, close the form and call `onDeleted`. | FE, `/checklists` |
-| L43 | MVP5-A review | Shared item-row error and focus hook: **done** in MVP5-B (`client/src/useItemErrors.ts`). | FE |
-| L44 | MVP5-A review | Test gaps: backend, a Check item with a whitespace-only unit; smoke, an item-index error after a reorder, and the browser message for an empty label. | Tests |
-| L45 | MVP5-A review | Nits: a CSS comment above the wrong rule (`index.css` ~276); `limit()` pulls a React type into `api.ts` (leave unless a forms module appears). | FE |
-| L46 | MVP5-A QA | A Latin checklist name in Hebrew puts the name and count on the left; add `dir="auto"` to `.name` in `ChecklistsPage.tsx`. | FE, `/checklists` |
-| L47 | MVP5-A QA | The New and Edit forms can be open together with nothing telling them apart; give each form a heading ("New checklist" or "Edit <name>"). | FE, `/checklists` |
-| L48 | MVP5-A + MVP5-B QA (app-wide) | Text-link buttons are 44px tall but 28 to 40px wide, including the new checklist and run-history buttons; give the shared text-button style a 44px minimum width. | FE, all pages |
-| L49 | MVP5-A QA | **Closed** in MVP5-B: the flaky Hebrew logout was the `saveSettings` race in `auth.tsx`, fixed in the fix round. QA scripts added: `qa-mvp5a.mjs`, `qa-mvp5a-logout.mjs`, `qa-mvp5a-zoom.mjs`. | Smoke |
-| L50 | MVP5-B security | A run date has no lower bound: 0001-01-01 is accepted and also adds an odometer reading on that date. Add a lower bound (for example 1900-01-01, or the car's purchase year) to runs, and check the same on service records and readings. | BE |
-| L51 | MVP5-B security | Two simultaneous attaches of one template to one car give a 500 instead of 409 `vehicleChecklist.duplicate` (the unique index holds; a `shortcut:` comment exists). Map the unique-key violation to the 409; fix together with L34 and L38. | BE |
-| L52 | MVP5-B review | No test for deleting a run whose odometer reading is the car's only reading (the code keeps it as Manual). | Tests |
-| L53 | MVP5-B review | The run form's live flags use the Min/Max loaded when the form opened, while the server flags with the template at save time. Add a `shortcut:` comment (the `itemsChanged` check covers added and removed items, not changed limits). | FE, run page |
-| L54 | MVP5-B review | Nits: blank lines at `TasksSection.tsx:8-9`; a mid-file import at `items.test.mjs:25`; a redundant `HasIndex(TemplateId)` at `VehicleChecklistConfiguration.cs:26`. | FE, BE |
-| L55 | MVP5-B QA | On the run page, Date and Odometer sit side by side and misaligned even at 390px; AC12 asked for one column. Stack them on narrow screens and align them on wide ones. | FE, run page |
-| L56 | MVP5-B QA | The `qa-*.mjs` scripts still check overflow with `innerWidth`; smoke now uses the viewport width (it caught the attach-select overflow). Update them or retire the old ones (with L35). | QA scripts |
-| L57 | MVP5-B QA | Test gaps: no real (unmocked) `itemsChanged` test (edit the template while the run form is open, then save); no test that a past run older than the last run leaves the last run and status alone in the UI. | Tests |
-| L58 | MVP5-B frontend | There is no `GET /api/vehicle-checklists/{id}`; the run page loads the car's whole checklist list. Fine at today's sizes; add a `shortcut:` comment, and the endpoint if the list grows. | BE + FE |
-| L59 | MVP5-B frontend | After Save and then Back, the car page appears twice in the browser history (a side effect of the replace navigation that fixed the blank form). Make Save return with `navigate(-1)` when the run page was opened from the car page, or accept it. | FE, run page |
-| L60 | MVP5-C review | "To-do created" in the run history goes stale when that to-do is deleted on the same page: clicking it fails `focusIssue` and silently reloads (`client/src/pages/ChecklistsSection.tsx:437-438`). Show the `issueGone` note and turn the button back into Create to-do. | FE, `/cars/:id` |
-| L61 | MVP5-C review | The RunHistory note is not cleared when a run is deleted (`client/src/pages/ChecklistsSection.tsx:301`, `:351-356`). | FE, `/cars/:id` |
-| L62 | MVP5-C review | The request-size test asserts nothing (`tests/OnlyCars.Tests/IssueTests.cs:363-364`). Make it assert a 413, or delete it. | Tests |
-| L63 | MVP5-C review | New lint warning `react(only-export-components)`: `focusIssue` is exported from `client/src/pages/IssuesSection.tsx:16`. Move it to a plain module. | FE |
-| L64 | MVP5-C review | The answer-text formatting at `client/src/pages/ChecklistsSection.tsx:444-447` duplicates `RunValue`; share one helper. | FE |
-| L65 | MVP5-C review | `JsonStringEnumConverter` (`src/OnlyCars.Api/Program.cs:16`) also binds numbers, so an undefined numeric value (such as `fuelType: 99`) can reach the database on any enum field: `FuelType`, `TaskCategory`, `ChecklistItemType`, `DistanceUnit`, `Locale`, `Theme`. Only `IssueStatus` has a service check (`issue.invalidStatus`). | BE |
+| L66 | LOW-3 review | Two simultaneous requests that hit a unique key still give a 500 instead of a 409: the same VIN on two cars (`Vehicle(UserId, Vin)`), and two registrations with the same email. Map them in the same place as L51. | BE |
+| L67 | LOW-3 review | `date.tooEarly` (before 1900-01-01) is not applied to a to-do's done date (`ResolvedAt`) or a task's last done date. Apply it there too. | BE (+ FE field mapping) |
+| L68 | LOW-3 review | Smoke has no step that triggers `date.tooEarly` or `concurrency.conflict`, and no step renders a Hebrew unit on a run value. (The new car form needs no `date.tooEarly` mapping: it always sends today's local date.) | Smoke |
+| L69 | LOW-3 review | Concurrency is tested only on the EF InMemory provider, not on real SQL Server. Add one SQL Server test, or accept. | Tests |
+| L70 | LOW-3 review | A service record edit that changes nothing still bumps `UpdatedAt`, so a void at the same moment gets a 409 (the user retries). Skip the save when nothing changed, or accept. | BE |
+| L71 | LOW-3 review | The L59 shortcut: after Save on the run page returns with `navigate(-1)`, if the car page then fails to load, the "Run saved" note may be stale. | FE, run page |
+| L72 | LOW-3 housekeeping | The local dev DB has leftover test users (`low3-*`, `lowcheck-*`, `ui-*`, and `sec-*` from SEC-1). Housekeeping only; clear them once delete-account exists, or with a one-off script. | Dev DB |
 
 ## Next ticket
 
-### LOW-3: The Low backlog (L27 to L65)
+### MVP5-D: Tire sets, which set is on which car, and km per set
 
-**Goal:** As a user, the app behaves the same way everywhere: concurrent and malformed requests get a clear message instead of a server error, dates and enum values are checked, focus never drops to the page body, and the last rough edges on the dashboard, car page, checklists and run page are gone.
+**Goal:** As a user, I can keep a list of my tire sets (brand, model, size, season, purchase date, DOT code, storage notes), record which set is on which car and when it was swapped, and see how many km each set has driven.
 
-**Spec:** section 12 (privacy and security, Hebrew and English, mobile-first), plus the polish of sections 7 and 10. No new feature.
+**Spec:** section 6 bullets 1, 2, 3 and 5; Part 2 `TireSet` and `TireMount`; the constraint "at most one open TireMount per vehicle and per tire set". Bullet 4 (pressure, tread and rotation: `TireMeasurement`, `TireRotation`) is MVP5-E.
 
-**Binding decisions:** decisions.md "Faster pipeline (owner)", "No ui-tester jobs (owner)", "LOW-3 choices" (every choice below), "MVP5-A sign-off" (focus after Delete), the MVP1-C focus and Escape rules, "Same-date odometer readings, revised", the quick-add local date (2026-10-15).
-
-Every row below is in the "Low issues backlog" table; read its full text there. L43 and L49 are already closed.
+**Binding decisions:** decisions.md "Tires scope and split, MVP5-D (delegated)" (every rule below), "No ui-tester jobs (owner)", "Faster pipeline (owner)", "LOW-3 choices" (`date.tooEarly`, the 64 KB limit, enums by name, `concurrency.conflict`), the km/miles rules (stored in km, shown in the user's unit), the MVP1-C focus and Escape rules.
 
 **Scope**
 
-*Backend (backend-engineer, runs first; publishes `docs/contracts/LOW-3.md` listing every changed status code and the new codes):*
-- **L65 (root fix):** `new JsonStringEnumConverter(allowIntegerValues: false)` in `src/OnlyCars.Api/Program.cs:16`, so a numeric enum value anywhere is a 400 `http.400`. Remove the now-unreachable `issue.invalidStatus` check (`IssueService.cs:85-88`) and its en/he string; its test asserts `http.400` instead; update the MVP5-C contract row. First confirm the client never sends an enum as a number (grep `client/src/api.ts`).
-- **L37:** an app-wide Kestrel `MaxRequestBodySize` of 64 KB (413 `http.413`); the per-controller attributes can stay. Cap `GET /api/vehicle-checklists/{id}/runs` at the newest 200 runs, with a `shortcut:` comment (no paging).
-- **L34, L38, L51 (concurrency):** map `DbUpdateConcurrencyException` and unique-key violations to 409 in one place: L34 to `serviceRecord.alreadyVoided`, L51 to `vehicleChecklist.duplicate`, L38(b) to a new `concurrency.conflict` ("This was changed at the same time somewhere else. Reload and try again."). L38(a) (the 100-template cap passed by simultaneous creates) is accepted with a `shortcut:` comment.
-- **L50:** dates before 1900-01-01 are rejected on checklist runs, service records (create and edit) and odometer readings (create and edit), with one new shared code `date.tooEarly` (400).
-- **L36:** a new car's first reading takes the client's local date, the way quick-add does (same field name and the same future-date check), instead of the server's UTC date. The client sends it (FE part).
-- **L58:** a `shortcut:` comment only (no new endpoint).
-- **Tests:** L44 (backend half: a Check item with a whitespace-only unit), L52 (deleting a run whose reading is the car's only one), L62 (the request-size test asserts a 413), and one test per row above.
-- **Nits:** L54 (backend half: the redundant `HasIndex(TemplateId)`, which needs a migration only if EF produces one; if it does, leave the index and drop the nit).
+*Backend (backend-engineer, runs first; publishes `docs/contracts/MVP5-D.md`):*
+- **Entities** (Part 2 names; Id, CreatedAt, UpdatedAt on both; migration `AddTires`):
+  - `TireSet`: `UserId`, `Brand` (required, 1 to 50, trimmed), `Model` (optional, up to 50), `Size` (optional, up to 30, free text such as "205/55 R16"), `Season` (enum `Summer`, `Winter`, `AllSeason`, required), `PurchaseDate` (optional date, not in the future, not before 1900-01-01), `DotCode` (optional, up to 20, free text, no format check), `Notes` (optional, up to 1,000; storage notes go here). Up to 50 sets per user (`tireSet.limitReached`).
+  - `TireMount`: `TireSetId`, `VehicleId`, `MountedAt` (date), `MountOdometerKm`, `UnmountedAt` (nullable), `UnmountOdometerKm` (nullable). Filtered unique indexes: one open mount per vehicle and one per tire set (`UnmountedAt IS NULL`); an index on `(TireSetId, MountedAt)`. Cascade delete from `TireSet`. Up to 500 mounts per set.
+- **Endpoints** (all scoped to the caller; another user's ids are 404):
+  - `GET /api/tire-sets`: the caller's sets, sorted by brand, then model, then creation time, each with `kmDriven` (in km), the open mount if any (`vehicleId`, the car's nickname, `mountedAt`, `mountOdometerKm`) and `mountCount`.
+  - `POST /api/tire-sets`, `PUT /api/tire-sets/{id}`, `DELETE /api/tire-sets/{id}` (hard delete with its mounts; the UI confirms).
+  - `GET /api/tire-sets/{id}/mounts`: the set's mounts, newest first, each with the car's nickname and the km for that mount.
+  - `GET /api/vehicles/{id}/tires`: the car's open mount (with its set) or null, plus the car's past mounts, newest first, capped at the newest 100 (`shortcut:` comment).
+  - `POST /api/vehicles/{id}/tires/mount` with `tireSetId`, `mountedAt`, `odometerKm`: mounts the set. If the car already has a set on, that mount is closed in the same transaction at the same date and odometer (a swap). Rejects: the set is on another car, 409 `tireMount.setMounted`; an archived car, 400 `tireMount.vehicleArchived`; a date before the open mount's `MountedAt` or before the latest `UnmountedAt` of the set or of the car, 400 `tireMount.overlap`; an odometer outside 0 to 10,000,000, 400 `odometer.invalidValue`; an odometer below the start of the mount being closed, 400 `tireMount.odometerBeforeMount`; a future date with the existing future-date code, and before 1900 `date.tooEarly`. Two simultaneous mounts hit the unique index and the loser gets 409 `concurrency.conflict`, not 500.
+  - `POST /api/vehicles/{id}/tires/unmount` with `unmountedAt`, `odometerKm`: closes the open mount (allowed on an archived car too, so a set is never stuck). Same date and odometer rules; no open mount is 404 `tireMount.notFound`.
+  - `DELETE /api/tire-mounts/{id}`: deletes one mount record, to fix a mistake (deleting the open mount leaves the car with no set).
+- **Km per set:** the sum over its mounts of `UnmountOdometerKm - MountOdometerKm`, plus for the open mount `max(0, vehicle.CurrentOdometerKm - MountOdometerKm)`. Computed on read, not stored.
+- Mount and unmount **do not** add odometer readings (decided; a `shortcut:` comment in the service).
+- **Tests:** CRUD and validation of every field; caller scoping on every endpoint; mount, swap, unmount, overlap, set on another car, archived car (mount rejected, unmount allowed); km with closed and open mounts, including a car odometer below the mount odometer (0, not negative); delete set cascades; delete mount; the 50-set and 500-mount caps; a numeric `season` is 400.
 
-*Frontend (frontend-engineer, builds against `docs/contracts/LOW-3.md`):*
-- **Dashboard `/`:** L27, L29, L30, L31, L32 (a and b: one guard for every load path during an in-flight Undo).
-- **Car page `/cars/:id`:** L28 (a `shortcut:` comment, keep as is), L33 (`useLayoutEffect`), L60 (stale "To-do created": show the `issueGone` note and turn the button back into Create to-do), L61 (clear the note on run delete), L63 (move `focusIssue` out of `IssuesSection.tsx`), L64 (one shared answer-text helper).
-- **`/checklists`:** L39 (a and b), L40 (match the server order: name, then creation time), L41, L42, L46 (`dir="auto"`), L47 (form headings "New checklist" and "Edit <name>").
-- **Run page:** L53 (a `shortcut:` comment), L55 (Date and Odometer stacked under 600px, aligned above), L59 (Save returns with `navigate(-1)` when the run page was opened from the car page; a replace navigation otherwise).
-- **App-wide:** L48 (text-link buttons at least 44px wide), L45 (the misplaced CSS comment; leave `limit()`), L54 (frontend nits), L36 (send the local date when adding a car), the new `concurrency.conflict` and `date.tooEarly` strings in `en` and `he`.
-- **Scripts and tests:** L35 and L56: delete every `client/ui-tests/qa-*.mjs` (they are in git history; smoke is the regression check while the ui-tester is stopped). L44 (smoke half) and L57 (smoke tests listed there).
+*Frontend (frontend-engineer, builds against `docs/contracts/MVP5-D.md`):*
+- **`/tires` page,** linked from the header next to Checklists: the list of sets (brand and model, size, season, purchase date, DOT code, "On <car> since <date>" or "In storage", km driven in the user's unit); New set and Edit forms with every field (season as a select, notes as a textarea labelled as storage notes); Delete with a confirm that says the set's history goes too. Each set can expand to its mount history (car, from, to, km).
+- **Car page `/cars/:id`:** a Tires section with the set on the car (or "No tire set on this car"); Mount, or Swap when a set is on (pick from the user's sets not on another car; the date defaults to today's local date, the odometer to the car's current odometer in the user's unit); Unmount (date and odometer); the car's past mounts with Delete (confirm). On an archived car only Unmount is shown.
+- Every error code above in `en` and `he`, shown on its field (`date.*` and `tireMount.overlap` on the date, odometer codes on the odometer).
 
 **Acceptance criteria**
-1. [BE] A numeric enum value (for example `fuelType: 99`, `status: 2`) on any endpoint returns 400 `http.400`; names still work; nothing in the client sends numbers.
-2. [BE] A body over 64 KB on any endpoint returns 413; the runs list returns at most 200 runs, newest first.
-3. [BE] Two simultaneous voids, two simultaneous attaches and two simultaneous template edits each give one success and one 409 with the codes above; no 500 in any of them (tests).
-4. [BE] A date before 1900-01-01 on a run, a service record or a reading returns 400 `date.tooEarly`; 1900-01-01 itself is accepted.
-5. [BE+FE] A car added at 00:30 local time in UTC+3 gets a first reading dated with the local date (test on the server; smoke no longer works around it).
-6. [BE] `dotnet test` passes in full, with tests for L44, L52, L62 and each row above; the L62 test asserts a 413.
-7. [FE] On the dashboard, after any action (Undo with a failed reload, archive with Show archived off, a failed archive), focus lands on a visible control, never `body`; archive can't be sent twice; a reload clears the old archive error; no stale Undo bar comes back from any load path.
-8. [FE] On the car page, clicking "To-do created" after that to-do was deleted shows the translated `issueGone` note and the item shows Create to-do again; deleting a run clears the run-history note; Undo moves focus in the same frame.
-9. [FE] On `/checklists`, deleting the last row while others remain focuses the first row's Edit; with the New form open, focus falls back to `main h1`; the order after Save matches a reload; each open form has its heading; a Latin name reads correctly in Hebrew; Edit-save on a template deleted elsewhere closes the form and removes the row.
-10. [FE] On the run page at 390px, Date and Odometer are stacked in one column; on wide screens they are aligned; after Save, a single Back returns to where the user was before the car page.
-11. [FE] Every text-link button is at least 44 by 44px (smoke checks it on each page).
-12. [FE] Hebrew and RTL: the two new error strings are in `he` and approved by the Hebrew reviewer; no layout change breaks RTL.
-13. [BE+FE] No regressions: build clean, lint 0 errors and 0 warnings, `dotnet test` passes, smoke passes in all 4 setups, and the `qa-*.mjs` files are gone.
+1. [BE] Every endpoint above is scoped to the caller; another user's set, mount or car is 404 (tests).
+2. [BE] A set with only Brand and Season saves; Brand empty or over 50, Model over 50, Size over 30, DOT code over 20, Notes over 1,000, a future or pre-1900 purchase date, and a 51st set each return 400 with their own code.
+3. [BE] Mounting on a car that has a set on closes the old mount at the same date and odometer; a set on another car is 409 `tireMount.setMounted`; a date before the open mount's start is 400 `tireMount.overlap`; two simultaneous mounts give one success and one 409, never 500.
+4. [BE] `kmDriven` is right for a set with two closed mounts and one open mount; an open mount whose odometer is above the car's current odometer adds 0.
+5. [BE] Deleting a set deletes its mounts; deleting the open mount leaves the car with no set; mount and unmount add no odometer reading.
+6. [FE] On `/tires` a user can add, edit and delete a set, and sees each set's car or "In storage" and its km driven, in km or miles as set in Settings.
+7. [FE] On `/cars/:id` a user can mount a set, swap it for another (the old one then shows "In storage" on `/tires` with its km), unmount it, and delete a past mount; every server error shows on its field.
+8. [FE] Empty states: no sets ("No tire sets yet" with New set), no set on the car, and no sets to pick (with a link to `/tires`). Loading states on both pages; a failed load shows the error with Retry.
+9. [FE] Hebrew and RTL: every new string in `en` and `he`; a Latin brand, size or DOT code reads correctly in Hebrew (`dir="auto"` or `bdi`); the Hebrew reviewer approves the strings.
+10. [FE] At 390px both screens fit with no sideways scroll, forms in one column, every control at least 44 by 44px; focus moves into a form when it opens and back to the button that opened it on Cancel or Escape.
+11. [BE+FE] No regressions: build clean, lint 0 errors and 0 warnings, `dotnet test` passes, smoke passes in all 4 setups with new steps for `/tires` (create, edit, delete) and the car page (mount, swap, unmount).
 
-**Out of scope:** new features; paging the runs list; a to-do page across all cars; any L-row not listed (none left); browser QA by the ui-tester (stopped by the owner).
+**Out of scope:** pressure, tread depth and rotations (MVP5-E); tire positions; adding an odometer reading from a mount; tires on the dashboard; tire reminders; photos (R2); a tire catalogue; data export and delete-account (later; they must include tires); the L66 to L72 Lows (LOW-4).
 
-**Open questions:** none blocking. One for the owner, with a default in the meantime: does "no ui-tester jobs" also cover the engineers running `smoke.mjs` as their own check? Until the owner says otherwise, engineers keep running it (it is their build check, not a ui-tester job).
+**Open questions:** none blocking; the rules above are recorded as delegated decisions. For the owner's review: Mount and Swap don't add an odometer reading, and a set's purchase is a full date (Part 2 `PurchaseDate`) although the spec's bullet says "purchase year".
 
 ---
 
 ### Later
-- **Tires (spec 6), MVP5-D,** split when written; then reports (spec 8), then notifications (spec 9).
+- **Tire pressure, tread depth and rotations (spec 6 bullet 4), MVP5-E;** then LOW-4 (L66 to L72); then reports (spec 8), then notifications (spec 9).
 - **Car photo upload, attachments and run photos:** blocked until the owner creates the Cloudflare R2 credentials.
 - **Predicted due date** from `AvgKmPerDay` (spec 2.3, optional).
-- **Data export and delete-account** (spec 12): must include checklists, their attachments to cars, runs and to-dos.
+- **Data export and delete-account** (spec 12): must include checklists, runs, to-dos and tires.
 
 ## Changed since last audit
-- **Signed off:** MVP5-C (backend `c232d4f`; frontend and fixes not committed yet), **without browser QA**: the owner stopped the ui-tester until further notice (decisions.md, "No ui-tester jobs (owner)").
-- **Status changes:** spec 7 "Failed items can create a to-do or a maintenance task" is Done (was Missing); spec 11 "Issue / to-do list" is Partial (was Deferred; per car only). Counts: Done 30 (was 29), Partial 6 (was 5), Missing 15 (was 16), Deferred 6 (was 7).
-- **Backlog:** L60 to L65 added.
-- **New decisions** (`docs/decisions.md`, 2026-10-16): "No ui-tester jobs (owner)", "MVP5-C sign-off", "LOW-3 choices".
-- **Next ticket:** LOW-3, written in full. The MVP5-C ticket text is in git history up to `c232d4f`.
-- **Data note:** the test users left by the security reviewer (`sec-*@example.test`) stay in the local dev DB until delete-account exists.
+- **Signed off:** LOW-3 (backend `5326e14`; frontend and fixes not committed yet), closing L27 to L65, **without browser QA** (the ui-tester is still stopped by the owner).
+- **Status changes:** none; LOW-3 is polish and hardening. Counts unchanged: Done 30, Partial 6, Missing 15, Deferred 6.
+- **Backlog:** L27 to L65 closed and removed from the table (git history has them); L66 to L72 added.
+- **New decisions** (`docs/decisions.md`, 2026-10-16): "LOW-3 sign-off", "Tires scope and split, MVP5-D".
+- **Next ticket:** MVP5-D (tire sets, mounts and km per set), written in full. The LOW-3 ticket text is in git history (`6a5fb19`).

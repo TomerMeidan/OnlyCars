@@ -1,11 +1,10 @@
-import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent, type MouseEventHandler, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type FormEvent, type KeyboardEvent, type MouseEventHandler, type ReactNode } from 'react'
 import { Trans, useTranslation } from 'react-i18next'
 import { useAuth, useDistance } from '../auth'
 import { api, ApiError, byUrgency, localToday, taskCategories, type MaintenanceTask, type TaskCategory, type TaskStatus, type TaskTemplate, type Vehicle } from '../api'
 import { errorMessage } from '../i18n'
 import { splitDays, unitDays, type Unit } from '../units'
 import { useRow } from '../useRow'
-
 
 type TaskBody = Pick<MaintenanceTask, 'name' | 'category' | 'intervalKm' | 'intervalDays' | 'dueSoonPercent' | 'lastDoneOdometerKm' | 'lastDoneDate'>
 // PUT is a full replace, so every save sends all of these.
@@ -125,7 +124,8 @@ export function TasksSection({ car, undo, setUndo, onOdometerChanged }: {
     if (!readOnly) api<TaskTemplate[]>('/task-templates').then(setTemplates, setTemplatesError)
   }, [readOnly])
 
-  useEffect(() => {
+  // Before paint, so focus never sits on body for a frame (Undo, as on the dashboard).
+  useLayoutEffect(() => {
     const sel = focusNext.current
     const section = sectionRef.current
     if (!sel || !section) return

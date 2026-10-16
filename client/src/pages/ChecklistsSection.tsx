@@ -1,19 +1,18 @@
 import { useEffect, useId, useRef, useState, type FormEvent } from 'react'
+import type { TFunction } from 'i18next'
 import { Trans, useTranslation } from 'react-i18next'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
-import { api, ApiError, localToday, runPath, type ChecklistRun, type ChecklistRunItem, type Issue, type ChecklistTemplate, type Vehicle, type VehicleChecklist } from '../api'
+import { api, ApiError, localToday, runPath, runReturn, type RunReturn, type ChecklistRun, type ChecklistRunItem, type Issue, type ChecklistTemplate, type Vehicle, type VehicleChecklist } from '../api'
 import { useDistance } from '../auth'
 import { errorMessage, fmtDate } from '../i18n'
 import { useRow } from '../useRow'
 import { splitDays, unitDays, type Unit } from '../units'
 import { Due, Interval, StatusBadge } from './TasksSection'
-import { focusIssue, IssueForm } from './IssuesSection'
+import { IssueForm } from './IssuesSection'
+import { focusIssue } from '../focusIssue'
 
 // The server's cap on a checklist's time interval (10 years).
 const MAX_DAYS = 3650
-
-// Where the run page sends the user back to: the checklist whose Run button gets focus, and the flagged count after a Save.
-export type RunReturn = { ran: string; flagged?: number }
 
 // The car page's checklists, after Maintenance. It loads on its own, like the tasks.
 // onIssuesChanged: a to-do was created from a flagged run item.
@@ -21,10 +20,11 @@ export function ChecklistsSection({ car, onChanged, onIssuesChanged }: { car: Ve
   const { t } = useTranslation()
   const location = useLocation()
   const navigate = useNavigate()
-  // Read once, then cleared from the history entry, so a reload doesn't repeat the status line.
-  const [back] = useState(() => location.state as RunReturn | null)
+  // Read once, then cleared from the history entry (or the hand-off after a Save that went back), so a reload doesn't repeat the status line.
+  const [back] = useState(() => (location.state as RunReturn | null) ?? runReturn.current)
   useEffect(() => {
-    if (back) navigate(location.pathname, { replace: true, state: null })
+    runReturn.current = null
+    if (location.state) navigate(location.pathname, { replace: true, state: null })
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
   const [list, setList] = useState<VehicleChecklist[] | null>(null)
   const [templates, setTemplates] = useState<ChecklistTemplate[] | null>(null)
@@ -254,7 +254,7 @@ function ChecklistRow({ car, checklist: c, readOnly, describedBy, onEdited, onRe
       {!readOnly && mode === 'view' && (
         <div className="actions">
           {c.isEnabled && (
-            <Link className="button run" to={runPath(car.id, c.id)} aria-label={t('runOf', { name })} aria-describedby={describedBy}>{t('run')}</Link>
+            <Link className="button run" to={runPath(car.id, c.id)} state={{ fromCar: true }} aria-label={t('runOf', { name })} aria-describedby={describedBy}>{t('run')}</Link>
           )}
           <button className="link edit" aria-label={t('editTask', { name })} ref={opener('edit')} onClick={() => open('edit')}>{t('edit')}</button>
           <button className="link" aria-label={t('removeChecklistOf', { name })} ref={opener('remove')} onClick={() => open('remove')}>{t('remove')}</button>
@@ -340,16 +340,17 @@ function RunHistory({ carId, checklist: c, readOnly, onChanged, onIssuesChanged 
       ) : (
         <ol className="run-list">
           {runs.map((r, i) => (
-            <RunRow key={r.id} run={r} carId={carId} checklistName={c.name} readOnly={readOnly} onIssue={(itemId, issueId, err) => {
+            <RunRow key={r.id} run={r} carId={carId} checklistName={c.name} readOnly={readOnly} onIssue={(itemId, issueId, message) => {
               // Created (here or in another tab): focus on its "To-do created"; its to-do deleted elsewhere: on Create to-do.
               focusNext.current = [`.run-items > li[data-id="${itemId}"] button.to-issue`, `.run-items > li[data-id="${itemId}"] button.create-issue`]
-              setNote(err == null ? null : errorMessage(err))
+              setNote(message ?? null)
               if (issueId) setRuns((rs) => rs && rs.map((x) => x.id !== r.id ? x : { ...x, items: x.items.map((it) => it.id === itemId ? { ...it, issueId } : it) }))
               else load()
               onIssuesChanged()
             }} onDeleted={() => {
               // The next older run, then the newest, then the summary (decisions.md, MVP1-C).
               focusNext.current = [`.run-list > li:nth-child(${i + 1}) button.delete-run`, '.run-list > li button.delete-run']
+              setNote(null)
               setRuns((rs) => rs && rs.filter((x) => x.id !== r.id))
               onChanged()
             }} />
@@ -422,8 +423,8 @@ type ItemIssueProps = {
   carId: string
   checklistName: string
   readOnly: boolean
-  // After a create (the new to-do's id), a stale item (the error that says why), or a to-do no longer on the page (neither).
-  onIssue: (itemId: string, issueId?: string, err?: unknown) => void
+  // After a create (the new to-do's id), or a stale item: the history reloads, with the note that says why.
+  onIssue: (itemId: string, issueId?: string, note?: string) => void
 }
 
 // A flagged item's Create to-do, prefilled from the item and its run; once created, "To-do created" moves focus to that to-do.
@@ -435,16 +436,13 @@ function ItemIssue({ item: it, run: r, carId, checklistName, readOnly, onIssue }
 
   if (it.issueId) {
     const id = it.issueId
-    return <button className="link to-issue" aria-label={t('issueCreatedOf', { label })} onClick={() => focusIssue(id) || onIssue(it.id)}>{t('issueCreated')}</button>
+    return <button className="link to-issue" aria-label={t('issueCreatedOf', { label })} onClick={() => focusIssue(id) || onIssue(it.id, undefined, t('issueGone'))}>{t('issueCreated')}</button>
   }
   if (readOnly) return null
   if (row.mode === 'view') {
     return <button className="link create-issue" aria-label={t('createIssueOf', { label })} ref={row.opener('create')} onClick={() => row.open('create')}>{t('createIssue')}</button>
   }
-  const value = it.type === 'Check' ? (it.boolValue == null ? t('unanswered') : t(it.boolValue ? 'ok' : 'notOk'))
-    : it.type === 'Text' ? it.textValue ?? t('unanswered')
-    : it.numberValue == null ? t('unanswered')
-    : [it.numberValue.toLocaleString(lng), it.unit].filter(Boolean).join(' ')
+  const value = answerText(it, t, lng) ?? t('unanswered')
   return (
     <IssueForm row={row} initial={{ title: label, description: t('issueFromRun', { value, name: checklistName, date: fmtDate(r.runAt, lng) }) }} onSubmit={async (body) => {
       try {
@@ -455,17 +453,25 @@ function ItemIssue({ item: it, run: r, carId, checklistName, readOnly, onIssue }
         // Created in another tab, or the run deleted there: the history reloads to show it.
         if (!(err instanceof ApiError && ['issue.duplicate', 'checklistRunItem.notFound'].includes(err.problem.code ?? ''))) throw err
         row.close()
-        onIssue(it.id, undefined, err)
+        onIssue(it.id, undefined, errorMessage(err))
       }
     }} />
   )
 }
 
-// A run item's answer: OK or Not OK, the number with its unit, or the text.
+// A run item's answer as text: OK or Not OK, the number with its unit, or the text; null if unanswered.
+const answerText = (it: ChecklistRunItem, t: TFunction, lng?: string) =>
+  it.type === 'Check' ? (it.boolValue == null ? null : t(it.boolValue ? 'ok' : 'notOk'))
+  : it.type === 'Text' ? it.textValue
+  : it.numberValue == null ? null
+  : [it.numberValue.toLocaleString(lng), it.unit].filter(Boolean).join(' ')
+
+// A run item's answer; the number and unit get separate bdis because `.tasks bdi` forces LTR, which would put a Hebrew unit first.
 function RunValue({ item: it }: { item: ChecklistRunItem }) {
   const { t, i18n } = useTranslation()
-  if (it.type === 'Check') return <span>{it.boolValue == null ? t('unanswered') : t(it.boolValue ? 'ok' : 'notOk')}</span>
-  if (it.type === 'Text') return it.textValue == null ? <span className="muted">{t('unanswered')}</span> : <span className="notes" dir="auto">{it.textValue}</span>
-  if (it.numberValue == null) return <span className="muted">{t('unanswered')}</span>
-  return <span><bdi dir="ltr">{it.numberValue.toLocaleString(i18n.resolvedLanguage)}</bdi>{it.unit && <> <bdi dir="auto">{it.unit}</bdi></>}</span>
+  const value = answerText(it, t, i18n.resolvedLanguage)
+  if (value == null) return <span className="muted">{t('unanswered')}</span>
+  if (it.type === 'Text') return <span className="notes" dir="auto">{value}</span>
+  if (it.type === 'Check') return <span>{value}</span>
+  return <span><bdi dir="ltr">{it.numberValue!.toLocaleString(i18n.resolvedLanguage)}</bdi>{it.unit && <> <bdi dir="auto">{it.unit}</bdi></>}</span>
 }

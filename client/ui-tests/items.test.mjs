@@ -2,7 +2,7 @@
 // Usage: node --test ui-tests/items.test.mjs
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { itemsTotal } from '../src/api.ts'
+import { autoFlag, itemsTotal } from '../src/api.ts'
 
 test('the contract example sums to 391', () => {
   assert.equal(itemsTotal([{ quantity: 2, unitCost: 45.5 }, { quantity: 1.5, unitCost: 200 }]), 391)
@@ -22,7 +22,6 @@ test('no items, and the caps stay exact', () => {
 })
 
 // MVP5-B: the run form's live flag must match the server's (docs/contracts/MVP5-B.md): the bounds themselves are inside.
-import { autoFlag } from '../src/api.ts'
 const n = (numberValue, minValue = 2, maxValue = 2.6) => autoFlag({ boolValue: null, numberValue, minValue, maxValue })
 
 test('auto flag: Not OK, and numbers outside the range', () => {

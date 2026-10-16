@@ -39,6 +39,7 @@ export interface Vehicle {
 
 export type VehicleInput = Omit<Vehicle, 'id' | 'currentOdometerKm' | 'avgKmPerDay' | 'isArchived'> & {
   initialOdometerKm?: number | null
+  readingDate?: string // the first reading's date, the client's local today (as quick-add)
 }
 
 export type OdometerSource = 'Manual' | 'Service' | 'Checklist' | 'Fuel'
@@ -233,6 +234,7 @@ export interface Problem {
   nextKm?: number
   currentKm?: number
   index?: number // the 0-based item row of a serviceItem.* or checklistItem.* error
+  minDate?: string // the earliest accepted date of a date.tooEarly error
 }
 
 export class ApiError extends Error {
@@ -293,6 +295,11 @@ export const isGuid = (s: string | undefined) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a
 // The API's answer for a car that doesn't exist, used without a request when the route id can't be one.
 export const carNotFound = () => new ApiError(404, { code: 'vehicle.notFound' }, 'Not Found')
 
+// Where the run page sends the user back to: the checklist whose Run button gets focus, and the flagged count after a Save.
+export type RunReturn = { ran: string; flagged?: number }
+// A Save that goes back in history can't carry state, so it leaves its RunReturn here for the car page.
+// shortcut: if the car page fails to load, it stays until the next car page shows (then a stale "Saved" line); clear it by time if that is reported.
+export const runReturn: { current: RunReturn | null } = { current: null }
 export const runPath = (carId: string, checklistId: string) => `/cars/${encodeURIComponent(carId)}/checklists/${encodeURIComponent(checklistId)}/run`
 
 // The user's calendar date, for date fields' max and defaults.

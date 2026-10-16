@@ -1,6 +1,6 @@
 # API contract: LOW-3, the Low backlog (backend part)
 
-Published by backend-engineer, verified with curl against the live API (SQL Server/LocalDB) and by `dotnet test` (all pass). No new endpoints. Migration `LowThreeConcurrency` is empty (it only records two concurrency tokens in the model snapshot; no schema change).
+Published by backend-engineer, verified with curl against the live API (SQL Server/LocalDB) and by `dotnet test` (all pass). No new endpoints. Migration `LowThreeConcurrency` is empty (it only records two concurrency tokens in the model snapshot; no schema change); `ServiceRecordUpdatedAtToken` is also empty (the service-record token moves from IsVoided to UpdatedAt).
 
 ## New error codes (the client must translate both, `en` and `he`)
 
@@ -23,7 +23,7 @@ Published by backend-engineer, verified with curl against the live API (SQL Serv
 4. **Concurrency (L34, L38, L51).**
    - Two simultaneous `POST /api/vehicles/{id}/service-records/{recordId}/void` of one record: one succeeds, the other is 409 `serviceRecord.alreadyVoided` (existing code).
    - Two simultaneous attaches of one template to one car: one 201, the other 409 `vehicleChecklist.duplicate` (existing code).
-   - Two simultaneous `PUT /api/checklist-templates/{id}` (or a PUT and a DELETE): one succeeds, the other is 409 `concurrency.conflict`. Same for an edit of a service record racing its void.
+   - Two simultaneous `PUT /api/checklist-templates/{id}` (or a PUT and a DELETE): one succeeds, the other is 409 `concurrency.conflict`. Same for an edit and a void of one service record, whichever saves second (a void that loses to another void is still `serviceRecord.alreadyVoided`).
    - Any other database concurrency failure is also 409 `concurrency.conflict` instead of a 500.
 5. **A new car's first reading date (L36).** `POST /api/vehicles` takes an optional `readingDate` (`YYYY-MM-DD`), the same field name and rules as quick-add (`POST /api/vehicles/{id}/odometer`): send the client's local today. Missing means the server's UTC today (old behavior). More than one day past the server's UTC today is 400 `odometer.futureDate`; before 1900-01-01 is 400 `date.tooEarly`. Ignored when `initialOdometerKm` is null (no reading is created).
 

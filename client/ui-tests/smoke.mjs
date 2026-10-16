@@ -82,12 +82,12 @@ for (const s of setups) {
     const h = await heightOf(loc)
     if (h < 44) throw new Error(`${what} is ${h}px tall`)
   }
-  // Every visible link and button on the page is a 44px tap target.
+  // Every visible link and button on the page is a 44px tap target; a text-link button is also 44px wide (LOW-3 L48).
   async function sweep(what) {
     const small = await page.evaluate(() => [...document.querySelectorAll('a, button')]
       .filter((el) => el.checkVisibility())
-      .map((el) => [el.textContent.trim() || el.getAttribute('aria-label'), Math.round(el.getBoundingClientRect().height)])
-      .filter(([, h]) => h < 44))
+      .map((el) => { const r = el.getBoundingClientRect(); return [el.textContent.trim() || el.getAttribute('aria-label'), Math.round(r.height), el.matches('button.link') ? Math.round(r.width) : 44] })
+      .filter(([, h, w]) => h < 44 || w < 44))
     if (small.length) throw new Error(`${what} under 44px: ${JSON.stringify(small)}`)
   }
   async function noOverflow(what) {
@@ -183,7 +183,12 @@ for (const s of setups) {
     await page.fill('input[name=plate]', '12-345-67')
     await page.selectOption('select[name=fuelType]', 'Hybrid')
     await page.fill('input[name=initialOdometerKm]', '61000')
+    // LOW-3 L36: the first reading is dated with the local date, as quick-add's.
+    const sent = page.waitForRequest((r) => r.method() === 'POST' && r.url().endsWith('/api/vehicles'))
     await page.click('form button:not(.link)')
+    const readingDate = (await sent).postDataJSON().readingDate
+    const today = await page.evaluate(() => new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10))
+    if (readingDate !== today) throw new Error(`new car readingDate ${readingDate}, want ${today}`)
     await page.locator('.cars > li').first().waitFor()
     if (digitsOnly(await odometer()) !== '61000') throw new Error(`odometer shows ${await odometer()}`)
   })
@@ -1638,10 +1643,8 @@ for (const s of setups) {
     await page.setViewportSize({ width: 390, height: 844 })
     await page.evaluate(() => { window.noReload = true })
     // LOW-2 L26: dated with the browser's local date, as the app dates its own readings (quick entry below), so they stay in order when that is already tomorrow in UTC.
-    // The API dates a new car's first reading in UTC, so it is moved to the local date too.
-    mileCarId = (await apiCall('POST', '/vehicles', { nickname: 'Mile car', initialOdometerKm: 80467 })).id
-    const [first] = await apiCall('GET', `/vehicles/${mileCarId}/odometer`)
-    await apiCall('PUT', `/vehicles/${mileCarId}/odometer/${first.id}`, { valueKm: 80467, readingDate: await localDate() })
+    // LOW-3 L36: a new car's first reading takes the local date the app sends, as the add-car form does.
+    mileCarId = (await apiCall('POST', '/vehicles', { nickname: 'Mile car', initialOdometerKm: 80467, readingDate: await localDate() })).id
     await apiCall('POST', `/vehicles/${mileCarId}/odometer`, { valueKm: 79967, readingDate: await histDay(-10) })
     await apiCall('POST', `/vehicles/${mileCarId}/tasks`, { name: 'Mile oil', category: 'Oil', intervalKm: 10000, intervalDays: null, dueSoonPercent: 10, lastDoneOdometerKm: 72000, lastDoneDate: await localDate() })
     if (!(await radio('distanceUnit', 'Km').isChecked())) throw new Error('unit not Km by default')
@@ -2135,12 +2138,12 @@ for (const s of setups) {
   }
   let dashCarId, taskIds
   await step('dashboard-summary', async () => {
-    dashCarId = (await apiCall('POST', '/vehicles', { nickname: 'Dash car', initialOdometerKm: 50000 })).id
-    await apiCall('POST', '/vehicles', { nickname: 'Dash bike', initialOdometerKm: 1000 })
+    // LOW-3 L36: the first readings take the local date, as the app sends it, so the tasks can be last done today too.
     const today = await localDate()
-    const utcToday = new Date().toISOString().slice(0, 10)
+    dashCarId = (await apiCall('POST', '/vehicles', { nickname: 'Dash car', initialOdometerKm: 50000, readingDate: today })).id
+    await apiCall('POST', '/vehicles', { nickname: 'Dash bike', initialOdometerKm: 1000, readingDate: today })
     const task = (name, intervalKm, intervalDays, lastKm) =>
-      apiCall('POST', `/vehicles/${dashCarId}/tasks`, { name, category: 'Other', intervalKm, intervalDays, dueSoonPercent: 10, lastDoneOdometerKm: lastKm, lastDoneDate: utcToday })
+      apiCall('POST', `/vehicles/${dashCarId}/tasks`, { name, category: 'Other', intervalKm, intervalDays, dueSoonPercent: 10, lastDoneOdometerKm: lastKm, lastDoneDate: today })
     taskIds = {
       Oil: (await task('Oil', 10000, null, 39000)).id, // overdue by 1,000 km
       Brakes: (await task('Brakes', 20000, null, 31000)).id, // due soon, 1,000 km left
@@ -2284,6 +2287,35 @@ for (const s of setups) {
     if (w.body) throw new Error(`during Undo: focus on body ${w.body} times`)
     if (await dashRow('Oil').count()) throw new Error('Oil still shown outside the first 3')
     await page.setViewportSize(s.viewport)
+    // LOW-3 L27: Undo whose reload fails: the bar goes, and focus moves to the row's Mark done, not body.
+    const markBrakes = () => dashRow('Brakes').getByRole('button', { name: RS.done + 'Brakes', exact: true })
+    const pageAlert = page.locator('main > .row [role=alert]')
+    await page.route(isDashGet, (r) => r.fulfill({ status: 500, contentType: 'application/json', body: '{}' }), { times: 1 })
+    await markBrakes().click()
+    await pageAlert.waitFor()
+    await focusIs(`li[data-id="${taskIds.Brakes}"] .undo button`, 'Undo after Mark done with a failed reload')
+    await page.route(isDashGet, (r) => r.fulfill({ status: 500, contentType: 'application/json', body: '{}' }), { times: 1 })
+    await dashRow('Brakes').locator('.undo button').click()
+    await focusIs(`li[data-id="${taskIds.Brakes}"] button.done`, 'Mark done after Undo with a failed reload')
+    if (await page.locator('.cars .undo').count()) throw new Error('the Undo bar stayed after Undo')
+    // LOW-3 L32(b): Retry while Undo's reload is held: the newer load ends the Undo bar too.
+    await page.route(isDashGet, (r) => r.fulfill({ status: 500, contentType: 'application/json', body: '{}' }), { times: 1 })
+    await markBrakes().click()
+    await focusIs(`li[data-id="${taskIds.Brakes}"] .undo button`, 'Undo after Mark done')
+    let releaseGet
+    const heldGet = new Promise((r) => { releaseGet = r })
+    await page.route(isDashGet, async (r) => { await heldGet; await r.continue() }, { times: 1 })
+    const voided = page.waitForResponse((r) => r.url().endsWith('/void'))
+    await dashRow('Brakes').locator('.undo button').click()
+    await voided
+    await page.getByRole('button', { name: HS.retry, exact: true }).click()
+    await focusIs('main h1', 'h1 after Retry')
+    await pageAlert.waitFor({ state: 'detached' })
+    releaseGet()
+    await page.waitForLoadState('networkidle')
+    if (await page.locator('.cars .undo').count()) throw new Error('a stale Undo bar after a newer load')
+    await markBrakes().waitFor()
+    forget500()
     // Criterion 8: a failed Mark done shows on that row, keeps the page, and focus returns to Mark done.
     await page.route('**/reset', (r) => r.fulfill({ status: 500, contentType: 'application/json', body: '{}' }), { times: 1 })
     await dashRow('Brakes').getByRole('button', { name: RS.done + 'Brakes', exact: true }).click()
@@ -2370,20 +2402,36 @@ for (const s of setups) {
     await tall(archive, 'Archive')
     await page.screenshot({ path: `${OUT}/${s.name}-dashboard-archive-error.png`, fullPage: true })
     await page.setViewportSize(s.viewport)
-    // Archived for real, the card leaves the dashboard.
+    // LOW-3 L29: a reload clears the old archive error.
+    const showArchived = page.locator('main > label.inline input')
+    await showArchived.check()
+    await alert.waitFor({ state: 'detached' })
+    await showArchived.uncheck()
+    await page.waitForLoadState('networkidle')
+    // Archived for real, the card leaves the dashboard. LOW-3 L30: Archive stays disabled until the reload ends; L31: then focus is on the h1.
+    let releaseGet
+    const heldGet = new Promise((r) => { releaseGet = r })
+    await page.route(isDashGet, async (r) => { await heldGet; await r.continue() }, { times: 1 })
+    const archived = page.waitForResponse((r) => r.url().endsWith(`/vehicles/${bikeId}/archive`))
     await archive.click()
+    await archived
+    if (!(await archive.isDisabled())) throw new Error('Archive enabled again before the reload ended')
+    releaseGet()
     await bike.waitFor({ state: 'detached' })
+    await focusIs('main h1', 'h1 after archiving a card away')
   })
   // MVP5-A: checklist templates on /checklists.
   const CL = he
     ? { title: 'רשימות בדיקה', add: 'רשימת בדיקה חדשה', empty: 'עדיין אין רשימות בדיקה. צרו רשימה כדי להשתמש בה ברכבים שלכם.', addItem: 'הוספת פריט',
         three: '3 פריטים', edit: 'עריכה של ', del: 'מחיקה של ', confirm: 'למחוק את רשימת הבדיקה הזו?', name: 'הזינו שם של עד 100 תווים.', remove2: 'הסרת פריט ⁦2⁩',
         range: 'פריט 2: הזינו מינימום ומקסימום בין -1,000,000 ל־1,000,000, עם עד 2 ספרות אחרי הנקודה. המינימום לא יכול להיות גבוה מהמקסימום.',
-        up: (n) => `הזזת פריט ⁦${n}⁩ למעלה`, unit: (n) => `פריט ${n}, יחידה` }
+        up: (n) => `הזזת פריט ⁦${n}⁩ למעלה`, unit: (n) => `פריט ${n}, יחידה`, label1: 'פריט 1: הזינו שם של עד 100 תווים.',
+        range1: 'פריט 1: הזינו מינימום ומקסימום בין -1,000,000 ל־1,000,000, עם עד 2 ספרות אחרי הנקודה. המינימום לא יכול להיות גבוה מהמקסימום.' }
     : { title: 'Checklists', add: 'New checklist', empty: 'No checklists yet. Create one to use on your cars.', addItem: 'Add item',
         three: '3 items', edit: 'Edit ', del: 'Delete ', confirm: 'Delete this checklist?', name: 'Enter a name of up to 100 characters.', remove2: 'Remove item 2',
         range: 'Item 2: Enter a min and max from -1,000,000 to 1,000,000 with up to 2 decimals, and a min not above the max.',
-        up: (n) => `Move item ${n} up`, unit: (n) => `Item ${n}, Unit` }
+        up: (n) => `Move item ${n} up`, unit: (n) => `Item ${n}, Unit`, label1: 'Item 1: Enter a name of up to 100 characters.',
+        range1: 'Item 1: Enter a min and max from -1,000,000 to 1,000,000 with up to 2 decimals, and a min not above the max.' }
   const clNew = page.getByRole('button', { name: CL.add, exact: true })
   const clForm = page.locator('main form')
   const clSave = clForm.locator('> .actions > button:not(.link)')
@@ -2570,6 +2618,88 @@ for (const s of setups) {
     await page.getByText(CL.empty, { exact: true }).waitFor()
     await page.setViewportSize(s.viewport)
   })
+  await step('checklist-low3', async () => {
+    // LOW-3 L40: "Beta check" exists; a new "beta check" (equal but for case) sorts after it, as the API lists them.
+    await apiCall('POST', '/checklist-templates', { name: 'Alpha check', items: [{ label: 'A', type: 'Check' }] })
+    await apiCall('POST', '/checklist-templates', { name: 'Beta check', items: [] })
+    await page.reload()
+    await clRow('Beta check').waitFor()
+    // L46: a Latin name follows its own direction inside the Hebrew row.
+    if ((await clRow('Alpha check').locator('.name').getAttribute('dir')) !== 'auto') throw new Error('name without dir=auto')
+    const [head, nameBox] = await Promise.all([clRow('Alpha check').locator('.task-head').boundingBox(), clRow('Alpha check').locator('.name').boundingBox()])
+    if (Math.abs(he ? head.x + head.width - (nameBox.x + nameBox.width) : nameBox.x - head.x) > 1) throw new Error('the name is not on the start side')
+    // L47: each open form has its heading.
+    await clNew.click()
+    const alpha = page.locator(`.checklists > li[data-id="${await clRow('Alpha check').getAttribute('data-id')}"]`)
+    await alpha.locator('button.edit').click()
+    const newHead = page.locator('main section > h2')
+    if (plain(await newHead.textContent()) !== CL.add) throw new Error(`New heading "${await newHead.textContent()}"`)
+    if (plain(await alpha.locator('h2').textContent()) !== `${CL.edit}Alpha check`) throw new Error('no Edit heading')
+    await alpha.locator('form > .actions > button.link').click()
+    const form = page.locator('main section form')
+    const item = (i) => form.locator('fieldset.item').nth(i)
+    await form.locator('input[name=name]').fill('beta check')
+    // L44: an empty label is stopped by the browser with its translated, numbered message.
+    await form.getByRole('button', { name: CL.addItem, exact: true }).click()
+    await form.locator('> .actions > button:not(.link)').click()
+    const labelMsg = await item(0).locator('input').first().evaluate((el) => el.validationMessage)
+    if (plain(labelMsg) !== CL.label1) throw new Error(`empty label message "${labelMsg}"`)
+    await item(0).locator('input').first().fill('X')
+    await form.getByRole('button', { name: CL.addItem, exact: true }).click()
+    await page.keyboard.type('Y')
+    await item(1).locator('select').selectOption('Number')
+    const [min, max] = [2, 3].map((n) => item(1).locator('input').nth(n))
+    await min.fill('3')
+    await max.fill('1')
+    await form.locator('> .actions > button:not(.link)').click()
+    await item(1).locator('[role=alert]').waitFor()
+    forget400()
+    // L41: a browser message typed as item 2 names item 1 once the row moved up; L44: the API's item error moves with its row and is renumbered.
+    await min.fill('1.234')
+    await form.getByRole('button', { name: CL.up(2), exact: true }).click()
+    const moved = item(0).locator('[role=alert]')
+    if (plain(await moved.textContent()) !== CL.range1) throw new Error(`item error after a move "${await moved.textContent()}"`)
+    const movedMin = item(0).locator('input').nth(2)
+    await form.locator('> .actions > button:not(.link)').click()
+    const rangeMsg = await movedMin.evaluate((el) => el.validationMessage)
+    if (plain(rangeMsg) !== CL.range1) throw new Error(`range message after a move "${rangeMsg}"`)
+    await movedMin.fill('1')
+    await item(0).locator('input').nth(3).fill('3')
+    await page.setViewportSize({ width: 390, height: 844 })
+    await noOverflow('the new checklist form with headings')
+    await sweep('the new checklist form with headings')
+    await page.screenshot({ path: `${OUT}/${s.name}-checklist-headings.png`, fullPage: true })
+    await page.setViewportSize(s.viewport)
+    const res = page.waitForResponse(isTemplateSave)
+    await form.locator('> .actions > button:not(.link)').click()
+    if ((await res).status() !== 201) throw new Error(`save ${(await res).status()}`)
+    const names = () => clRows.locator('.name').allTextContents()
+    const order = (await names()).join('|')
+    if (order !== 'Alpha check|Beta check|beta check') throw new Error(`order after Save ${order}`)
+    await page.reload()
+    await clRows.nth(2).waitFor()
+    if ((await names()).join('|') !== order) throw new Error(`order after a reload ${(await names()).join('|')}`)
+    // L42: Edit-save on a template deleted elsewhere closes the form, removes the row, and focuses the first row's Edit (L39a: it was the last row).
+    const last = clRows.nth(2)
+    const lastId = await last.getAttribute('data-id')
+    await last.locator('button.edit').click()
+    await apiCall('DELETE', `/checklist-templates/${lastId}`)
+    await last.locator('form > .actions > button:not(.link)').click()
+    await page.locator(`.checklists > li[data-id="${lastId}"]`).waitFor({ state: 'detached' })
+    await focusIs('.checklists > li:nth-child(1) button.edit', "the first row's Edit after a gone template")
+    run.badResponses = run.badResponses.filter((r) => !(r.startsWith('404 ') && r.includes('/checklist-templates/')))
+    run.consoleErrors = run.consoleErrors.filter((e) => !e.includes('status of 404'))
+    // L39: with the New form open, deleting the last row focuses the first row's Edit, and deleting the only one the h1.
+    await clNew.click()
+    for (const [name, target] of [['Beta check', '.checklists > li:nth-child(1) button.edit'], ['Alpha check', 'main h1']]) {
+      await clRow(name).getByRole('button', { name: `${CL.del}${name}`, exact: true }).click()
+      await clRow(name).locator('button.danger').click()
+      await clRow(name).waitFor({ state: 'detached' })
+      await focusIs(target, `focus after deleting ${name} with the New form open`)
+    }
+    await form.locator('input[name=name]').press('Escape')
+    await page.getByText(CL.empty, { exact: true }).waitFor()
+  })
   // MVP5-B: checklists on a car (Dash car), runs, run history, the dashboard's Start a checklist, and a template in use.
   const CK = he
     ? { add: 'הוספת רשימת בדיקה', none: 'עדיין אין רשימות בדיקה לרכב הזה.', noTemplates: 'עדיין אין לך רשימות בדיקה. אפשר ליצור רשימה בדף רשימות הבדיקה.',
@@ -2736,7 +2866,12 @@ for (const s of setups) {
     page.off('request', onPost)
     if (msg !== CK.future || posted) throw new Error(`future date: "${msg}", posted ${posted}`)
     await runAt.fill(await localDate())
+    // LOW-3 L55: Date and Odometer stacked at 390px; side by side from 600px, their tops aligned.
+    const [dateBox, odoBox] = await Promise.all([0, 1].map((i) => runForm.locator('> label').nth(i).boundingBox()))
+    if (s.viewport.width >= 600 ? Math.abs(dateBox.y - odoBox.y) > 1 || odoBox.x === dateBox.x : odoBox.y < dateBox.y + dateBox.height) throw new Error(`Date ${JSON.stringify(dateBox)}, Odometer ${JSON.stringify(odoBox)}`)
     await page.setViewportSize({ width: 390, height: 844 })
+    const [date390, odo390] = await Promise.all([0, 1].map((i) => runForm.locator('> label').nth(i).boundingBox()))
+    if (odo390.y < date390.y + date390.height) throw new Error('Date and Odometer side by side at 390px')
     await noOverflow('the run form')
     await sweep('the run form')
     for (const r of [notOk, hand]) await tall(r.locator('xpath=..'), 'an item control')
@@ -2755,10 +2890,13 @@ for (const s of setups) {
     if (plain(await status.textContent()) !== CK.saved3) throw new Error(`status "${await status.textContent()}"`)
     await focusIs(`li[data-id="${monthlyId}"] a.run`, 'Run after saving a run')
     if (digitsOnly(await odometer()) !== String(before + 500)) throw new Error(`odometer ${await odometer()}`)
-    // Back doesn't reopen the saved run form (a second save would make a duplicate run).
+    // LOW-3 L59: Save went back in history, so one Back leaves the car page (it isn't there twice) and never reopens the saved run form.
     await page.goBack()
+    await page.waitForURL((u) => u.pathname !== ckCarPath())
     await page.waitForLoadState('networkidle')
-    if (new URL(page.url()).pathname !== ckCarPath() || (await page.locator('fieldset.item').count())) throw new Error(`Back went to ${page.url()}`)
+    if (await page.locator('fieldset.item').count()) throw new Error(`Back went to ${page.url()}`)
+    await page.goForward()
+    await page.waitForURL((u) => u.pathname === ckCarPath())
     const monthly = ckRow('Monthly quick check')
     if (plain(await monthly.textContent()).includes(CK.notRun)) throw new Error('last run not updated')
     // After a reload it is all still there, without the status line.
@@ -2935,6 +3073,24 @@ for (const s of setups) {
     await runRow.locator('summary').click()
     const items = (await runRow.locator('.run-items > li').allTextContents()).map(plain)
     if (items.length !== 3 || !(items[1].startsWith('Tire pressure') && items[1].includes('1.8 bar')) || (await runRow.locator('.run-items > li > .flag').count()) !== 3) throw new Error(`items ${JSON.stringify(items)}`)
+    // LOW-3 review: the number and unit are separate isolates, so the unit follows the number in the reading direction (left of it in Hebrew).
+    const [num, unit] = await Promise.all([/^1\.8$/, /^bar$/].map((v) => runRow.locator('.run-items > li bdi', { hasText: v }).boundingBox()))
+    if ((unit.x < num.x) !== (s.lng === 'he')) throw new Error(`unit "bar" at x ${unit.x}, number at x ${num.x}`)
+    // LOW-3 L60: Notes gets a to-do, deleted in To-dos on this page; its "To-do created" then says so and turns back into Create to-do.
+    const notes = runRow.locator('.run-items > li').filter({ hasText: 'Notes' })
+    const notesId = await notes.getAttribute('data-id')
+    await notes.locator('button.create-issue').click()
+    await notes.locator('form input[name=title]').fill('Fix the scratch')
+    await notes.locator('form .actions > button:not(.link)').click()
+    await focusIs(`li[data-id="${notesId}"] button.to-issue`, 'To-do created on Notes')
+    const scratch = isRow('Fix the scratch')
+    await scratch.locator('.actions button:not(.done, .edit)').click()
+    await scratch.locator('button.danger').click()
+    await scratch.waitFor({ state: 'detached' })
+    await notes.locator('button.to-issue').click()
+    await focusIs(`li[data-id="${notesId}"] button.create-issue`, 'Create to-do after its to-do was deleted')
+    const runNote = monthly.locator('details.run-history > [role=status]')
+    if (plain(await runNote.textContent()) !== IS.gone) throw new Error(`gone note "${await runNote.textContent()}"`)
     // Remove with runs: the translated hasRuns message, and the row stays.
     await (await named(monthly.locator(':scope > .actions button:not(.edit)'), CK.removeOf('Monthly quick check'))).click()
     await monthly.locator('button.danger').click()
@@ -2958,6 +3114,8 @@ for (const s of setups) {
     await runRow.locator('button.danger').click()
     await runRow.waitFor({ state: 'detached' })
     await focusIs(`li[data-id="${monthlyId}"] details.run-history > summary`, 'History after deleting the last run')
+    // LOW-3 L61: deleting a run clears the history's note.
+    if (await runNote.count()) throw new Error('the run history note outlived the run delete')
     await page.waitForFunction((b) => document.querySelector('.odometer').getAttribute('aria-label').replace(/\D/g, '') !== b, before, { timeout: 5000 })
     await page.waitForFunction(([id, w]) => document.querySelector(`li[data-id="${id}"] details.run-history > summary`).textContent.replace(/[⁦-⁩]/g, '') === w, [monthlyId, CK.history(0)], { timeout: 5000 })
     // MVP5-C criterion 5: the run's to-dos stay, without their From line.
@@ -2995,6 +3153,35 @@ for (const s of setups) {
     await dashCar().waitFor()
     const others = page.locator('.cars > li').filter({ hasNot: page.getByRole('link', { name: 'Dash car', exact: true }) })
     if (await others.getByText(CK.start).count()) throw new Error('Start a checklist on a car without checklists')
+  })
+  await step('checklist-past-run', async () => {
+    // LOW-3 L57: a real itemsChanged (the template edited while the run form is open), then a run older than the last one leaves the last run alone.
+    const trip = (await apiCall('GET', `/vehicles/${dashCarId}/checklists`)).find((c) => c.name === 'Pre-road-trip')
+    const tpl = await apiCall('GET', `/checklist-templates/${trip.templateId}`)
+    await apiCall('POST', `/vehicle-checklists/${trip.id}/runs`, { runAt: await localDate(), items: tpl.items.map((i) => ({ templateItemId: i.id, boolValue: true, isFlagged: false })) })
+    await page.goto(`${BASE}${ckCarPath()}`)
+    const row = ckRow('Pre-road-trip')
+    const lastRunText = () => row.locator(':scope > p.muted').nth(1).textContent()
+    const lastRun = plain(await lastRunText())
+    await row.locator('a.run').click()
+    await arrivedAt(CK.title('Pre-road-trip', 'Dash car'))
+    await apiCall('PUT', `/checklist-templates/${tpl.id}`, { name: tpl.name, items: [...tpl.items, { label: 'Jack', type: 'Check' }] })
+    await runForm.locator('> .actions > button:not(.link)').click()
+    const changed = runForm.locator('> [role=alert]')
+    await changed.waitFor()
+    if (!plain(await changed.textContent()).startsWith(CK.changed)) throw new Error(`itemsChanged "${await changed.textContent()}"`)
+    forgetCk(400, '/runs')
+    await page.reload()
+    await runItem(1).waitFor()
+    await runForm.locator('input[name=runAt]').fill(await histDay(-10))
+    await runForm.locator('> .actions > button:not(.link)').click()
+    await page.waitForURL((u) => u.pathname === ckCarPath())
+    await focusIs(`li[data-id="${trip.id}"] a.run`, 'Run after saving a past run')
+    if (plain(await lastRunText()) !== lastRun || (await row.locator('.badge.status').count())) throw new Error(`last run "${plain(await lastRunText())}", want "${lastRun}"`)
+    if (plain(await row.locator('details.run-history > summary').textContent()) !== CK.history(2)) throw new Error('history count')
+    // L59: one Back leaves the car page.
+    await page.goBack()
+    await page.waitForURL((u) => u.pathname === '/')
   })
   await step('dashboard-open-issues', async () => {
     // Criterion 7: Dash car's 2 open to-dos link to its page; after one is marked done it shows 1; other cars show nothing.

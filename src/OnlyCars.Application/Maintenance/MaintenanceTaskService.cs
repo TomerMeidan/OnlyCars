@@ -533,8 +533,13 @@ public class MaintenanceTaskService(IAppDbContext db, VehicleService vehicleServ
         }
         catch (DbUpdateConcurrencyException)
         {
-            // A simultaneous void saved first (IsVoided is a concurrency token).
-            throw new ConflictException("serviceRecord.alreadyVoided", "This service record is already undone.");
+            // A simultaneous void or edit saved first (UpdatedAt is a concurrency token); an edit stays concurrency.conflict.
+            if (await db.ServiceRecords.Where(r => r.Id == record.Id).Select(r => r.IsVoided).SingleAsync(ct))
+            {
+                throw new ConflictException("serviceRecord.alreadyVoided", "This service record is already undone.");
+            }
+
+            throw;
         }
 
         var today = TodayUtc();

@@ -1,18 +1,18 @@
 import { useEffect, useId, useState, type FormEvent, type ReactNode } from 'react'
 import { Trans, useTranslation } from 'react-i18next'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
-import { api, ApiError, autoFlag, carNotFound, isGuid, isOrderError, limit, localToday, type ChecklistRun, type ChecklistTemplate, type ChecklistTemplateItem, type Vehicle, type VehicleChecklist } from '../api'
+import { api, ApiError, autoFlag, carNotFound, isGuid, isOrderError, limit, localToday, runReturn, type RunReturn, type ChecklistRun, type ChecklistTemplate, type ChecklistTemplateItem, type Vehicle, type VehicleChecklist } from '../api'
 import { useDistance } from '../auth'
 import { errorMessage } from '../i18n'
 import { useItemErrors } from '../useItemErrors'
 import { usePage } from '../usePage'
 import { useRow } from '../useRow'
 import { CarError } from './CarPage'
-import type { RunReturn } from './ChecklistsSection'
 
 // The form field each API error is about; item errors also by their row's index (the request sends the rows in order).
 const fieldOf: Record<string, string> = {
   'checklistRun.futureDate': 'runAt',
+  'date.tooEarly': 'runAt',
   'checklistRun.invalidOdometer': 'odometerKm',
   'odometer.lowerThanPrevious': 'odometerKm',
   'odometer.higherThanNext': 'odometerKm',
@@ -50,6 +50,7 @@ export default function RunPage() {
   // Ids that can't exist never reach the API.
   const badId = !isGuid(id) ? carNotFound() : !isGuid(checklistId) ? new ApiError(404, { code: 'vehicleChecklist.notFound' }, 'Not Found') : null
 
+  // shortcut: there is no GET /api/vehicle-checklists/{id}, so this loads the car's whole checklist list; add the endpoint if cars get many checklists.
   const load = () => Promise.all([api<Vehicle>(`/vehicles/${enc(id)}`), api<VehicleChecklist[]>(`/vehicles/${enc(id)}/checklists`)])
     .then(async ([car, list]) => {
       const checklist = list.find((c) => c.id === checklistId)
@@ -93,8 +94,12 @@ export default function RunPage() {
           return { templateItemId: it.id, isFlagged: a.hand, ...(it.type === 'Check' ? { boolValue: a.bool } : it.type === 'Number' ? { numberValue: numberOf(a) } : { textValue: a.text }) }
         }),
       })
-      // Replaces the run form, so Back can't reopen it and save the run twice.
-      navigate(carPath, { replace: true, state: { ran: checklist.id, flagged: r.run.flaggedCount } satisfies RunReturn })
+      const ret: RunReturn = { ran: checklist.id, flagged: r.run.flaggedCount }
+      // Opened from the car page: back to it, so one more Back leaves the car page. Otherwise replace the run form, so Back can't reopen it and save twice.
+      if ((location.state as { fromCar?: boolean } | null)?.fromCar) {
+        runReturn.current = ret
+        navigate(-1)
+      } else navigate(carPath, { replace: true, state: ret })
     }, (e.nativeEvent as SubmitEvent).submitter)
     if (err) {
       setNeedsConfirm(isOrderError(err))
@@ -114,7 +119,7 @@ export default function RunPage() {
     <>
       <Link to={carPath} className="back"><span dir="auto">{car.nickname}</span></Link>
       <h1 tabIndex={-1}>{t('runTitle', { name: checklist.name, car: car.nickname })}</h1>
-      <form className="card inline-form" ref={formRef} onSubmit={submit}>
+      <form className="card inline-form run-form" ref={formRef} onSubmit={submit}>
         <label>
           {t('readingDate')}
           <input name="runAt" type="date" required max={localToday()} defaultValue={localToday()} onInput={future} {...tie('runAt')} />
@@ -166,6 +171,7 @@ function RunItem({ item: it, answer: a, lng, onChange, tie, children }: {
 }) {
   const { t } = useTranslation()
   const id = useId()
+  // shortcut: live flags use the Min/Max loaded with the page, the server flags with the template at save time (itemsChanged catches added or removed items, not changed limits); reload the template on Save if that is reported.
   const auto = autoFlag({ boolValue: a.bool, numberValue: numberOf(a), minValue: it.minValue, maxValue: it.maxValue })
   const label = it.label
   const named = (field: string) => ({ 'aria-label': t('runField', { label, field }) })

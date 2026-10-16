@@ -26,14 +26,25 @@ export default function CarsPage() {
   const focusNext = useRef<(() => HTMLElement | null | undefined) | null>(null)
   usePage(t('dashboard'))
 
-  // Old cards stay up while it reloads. `then` runs with the answer's state updates, so they render together.
+  // `then` callbacks waiting for the next shown answer, kept when a newer load replaces theirs (so no load path brings back a stale Undo bar).
+  const pending = useRef<(() => void)[]>([])
+
+  // Old cards stay up while it reloads. `then` (Undo's setUndo(null)) runs with the answer's state updates, so the bar and the restored row swap in one render.
   const load = (then?: () => void) => {
     const n = ++request.current
     const today = localToday()
+    if (then) pending.current.push(then)
+    const done = () => pending.current.splice(0).forEach((f) => f())
     return Promise.all([api<Dashboard>(`/dashboard?today=${today}`), api<Vehicle[]>(`/vehicles?includeArchived=${showArchived}`)]).then(
-      ([dash, cars]) => { if (n === request.current) { setData({ dash, cars, today }); setError(null); then?.() } },
-      // A failed reload keeps focus where it was (MVP1-C), so drop the pending target.
-      (err) => { if (n === request.current) { focusNext.current = null; setError(err); then?.() } },
+      ([dash, cars]) => { if (n === request.current) { setData({ dash, cars, today }); setError(null); done() } },
+      (err) => {
+        if (n !== request.current) return
+        // A failed reload keeps focus where it was (MVP1-C); only if `then` removed the focused control (the Undo bar) does the target apply.
+        const target = focusNext.current
+        focusNext.current = target && (() => (document.activeElement === document.body ? target() : null))
+        setError(err)
+        done()
+      },
     ).finally(() => n === request.current && setRetrying(false))
   }
   const reloadThenFocus = (target: () => HTMLElement | null | undefined, then?: () => void) => {
@@ -49,7 +60,10 @@ export default function CarsPage() {
   useLayoutEffect(() => {
     const target = focusNext.current
     focusNext.current = null
-    target?.()?.focus()
+    if (!target) return
+    target()?.focus()
+    // The target can be gone (a card archived away) or disabled; focus never stays on body.
+    if (document.activeElement === document.body) document.querySelector<HTMLElement>('main h1')?.focus()
   }, [data, error])
 
   const taskPath = (carId: string, taskId: string) => `/vehicles/${encodeURIComponent(carId)}/tasks/${encodeURIComponent(taskId)}`
@@ -163,7 +177,7 @@ export default function CarsPage() {
                 )}
               </>
             )}
-            <CarActions car={car} onArchived={() => load()} />
+            <CarActions car={car} onArchived={() => reloadThenFocus(() => document.querySelector<HTMLElement>(`.cars > li[data-id="${car.id}"] button.archive`))} />
           </li>
         ))}
       </ul>
@@ -236,15 +250,18 @@ function StartChecklist({ carId, checklists }: { carId: string; checklists: Vehi
 }
 
 // Edit and Archive or Unarchive; a failed archive shows on its card, which stays as it was.
-function CarActions({ car, onArchived }: { car: Vehicle; onArchived: () => void }) {
+function CarActions({ car, onArchived }: { car: Vehicle; onArchived: () => Promise<void> }) {
   const { t } = useTranslation()
-  const { busy, error, run } = useRow()
+  const { busy, error, run, open } = useRow()
+  // A reload (a new car object) clears an old archive error; open('view') only clears the error here.
+  useEffect(() => open('view'), [car]) // eslint-disable-line react-hooks/exhaustive-deps
   return (
     <>
       <div className="actions">
         <Link to={`/cars/${car.id}/edit`}>{t('edit')}</Link>
-        <button className="link" disabled={busy}
-          onClick={(e) => run(async () => { await api(`/vehicles/${car.id}/${car.isArchived ? 'unarchive' : 'archive'}`, 'POST'); onArchived() }, e.currentTarget)}>
+        {/* Busy until the reload ends, so it can't be sent twice. */}
+        <button className="link archive" disabled={busy}
+          onClick={(e) => run(async () => { await api(`/vehicles/${car.id}/${car.isArchived ? 'unarchive' : 'archive'}`, 'POST'); await onArchived() }, e.currentTarget)}>
           {t(car.isArchived ? 'unarchive' : 'archive')}
         </button>
       </div>

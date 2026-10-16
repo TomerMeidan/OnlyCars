@@ -64,7 +64,7 @@ public class LowThreeTests
     public async Task Void_Simultaneous_SecondIsAlreadyVoided_EvenWhenTheReadingIsKept()
     {
         // No starting reading, so the record's reading is the car's only one and is kept (an update, not a delete):
-        // only the IsVoided token can catch the race.
+        // only the record's UpdatedAt token can catch the race.
         var car = await CarAsync(km: null);
         var record = await S.Tasks.CreateRecordAsync(userId, car, new CreateServiceRecordRequest(Today, 51_000, null, null, null, []));
         race.Next = () => Services(Context()).Tasks.VoidAsync(userId, car, record.Record.Id);
@@ -74,6 +74,23 @@ public class LowThreeTests
         await using var check = Context();
         Assert.True((await check.ServiceRecords.SingleAsync()).IsVoided);
         Assert.Equal(OdometerSource.Manual, (await check.OdometerReadings.SingleAsync()).Source);
+    }
+
+    [Fact]
+    public async Task Void_RacingAnEditThatSavedFirst_IsAConcurrencyException_EditIsKept()
+    {
+        var car = await CarAsync();
+        var record = await S.Tasks.CreateRecordAsync(userId, car, new CreateServiceRecordRequest(Today, 51_000, null, null, null, []));
+        var oil = (await S.Tasks.CreateAsync(userId, car, new CreateMaintenanceTaskRequest(null, "Oil", "Oil", 5_000, 730, 40_000, Today.AddYears(-1)))).Id;
+        race.Next = () => Services(Context()).Tasks.UpdateRecordAsync(userId, car, record.Record.Id,
+            new UpdateServiceRecordRequest(null, null, null, null, TaskIds: [oil]));
+
+        // The handler turns it into 409 concurrency.conflict, not serviceRecord.alreadyVoided.
+        await Assert.ThrowsAsync<DbUpdateConcurrencyException>(() => S.Tasks.VoidAsync(userId, car, record.Record.Id));
+
+        await using var check = Context();
+        Assert.False((await check.ServiceRecords.SingleAsync()).IsVoided);
+        Assert.Equal(oil, (await check.ServiceRecordTasks.SingleAsync()).MaintenanceTaskId);
     }
 
     // --- L38(b): two simultaneous template edits ---
