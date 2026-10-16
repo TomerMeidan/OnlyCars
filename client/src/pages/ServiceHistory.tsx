@@ -1,7 +1,7 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
-import { api, ApiError, isGoneRecord, isOrderError, itemsTotal, localToday, type MaintenanceTask, type ServiceItem, type ServiceRecord, type Vehicle } from '../api'
+import { api, ApiError, isGoneRecord, isOrderError, itemsTotal, limit, localToday, type MaintenanceTask, type ServiceItem, type ServiceRecord, type Vehicle } from '../api'
 import { useAuth, useDistance } from '../auth'
 import { errorMessage, money } from '../i18n'
 import { useRow } from '../useRow'
@@ -40,13 +40,6 @@ const toItem = (i: ServiceItem | null, isLabor = false): Item => ({
   unitCost: i ? String(i.unitCost) : '',
   isLabor: i?.isLabor ?? isLabor,
 })
-
-// The browser blocks an out-of-range number or a third decimal before any request, with this message on the field.
-const limit = (message: string) => (e: FormEvent<HTMLInputElement>) => {
-  const el = e.currentTarget
-  el.setCustomValidity('')
-  el.setCustomValidity(el.validity.valid ? '' : message)
-}
 
 // The car page's service history, between the tasks and the odometer history. It loads on its own, like the tasks.
 export function ServiceHistory({ car, onChanged }: { car: Vehicle; onChanged: () => void }) {

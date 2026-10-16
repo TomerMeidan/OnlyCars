@@ -1,3 +1,5 @@
+import type { FormEvent } from 'react'
+
 export type FuelType = 'Petrol' | 'Diesel' | 'Hybrid' | 'Electric' | 'Lpg' | 'Other'
 export const fuelTypes: FuelType[] = ['Petrol', 'Diesel', 'Hybrid', 'Electric', 'Lpg', 'Other']
 
@@ -134,6 +136,26 @@ export interface ServiceItem {
 export const itemsTotal = (items: { quantity: number; unitCost: number }[]) =>
   Math.round(items.reduce((sum, i) => sum + Math.round(i.quantity * 100) * Math.round(i.unitCost * 100), 0) / 100) / 100
 
+export type ChecklistItemType = 'Check' | 'Number' | 'Text'
+export const checklistItemTypes: ChecklistItemType[] = ['Check', 'Number', 'Text']
+
+// Unit, min and max are always null unless the type is Number.
+export interface ChecklistTemplateItem {
+  id: string
+  label: string
+  type: ChecklistItemType
+  unit: string | null
+  minValue: number | null
+  maxValue: number | null
+}
+
+export interface ChecklistTemplate {
+  id: string
+  name: string
+  itemCount: number
+  items: ChecklistTemplateItem[] // in the saved order
+}
+
 // ProblemDetails from the API; `code` is translated by errorMessage() in i18n.ts.
 export interface Problem {
   title?: string
@@ -142,7 +164,7 @@ export interface Problem {
   previousKm?: number
   nextKm?: number
   currentKm?: number
-  index?: number // the 0-based item row of a serviceItem.* error
+  index?: number // the 0-based item row of a serviceItem.* or checklistItem.* error
 }
 
 export class ApiError extends Error {
@@ -207,4 +229,11 @@ export const carNotFound = () => new ApiError(404, { code: 'vehicle.notFound' },
 export function localToday() {
   const d = new Date()
   return new Date(d.getTime() - d.getTimezoneOffset() * 60_000).toISOString().slice(0, 10)
+}
+
+// The browser blocks an out-of-range number or a third decimal before any request, with this message on the field.
+export const limit = (message: string) => (e: FormEvent<HTMLInputElement>) => {
+  const el = e.currentTarget
+  el.setCustomValidity('')
+  el.setCustomValidity(el.validity.valid ? '' : message)
 }

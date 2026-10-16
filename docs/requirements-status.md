@@ -1,20 +1,20 @@
 # OnlyCars: Requirements Status
 
-**Audit date:** 2026-10-16 (fifteenth audit, short sign-off of LOW-2, the second Low batch; not committed yet)
-**Overall:** MVP steps 1 to 4 are complete apart from the car photo and attachments (both blocked on R2) and the dashboard's "Start a checklist" (waits for step 5). Next: step 5, starting with MVP5-A (checklist templates). No deployment tickets until the owner asks.
+**Audit date:** 2026-10-16 (sixteenth audit, short sign-off of MVP5-A, checklist templates and items; backend committed in `75e46ea`, frontend not committed yet)
+**Overall:** MVP steps 1 to 4 are complete apart from the car photo and attachments (both blocked on R2) and the dashboard's "Start a checklist". Step 5 has started: checklist templates and their items are done. Next: MVP5-B (attach a checklist to a car with a schedule, run it, run history, "Start a checklist"). No deployment tickets until the owner asks.
 
 | Status | Count |
 |---|---|
-| Done | 24 |
+| Done | 26 |
 | API only | 0 |
 | Partial | 5 |
-| Missing | 21 |
+| Missing | 19 |
 | Deferred | 7 |
 | **Total** | **57** |
 
-How this was checked (fifteenth audit, short sign-off of LOW-2 per decisions.md "Faster pipeline (owner)"; I re-ran no test suites and no browser scripts):
-- Reported by other agents, not re-run by me: LOW-2 is frontend and smoke only; build and lint clean; smoke 64 of 64 in all 4 setups under both `UI_TZ=UTC` and `UI_TZ=Pacific/Kiritimati`; QA verified every item (L13 to L26) in 4 setups; the Hebrew reviewer approved `taskGone`. Fix round: code review's Medium (a stale Undo bar when Show archived is toggled during an in-flight Undo) is fixed with a smoke check, and `taskGone` now ends with "Check your selection and save again." (`client/src/i18n.ts:132,409`); QA confirmed saving again works.
-- No status changes: LOW-2 polished Done bullets in spec 5 and 10.
+How this was checked (sixteenth audit, short sign-off of MVP5-A per decisions.md "Faster pipeline (owner)"; I re-ran no test suites and no browser scripts):
+- Reported by other agents, not re-run by me: `dotnet test` 345 of 345; frontend build and lint clean; smoke 68 of 68 in all 4 setups (`SMOKE_ALL=1 UI_TZ=UTC`) with the new `checklists-empty`, `checklist-create`, `checklist-edit` and `checklist-delete` steps; security review with no High or Medium; code review approved with Lows only; the Hebrew reviewer changed two strings (`invalidRange` split into two sentences, `invalidId` uses "רעננו"); QA passed with one Medium (a negative Min or Max in Hebrew showed the minus on the wrong side), now fixed (`dir=ltr`, right-aligned in RTL) with a smoke assertion.
+- I checked in code: the endpoints (`src/OnlyCars.Api/Controllers/ChecklistTemplatesController.cs:11`), the service and its item-id check (`src/OnlyCars.Application/Checklists/ChecklistTemplateService.cs:32,62`), the page (`client/src/pages/ChecklistsPage.tsx:29`), the route (`client/src/App.tsx:54`), both languages (`client/src/i18n.ts:302,609`) and the smoke steps (`client/ui-tests/smoke.mjs:2399-2538`).
 - The notes from earlier audits are in git history.
 
 ## 1. Vehicles
@@ -78,12 +78,12 @@ How this was checked (fifteenth audit, short sign-off of LOW-2 per decisions.md 
 
 | Requirement | Status | Evidence | What's missing |
 |---|---|---|---|
-| Checklist templates | **Missing** | none | Everything. Next: MVP5-A |
-| Items: checkbox, numeric or text | **Missing** | none | Everything. Next: MVP5-A |
-| Per-checklist schedule: by km, by time, or manual only | **Missing** | none | Everything |
-| Run a checklist: tick items, add notes or photos, flag issues | **Missing** | none | Everything |
+| Checklist templates | **Done** | MVP5-A: `ChecklistTemplatesController.cs:11` (CRUD scoped to the caller), `ChecklistTemplateService.cs`, migration `AddChecklistTemplates`, `tests/OnlyCars.Tests/ChecklistTemplateTests.cs`; the `/checklists` page (`ChecklistsPage.tsx:29`) with a header link; smoke `checklists-empty`, `checklist-create`, `checklist-delete` (`smoke.mjs:2399,2418,2538`) in 4 setups | No starter checklists (decided: none for now) |
+| Items: checkbox, numeric or text | **Done** | MVP5-A: Check, Number (unit, min, max) and Text items, reorder with up and down buttons, in-place update keeping item ids (`ChecklistTemplateService.cs:32,62`); smoke `checklist-create`, `checklist-edit` (`smoke.mjs:2418,2498`); Hebrew strings (`i18n.ts:609`) | none |
+| Per-checklist schedule: by km, by time, or manual only | **Missing** | none | Everything. Next: MVP5-B |
+| Run a checklist: tick items, add notes or photos, flag issues | **Missing** | none | Everything. Next: MVP5-B (photos wait for R2) |
 | Failed items can create a to-do or a maintenance task | **Missing** | none | Everything |
-| Run history per car | **Missing** | none | Everything |
+| Run history per car | **Missing** | none | Everything. Next: MVP5-B |
 
 ## 8. Costs and Reports
 
@@ -160,16 +160,15 @@ How this was checked (fifteenth audit, short sign-off of LOW-2 per decisions.md 
 | Deploy gate | **SEC-1 signed off.** Nothing else blocks a first deploy except the owner's Azure account. The owner said not to deploy yet (decisions.md, 2026-10-15, "When to deploy"), so no deployment tickets are queued. |
 | 3. Service history with costs | **Complete apart from attachments (blocked on R2). MVP3-A, MVP3-B, MVP3-C and MVP3-D are signed off.** Working end to end in EN and HE: the service history on `/cars/:id`, recording a past service (date, odometer, shop or DIY, cost, notes, several tasks, parts and labour) with the date-order rules, editing everything on a record (shop, cost, notes, items, date, odometer and tasks, with the car's odometer and the tasks' last done following), deleting any record, and a `/history` page that filters and searches all cars. LOW-1 (the first Low batch) is signed off too. |
 | 4. Dashboard with due/overdue status | **Complete apart from "Start a checklist" (waits for step 5). MVP4-A and LOW-2 are signed off.** The dashboard on `/`: overdue and due-soon counts, this month's spend linking to `/history`, and per-car cards with the next 3 tasks, one-tap Mark done with Undo, and quick odometer entry, in EN and HE. |
-| 5. Checklists, tires, reports, notifications | Not started. Checklists are split into MVP5-A (templates and items, next), MVP5-B (attach to a car with a schedule, run, run history, the dashboard's "Start a checklist") and MVP5-C (a flagged item creates a maintenance task) (decisions.md, "Checklists scope and split, step 5"). |
+| 5. Checklists, tires, reports, notifications | **Started. MVP5-A (checklist templates and items) is signed off.** Checklists are split into MVP5-A (templates and items, done), MVP5-B (attach to a car with a schedule, run, run history, the dashboard's "Start a checklist") and MVP5-C (a flagged item creates a maintenance task) (decisions.md, "Checklists scope and split, step 5"). |
 
 ## Ticket queue
 
 | Order | Ticket | Who | State |
 |---|---|---|---|
-| 1 | MVP5-A: checklist templates and items (spec 7 bullets 1 and 2) | BE, then FE | **Next** (written below) |
-| 2 | MVP5-B: attach to a car with a schedule, run a checklist, run history, the dashboard's "Start a checklist" | BE, then FE | After MVP5-A |
-| 3 | MVP5-C: a flagged item creates a maintenance task | BE, then FE | After MVP5-B |
-| 4 | LOW-3: the Low backlog (L27 onwards) | BE and FE | After MVP5-C |
+| 1 | MVP5-B: attach to a car with a schedule, run a checklist, run history, the dashboard's "Start a checklist" | BE, then FE | **Next** (written below) |
+| 2 | MVP5-C: a flagged item creates a maintenance task | BE, then FE | After MVP5-B |
+| 3 | LOW-3: the Low backlog (L27 onwards) | BE and FE | After MVP5-C |
 
 ## Signed-off tickets
 
@@ -234,9 +233,15 @@ How this was checked (fifteenth audit, short sign-off of LOW-2 per decisions.md 
   - Fix round: code review's Medium M1 (a stale Undo bar when Show archived is toggled during an in-flight Undo) is fixed with a smoke check; `taskGone` now tells the user to check the selection and save again, and QA confirmed that works.
   - Accepted (decisions.md, "LOW-2 sign-off"): L23 reuses the existing translated error strings. The new Lows are L27 to L36.
 
+- **MVP5-A (backend commit `75e46ea`; the frontend is not committed yet): signed off 2026-10-16.** Short sign-off under "Faster pipeline (owner)"; I re-ran no suites.
+  - Reported evidence: 345 of 345 tests; build and lint clean; smoke 68 of 68 in all 4 setups with the four new checklist steps; security review with no High or Medium; code review approved with Lows only; the Hebrew reviewer changed two strings; QA passed, and its Medium (the minus of a negative Min or Max on the wrong side in Hebrew) is fixed with a smoke assertion.
+  - AC7 is signed off with a known gap: deleting the last row while others remain focuses New checklist, not the first remaining row's Edit as now decided (decisions.md, "MVP5-A sign-off"); fixed in LOW-3 (L39).
+  - Accepted: `checklistItem.invalidId`, the code the backend named itself. Data export and delete-account must include checklists.
+  - The security, review and QA Lows are L37 to L49 in the backlog.
+
 ## Low issues backlog
 
-Every Low finding from QA and review lands here (decisions.md, "Faster pipeline (owner)"). They are fixed together in a batch ticket LOW-n about every 3 tickets. LOW-1 closed L1 to L12; LOW-2 closed L13 to L26 (all fixed). LOW-3 takes what is below.
+Every Low finding from QA and review lands here (decisions.md, "Faster pipeline (owner)"). They are fixed together in a batch ticket LOW-n about every 3 tickets. LOW-1 closed L1 to L12; LOW-2 closed L13 to L26 (all fixed). LOW-3 takes what is below (L43 is done inside MVP5-B).
 
 | # | From | Issue | Area |
 |---|---|---|---|
@@ -250,66 +255,94 @@ Every Low finding from QA and review lands here (decisions.md, "Faster pipeline 
 | L34 | LOW-2 QA | Two simultaneous void requests on one service record give one 500 instead of a 409 `serviceRecord.alreadyVoided` (concurrency; no data damage). | BE |
 | L35 | LOW-2 QA | Stale QA scripts: `qa-mvp3a.mjs` clicks the removed `button.undo-service` (update or retire it); `qa-mvp4a.mjs`'s offline check aborts only one request, but StrictMode sends two (`qa-low2-offline.mjs` shows the app is fine); `qa-low2.mjs` still has a debug log. | QA scripts |
 | L36 | LOW-2 engineer | A new car's first reading is dated with the server's UTC date (`src/OnlyCars.Application/Vehicles/VehicleService.cs:71`), other readings with the client's local date, so avg km/day can be one day off near midnight (smoke works around it). Use the client's local date, as decided for quick-add (2026-10-15). | BE + FE |
+| L37 | MVP5-A security | No request body size limit on the checklist endpoints; add `[RequestSizeLimit(65_536)]` as on `AuthController`. The other controllers have the same gap; fix them all at once. | BE |
+| L38 | MVP5-A security | Concurrency on checklist templates: (a) the 100-template cap can be exceeded by simultaneous POSTs; (b) simultaneous PUTs on one template can give a 500 (`DbUpdateConcurrencyException` unmapped). Map it to a 409 with a translated code; fix together with L34. | BE |
+| L39 | MVP5-A review + decision | Focus after deleting a checklist (`ChecklistsPage.tsx:92`): (a) when the deleted row was the last one and others remain, focus the first row's Edit (decisions.md, "MVP5-A sign-off"); (b) with the New form open, `main button.add` is not there and focus drops to `body`; add `main h1` as the last fallback. | FE, `/checklists` |
+| L40 | MVP5-A review | The client's re-sort after Save may differ from the server's order (name, then creation time). Match it, or add a `shortcut:` comment. | FE, `/checklists` |
+| L41 | MVP5-A review | The browser's min/max validity message keeps an old item number after an item is moved. | FE, `/checklists` |
+| L42 | MVP5-A review | Edit-save on a template deleted elsewhere leaves a dead row: on `notFound`, close the form and call `onDeleted`. | FE, `/checklists` |
+| L43 | MVP5-A review | The item-row error and focus code is copied from `ServiceHistory.tsx` (~25 lines). Extract a shared hook when the run form would be the third copy: done inside MVP5-B. | FE |
+| L44 | MVP5-A review | Test gaps: backend, a Check item with a whitespace-only unit; smoke, an item-index error after a reorder, and the browser message for an empty label. | Tests |
+| L45 | MVP5-A review | Nits: a CSS comment above the wrong rule (`index.css` ~276); `limit()` pulls a React type into `api.ts` (leave unless a forms module appears). | FE |
+| L46 | MVP5-A QA | A Latin checklist name in Hebrew puts the name and count on the left; add `dir="auto"` to `.name` in `ChecklistsPage.tsx`. | FE, `/checklists` |
+| L47 | MVP5-A QA | The New and Edit forms can be open together with nothing telling them apart; give each form a heading ("New checklist" or "Edit <name>"). | FE, `/checklists` |
+| L48 | MVP5-A QA (app-wide) | Text-link buttons are 44px tall but 28 to 40px wide; give the shared text-button style a 44px minimum width. | FE, all pages |
+| L49 | MVP5-A QA | The Hebrew smoke logout step flaked once under load (not reproduced). Watch it; harden the wait if it recurs. QA scripts added: `qa-mvp5a.mjs`, `qa-mvp5a-logout.mjs`, `qa-mvp5a-zoom.mjs`. | Smoke |
 
 ## Next ticket
 
-### MVP5-A: Checklist templates and items
+### MVP5-B: Run a checklist on a car
 
-**Goal:** As a user, I can create my own inspection checklists (for example "Monthly quick check" or "Pre-road-trip"), each a named, ordered list of items that are a checkbox, a number with an optional unit and range, or a text note, and edit, reorder or delete them, so they are ready to run on my cars.
+**Goal:** As a user, I can attach one of my checklists to a car with a schedule (every N km, every N days, both, or manual only), see when it is due, run it (tick OK / Not OK, enter numbers and text, flag problems, add notes), and look back at the car's past runs, also starting a run from the dashboard.
 
-**Spec:** section 7 bullets 1 ("Checklist templates") and 2 ("Items: checkbox, numeric or text"); Part 2 "Checklists" (`ChecklistTemplate`, `ChecklistTemplateItem`); section 12 (Hebrew and English, mobile).
+**Spec:** section 7 bullets 3 ("Per-checklist schedule"), 4 ("Run a checklist", without photos) and 6 ("Run history per car"); section 10 bullet 3 ("start a checklist"); Part 2 "Checklists" (`VehicleChecklist`, `ChecklistRun`, `ChecklistRunItem`); section 12 (Hebrew and English, mobile).
 
-**Binding decisions:** decisions.md "Checklists scope and split, step 5", "Checklist template rules, MVP5-A", "Faster pipeline (owner)", the MVP1-C focus and Escape rules, "Destructive actions and page titles".
+**Binding decisions:** decisions.md "Checklist run rules, MVP5-B", "Checklist template rules, MVP5-A" (`checklistTemplate.inUse`), "'Manual only' checklist schedule vs the spec's check constraint", "MVP5-A sign-off" (focus after Delete), the service-record date-order rules and `confirmCorrection` (MVP3-A), "Faster pipeline (owner)", the MVP1-C focus and Escape rules, "Destructive actions and page titles".
 
 **Scope**
 
-*Backend (backend-engineer, runs first and publishes `docs/contracts/MVP5-A.md`):*
-- Entities `ChecklistTemplate` (`UserId`, `Name`) and `ChecklistTemplateItem` (`TemplateId`, `Label`, `Type` Check/Number/Text, `Unit` nullable, `MinValue` nullable, `MaxValue` nullable, `SortOrder`), each with `Id`, `CreatedAt`, `UpdatedAt`. Items cascade from their template. `MinValue`/`MaxValue` as `decimal(12,2)`. An EF configuration and a migration. No `VehicleChecklist`, runs or seed data yet.
-- Endpoints, all scoped to the signed-in user (another user's template is a 404):
-  - `GET /api/checklist-templates`: the user's templates, ordered by name then creation time, each with its id, name, item count and items.
-  - `GET /api/checklist-templates/{id}`: one template with its items in `SortOrder`.
-  - `POST /api/checklist-templates`: `{ name, items: [{ label, type, unit, minValue, maxValue }] }`; returns the created template (201).
-  - `PUT /api/checklist-templates/{id}`: same body; each item may carry `id`. An item with an `id` of this template is updated in place, one without an `id` is created, and items of the template missing from the list are deleted. `SortOrder` is the array position. An `id` that belongs to another template is a 400.
-  - `DELETE /api/checklist-templates/{id}`: hard delete (204).
-- Validation (translated error codes, the existing error shape): name 1 to 100 after trim (`checklistTemplate.invalidName`); at most 100 templates per user (`checklistTemplate.tooMany`); 0 to 50 items (`checklistTemplate.tooManyItems`); label 1 to 100 after trim (`checklistItem.invalidLabel`); type one of Check, Number, Text (`checklistItem.invalidType`); unit up to 20 after trim, empty becomes null (`checklistItem.invalidUnit`); min and max each -1,000,000 to 1,000,000 with at most 2 decimals, min not above max (`checklistItem.invalidRange`); unit, min and max on a Check or Text item are a 400 (`checklistItem.numberOnly`).
-- Tests in `tests/OnlyCars.Tests`: CRUD, ownership (another user's template is a 404 on every endpoint), each validation code with its boundary, the in-place update keeping item ids, reorder, delete-missing, a foreign item id rejected, and cascade delete.
+*Backend (backend-engineer, runs first and publishes `docs/contracts/MVP5-B.md`):*
+- Entities, each with `Id`, `CreatedAt`, `UpdatedAt`:
+  - `VehicleChecklist`: `VehicleId`, `TemplateId`, `IntervalKm` (int, nullable), `IntervalDays` (int, nullable), `LastRunOdometerKm`, `LastRunDate`, `IsEnabled`, plus `StartDate` and `StartOdometerKm` (the attach values, see the decision). Unique on (`VehicleId`, `TemplateId`). No check constraint on the intervals (manual only is allowed).
+  - `ChecklistRun`: `VehicleChecklistId`, `RunAt` (date), `OdometerKm`, `Notes` (nullable), and the id of the Checklist `OdometerReading` it created (nullable).
+  - `ChecklistRunItem`: `RunId`, `TemplateItemId` (nullable; the link is cleared when the template item is deleted), `LabelSnapshot`, plus the item's type, unit, min and max at run time, `BoolValue`, `NumberValue` (`decimal(12,2)`), `TextValue`, `IsFlagged`.
+  - An EF configuration and a migration. Watch SQL Server's multiple-cascade-paths rule; where a cascade is not allowed, clear or delete in the service, with a test.
+- Endpoints, all scoped to the signed-in user (another user's car, template, attachment or run is a 404):
+  - `GET /api/vehicles/{vehicleId}/checklists`: the car's attached checklists, each with id, template id and name, item count, intervals, `isEnabled`, last run date and km, and status, remaining km, remaining days and progress as tasks have them (none when manual only or off); most urgent first (Overdue, Due soon, OK, then manual only and off), ties by name.
+  - `POST /api/vehicles/{vehicleId}/checklists`: `{ templateId, intervalKm, intervalDays, date }` (date is the client's local date, the `StartDate`); 201.
+  - `PUT /api/vehicle-checklists/{id}`: `{ intervalKm, intervalDays, isEnabled }`.
+  - `DELETE /api/vehicle-checklists/{id}`: 204, or 409 `vehicleChecklist.hasRuns`.
+  - `GET /api/vehicle-checklists/{id}/runs`: the runs, newest first (`RunAt` DESC, then creation time DESC), each with its items and flagged count.
+  - `POST /api/vehicle-checklists/{id}/runs`: `{ runAt, odometerKm, confirmCorrection, notes, items: [{ templateItemId, boolValue, numberValue, textValue, isFlagged }] }`; 201 with the run and the updated checklist. Items must be exactly the template's current items (missing or foreign is a 400 `checklistRun.itemsChanged`, so a form opened before a template edit is told to reload).
+  - `DELETE /api/checklist-runs/{id}`: 204; recomputes the last run and removes its Checklist reading with the odometer recompute.
+  - `DELETE /api/checklist-templates/{id}` returns 409 `checklistTemplate.inUse` while the template is attached to any car.
+  - The dashboard's `GET /api/dashboard`: each active car also gets its enabled checklists in the order above (id, name, status), for "Start a checklist". The summary counts stay tasks only.
+- Validation (translated codes, existing error shape): `vehicleChecklist.invalidInterval` (km 1 to 1,000,000, days 1 to 3,650), `vehicleChecklist.duplicate` (409), `vehicleChecklist.vehicleArchived` (attach or run on an archived car), `checklistRun.futureDate`, `checklistRun.invalidOdometer` (0 to 10,000,000) plus the existing date-order correction codes, `checklistRun.invalidNotes` (up to 1,000), `checklistItem.invalidValue` (a value that does not fit the item type; number -1,000,000 to 1,000,000 with 2 decimals; text up to 500), with the item index as in MVP5-A.
+- Flags are computed on the server: Check with `boolValue = false`, or Number outside Min/Max, is always flagged; `isFlagged` from the client can only add a flag.
+- Tests in `tests/OnlyCars.Tests`: CRUD and ownership on every endpoint; manual only never due; status at the 10% boundary for km and days; the auto flags at Min and Max exactly (inside) and just outside; a hand flag kept; an auto flag not clearable; an older run not moving the last run; run delete recomputing (from another run and from the start values); the run's odometer reading and the correction rule; `inUse` and `hasRuns`; `itemsChanged`; a deleted template item leaving the run item's snapshot readable; archived car rejected.
 
 *Frontend (frontend-engineer, builds against the contract):*
-- A **Checklists** link in the header and a `/checklists` page (page `h1` and `document.title` as on every route) listing the templates by name, each with its item count and **Edit** and **Delete** buttons, plus **New checklist**.
-- A template form (inline or on `/checklists/new` and `/checklists/:id`, the engineer's choice, following the existing car form or edit patterns): the name, and an item list where each row has a label, a type select (Checkbox (OK / Not OK), Number, Text), and for Number only the unit, min and max fields. Rows can be added, removed, and moved up and down with buttons (no drag and drop). Save sends the whole list; Cancel and Escape discard.
-- Delete asks for confirmation with the red `--danger` confirm button, as on other deletes.
-- All new text in `en` and `he` in `client/src/i18n.ts`, with every new error code translated.
-- Smoke steps in `client/ui-tests/smoke.mjs`: `checklists-empty`, `checklist-create` (three items, one of each type, Number with unit and range), `checklist-edit` (reorder, rename an item, remove one, add one), `checklist-delete`.
+- On `/cars/:id`, a **Checklists** section after Maintenance: each attached checklist with its schedule ("Every 5,000 km or 30 days", "Manual only"), status badge, remaining km or days and progress as tasks show them, last run date, and **Run**, **Edit** (intervals and on/off) and **Remove** buttons; **Add a checklist** picks one of the user's templates (templates already attached are not offered; with no templates, a link to `/checklists`). Distances use the km or miles setting.
+- A run page `/cars/:id/checklists/:vehicleChecklistId/run` (page `h1` with the checklist and car name, `document.title`): date (today, local), odometer (optional, prefilled empty with the current odometer shown as a hint), one row per item in order: Check as an OK / Not OK pair of radio buttons (unanswered allowed), Number as a number input with its unit and range shown, Text as a text area, each with a **Flag** toggle; auto-flagged rows show they are flagged and why ("Below 2.0 bar"), live as the user types; run notes; **Save run** and **Cancel**. The date-order correction prompt as on Record a service. After Save, back to `/cars/:id` with focus on that checklist's Run button and a status line with the flagged count.
+- **Run history** under each checklist on the car page (collapsed by default, "History (3)"): newest first, each run with date, odometer, flagged count and notes; expanding a run shows every item's label snapshot, value (with unit) and flag. **Delete** on a run with the red confirm.
+- The dashboard card: a **Start a checklist** button when the car has enabled checklists, opening a list of them (name and status badge, most urgent first) where each opens the run page; with exactly one it goes straight there. Hidden on archived cars and on cars without checklists.
+- On `/checklists`, deleting an attached template shows the translated `inUse` message next to the row and keeps the row.
+- Extract the item-row error and focus code shared by `ServiceHistory.tsx`, `ChecklistsPage.tsx` and the run form into one hook (L43).
+- All new text in `en` and `he` in `client/src/i18n.ts`, every new error code translated.
+- Smoke steps in `client/ui-tests/smoke.mjs`: `checklist-attach` (manual only and a km schedule), `checklist-run` (one item of each type, a Number out of range auto-flagged, a hand flag, an odometer that updates the car), `checklist-run-history` (expand, delete), `dashboard-start-checklist`, `checklist-template-in-use`.
 
 **Acceptance criteria**
-1. [BE] The five endpoints work as in the contract; another user's template is a 404 on GET, PUT and DELETE; every validation rule returns its code with a 400, and the limits are tested at their boundaries.
-2. [BE] PUT updates items in place: an item kept in the list keeps its `id`, a new one gets a new `id`, a missing one is deleted, and the order follows the array. A foreign item `id` is a 400 and changes nothing.
-3. [BE] Deleting a template deletes its items; `dotnet test` passes in full.
-4. [FE] From the header, a user opens Checklists, creates "Monthly quick check" with a Checkbox item, a Number item "Tire pressure" with unit "bar", min 2.0 and max 2.6, and a Text item; after a reload the template and its items are there in the same order.
-5. [FE] Editing a template can rename it, change an item's label or type, reorder items with the up and down buttons, remove an item and add one; Save keeps the result after a reload. Changing a Number item to Checkbox or Text clears and hides its unit, min and max.
-6. [FE] Unit, min and max are shown only for Number items; min above max, a value out of range and an empty name or label show a translated message next to the field, and nothing is saved.
-7. [FE] Delete asks for confirmation; after it the template is gone from the list and focus follows the MVP1-C rules (next row's Edit, else New checklist).
-8. [FE] Empty state: with no templates the page says so and offers New checklist. Loading shows the existing loading pattern; a failed load shows a translated error with Retry; a failed save keeps the form and what was typed and shows a translated error.
-9. [FE] Hebrew and RTL: every new string is in `he`, the Hebrew reviewer approves them, the layout mirrors, and numbers (2.6) and units read correctly in RTL.
-10. [FE] Mobile: at 390px there is no horizontal overflow, item rows stack cleanly, and every button (including move up and down and remove) is at least 44px; each item's controls have accessible names that include the item number or label. Dark mode works.
-11. [FE] Focus: on open, focus goes to the name field; after adding an item, to its label; after Save, to the template's Edit button in the list; Escape cancels the form like Cancel.
-12. [BE+FE] No regressions: build and lint clean; smoke passes in all 4 setups with the four new steps; QA covers 4 setups.
+1. [BE] Every endpoint works as in the contract; another user's car, template, attachment or run is a 404 on every endpoint; every validation code returns with its boundary tested; `dotnet test` passes in full.
+2. [BE] Status follows the task rules with a 10% due-soon threshold; manual only and turned-off checklists have no status and are never due; never-run checklists count from their start values.
+3. [BE] Flags: Not OK and a Number outside Min/Max are always flagged (Min and Max themselves are inside); a hand flag is kept; the client can't clear an auto flag.
+4. [BE] A run at least as recent as the last run moves the last run; an older one doesn't. Deleting a run recomputes the last run from the remaining runs or the start values, and removes its odometer reading with the car's odometer recompute. A run with an odometer follows the service-record date-order rule and `confirmCorrection`.
+5. [BE] A template attached to a car can't be deleted (409 `checklistTemplate.inUse`); an attachment with runs can't be removed (409 `vehicleChecklist.hasRuns`); deleting an item from a template keeps old runs readable from their snapshot.
+6. [FE] On a car page, a user attaches "Monthly quick check" every 30 days and another checklist as manual only; both show with their schedules, the first with OK and days remaining, the second as "Manual only" with no badge. Editing the intervals or turning one off updates the status without a reload. Remove asks for confirmation; with runs it shows the translated `hasRuns` message.
+7. [FE] A user runs a checklist: answers a Check item Not OK, enters 1.8 for "Tire pressure" (2.0 to 2.6 bar), which shows flagged with the reason as typed, flags the Text item by hand, adds notes and an odometer above the current one, and saves; the car's odometer, the checklist's last run and status update, and the history shows the run with 3 flagged. After a reload it is all still there.
+8. [FE] Run history: newest first, collapsed by default; expanding a run shows each item's label as it was, its value with unit and its flag; after the template item is renamed the old run still shows the old label. Delete asks for confirmation and focus follows the decided Delete rule.
+9. [FE] Dashboard: "Start a checklist" shows on a card with enabled checklists, lists them most urgent first, and opens the run page; with one checklist it opens it directly; it is not shown on archived cars or cars without checklists.
+10. [FE] Errors and states: empty states (no checklists on the car, no templates yet with a link to `/checklists`, no runs yet); loading uses the existing pattern; a failed load shows a translated error with Retry; a failed save keeps everything typed and shows a translated error next to the field or item; `itemsChanged` tells the user to reload; a future date and the date-order correction behave as on Record a service.
+11. [FE] Hebrew and RTL: every new string is in `he` and approved by the Hebrew reviewer; the layout mirrors; numbers with units and negative values read correctly (as fixed in MVP5-A); the OK / Not OK pair and the flag toggle make sense in Hebrew.
+12. [FE] Mobile and accessibility: at 390px no horizontal overflow and the run form fits one column; every control is at least 44px; each item's controls have accessible names with the item label; the auto-flag reason is linked with `aria-describedby`; the status line after Save is `role="status"`; dark mode works.
+13. [FE] Focus: route change to the run page focuses its `h1`; Escape and Cancel on inline forms return to the opener; after Save of a run, focus goes to the checklist's Run button on the car page; after attaching, to the new checklist's Run button.
+14. [BE+FE] No regressions: build and lint clean; smoke passes in all 4 setups with the five new steps; QA covers 4 setups.
 
-**Out of scope:** attaching a template to a car, schedules, `VehicleChecklist`, running a checklist, run history and flags (MVP5-B); creating tasks from flagged items (MVP5-C); photos (R2); starter checklists (decisions.md: none seeded for now); the dashboard's "Start a checklist" (MVP5-B); drag-and-drop reordering; any change to the Low backlog items.
+**Out of scope:** photos on runs (R2); editing a run; creating a task or to-do from a flagged item (MVP5-C); notifications for due checklists (spec 9); counting checklists in the dashboard's Overdue and Due soon summary; a per-checklist due-soon threshold; starter checklists; other Low backlog items except L43.
 
-**Open questions:** none. The choices are recorded in decisions.md ("Checklists scope and split, step 5" and "Checklist template rules, MVP5-A"). The owner may want starter checklists later; that is noted in the decision, not asked now.
+**Open questions:** none. The choices are recorded in decisions.md ("Checklist run rules, MVP5-B" and the earlier checklist decisions).
 
 ---
 
 ### Later
-- **MVP5-B:** attach a checklist template to a car with a schedule (km, days or manual only), its due status, run a checklist (tick, values, notes, flags; Number items auto-flag outside Min/Max, Check items flag on Not OK), run history per car, and the dashboard's "Start a checklist". A run's reading uses `OdometerReading.Source = Checklist`.
-- **MVP5-C:** a flagged item creates a maintenance task. Then tires, reports and notifications.
+- **MVP5-C:** a flagged item creates a maintenance task (from the run history or right after Save). Then LOW-3, then tires, reports and notifications.
 - **Car photo upload, attachments and run photos:** blocked until the owner creates the Cloudflare R2 credentials.
 - **Predicted due date** from `AvgKmPerDay` (spec 2.3, optional).
+- **Data export and delete-account** (spec 12): must include checklists, their attachments to cars and runs.
 
 ## Changed since last audit
-- **Signed off:** LOW-2 (not committed yet). L13 to L26 fixed; L23's reuse of existing error strings accepted.
-- **Counts:** unchanged (Done 24, Partial 5, Missing 21, Deferred 7).
-- **Backlog:** L27 to L36 added (LOW-2 review, QA and engineer). Two touch the backend (L34, L36).
-- **New decisions** (`docs/decisions.md`, 2026-10-16): "LOW-2 sign-off", "Checklists scope and split, step 5", "Checklist template rules, MVP5-A", "'Manual only' checklist schedule vs the spec's check constraint".
-- **Next ticket:** MVP5-A, written in full. The LOW-2 ticket text is in git history up to `1de85aa`.
+- **Signed off:** MVP5-A (backend `75e46ea`; frontend not committed yet). AC7 signed off with the focus gap tracked as L39.
+- **Status changes:** spec 7 "Checklist templates" and "Items: checkbox, numeric or text" are now Done. Counts: Done 26 (was 24), Missing 19 (was 21).
+- **Backlog:** L37 to L49 added (MVP5-A security, review and QA). L43 is done inside MVP5-B; L37 and L38 touch the backend.
+- **New decisions** (`docs/decisions.md`, 2026-10-16): "MVP5-A sign-off: focus after Delete, `checklistItem.invalidId`" and "Checklist run rules, MVP5-B".
+- **Next ticket:** MVP5-B, written in full. The MVP5-A ticket text is in git history up to `75e46ea`.
+- **Data note:** the security reviewer left two test users (`seca…`/`secb…@example.test`) in the local dev DB; they stay until delete-account exists.

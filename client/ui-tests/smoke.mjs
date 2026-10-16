@@ -2372,6 +2372,202 @@ for (const s of setups) {
     await archive.click()
     await bike.waitFor({ state: 'detached' })
   })
+  // MVP5-A: checklist templates on /checklists.
+  const CL = he
+    ? { title: 'רשימות בדיקה', add: 'רשימת בדיקה חדשה', empty: 'עדיין אין רשימות בדיקה. צרו רשימה כדי להשתמש בה ברכבים שלכם.', addItem: 'הוספת פריט',
+        three: '3 פריטים', edit: 'עריכה של ', del: 'מחיקה של ', confirm: 'למחוק את רשימת הבדיקה הזו?', name: 'הזינו שם של עד 100 תווים.', remove2: 'הסרת פריט ⁦2⁩',
+        range: 'פריט 2: הזינו מינימום ומקסימום בין -1,000,000 ל־1,000,000, עם עד 2 ספרות אחרי הנקודה. המינימום לא יכול להיות גבוה מהמקסימום.',
+        up: (n) => `הזזת פריט ⁦${n}⁩ למעלה`, unit: (n) => `פריט ${n}, יחידה` }
+    : { title: 'Checklists', add: 'New checklist', empty: 'No checklists yet. Create one to use on your cars.', addItem: 'Add item',
+        three: '3 items', edit: 'Edit ', del: 'Delete ', confirm: 'Delete this checklist?', name: 'Enter a name of up to 100 characters.', remove2: 'Remove item 2',
+        range: 'Item 2: Enter a min and max from -1,000,000 to 1,000,000 with up to 2 decimals, and a min not above the max.',
+        up: (n) => `Move item ${n} up`, unit: (n) => `Item ${n}, Unit` }
+  const clNew = page.getByRole('button', { name: CL.add, exact: true })
+  const clForm = page.locator('main form')
+  const clSave = clForm.locator('> .actions > button:not(.link)')
+  const clRows = page.locator('main .checklists > li')
+  const clRow = (name) => clRows.filter({ has: page.locator('.name', { hasText: new RegExp(`^${name}$`) }) })
+  const clItem = (i) => clForm.locator('fieldset.item').nth(i)
+  const clLabels = () => clForm.locator('fieldset.item').evaluateAll((fs) => fs.map((f) => f.querySelector('input').value).join())
+  const clTypes = () => clForm.locator('fieldset.item select').evaluateAll((xs) => xs.map((x) => x.value).join())
+  const isTemplateSave = (r) => r.url().includes('/api/checklist-templates') && ['POST', 'PUT'].includes(r.request().method())
+  const forget400 = () => {
+    run.badResponses = run.badResponses.filter((r) => !(r.startsWith('400 ') && r.includes('/checklist-templates')))
+    run.consoleErrors = run.consoleErrors.filter((e) => !e.includes('status of 400'))
+  }
+  let clIds
+  await step('checklists-empty', async () => {
+    // Criterion 8: a failed load shows a translated error with Retry; Retry focuses the h1. Every load fails until unrouted (StrictMode loads twice).
+    await page.route('**/api/checklist-templates', (r) => r.fulfill({ status: 500, contentType: 'application/json', body: '{}' }))
+    await page.click('header nav a[href="/checklists"]')
+    await arrivedAt(CL.title)
+    const alert = page.locator('main [role=alert]')
+    await alert.waitFor()
+    if (plain(await alert.textContent()) !== HS.generic) throw new Error(`load error "${await alert.textContent()}"`)
+    await page.unroute('**/api/checklist-templates')
+    forget500()
+    await page.getByRole('button', { name: HS.retry, exact: true }).click()
+    await focusIs('main h1', 'h1 after Retry')
+    // The empty state offers New checklist.
+    await page.getByText(CL.empty, { exact: true }).waitFor()
+    await page.setViewportSize({ width: 390, height: 844 })
+    await tall(clNew, 'New checklist')
+    await sweep('the empty checklists page')
+    await noOverflow('the empty checklists page')
+  })
+  await step('checklist-create', async () => {
+    // Criterion 11: focus on the name when the form opens; Escape cancels and returns to New checklist.
+    await clNew.click()
+    await focusIs('main form input[name=name]', 'the name after New checklist')
+    await page.keyboard.press('Escape')
+    await focusIs('main button.add', 'New checklist after Escape')
+    if (await clForm.count()) throw new Error('the form stayed open')
+    await clNew.click()
+    // Criterion 6: an empty name is stopped by the browser with the translated message, before any request.
+    let sent = 0
+    const count = (r) => { if (r.url().includes('/api/checklist-templates') && r.method() === 'POST') sent++ }
+    page.on('request', count)
+    await clSave.click()
+    const nameMsg = await clForm.locator('input[name=name]').evaluate((el) => el.validationMessage)
+    if (plain(nameMsg) !== CL.name) throw new Error(`name message "${nameMsg}"`)
+    await clForm.locator('input[name=name]').fill('Monthly quick check')
+    const addItem = clForm.getByRole('button', { name: CL.addItem, exact: true })
+    // Criterion 4: a Checkbox, a Number with unit and range, and a Text item; focus goes to each new label.
+    await addItem.click()
+    await focusIs('main form fieldset.item:nth-of-type(1) input', 'the new label')
+    await page.keyboard.type('Lights')
+    await addItem.click()
+    await focusIs('main form fieldset.item:nth-of-type(2) input', 'the second label')
+    await page.keyboard.type('Tire pressure')
+    if ((await clItem(1).locator('input').count()) !== 1) throw new Error('unit, min or max shown for a Checkbox item')
+    await clItem(1).locator('select').selectOption('Number')
+    const [unit, min, max] = [1, 2, 3].map((n) => clItem(1).locator('input').nth(n))
+    if (plain(await unit.getAttribute('aria-label')) !== CL.unit(2)) throw new Error(`unit name "${await unit.getAttribute('aria-label')}"`)
+    await unit.fill('bar')
+    await min.fill('2.0')
+    await max.fill('1.5')
+    await addItem.click()
+    await page.keyboard.type('Notes')
+    await clItem(2).locator('select').selectOption('Text')
+    page.off('request', count)
+    if (sent) throw new Error('a request was sent with an empty name')
+    // Min above max: the API's message on that row, tied to min and max; everything typed stays.
+    await clSave.click()
+    const rowAlert = clItem(1).locator('[role=alert]')
+    await rowAlert.waitFor()
+    if (plain(await rowAlert.textContent()) !== CL.range) throw new Error(`range error "${await rowAlert.textContent()}"`)
+    if ((await min.getAttribute('aria-invalid')) !== 'true' || (await max.getAttribute('aria-describedby')) !== (await rowAlert.getAttribute('id'))) throw new Error('range error not tied to min and max')
+    if ((await clForm.locator('[role=alert]').count()) !== 1) throw new Error('the error shows twice')
+    forget400()
+    await max.fill('2.6')
+    // A negative min reads "-5.5" in Hebrew too: min and max are LTR, aligned to the page's start side.
+    await min.fill('-5.5')
+    const pageDir = await page.evaluate(() => document.documentElement.dir)
+    for (const x of [min, max]) {
+      const [dir, align] = await x.evaluate((el) => [getComputedStyle(el).direction, getComputedStyle(el).textAlign])
+      if (dir !== 'ltr' || align !== (pageDir === 'rtl' ? 'right' : 'start')) throw new Error(`min/max direction ${dir} ${align}`)
+    }
+    // A failed save keeps the form and what was typed, with a translated error.
+    await page.route('**/api/checklist-templates', (r) => r.fulfill({ status: 500, contentType: 'application/json', body: '{}' }), { times: 1 })
+    await clSave.click()
+    await clForm.locator('[role=alert]', { hasText: HS.generic }).waitFor()
+    forget500()
+    if ((await clLabels()) !== 'Lights,Tire pressure,Notes' || (await max.inputValue()) !== '2.6') throw new Error('values lost after a failed save')
+    noLatin(plain((await clForm.locator('label, legend, option').allTextContents()).join()), 'checklist form labels')
+    await noOverflow('the checklist form with three items')
+    await sweep('the checklist form')
+    await page.screenshot({ path: `${OUT}/${s.name}-checklist-form.png`, fullPage: true })
+    const res = page.waitForResponse(isTemplateSave)
+    await clSave.click()
+    const r = await res
+    const body = r.request().postDataJSON()
+    const tp = await r.json()
+    if (r.status() !== 201 || body.items[0].unit !== undefined || body.items[1].minValue !== -5.5 || body.items[1].maxValue !== 2.6 || body.items[1].unit !== 'bar') throw new Error(`${r.status()} ${JSON.stringify(body)}`)
+    clIds = tp.items.map((i) => i.id)
+    // Criterion 11: after Save, focus on the template's Edit.
+    await focusIs(`.checklists li[data-id="${tp.id}"] button.edit`, 'Edit after Save')
+    if (plain(await clRow('Monthly quick check').locator('.task-head .muted').textContent()) !== CL.three) throw new Error('item count')
+    // After a reload the items are there in the same order, with the Number's unit and range (GET's 2.60 shown as 2.6).
+    await page.reload()
+    await clRow('Monthly quick check').getByRole('button', { name: `${CL.edit}Monthly quick check`, exact: true }).click()
+    if ((await clLabels()) !== 'Lights,Tire pressure,Notes' || (await clTypes()) !== 'Check,Number,Text') throw new Error(`after reload ${await clLabels()} ${await clTypes()}`)
+    if ([await unit.inputValue(), await min.inputValue(), await max.inputValue()].join() !== 'bar,-5.5,2.6') throw new Error('unit or range after reload')
+    await page.keyboard.press('Escape')
+    await focusIs('.checklists button.edit', 'Edit after Escape')
+  })
+  await step('checklist-edit', async () => {
+    // Criterion 5: rename, relabel, reorder with the buttons, change a type, remove one and add one.
+    await clRow('Monthly quick check').locator('button.edit').click()
+    await focusIs('main form input[name=name]', 'the name on Edit')
+    await clForm.locator('input[name=name]').fill('Monthly check')
+    await clItem(2).locator('input').first().fill('Notes v2')
+    await clForm.getByRole('button', { name: CL.up(3), exact: true }).click()
+    await focusIs('main form fieldset.item:nth-of-type(2) button.up', 'Move up after moving up')
+    await clForm.getByRole('button', { name: CL.up(2), exact: true }).click()
+    // At the top its Move up is disabled, so focus moves to its Move down.
+    await focusIs('main form fieldset.item:nth-of-type(1) button.down', 'Move down at the top')
+    if ((await clLabels()) !== 'Notes v2,Lights,Tire pressure') throw new Error(`order ${await clLabels()}`)
+    // Number to Text hides and clears unit, min and max; back to Number they are empty.
+    await clItem(2).locator('select').selectOption('Text')
+    if ((await clItem(2).locator('input').count()) !== 1) throw new Error('unit, min or max still shown')
+    await clItem(2).locator('select').selectOption('Number')
+    if ((await clItem(2).locator('input').evaluateAll((xs) => xs.slice(1).map((x) => x.value).join(''))) !== '') throw new Error('unit, min or max not cleared')
+    await clItem(2).locator('select').selectOption('Check')
+    // Remove Lights: focus goes to the row that took its place.
+    await clItem(1).getByRole('button', { name: CL.remove2, exact: true }).click()
+    await focusIs('main form fieldset.item:nth-of-type(2) input', 'the next label after Remove')
+    await clForm.getByRole('button', { name: CL.addItem, exact: true }).click()
+    await page.keyboard.type('Wipers')
+    await page.setViewportSize({ width: 390, height: 844 })
+    await noOverflow('the edit form')
+    await sweep('the edit form')
+    const res = page.waitForResponse(isTemplateSave)
+    await clSave.click()
+    const r = await res
+    const body = r.request().postDataJSON()
+    const tp = await r.json()
+    if (r.status() !== 200 || body.items[1].unit !== undefined || body.items.map((i) => i.id ?? '').join() !== `${clIds[2]},${clIds[1]},`) throw new Error(`${r.status()} ${JSON.stringify(body)}`)
+    if (tp.items[0].id !== clIds[2] || tp.items[1].id !== clIds[1] || !tp.items[2].id) throw new Error('item ids not kept')
+    await focusIs(`.checklists li[data-id="${tp.id}"] button.edit`, 'Edit after saving an edit')
+    await page.reload()
+    await clRow('Monthly check').locator('button.edit').click()
+    if ((await clLabels()) !== 'Notes v2,Tire pressure,Wipers' || (await clTypes()) !== 'Text,Check,Check') throw new Error(`after reload ${await clLabels()} ${await clTypes()}`)
+    await clForm.locator('> .actions > button.link').click() // Cancel
+    await focusIs('.checklists button.edit', 'Edit after Cancel')
+  })
+  await step('checklist-delete', async () => {
+    // A second template, sorted first, so deleting it moves focus to the next row's Edit.
+    const token = await page.evaluate(() => localStorage.getItem('token'))
+    await page.request.post(`${BASE}/api/checklist-templates`, { headers: { Authorization: `Bearer ${token}` }, data: { name: 'Another check', items: [] } })
+    await page.reload()
+    await clRow('Another check').waitFor()
+    const del = (name) => clRow(name).getByRole('button', { name: `${CL.del}${name}`, exact: true })
+    // Criterion 7: Delete asks first, with the red confirm; Escape goes back to Delete.
+    await del('Another check').click()
+    await clRow('Another check').getByText(CL.confirm, { exact: true }).waitFor()
+    const danger = clRow('Another check').locator('button.danger')
+    const bg = await danger.evaluate((el) => getComputedStyle(el).backgroundColor)
+    const want = await page.evaluate(() => { const d = document.createElement('i'); d.style.color = 'var(--danger)'; document.body.append(d); const c = getComputedStyle(d).color; d.remove(); return c })
+    if (bg !== want) throw new Error(`confirm ${bg}, want ${want}`)
+    await page.setViewportSize({ width: 390, height: 844 })
+    await sweep('the delete confirm')
+    await noOverflow('the delete confirm')
+    await page.screenshot({ path: `${OUT}/${s.name}-checklist-delete-confirm.png`, fullPage: true })
+    await page.keyboard.press('Escape')
+    await focusIs('.checklists > li:nth-child(1) .actions button:not(.edit)', 'Delete after Escape')
+    await del('Another check').click()
+    await danger.click()
+    await clRow('Another check').waitFor({ state: 'detached' })
+    await focusIs('.checklists > li:nth-child(1) button.edit', 'the next row\'s Edit after Delete')
+    // The last one: focus goes to New checklist, and the empty state is back.
+    await del('Monthly check').click()
+    await clRow('Monthly check').locator('button.danger').click()
+    await page.getByText(CL.empty, { exact: true }).waitFor()
+    await focusIs('main button.add', 'New checklist after deleting the last')
+    await page.reload()
+    await page.getByText(CL.empty, { exact: true }).waitFor()
+    await page.setViewportSize(s.viewport)
+  })
   await step('switch-language', async () => {
     const before = await page.getAttribute('html', 'dir')
     await page.click('header nav button.link >> nth=0')

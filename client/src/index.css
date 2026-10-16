@@ -272,3 +272,10 @@ h2 a { margin-block: -0.5625rem; }
 /* A long name wraps beside its status badge instead of pushing the badge to the next line. */
 .dash-tasks .task-head { flex-wrap: nowrap; align-items: baseline; }
 .dash-tasks .badge.status { flex-shrink: 0; white-space: nowrap; }
+
+/* Checklist item rows: move up and down as square neutral buttons, so the amber Save stays the one primary button */
+.item > .actions { flex-basis: 100%; }
+.item > label.num { flex: 1 1 5rem; } /* unit, min and max share one row at 390px */
+/* Signed numbers are typed LTR; in Hebrew they still sit on the start (right) side like the other inputs. */
+[dir='rtl'] input[dir='ltr'] { text-align: right; }
+button.move { min-inline-size: 2.75rem; padding-inline: 0; color: var(--ink); background: var(--surface); border-color: var(--line); }

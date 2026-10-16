@@ -7,6 +7,7 @@ import AuthPage from './pages/AuthPage'
 import CarPage from './pages/CarPage'
 import CarFormPage from './pages/CarFormPage'
 import CarsPage from './pages/CarsPage'
+import ChecklistsPage from './pages/ChecklistsPage'
 import HistoryPage from './pages/HistoryPage'
 import SettingsPage from './pages/SettingsPage'
 
@@ -36,6 +37,7 @@ export default function App() {
             {otherLang === 'he' ? 'עברית' : 'English'}
           </button>
           {user && <Link to="/history">{t('serviceHistory')}</Link>}
+          {user && <Link to="/checklists">{t('checklists')}</Link>}
           {user && <Link to="/settings">{t('settings')}</Link>}
           {user && <button className="link" onClick={logout}>{t('logout')}</button>}
         </nav>
@@ -49,6 +51,7 @@ export default function App() {
             <Route path="/cars/:id" element={<CarPage />} />
             <Route path="/cars/:id/edit" element={<CarFormPage />} />
             <Route path="/history" element={<HistoryPage />} />
+            <Route path="/checklists" element={<ChecklistsPage />} />
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
