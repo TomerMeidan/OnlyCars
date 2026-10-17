@@ -67,7 +67,7 @@ public class ReportService(IAppDbContext db)
             // An edited first reading can sit above the current odometer; that is no distance, not a negative one.
             var kmDriven = Math.Max(0, v.CurrentOdometerKm - firstKm.GetValueOrDefault(v.Id, v.CurrentOdometerKm));
             return new CostCarDto(v.Id, v.Nickname, v.IsArchived, serviceTotal, kmDriven,
-                kmDriven == 0 ? null : Math.Round(serviceTotal / kmDriven, 4),
+                kmDriven == 0 ? null : Math.Round(serviceTotal / kmDriven, 4, MidpointRounding.AwayFromZero),
                 v.PurchasePrice, v.PurchasePrice + serviceTotal);
         }).ToList();
 

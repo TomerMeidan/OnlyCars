@@ -815,8 +815,8 @@ const he: typeof en = {
   createIssueOf: 'יצירת מטלה: ⁨{{label}}⁩',
   issueCreated: 'נוצרה מטלה',
   issueCreatedOf: 'נוצרה מטלה: ⁨{{label}}⁩',
-  // Saved as the to-do's text, so no bidi isolates here; the to-do shows it with dir="auto".
-  issueFromRun: '{{value}}, {{name}}, {{date}}',
+  // Saved as the to-do's text, shown with dir="auto": the RLM makes the line right to left even when the value starts in Latin, and each part is isolated so the date doesn't reorder.
+  issueFromRun: '‏⁨{{value}}⁩, ⁨{{name}}⁩, ⁨{{date}}⁩',
   openIssues_one: 'מטלה פתוחה אחת',
   openIssues_two: 'שתי מטלות פתוחות',
   openIssues_other: '⁦{{count, number}}⁩ מטלות פתוחות',

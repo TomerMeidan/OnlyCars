@@ -223,7 +223,7 @@ button.danger { background: var(--danger); border-color: var(--danger); color: #
 }
 
 /* Text links: a 44px tap target (link-style buttons get theirs from the button rule); the car name keeps its line height */
-.brand, nav a, h2 a, .actions a, .switch a, .services a.car { display: inline-flex; align-items: center; min-height: 2.75rem; }
+.brand, nav a, h2 a, .actions a, .switch a, .services a.car, .report a { display: inline-flex; align-items: center; min-height: 2.75rem; }
 h2 a { margin-block: -0.5625rem; }
 
 /* "All cars": a 44px tap target from padding, with the focus ring on the text only */
@@ -322,7 +322,6 @@ details > summary { padding-block: 0.625rem; cursor: pointer; }
 /* RPT-1 reports: label and value rows instead of tables, so nothing scrolls sideways at 390px */
 .filters > p[role='status'] { min-block-size: 1.55em; } /* holds the loading line's place */
 .report { display: grid; gap: 1.25rem; }
-.report a { display: inline-flex; align-items: center; min-height: 2.75rem; }
 .report h3 { margin: 0; font-size: 1.05rem; }
 .car-costs { display: grid; gap: 0.25rem; }
 .figures { margin: 0; }

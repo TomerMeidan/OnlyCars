@@ -235,9 +235,10 @@ public class MaintenanceSchemaTests : IAsyncLifetime
     private static async Task<string> CodeAsync(Func<Task> act) => (await Assert.ThrowsAnyAsync<AppException>(act)).Code;
 
     [Fact]
-    public async Task ServiceRecord_OnSqlServer_VoidRacingAnEdit_IsAConcurrencyException_ANoOpEditIsNot()
+    public async Task ServiceRecord_OnSqlServer_VoidRacingAnEdit_ThrowsDbUpdateConcurrencyException_ANoOpEditDoesNot()
     {
-        // L69: the UpdatedAt token on SQL Server; the handler maps the exception to 409 concurrency.conflict (GlobalExceptionHandlerTests).
+        // L69: the UpdatedAt token on SQL Server. This checks the EF exception only; its 409 concurrency.conflict mapping is
+        // GlobalExceptionHandlerTests.ConcurrencyException_Returns409_ConcurrencyConflict_WithoutEfDetails (L89).
         var car = await AddCarAsync();
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
         var record = (await new MaintenanceTaskService(db, new VehicleService(db)).CreateRecordAsync(car.UserId, car.Id,

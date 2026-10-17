@@ -334,8 +334,8 @@ for (const s of setups) {
 
   // MVP3-A: service history.
   const SV = he
-    ? { items: 'חלקים ועבודה', empty: 'עדיין לא נרשמו טיפולים.', record: 'רישום טיפול', diy: 'טיפול עצמי', editOf: 'עריכת הטיפול מ־', deleteOf: 'מחיקת הטיפול מ־', gone: 'הטיפול הזה כבר נמחק.', editHint: 'כדי לשנות את התאריך, הקילומטראז׳ או המשימות, מחקו את הטיפול ורשמו אותו מחדש.', labour: 'עבודה', item2Qty: 'פריט 2: יש להזין כמות בין 0.01 ל־10,000, עם עד 2 ספרות אחרי הנקודה.', taskGone: 'אחת המשימות שסומנו נמחקה, ורשימת המשימות עודכנה. יש לבדוק את הבחירה ולשמור שוב.', item2Hours: 'פריט 2, שעות', item1Part: 'פריט 1, מק״ט', legend: 'משימות שבוצעו', hint: 'בטיפול עצמי יש להשאיר ריק.', future: 'תאריך הטיפול לא יכול להיות בעתיד.', km: 'ק״מ', generic: 'משהו השתבש. אפשר לנסות שוב.', odoLabel: 'קילומטראז׳ במיילים', at59500: 'ב־59,500 ק״מ', at59000: 'ב־59,000 ק״מ' }
-    : { items: 'Parts and labour', empty: 'No services recorded yet.', record: 'Record a service', diy: 'DIY', editOf: 'Edit the service from ', deleteOf: 'Delete the service from ', gone: 'This service was already deleted.', editHint: 'To change the date, odometer or tasks, delete this service and record it again.', labour: 'Labour', item2Qty: 'Item 2: Enter a quantity above 0 and up to 10,000 with up to 2 decimals.', taskGone: 'A task you ticked was deleted, and the task list has been updated. Check your selection and save again.', item2Hours: 'Item 2, Hours', item1Part: 'Item 1, Part number', legend: 'Tasks done', hint: 'Leave empty for DIY.', future: "The service date can't be in the future.", km: 'km', generic: 'Something went wrong. Please try again.', odoLabel: 'Odometer in miles', at59500: 'at 59,500 km', at59000: 'at 59,000 km' }
+    ? { items: 'חלקים ועבודה', empty: 'עדיין לא נרשמו טיפולים.', record: 'רישום טיפול', diy: 'טיפול עצמי', editOf: 'עריכת הטיפול מ־', deleteOf: 'מחיקת הטיפול מ־', gone: 'הטיפול הזה כבר נמחק.', editHint: 'כדי לשנות את התאריך, הקילומטראז׳ או המשימות', labour: 'עבודה', item2Qty: 'פריט 2: יש להזין כמות בין 0.01 ל־10,000, עם עד 2 ספרות אחרי הנקודה.', taskGone: 'אחת המשימות שסומנו נמחקה, ורשימת המשימות עודכנה. יש לבדוק את הבחירה ולשמור שוב.', item2Hours: 'פריט 2, שעות', item1Part: 'פריט 1, מק״ט', legend: 'משימות שבוצעו', hint: 'בטיפול עצמי יש להשאיר ריק.', future: 'תאריך הטיפול לא יכול להיות בעתיד.', km: 'ק״מ', generic: 'משהו השתבש. אפשר לנסות שוב.', odoLabel: 'קילומטראז׳ במיילים', at59500: 'ב־59,500 ק״מ', at59000: 'ב־59,000 ק״מ' }
+    : { items: 'Parts and labour', empty: 'No services recorded yet.', record: 'Record a service', diy: 'DIY', editOf: 'Edit the service from ', deleteOf: 'Delete the service from ', gone: 'This service was already deleted.', editHint: 'To change the date, odometer or tasks', labour: 'Labour', item2Qty: 'Item 2: Enter a quantity above 0 and up to 10,000 with up to 2 decimals.', taskGone: 'A task you ticked was deleted, and the task list has been updated. Check your selection and save again.', item2Hours: 'Item 2, Hours', item1Part: 'Item 1, Part number', legend: 'Tasks done', hint: 'Leave empty for DIY.', future: "The service date can't be in the future.", km: 'km', generic: 'Something went wrong. Please try again.', odoLabel: 'Odometer in miles', at59500: 'at 59,500 km', at59000: 'at 59,000 km' }
   const services = page.locator('section[aria-labelledby=service-history]')
   const serviceItems = () => services.locator('.services > li')
   const recordForm = services.locator('form')
@@ -486,10 +486,20 @@ for (const s of setups) {
     const want = he ? `התאריך לא יכול להיות לפני ${min}.` : `The date can't be before ${min}.`
     if (plain(await alert.textContent()) !== want) throw new Error(`tooEarly "${await alert.textContent()}"`)
     if ((await date.getAttribute('aria-invalid')) !== 'true' || (await date.getAttribute('aria-describedby')) !== (await alert.getAttribute('id'))) throw new Error('tooEarly not on the date')
+    // LOW-5 L87: after a failed save, focus is back on the field the error is about, so Escape still closes the form.
+    await focusIs('form input[name=lastDoneDate]', 'after date.tooEarly')
+    // A 400 on the name (no code): focus goes to the first field, the name.
+    await date.fill(await page.evaluate(() => new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10)))
+    const stubbed = page.waitForResponse((r) => r.request().method() === 'PUT' && r.url().includes('/tasks/'))
+    await page.route('**/api/vehicles/*/tasks/*', (r) => r.fulfill({ status: 400, contentType: 'application/problem+json', body: JSON.stringify({ title: 'One or more validation errors occurred.', errors: { Name: ['The Name field is required.'] } }) }), { times: 1 })
+    await form.locator('button:not(.link)').click()
+    await stubbed
+    await focusIs('form input[name=name]', 'after a 400 on the name')
     run.badResponses = run.badResponses.filter((r) => !(r.startsWith('400 ') && r.includes('/tasks/')))
     run.consoleErrors = run.consoleErrors.filter((e) => !e.includes('status of 400'))
-    await form.locator('button.link').click()
+    await page.keyboard.press('Escape')
     await form.waitFor({ state: 'detached' })
+    await focusIs(`button[aria-label="${TK.edit}${TK.wash2}"]`, 'after Escape from a failed save')
   })
   await step('disable-task', async () => {
     const toggle = tasks.getByRole('checkbox', { name: TK.on + TK.belt })
@@ -1156,6 +1166,7 @@ for (const s of setups) {
     const garageDesc = plain(await describedText(services.locator(`li[data-id="${garageId}"] button.delete-service`)))
     if (!garageDesc.includes('250.50') || !garageDesc.includes('Oil') || !digitsOnly(await describedText(row.locator('button.edit-service'))).includes('39100')) throw new Error(`described by "${garageDesc}"`)
     // Criterion 6 (MVP3-D: the date, odometer and tasks are fields now, without the old hint).
+    // LOW-5 L91: SV.editHint is the hint's opening words, the same in the old plural Hebrew and any impersonal rewording, so this can fail.
     await row.locator('button.edit-service').click()
     await focusIs(`li[data-id="${itemsId}"] form input[name=date]`, 'Edit open')
     if ((await form.locator('input[name=date]').inputValue()) !== (await localDate()) || (await form.locator('input[name=odometerKm]').inputValue()) !== '59500') throw new Error('date or odometer not filled in')
@@ -2939,6 +2950,27 @@ for (const s of setups) {
     if (digitsOnly(await odometer()) !== String(before + 500)) throw new Error('odometer after reload')
     if (await ckSec.locator('[role=status]', { hasText: CK.saved3.slice(0, 6) }).count()) throw new Error('the status line came back after a reload')
   })
+  await step('checklist-run-saved-load-fails', async () => {
+    // LOW-5 L88 (L71): a run Save goes back to the car page, which fails to load; the next car page, reached in the app, has no "Run saved" note.
+    // The Save is stubbed, so no run is added for the later steps.
+    await (await named(ckRow('Monthly quick check').locator('a.run'), CK.runOf('Monthly quick check'))).click()
+    await arrivedAt(CK.title('Monthly quick check', 'Dash car'))
+    await runItem(0).locator('input[type=radio]').first().check()
+    await runItem(1).locator('input[type=number]').fill('2.2')
+    await page.route('**/runs', (r) => r.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ run: { flaggedCount: 0 } }) }), { times: 1 })
+    await page.route(`**/api/vehicles/${dashCarId}`, (r) => r.fulfill({ status: 500, contentType: 'application/json', body: '{}' }), { times: 1 })
+    await runForm.locator('> .actions > button:not(.link)').click()
+    await page.waitForURL((u) => u.pathname === ckCarPath())
+    await page.locator('main [role=alert]').waitFor()
+    forget500()
+    // In the app, not a reload, so the in-memory hand-off would still be there if the failed load had kept it.
+    await page.click('header a[href="/"]')
+    await page.locator(`main a[href="${ckCarPath()}"]`).first().click()
+    await page.waitForURL((u) => u.pathname === ckCarPath())
+    await ckRow('Monthly quick check').waitFor()
+    await page.waitForLoadState('networkidle')
+    if (await ckSec.locator('[role=status]', { hasText: CK.saved3.slice(0, 6) }).count()) throw new Error('the Run saved note showed after the failed car page')
+  })
   // MVP5-C: Dash car's to-dos, from the run's flagged items (Lights, Tire pressure, Notes) and by hand; the dashboard's open count.
   const IS = he
     ? { empty: 'אין מטלות פתוחות.', create: (l) => `יצירת מטלה: ${l}`, created: (l) => `נוצרה מטלה: ${l}`, from: (n, d) => `מקור: ${n}, ${d}`,
@@ -2982,7 +3014,10 @@ for (const s of setups) {
     await focusIs(`li[data-id="${tireId}"] form input[name=title]`, 'the title after Create to-do')
     const date = await fmtDay(await localDate())
     const desc = await form.locator('textarea[name=description]').inputValue()
-    if ((await form.locator('input[name=title]').inputValue()) !== 'Tire pressure' || desc !== `1.8 bar, Monthly quick check, ${date}`) throw new Error(`prefilled "${desc}"`)
+    // In Hebrew: an RLM and isolated parts, so the line is right to left and the date keeps its order though the value starts in Latin (LOW-5 QA).
+    const wantDesc = he ? `‏⁨1.8 bar⁩, ⁨Monthly quick check⁩, ⁨${date}⁩` : `1.8 bar, Monthly quick check, ${date}`
+    if ((await form.locator('input[name=title]').inputValue()) !== 'Tire pressure' || desc !== wantDesc) throw new Error(`prefilled ${JSON.stringify(desc)}`)
+    if (await form.locator('textarea[name=description]').evaluate((el) => el.matches(':dir(rtl)')) !== he) throw new Error('the description is not laid out in the UI direction')
     await page.keyboard.press('Escape')
     await focusIs(`li[data-id="${tireId}"] button.create-issue`, 'Create to-do after Escape')
     await create.click()
@@ -2998,6 +3033,13 @@ for (const s of setups) {
     const top = isSec.locator('.open-issues > li').first()
     await top.waitFor()
     if (plain(await top.locator('.name').textContent()) !== 'Inflate the tires' || !plain(await top.textContent()).includes(IS.from('Monthly quick check', date))) throw new Error(`to-do "${plain(await top.textContent())}"`)
+    // The saved description in the row: right to left in Hebrew, with the date's day at its start (right) and the year at its end (left).
+    const notes = await top.locator('p.notes').evaluate((el) => {
+      const t = el.firstChild, s = t.data, x = (sub) => { const r = document.createRange(), i = s.lastIndexOf(sub); r.setStart(t, i); r.setEnd(t, i + sub.length); return r.getBoundingClientRect().x }
+      const year = String(new Date().getFullYear())
+      return { rtl: el.matches(':dir(rtl)'), dayRightOfYear: x(String(new Date().getDate())) > x(year), valueRightOfName: x('1.8') > x('Monthly') }
+    })
+    if (he && !(notes.rtl && notes.dayRightOfYear && notes.valueRightOfName)) throw new Error(`description layout ${JSON.stringify(notes)}`)
     // To-do created moves focus to that to-do.
     await tire.locator('button.to-issue').click()
     await focusIs(`${isSel} li[data-id="${created.id}"] button.edit`, 'the to-do after To-do created')
@@ -3920,6 +3962,31 @@ for (const s of setups) {
     // Criterion 9: 390px, no sideways scroll, 44px targets.
     await at390('the reports page', 'reports-390')
   })
+  await step('reports-year-and-links', async () => {
+    // LOW-5 L95: a year with leading zeros is that year: one option, and the request and figures are that year's.
+    const asked = []
+    const onReq = (r) => r.url().includes('/api/reports/costs?') && asked.push(new URL(r.url()).searchParams.get('year'))
+    page.on('request', onReq)
+    await page.goto(`${BASE}/reports?year=0${ly}`)
+    await rpCats.waitFor()
+    page.off('request', onReq)
+    const opts = await page.locator(yearSel).locator('option').allTextContents()
+    if ([...new Set(asked)].join() !== String(ly) || opts.filter((o) => o.includes(String(ly))).length !== 1 || (await page.inputValue(yearSel)) !== String(ly)) throw new Error(`asked ${asked}, options ${opts}, value ${await page.inputValue(yearSel)}`)
+    await rpIs(rpCats, RP.oil, await rpMoney(150))
+    // L96 (RPT-1 M2): while a new car loads, the old figures keep their own links (All cars: no vehicleId); then the new ones carry the car.
+    const costs = '**/api/reports/costs?**'
+    const slow = async (r) => { await page.waitForTimeout(1500); await r.continue().catch(() => {}) }
+    await page.route(costs, slow)
+    await page.selectOption(rpCarSel, rpA)
+    await page.locator('main .report[aria-busy=true]').waitFor()
+    const hrefs = () => page.locator('main .report a[href^="/history"]').evaluateAll((as) => as.filter((a) => !a.closest('.by-car')).map((a) => a.getAttribute('href'))) // By car links name their own car
+    const old = await hrefs()
+    if (!old.length || old.some((h) => h.includes('vehicleId=')) || !(await page.locator('main .by-car').count())) throw new Error(`links while loading ${old}`)
+    await page.unroute(costs, slow)
+    await page.locator('main .report[aria-busy=false]').waitFor()
+    const now = (await hrefs()).filter((h) => !h.includes(`vehicleId=${rpA}`))
+    if (now.length) throw new Error(`links without the car ${now}`)
+  })
   // RPT-2: the charts. Bar sizes as a share of their slot, rounded to 2 decimals; x is each month's left edge.
   const rpCharts = () => page.evaluate(() => {
     const r2 = (v) => Math.round(v * 100) / 100
@@ -3980,6 +4047,36 @@ for (const s of setups) {
     await page.evaluate(() => { document.documentElement.style.fontSize = '' })
     await page.setViewportSize(s.viewport)
     if (narrow.labels.overlap || narrow.labels.edge || narrow.labels.shown !== 6) throw new Error(`labels at 390px with 20px text ${JSON.stringify(narrow.labels)}`)
+    // LOW-5 L102: --muted (the bars and month names) on the card is at least 4.5:1, in the light and the dark theme.
+    const ratios = await page.evaluate(() => {
+      const lum = (c) => c.match(/[\d.]+/g).slice(0, 3).map((v) => { v /= 255; return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4 }).reduce((s, v, i) => s + v * [0.2126, 0.7152, 0.0722][i], 0)
+      const root = document.documentElement, was = root.getAttribute('data-theme')
+      const out = ['light', 'dark'].map((theme) => {
+        root.setAttribute('data-theme', theme)
+        const [a, b] = [lum(getComputedStyle(document.querySelector('main .month-chart span[style]')).backgroundColor), lum(getComputedStyle(document.querySelector('main .month-chart').closest('.card')).backgroundColor)]
+        return `${theme} ${Math.round(((Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05)) * 100) / 100}`
+      })
+      if (was == null) root.removeAttribute('data-theme'); else root.setAttribute('data-theme', was)
+      return out
+    })
+    if (ratios.some((r) => Number(r.split(' ')[1]) < 4.5)) throw new Error(`--muted on the card: ${ratios}`)
+    // LOW-5 L101: at 390px with the web fonts blocked, the wider fallback font still fits: labels apart, inside the chart, no sideways scroll.
+    const fonts = /fonts\.(googleapis|gstatic)\.com/
+    const before = run.consoleErrors.length
+    await page.route(fonts, (r) => r.abort())
+    await page.setViewportSize({ width: 390, height: 844 })
+    await page.reload()
+    await page.locator('main .month-chart').waitFor()
+    if (await page.evaluate(() => [...document.fonts].some((f) => f.status === 'loaded'))) throw new Error('a web font loaded')
+    const fallback = await rpCharts()
+    await noOverflow('the reports charts without web fonts')
+    await page.screenshot({ path: `${OUT}/${s.name}-reports-charts-no-webfonts-390.png`, fullPage: true })
+    await page.unroute(fonts)
+    run.consoleErrors.splice(before, Infinity, ...run.consoleErrors.slice(before).filter((e) => !e.includes('net::ERR_FAILED')))
+    await page.setViewportSize(s.viewport)
+    await page.reload()
+    await page.locator('main .month-chart').waitFor()
+    if (fallback.labels.overlap || fallback.labels.edge || fallback.labels.shown !== 6) throw new Error(`labels at 390px without web fonts ${JSON.stringify(fallback.labels)}`)
     // Criterion 3: the Car filter redraws: the Corolla has nothing that year, so no month chart and no category section.
     await page.selectOption(rpCarSel, rpA)
     const none = await chartsAre({ months: null, categories: null }, `${py}, Corolla`)
@@ -4120,6 +4217,45 @@ for (const s of setups) {
     if ((await page.evaluate(() => getComputedStyle(document.activeElement).outlineStyle)) !== 'solid') throw new Error('no focus ring')
     await at390('the reports export buttons', 'reports-export-390')
   })
+  await step('reports-export-one-at-a-time', async () => {
+    // LOW-5 L104: a filter change mid-export leaves the CSV button busy until that export ends; a click meanwhile starts nothing; one download.
+    const recs = '**/api/service-records?**'
+    const slow = async (r) => { await page.waitForTimeout(1000); await r.continue().catch(() => {}) }
+    await page.goto(`${BASE}/reports?year=${ey}&vehicleId=${xM}`)
+    await xReady()
+    await page.route(recs, slow)
+    const before = downloads
+    const dl = page.waitForEvent('download', { timeout: 15000 })
+    await xBtns.first().click()
+    const csvBusy = () => page.waitForFunction((w) => { const b = document.querySelector('main .filters .export button'); return b?.textContent === w && b.getAttribute('aria-disabled') === 'true' }, XP.busy, { timeout: 3000 })
+    await csvBusy()
+    await page.selectOption(rpCarSel, '')
+    await page.locator('main .by-car').waitFor()
+    await csvBusy().catch(() => { throw new Error('the CSV button is not busy after the filter change') })
+    await xBtns.first().click({ force: true }) // force: Playwright waits out aria-disabled, which would click after the export ends
+    await csvBusy()
+    if ((await (await dl).suggestedFilename()) !== `onlycars-${ey}-Export-Many.csv`) throw new Error('not the first export\'s file')
+    await xReady()
+    await page.waitForTimeout(2500) // a second export would need two slow pages
+    await page.unroute(recs, slow)
+    if (downloads !== before + 1) throw new Error(`${downloads - before} downloads`)
+  })
+  await step('reports-export-leave', async () => {
+    // LOW-5 L106: leaving /reports mid-export downloads nothing.
+    const recs = '**/api/service-records?**'
+    const slow = async (r) => { await page.waitForTimeout(1000); await r.continue().catch(() => {}) }
+    await page.goto(`${BASE}/reports?year=${ey}&vehicleId=${xM}`)
+    await xReady()
+    await page.route(recs, slow)
+    const before = downloads
+    await xBtns.first().click()
+    await xStateIs(`${XP.busy}:true|${XP.pdf}:false`, 'building the CSV')
+    await page.click('header a[href="/"]')
+    await arrivedAt(T.dashboard)
+    await page.waitForTimeout(3000) // both slow pages answer meanwhile
+    await page.unroute(recs, slow)
+    if (downloads !== before) throw new Error('a download followed after leaving /reports')
+  })
   await step('reports-print', async () => {
     // Criterion 5: Export PDF opens the print dialog (stubbed: a real one blocks the page).
     await page.goto(`${BASE}/reports?year=${ey}`)
@@ -4142,6 +4278,15 @@ for (const s of setups) {
     if (got.hidden.length) throw new Error(`printed: ${got.hidden}`)
     const date = await page.evaluate((l) => new Date().toLocaleDateString(l, { dateStyle: 'medium' }), s.lng)
     if (plain(got.line ?? '') !== XP.line(ey, XP.allCars, date)) throw new Error(`print line "${got.line}"`)
+    // LOW-5 L103: the date is the one when printing starts: the clock moves 3 days on, then beforeprint.
+    const later = await page.evaluate((l) => {
+      const D = Date, at = D.now() + 3 * 86_400_000
+      window.Date = class extends D { constructor(...a) { super(...(a.length ? a : [at])) } static now() { return at } }
+      try { dispatchEvent(new Event('beforeprint')) } finally { window.Date = D }
+      return new D(at).toLocaleDateString(l, { dateStyle: 'medium' })
+    }, s.lng)
+    const printed = plain(await page.locator('main .print-only').textContent())
+    if (later === date || printed !== XP.line(ey, XP.allCars, later)) throw new Error(`after beforeprint "${printed}", want the date ${later}`)
     if (got.colors !== 'rgb(255, 255, 255),rgb(255, 255, 255),rgb(0, 0, 0),rgb(0, 0, 0)') throw new Error(`print colors ${got.colors}`)
     if (!got.bar.endsWith(',exact') || got.bar.startsWith('rgba(0, 0, 0, 0)')) throw new Error(`chart bar ${got.bar}`)
     if (got.link !== 'none' || got.dir !== (he ? 'rtl' : 'ltr')) throw new Error(`link ${got.link}, direction ${got.dir}`)

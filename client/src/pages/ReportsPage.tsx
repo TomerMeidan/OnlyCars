@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
+import { flushSync } from 'react-dom'
 import { useTranslation } from 'react-i18next'
 import { Link, useSearchParams } from 'react-router-dom'
 import { api, ApiError, type CostReport, type ServiceRecord, type ServiceRecordPage, type Vehicle } from '../api'
@@ -22,9 +23,15 @@ export default function ReportsPage() {
   const id = useId()
   const [params, setParams] = useSearchParams()
   const [thisYear] = useState(() => String(new Date().getFullYear())) // the local year at page load
-  // shortcut: the print line's date is the page load's, so a page left open past midnight prints yesterday's; set it on beforeprint if that matters
-  const [today] = useState(() => new Date())
-  const year = params.get('year') || thisYear
+  // The print line's date: set when printing starts, so a page left open past midnight prints today's; flushSync so it is in the DOM before the print layout.
+  const [today, setToday] = useState(() => new Date())
+  useEffect(() => {
+    const onPrint = () => flushSync(() => setToday(new Date()))
+    addEventListener('beforeprint', onPrint)
+    return () => removeEventListener('beforeprint', onPrint)
+  }, [])
+  // Leading zeros dropped, so 02025 is 2025 (one option, one request); anything else goes to the API as it is.
+  const year = (params.get('year') || thisYear).replace(/^0+(?=\d+$)/, '')
   const vehicleId = params.get('vehicleId') ?? ''
   const [cars, setCars] = useState<Vehicle[] | null>(null)
   const [attempt, setAttempt] = useState(0)
@@ -70,7 +77,8 @@ export default function ReportsPage() {
   const isEmpty = (r: CostReport, vehicleId: string) => !vehicleId && r.years.every((y) => y.total === 0)
   // From the report, not the cached car list, so a car renamed elsewhere shows its current name; r.cars holds every car, archived too.
   const nickname = (r: CostReport, id: string) => r.cars.find((c) => c.vehicleId === id)?.nickname ?? ''
-  const csvBusy = csv?.at === key && !!csv.busy
+  // One export at a time: it stays busy across filter changes until it ends.
+  const csvBusy = !!csv?.busy
   // Leaving the page mid-export must not download.
   const mounted = useRef(true)
   useEffect(() => { mounted.current = true; return () => { mounted.current = false } }, [])
@@ -135,7 +143,7 @@ export default function ReportsPage() {
     const category = (c: string | null) => c ? t(`categories.${c}`) : t('noTask')
     // Bars scale to the highest value; a non-zero value keeps a sliver so it never looks like 0.
     const topMonth = Math.max(...r.byMonth.map((m) => m.total))
-    const topCategory = Math.max(0, ...r.byCategory.map((c) => c.total))
+    const topCategory = Math.max(...r.byCategory.map((c) => c.total))
     const scale = (v: number, top: number) => v > 0 ? `max(2px, ${(v / top) * 100}%)` : '0'
     return (
       <>
@@ -146,7 +154,7 @@ export default function ReportsPage() {
         </section>
         <section className="card" aria-labelledby={`${id}months`}>
           <h2 id={`${id}months`}>{t('byMonth')}</h2>
-          {/* Decoration over the rows below, which are the text version. */}
+          {/* aria-hidden: these bars and short month names, and the By category bars with their names and amounts, repeat the figures of the rows under them, which screen readers read instead. */}
           {topMonth > 0 && (
             <div className="month-chart" aria-hidden="true">
               {r.byMonth.map((m) => <div key={m.month}><div><span style={{ blockSize: scale(m.total, topMonth) }} /></div><span>{month(m.month, 'short')}</span></div>)}
@@ -160,11 +168,9 @@ export default function ReportsPage() {
         {r.byCategory.length > 0 && (
           <section className="card" aria-labelledby={`${id}categories`}>
             <h2 id={`${id}categories`}>{t('byCategory')}</h2>
-            {topCategory > 0 && (
-              <div className="category-chart" aria-hidden="true">
-                {r.byCategory.map((c) => <div key={`c${c.category}`}>{category(c.category)}{amount(c.total)}<span style={{ inlineSize: scale(c.total, topCategory) }} /></div>)}
-              </div>
-            )}
+            <div className="category-chart" aria-hidden="true">
+              {r.byCategory.map((c) => <div key={`c${c.category}`}>{category(c.category)}{amount(c.total)}<span style={{ inlineSize: scale(c.total, topCategory) }} /></div>)}
+            </div>
             <dl className="figures categories">
               {r.byCategory.map((c) => row(`c${c.category}`, category(c.category), amount(c.total)))}
             </dl>

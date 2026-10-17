@@ -8,7 +8,7 @@ import { noItems, useItemErrors } from '../useItemErrors'
 import { useRow } from '../useRow'
 
 // The task form's date errors are about Last done date (the error shows right under it); others are about the whole form.
-const fieldOf: Record<string, string> = { 'date.tooEarly': 'lastDoneDate', 'task.futureDate': 'lastDoneDate' }
+const fieldOf: Record<string, string> = { 'date.tooEarly': 'lastDoneDate', 'task.futureDate': 'lastDoneDate', 'task.invalidLastDone': 'lastDoneOdometerKm' }
 
 type TaskBody = Pick<MaintenanceTask, 'name' | 'category' | 'intervalKm' | 'intervalDays' | 'dueSoonPercent' | 'lastDoneOdometerKm' | 'lastDoneDate'>
 // PUT is a full replace, so every save sends all of these.
@@ -267,7 +267,8 @@ function TaskForm({ initial, currentKm, onSubmit, onCancel }: {
 
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault()
-    const f = new FormData(e.currentTarget)
+    const form = e.currentTarget
+    const f = new FormData(form)
     const num = (k: string) => (f.get(k) === '' ? null : Number(f.get(k)))
     const time = num('intervalTime')
     const intervalKm = num('intervalKm')
@@ -287,6 +288,9 @@ function TaskForm({ initial, currentKm, onSubmit, onCancel }: {
       await onSubmit(body)
     } catch (err) {
       setError(err)
+      // The disabled Save dropped focus to body, out of Escape's reach: back to the field the error is about, else the first.
+      const field = fieldOf[err instanceof ApiError ? err.problem.code ?? '' : ''] ?? 'name'
+      ;(form.elements.namedItem(field) as HTMLElement | null)?.focus()
     } finally {
       setBusy(false)
     }
@@ -338,7 +342,7 @@ function TaskForm({ initial, currentKm, onSubmit, onCancel }: {
       </label>
       <label>
         {t('lastDoneKm', d.vars)}
-        <input name="lastDoneOdometerKm" type="number" inputMode="decimal" min={0} step="any" required defaultValue={d.value(initial.lastDoneOdometerKm)} />
+        <input name="lastDoneOdometerKm" type="number" inputMode="decimal" min={0} step="any" required defaultValue={d.value(initial.lastDoneOdometerKm)} {...tie('lastDoneOdometerKm')} />
       </label>
       <label>
         {t('lastDoneDate')}

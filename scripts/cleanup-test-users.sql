@@ -19,10 +19,12 @@ IF CONVERT(nvarchar(128), SERVERPROPERTY('InstanceName')) NOT LIKE 'LOCALDB#%' O
 
 -- rules:start (read-only from here to rules:end)
 DECLARE @D13 varchar(65) = REPLICATE('[0-9]', 13); -- a Date.now() in ms
+DECLARE @D9 varchar(45) = REPLICATE('[0-9]', 9);
 DECLARE @D5 varchar(25) = REPLICATE('[0-9]', 5);
 DECLARE @Hex8 varchar(64) = REPLICATE('[0-9a-f]', 8);
 DECLARE @Rules TABLE (Name varchar(40) PRIMARY KEY, Pattern varchar(200) NOT NULL);
 INSERT INTO @Rules VALUES
+    -- Also matches the RPT smoke users ui-rpt-<setup>-<ms> and ui-rptdbg-<ms> (L97).
     ('smoke ui-<setup>-<ms>',        'ui-[a-z]%-' + @D13 + '@onlycars.test'),
     ('smoke other-<setup>-<ms>',     'other-[a-z]%-' + @D13 + '@onlycars.test'),
     ('smoke short-<setup>-<ms>',     'short-[a-z]%-' + @D13 + '@onlycars.test'),
@@ -33,6 +35,9 @@ INSERT INTO @Rules VALUES
     ('agent sec-<8 hex>',            'sec-' + @Hex8 + '@example.test'),
     ('agent low4-<ms>',              'low4-' + @D13 + '@onlycars.test'),
     ('agent low4b-<ms>',             'low4b-' + @D13 + '@onlycars.test'),
+    ('agent rpt1-a-<9 digits>',      'rpt1-a-' + @D9 + '@example.com'),
+    ('agent rpt1-b-<9 digits>',      'rpt1-b-' + @D9 + '@example.com'),
+    ('agent probe-rpt-<ms>',         'probe-rpt-' + @D13 + '@onlycars.test'),
     ('old qa+<run>-<ms>',            'qa+[a-z0-9]%-' + @D13 + '@example.com'),
     ('old dbg-<ms> onlycars.test',   'dbg-' + @D13 + '@onlycars.test'),
     ('old dbg<ms> x.com',            'dbg' + @D13 + '@x.com'),
@@ -43,7 +48,9 @@ DECLARE @MustNotMatch TABLE (Email nvarchar(256));
 INSERT INTO @MustNotMatch VALUES ('tommymeidan@gmail.com'), ('tomboi@gmail.com'), ('ui-tommy@gmail.com'), ('ui-x-1792098626274@gmail.com'),
     ('ui-1792098626274@onlycars.test'), ('ui+8755@onlycars.test'), ('qa+me@example.com'), ('qa+tommy-1234@example.com'),
     ('reg-123@onlycars.test'), ('low3-1@example.test'), ('sec-mvp5c-1792133549926-gnb8@test.local'), ('dbg1792199810023@gmail.com'),
-    ('ui-a@b-1792098626274@onlycars.test'), ('ui-tom my-1792098626274@onlycars.test');
+    ('ui-a@b-1792098626274@onlycars.test'), ('ui-tom my-1792098626274@onlycars.test'),
+    ('rpt1-a-1234@example.com'), ('rpt1-c-132112091@example.com'), ('rpt1-a-132112091@gmail.com'), ('rpt1-a-1321120912@example.com'),
+    ('probe-rpt-123@onlycars.test'), ('probe-rpt-1792226542697@gmail.com'), ('probe-1792226542697@onlycars.test');
 IF EXISTS (SELECT 1 FROM @MustNotMatch m JOIN @Rules r ON m.Email LIKE r.Pattern
            WHERE m.Email NOT LIKE '%[^a-z0-9+-]%@%' AND m.Email NOT LIKE '%@%@%')
     THROW 50001, 'Self-check failed: a rule matches an address it must never match.', 1;

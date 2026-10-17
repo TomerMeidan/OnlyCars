@@ -156,6 +156,76 @@ public class CostReportTests
             (cb.ServiceTotal, cb.KmDriven, cb.CostPerKm, cb.PurchasePrice, cb.TotalCostOfOwnership));
     }
 
+    private async Task SetOdometerAsync(Guid car, decimal km)
+    {
+        (await db.Vehicles.FindAsync(car))!.CurrentOdometerKm = km;
+        await db.SaveChangesAsync();
+    }
+
+    [Fact]
+    public async Task CostPerKm_HalfwayAtTheFifthDecimal_RoundsAwayFromZero()
+    {
+        var car = await CarAsync("A");
+        await SetOdometerAsync(car, 50_032);
+        await RecordAsync(car, new DateOnly(Year, 1, 1), 1);
+
+        // 1 / 32 = 0.03125; ToEven would give 0.0312 (L93).
+        Assert.Equal(0.0313m, (await CostsAsync()).Cars.Single().CostPerKm);
+    }
+
+    [Fact]
+    public async Task KmDriven_IsClampedAt0_WhenTheFirstReadingIsAboveTheOdometer()
+    {
+        var car = await CarAsync("A");
+        await SetOdometerAsync(car, 45_000);
+        await RecordAsync(car, new DateOnly(Year, 1, 1), 100);
+
+        var c = (await CostsAsync()).Cars.Single();
+        Assert.Equal((0m, (decimal?)null), (c.KmDriven, c.CostPerKm));
+    }
+
+    [Fact]
+    public async Task FirstReading_OnTheSameDate_IsTheEarliestSaved()
+    {
+        var car = await CarAsync("A");
+        var initial = db.OdometerReadings.Single(o => o.VehicleId == car);
+        // Same date as the initial 50,000: one saved before it (the first) and a lower one saved after it.
+        db.OdometerReadings.AddRange(
+            new OdometerReading { VehicleId = car, ValueKm = 30_000, ReadingDate = initial.ReadingDate, CreatedAt = initial.CreatedAt.AddMinutes(-1) },
+            new OdometerReading { VehicleId = car, ValueKm = 10_000, ReadingDate = initial.ReadingDate, CreatedAt = initial.CreatedAt.AddMinutes(1) });
+        await db.SaveChangesAsync();
+
+        Assert.Equal(20_000m, (await CostsAsync()).Cars.Single().KmDriven);
+    }
+
+    [Fact]
+    public async Task AllTimeCars_AreActiveFirstThenByNickname()
+    {
+        var zed = await CarAsync("Zed");
+        var old = await CarAsync("Alpha old");
+        var alpha = await CarAsync("Alpha");
+        await vehicles.ArchiveAsync(userId, old, true);
+
+        Assert.Equal([alpha, zed, old], (await CostsAsync()).Cars.Select(c => c.VehicleId));
+    }
+
+    [Fact]
+    public async Task EqualTotals_ByCategoryInNameOrder_ByVehicleInNicknameOrder()
+    {
+        var zed = await CarAsync("Zed");
+        var alpha = await CarAsync("Alpha");
+        await RecordAsync(zed, new DateOnly(Year, 1, 1), 50, false, TaskCategory.Oil);
+        await RecordAsync(alpha, new DateOnly(Year, 1, 1), 50, false, TaskCategory.Brakes);
+        await RecordAsync(alpha, new DateOnly(Year, 1, 2), 80, false, TaskCategory.Tires);
+        await RecordAsync(zed, new DateOnly(Year, 1, 2), 80);
+
+        var r = await CostsAsync();
+
+        // A tie sorts by the category name; no category (null) comes first.
+        Assert.Equal([null, (TaskCategory?)TaskCategory.Tires, TaskCategory.Brakes, TaskCategory.Oil], r.ByCategory.Select(c => c.Category));
+        Assert.Equal([alpha, zed], r.ByVehicle.Select(v => v.VehicleId));
+    }
+
     [Fact]
     public async Task WithAVehicle_EveryBlockHoldsThatCarOnly()
     {
