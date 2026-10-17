@@ -52,4 +52,34 @@ public class TiresController(TireService tireService) : ControllerBase
         await tireService.DeleteMountAsync(User.GetUserId(), id, ct);
         return NoContent();
     }
+
+    [HttpGet("tire-mounts/{id:guid}/checks")]
+    public async Task<ActionResult<List<TireCheckDto>>> Checks(Guid id, CancellationToken ct) =>
+        Ok(await tireService.ListChecksAsync(User.GetUserId(), id, ct));
+
+    [HttpPost("tire-mounts/{id:guid}/checks")]
+    public async Task<ActionResult<TireCheckDto>> AddCheck(Guid id, TireCheckRequest request, CancellationToken ct) =>
+        StatusCode(StatusCodes.Status201Created, await tireService.AddCheckAsync(User.GetUserId(), id, request, ct));
+
+    [HttpDelete("tire-mounts/{id:guid}/checks/{measuredAt}")]
+    public async Task<IActionResult> DeleteCheck(Guid id, DateOnly measuredAt, CancellationToken ct)
+    {
+        await tireService.DeleteCheckAsync(User.GetUserId(), id, measuredAt, ct);
+        return NoContent();
+    }
+
+    [HttpGet("tire-mounts/{id:guid}/rotations")]
+    public async Task<ActionResult<List<TireRotationDto>>> Rotations(Guid id, CancellationToken ct) =>
+        Ok(await tireService.ListRotationsAsync(User.GetUserId(), id, ct));
+
+    [HttpPost("tire-mounts/{id:guid}/rotations")]
+    public async Task<ActionResult<TireRotationDto>> AddRotation(Guid id, TireRotationRequest request, CancellationToken ct) =>
+        StatusCode(StatusCodes.Status201Created, await tireService.AddRotationAsync(User.GetUserId(), id, request, ct));
+
+    [HttpDelete("tire-rotations/{id:guid}")]
+    public async Task<IActionResult> DeleteRotation(Guid id, CancellationToken ct)
+    {
+        await tireService.DeleteRotationAsync(User.GetUserId(), id, ct);
+        return NoContent();
+    }
 }

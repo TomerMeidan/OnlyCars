@@ -274,7 +274,7 @@ public class TireTests
         var root = new Microsoft.EntityFrameworkCore.Storage.InMemoryDatabaseRoot();
         var name = Guid.NewGuid().ToString();
         var t = new TireTests(new AppDbContext(new DbContextOptionsBuilder<AppDbContext>().UseInMemoryDatabase(name, root)
-            .AddInterceptors(new UniqueIndexInterceptor()).Options));
+            .AddInterceptors(new UniqueIndexInterceptor<TireMount>()).Options));
         var car = await t.CarAsync();
         var s = await t.SetAsync();
 
@@ -392,13 +392,305 @@ public class TireTests
         Assert.Equal((Today, Today.AddDays(-99)), (past[0].MountedAt, past[^1].MountedAt));
     }
 
-    /// <summary>Fails the save like the open-mount unique index after another request mounted first.</summary>
-    private sealed class UniqueIndexInterceptor : SaveChangesInterceptor
+    // ===== MVP5-E: checks and rotations. Criterion numbers below refer to the MVP5-E ticket. =====
+
+    private async Task<(Guid Car, Guid Set, Guid Mount)> MountedAsync(decimal odometer = 50_000, int daysAgo = 30)
     {
-        public override ValueTask<InterceptionResult<int>> SavingChangesAsync(DbContextEventData eventData, InterceptionResult<int> result,
-            CancellationToken cancellationToken = default) =>
-            eventData.Context!.ChangeTracker.Entries<TireMount>().Any(e => e.State == EntityState.Added)
-                ? throw new DbUpdateException("Cannot insert duplicate key row in object 'dbo.TireMounts' with unique index 'IX_TireMounts_VehicleId_Open'.")
-                : ValueTask.FromResult(result);
+        var car = await CarAsync(odometer: odometer);
+        var set = await SetAsync();
+        var state = await MountAsync(car, set.Id, Today.AddDays(-daysAgo), odometer);
+        return (car, set.Id, state.Current!.Id);
+    }
+
+    private static TireCheckItemRequest Wheel(TirePosition? position, decimal? bar = null, decimal? mm = null) => new(position, bar, mm);
+
+    private Task<TireCheckDto> CheckAsync(Guid mount, DateOnly date, params TireCheckItemRequest[] items) =>
+        tires.AddCheckAsync(userId, mount, new TireCheckRequest(date, [.. items]));
+
+    private Task<TireRotationDto> RotateAsync(Guid mount, DateOnly date, decimal km, string? notes = null) =>
+        tires.AddRotationAsync(userId, mount, new TireRotationRequest(date, km, notes));
+
+    // --- Criterion 1: scoping ---
+
+    [Fact]
+    public async Task ChecksAndRotations_AnotherUsersMountOrRotation_IsNotFound()
+    {
+        var (_, _, mount) = await MountedAsync();
+        await CheckAsync(mount, Today, Wheel(TirePosition.FL, 2.4m));
+        var rotation = await RotateAsync(mount, Today, 50_000);
+        var other = otherUserId;
+
+        Assert.Equal("tireMount.notFound", await CodeAsync(() => tires.ListChecksAsync(other, mount)));
+        Assert.Equal("tireMount.notFound", await CodeAsync(() => tires.AddCheckAsync(other, mount, new TireCheckRequest(Today.AddDays(-1), [Wheel(TirePosition.FL, 2)]))));
+        Assert.Equal("tireMount.notFound", await CodeAsync(() => tires.DeleteCheckAsync(other, mount, Today)));
+        Assert.Equal("tireMount.notFound", await CodeAsync(() => tires.ListRotationsAsync(other, mount)));
+        Assert.Equal("tireMount.notFound", await CodeAsync(() => tires.AddRotationAsync(other, mount, new TireRotationRequest(Today, 50_000, null))));
+        Assert.Equal("tireRotation.notFound", await CodeAsync(() => tires.DeleteRotationAsync(other, rotation.Id)));
+        Assert.Equal("tireMount.notFound", await CodeAsync(() => tires.ListChecksAsync(userId, Guid.NewGuid())));
+        Assert.Equal((1, 1), (db.TireMeasurements.Count(), db.TireRotations.Count()));
+    }
+
+    // --- Criterion 2: checks ---
+
+    [Fact]
+    public async Task AddCheck_OnlyFrontLeftPressure_Saves_ItemsInWheelOrder_AndShowsAsLastCheck()
+    {
+        var (car, _, mount) = await MountedAsync();
+
+        var one = await CheckAsync(mount, Today.AddDays(-2), Wheel(TirePosition.FL, 2.4m));
+        var full = await CheckAsync(mount, Today, Wheel(TirePosition.Spare, mm: 8), Wheel(TirePosition.RR, 2.25m, 6.5m), Wheel(TirePosition.FL, 2.3m));
+
+        Assert.Equal(new TireCheckItemDto(TirePosition.FL, 2.4m, null), Assert.Single(one.Items));
+        Assert.Equal([TirePosition.FL, TirePosition.RR, TirePosition.Spare], full.Items.Select(i => i.Position));
+        var list = await tires.ListChecksAsync(userId, mount);
+        Assert.Equal([Today, Today.AddDays(-2)], list.Select(c => c.MeasuredAt));
+        Assert.Equal(full.Items, list[0].Items);
+        var lastCheck = (await tires.GetVehicleTiresAsync(userId, car)).Current!.LastCheck!;
+        Assert.Equal(Today, lastCheck.MeasuredAt);
+        Assert.Equal(full.Items, lastCheck.Items);
+    }
+
+    [Theory]
+    [InlineData(0.49, null, "tireMeasurement.invalidPressure")]
+    [InlineData(6.01, null, "tireMeasurement.invalidPressure")]
+    [InlineData(2.255, null, "tireMeasurement.invalidPressure")]
+    [InlineData(null, -0.1, "tireMeasurement.invalidTread")]
+    [InlineData(null, 20.1, "tireMeasurement.invalidTread")]
+    [InlineData(null, 6.55, "tireMeasurement.invalidTread")]
+    [InlineData(null, null, "tireMeasurement.empty")]
+    public async Task AddCheck_BadSecondItem_HasItsCodeAndIndex(double? bar, double? mm, string code)
+    {
+        var (_, _, mount) = await MountedAsync();
+
+        var error = await Assert.ThrowsAsync<ValidationFailedException>(() =>
+            CheckAsync(mount, Today, Wheel(TirePosition.FL, 2.4m), Wheel(TirePosition.FR, (decimal?)bar, (decimal?)mm)));
+
+        Assert.Equal((code, 1), (error.Code, error.Extensions["index"]));
+        Assert.Empty(db.TireMeasurements);
+    }
+
+    [Fact]
+    public async Task AddCheck_BoundsSave_AndShapeErrorsHaveTheirCodes()
+    {
+        var (_, _, mount) = await MountedAsync();
+
+        await CheckAsync(mount, Today, Wheel(TirePosition.FL, 0.5m, 0), Wheel(TirePosition.FR, 6.0m, 20));
+
+        var day = Today.AddDays(-1);
+        var duplicate = await Assert.ThrowsAsync<ValidationFailedException>(() => CheckAsync(mount, day, Wheel(TirePosition.RL, 2), Wheel(TirePosition.RL, 2)));
+        Assert.Equal(("tireMeasurement.duplicatePosition", 1), (duplicate.Code, duplicate.Extensions["index"]));
+        Assert.Equal("tireMeasurement.invalidPosition", await CodeAsync(() => CheckAsync(mount, day, Wheel(null, 2))));
+        Assert.Equal("tireMeasurement.empty", await CodeAsync(() => CheckAsync(mount, day)));
+        Assert.Equal("tireMeasurement.empty", await CodeAsync(() => tires.AddCheckAsync(userId, mount, new TireCheckRequest(day, null))));
+    }
+
+    [Fact]
+    public async Task AddCheck_DateBeforeMountFutureOrBefore1900_HasItsCode_NullIsToday()
+    {
+        var (_, _, mount) = await MountedAsync(daysAgo: 10);
+
+        var before = await Assert.ThrowsAsync<ValidationFailedException>(() => CheckAsync(mount, Today.AddDays(-11), Wheel(TirePosition.FL, 2)));
+        Assert.Equal(("tireMount.dateBeforeMount", Today.AddDays(-10)), (before.Code, before.Extensions["mountedAt"]));
+        Assert.Equal("tireMount.futureDate", await CodeAsync(() => CheckAsync(mount, Today.AddDays(2), Wheel(TirePosition.FL, 2))));
+        Assert.Equal("date.tooEarly", await CodeAsync(() => CheckAsync(mount, new DateOnly(1899, 12, 31), Wheel(TirePosition.FL, 2))));
+
+        await CheckAsync(mount, Today.AddDays(-10), Wheel(TirePosition.FL, 2));
+        Assert.Equal(Today, (await tires.AddCheckAsync(userId, mount, new TireCheckRequest(null, [Wheel(TirePosition.FL, 2)]))).MeasuredAt);
+    }
+
+    [Fact]
+    public async Task AddCheck_SameDateAgain_Is409EvenWithOtherWheels()
+    {
+        var (_, _, mount) = await MountedAsync();
+        await CheckAsync(mount, Today, Wheel(TirePosition.FL, 2.4m));
+
+        var error = await Assert.ThrowsAsync<ConflictException>(() => CheckAsync(mount, Today, Wheel(TirePosition.RR, 2.4m)));
+
+        Assert.Equal(("tireMeasurement.duplicate", Today), (error.Code, error.Extensions["measuredAt"]));
+        Assert.Single(db.TireMeasurements);
+    }
+
+    [Fact]
+    public async Task AddCheck_SimultaneousCheckOfOtherWheelsOnTheSameDate_Is409NotA500()
+    {
+        // Two requests: `first` saves an FR check while `second`, past its "already a check" query, is saving an FL one.
+        var root = new Microsoft.EntityFrameworkCore.Storage.InMemoryDatabaseRoot();
+        var name = Guid.NewGuid().ToString();
+        var first = new TireTests(new AppDbContext(new DbContextOptionsBuilder<AppDbContext>().UseInMemoryDatabase(name, root).Options));
+        var (_, _, mount) = await first.MountedAsync();
+        var second = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>().UseInMemoryDatabase(name, root)
+            .AddInterceptors(new UniqueIndexInterceptor<TireCheck>(() => first.CheckAsync(mount, Today, Wheel(TirePosition.FR, 2.2m)))).Options);
+
+        var error = await Assert.ThrowsAsync<ConflictException>(() => new TireService(second, new VehicleService(second))
+            .AddCheckAsync(first.userId, mount, new TireCheckRequest(Today, [Wheel(TirePosition.FL, 2.4m)])));
+
+        Assert.Equal(("tireMeasurement.duplicate", Today), (error.Code, error.Extensions["measuredAt"]));
+        Assert.Equal(TirePosition.FR, Assert.Single(Assert.Single(await first.tires.ListChecksAsync(first.userId, mount)).Items).Position);
+    }
+
+    [Fact]
+    public async Task AddCheck_SaveFailureWithNoCheckOnThatDate_IsRethrownNotA409()
+    {
+        var t = new TireTests(new AppDbContext(new DbContextOptionsBuilder<AppDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .AddInterceptors(new UniqueIndexInterceptor<TireCheck>()).Options));
+        var (_, _, mount) = await t.MountedAsync();
+
+        await Assert.ThrowsAsync<DbUpdateException>(() => t.CheckAsync(mount, Today, Wheel(TirePosition.FL, 2)));
+    }
+
+    [Fact]
+    public async Task ClosedMountOrArchivedCar_CreateRejected_DeleteAllowed()
+    {
+        var (car, _, mount) = await MountedAsync();
+        await CheckAsync(mount, Today, Wheel(TirePosition.FL, 2));
+        var rotation = await RotateAsync(mount, Today, 50_000);
+        await CheckAsync(mount, Today.AddDays(-1), Wheel(TirePosition.FL, 2));
+        var rotation2 = await RotateAsync(mount, Today.AddDays(-1), 50_000);
+
+        await vehicles.ArchiveAsync(userId, car, true);
+        Assert.Equal("tireMount.vehicleArchived", await CodeAsync(() => CheckAsync(mount, Today.AddDays(-2), Wheel(TirePosition.FL, 2))));
+        Assert.Equal("tireMount.vehicleArchived", await CodeAsync(() => RotateAsync(mount, Today, 50_000)));
+        await tires.DeleteCheckAsync(userId, mount, Today);
+        await tires.DeleteRotationAsync(userId, rotation.Id);
+
+        await vehicles.ArchiveAsync(userId, car, false);
+        await UnmountAsync(car, Today, 50_000);
+        Assert.Equal("tireMount.notOpen", await CodeAsync(() => CheckAsync(mount, Today.AddDays(-2), Wheel(TirePosition.FL, 2))));
+        Assert.Equal("tireMount.notOpen", await CodeAsync(() => RotateAsync(mount, Today, 50_000)));
+        await tires.DeleteCheckAsync(userId, mount, Today.AddDays(-1));
+        await tires.DeleteRotationAsync(userId, rotation2.Id);
+
+        Assert.Equal((0, 0, 0), (db.TireChecks.Count(), db.TireMeasurements.Count(), db.TireRotations.Count()));
+        Assert.Equal("tireMeasurement.notFound", await CodeAsync(() => tires.DeleteCheckAsync(userId, mount, Today)));
+        Assert.Equal("tireRotation.notFound", await CodeAsync(() => tires.DeleteRotationAsync(userId, rotation.Id)));
+    }
+
+    [Fact]
+    public async Task DeleteCheck_RemovesEveryWheelOfThatDateOnly()
+    {
+        var (_, _, mount) = await MountedAsync();
+        await CheckAsync(mount, Today, Wheel(TirePosition.FL, 2), Wheel(TirePosition.FR, 2), Wheel(TirePosition.Spare, mm: 7));
+        await CheckAsync(mount, Today.AddDays(-1), Wheel(TirePosition.FL, 2));
+
+        await tires.DeleteCheckAsync(userId, mount, Today);
+
+        Assert.Equal(Today.AddDays(-1), Assert.Single(await tires.ListChecksAsync(userId, mount)).MeasuredAt);
+    }
+
+    [Fact]
+    public async Task Checks_201stDateIsLimitReached_AndTheListIsTheNewest50Dates()
+    {
+        var (car, _, mount) = await MountedAsync(daysAgo: 1000);
+        db.TireChecks.AddRange(Enumerable.Range(1, TireCheck.MaxPerMount).Select(n => new TireCheck
+        {
+            TireMountId = mount, MeasuredAt = Today.AddDays(-n),
+            Measurements = [new() { Position = TirePosition.RR, PressureBar = 2 }, new() { Position = TirePosition.FL, PressureBar = 2 }]
+        }));
+        await db.SaveChangesAsync();
+
+        Assert.Equal("tireMeasurement.limitReached", await CodeAsync(() => CheckAsync(mount, Today, Wheel(TirePosition.FL, 2))));
+        var list = await tires.ListChecksAsync(userId, mount);
+        Assert.Equal(TireService.MaxCheckDatesListed, list.Count);
+        Assert.Equal((Today.AddDays(-1), Today.AddDays(-50)), (list[0].MeasuredAt, list[^1].MeasuredAt));
+        Assert.All(list, c => Assert.Equal([TirePosition.FL, TirePosition.RR], c.Items.Select(i => i.Position)));
+        Assert.Equal(Today.AddDays(-1), (await tires.GetVehicleTiresAsync(userId, car)).Current!.LastCheck!.MeasuredAt);
+    }
+
+    // --- Criterion 3: rotations ---
+
+    [Fact]
+    public async Task AddRotation_Saves_ListsNewestFirst_AddsNoReading_AndShowsAsLastRotation()
+    {
+        var (car, _, mount) = await MountedAsync(odometer: 50_000);
+        var readings = db.OdometerReadings.Count();
+
+        var older = await RotateAsync(mount, Today.AddDays(-5), 50_500, "  Front to back ");
+        var sameDayLow = await RotateAsync(mount, Today, 51_000);
+        var newest = await RotateAsync(mount, Today, 51_200, " ");
+        await SetOdometerAsync(car, 52_000);
+
+        Assert.Equal((Today.AddDays(-5), 50_500m, "Front to back"), (older.Date, older.OdometerKm, older.Notes));
+        Assert.Null(newest.Notes);
+        Assert.Equal([newest.Id, sameDayLow.Id, older.Id], (await tires.ListRotationsAsync(userId, mount)).Select(r => r.Id));
+        Assert.Equal(readings, db.OdometerReadings.Count());
+        Assert.Equal(new LastTireRotationDto(Today, 51_200m, 800m), (await tires.GetVehicleTiresAsync(userId, car)).Current!.LastRotation);
+    }
+
+    [Fact]
+    public async Task LastRotation_KmSinceIsZeroWhenTheCarsOdometerIsLower_AndNullsWithoutAny()
+    {
+        var (car, _, mount) = await MountedAsync(odometer: 50_000);
+        var current = (await tires.GetVehicleTiresAsync(userId, car)).Current!;
+        Assert.Equal((null, null), (current.LastCheck, current.LastRotation));
+
+        await RotateAsync(mount, Today, 60_000);
+
+        Assert.Equal(0m, (await tires.GetVehicleTiresAsync(userId, car)).Current!.LastRotation!.KmSince);
+    }
+
+    [Fact]
+    public async Task AddRotation_InvalidValues_HaveTheirCodes()
+    {
+        var (_, _, mount) = await MountedAsync(odometer: 50_000, daysAgo: 10);
+
+        var below = await Assert.ThrowsAsync<ValidationFailedException>(() => RotateAsync(mount, Today, 49_999.99m));
+        Assert.Equal(("tireMount.odometerBeforeMount", 50_000m), (below.Code, below.Extensions["mountOdometerKm"]));
+        Assert.Equal("odometer.invalidValue", await CodeAsync(() => RotateAsync(mount, Today, 10_000_001)));
+        Assert.Equal("odometer.invalidValue", await CodeAsync(() => tires.AddRotationAsync(userId, mount, new TireRotationRequest(Today, null, null))));
+        Assert.Equal("tireMount.dateBeforeMount", await CodeAsync(() => RotateAsync(mount, Today.AddDays(-11), 50_000)));
+        Assert.Equal("tireMount.futureDate", await CodeAsync(() => RotateAsync(mount, Today.AddDays(2), 50_000)));
+        Assert.Equal("date.tooEarly", await CodeAsync(() => RotateAsync(mount, new DateOnly(1899, 1, 1), 50_000)));
+        Assert.Equal("tireRotation.invalidNotes", await CodeAsync(() => RotateAsync(mount, Today, 50_000, new string('n', TireRotation.MaxNotesLength + 1))));
+        await RotateAsync(mount, Today, 50_000, new string('n', TireRotation.MaxNotesLength));
+        Assert.Single(db.TireRotations);
+    }
+
+    [Fact]
+    public async Task AddRotation_101stIsLimitReached()
+    {
+        var (_, _, mount) = await MountedAsync();
+        db.TireRotations.AddRange(Enumerable.Range(0, TireRotation.MaxPerMount).Select(_ => new TireRotation { TireMountId = mount, Date = Today, OdometerKm = 50_000 }));
+        await db.SaveChangesAsync();
+
+        Assert.Equal("tireRotation.limitReached", await CodeAsync(() => RotateAsync(mount, Today, 50_000)));
+    }
+
+    // --- Criterion 4: cascade ---
+
+    [Fact]
+    public async Task DeleteMountOrSet_DeletesItsChecksAndRotations()
+    {
+        var (car, set, mount) = await MountedAsync();
+        await CheckAsync(mount, Today, Wheel(TirePosition.FL, 2));
+        await RotateAsync(mount, Today, 50_000);
+        await tires.DeleteMountAsync(userId, mount);
+        Assert.Equal((0, 0, 0), (db.TireChecks.Count(), db.TireMeasurements.Count(), db.TireRotations.Count()));
+
+        var again = (await MountAsync(car, set, Today, 50_000)).Current!.Id;
+        await CheckAsync(again, Today, Wheel(TirePosition.FL, 2));
+        await RotateAsync(again, Today, 50_000);
+        await tires.DeleteAsync(userId, set);
+        Assert.Equal((0, 0, 0), (db.TireChecks.Count(), db.TireMeasurements.Count(), db.TireRotations.Count()));
+    }
+
+    /// <summary>Fails the save of a new T like a unique index after a simultaneous request saved first.</summary>
+    /// <remarks><paramref name="winner"/>, if given, is the simultaneous request's save, run just before the failure.</remarks>
+    private sealed class UniqueIndexInterceptor<T>(Func<Task>? winner = null) : SaveChangesInterceptor where T : class
+    {
+        public override async ValueTask<InterceptionResult<int>> SavingChangesAsync(DbContextEventData eventData, InterceptionResult<int> result,
+            CancellationToken cancellationToken = default)
+        {
+            if (!eventData.Context!.ChangeTracker.Entries<T>().Any(e => e.State == EntityState.Added))
+            {
+                return result;
+            }
+
+            if (winner is not null)
+            {
+                await winner();
+            }
+
+            throw new DbUpdateException("Cannot insert duplicate key row with unique index.");
+        }
     }
 }

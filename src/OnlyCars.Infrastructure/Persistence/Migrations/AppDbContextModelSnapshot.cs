@@ -635,6 +635,67 @@ namespace OnlyCars.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("OnlyCars.Domain.Entities.TireCheck", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateOnly>("MeasuredAt")
+                        .HasColumnType("date");
+
+                    b.Property<Guid>("TireMountId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TireMountId", "MeasuredAt")
+                        .IsUnique();
+
+                    b.ToTable("TireChecks");
+                });
+
+            modelBuilder.Entity("OnlyCars.Domain.Entities.TireMeasurement", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<int>("Position")
+                        .HasColumnType("int");
+
+                    b.Property<decimal?>("PressureBar")
+                        .HasColumnType("decimal(4,2)");
+
+                    b.Property<Guid>("TireCheckId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal?>("TreadDepthMm")
+                        .HasColumnType("decimal(4,1)");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TireCheckId", "Position")
+                        .IsUnique();
+
+                    b.ToTable("TireMeasurements", t =>
+                        {
+                            t.HasCheckConstraint("CK_TireMeasurements_Values", "([PressureBar] IS NOT NULL OR [TreadDepthMm] IS NOT NULL) AND ([PressureBar] IS NULL OR [PressureBar] BETWEEN 0.5 AND 6.0) AND ([TreadDepthMm] IS NULL OR [TreadDepthMm] BETWEEN 0 AND 20)");
+                        });
+                });
+
             modelBuilder.Entity("OnlyCars.Domain.Entities.TireMount", b =>
                 {
                     b.Property<Guid>("Id")
@@ -685,6 +746,38 @@ namespace OnlyCars.Infrastructure.Persistence.Migrations
                         {
                             t.HasCheckConstraint("CK_TireMounts_Unmount", "([UnmountedAt] IS NULL AND [UnmountOdometerKm] IS NULL) OR ([UnmountedAt] >= [MountedAt] AND [UnmountOdometerKm] >= [MountOdometerKm])");
                         });
+                });
+
+            modelBuilder.Entity("OnlyCars.Domain.Entities.TireRotation", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateOnly>("Date")
+                        .HasColumnType("date");
+
+                    b.Property<string>("Notes")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<decimal>("OdometerKm")
+                        .HasColumnType("decimal(12,2)");
+
+                    b.Property<Guid>("TireMountId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TireMountId", "Date");
+
+                    b.ToTable("TireRotations");
                 });
 
             modelBuilder.Entity("OnlyCars.Domain.Entities.TireSet", b =>
@@ -1053,6 +1146,28 @@ namespace OnlyCars.Infrastructure.Persistence.Migrations
                     b.Navigation("ServiceRecord");
                 });
 
+            modelBuilder.Entity("OnlyCars.Domain.Entities.TireCheck", b =>
+                {
+                    b.HasOne("OnlyCars.Domain.Entities.TireMount", "TireMount")
+                        .WithMany("Checks")
+                        .HasForeignKey("TireMountId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("TireMount");
+                });
+
+            modelBuilder.Entity("OnlyCars.Domain.Entities.TireMeasurement", b =>
+                {
+                    b.HasOne("OnlyCars.Domain.Entities.TireCheck", "TireCheck")
+                        .WithMany("Measurements")
+                        .HasForeignKey("TireCheckId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("TireCheck");
+                });
+
             modelBuilder.Entity("OnlyCars.Domain.Entities.TireMount", b =>
                 {
                     b.HasOne("OnlyCars.Domain.Entities.TireSet", "TireSet")
@@ -1070,6 +1185,17 @@ namespace OnlyCars.Infrastructure.Persistence.Migrations
                     b.Navigation("TireSet");
 
                     b.Navigation("Vehicle");
+                });
+
+            modelBuilder.Entity("OnlyCars.Domain.Entities.TireRotation", b =>
+                {
+                    b.HasOne("OnlyCars.Domain.Entities.TireMount", "TireMount")
+                        .WithMany("Rotations")
+                        .HasForeignKey("TireMountId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("TireMount");
                 });
 
             modelBuilder.Entity("OnlyCars.Domain.Entities.TireSet", b =>
@@ -1128,6 +1254,18 @@ namespace OnlyCars.Infrastructure.Persistence.Migrations
                     b.Navigation("Items");
 
                     b.Navigation("Tasks");
+                });
+
+            modelBuilder.Entity("OnlyCars.Domain.Entities.TireCheck", b =>
+                {
+                    b.Navigation("Measurements");
+                });
+
+            modelBuilder.Entity("OnlyCars.Domain.Entities.TireMount", b =>
+                {
+                    b.Navigation("Checks");
+
+                    b.Navigation("Rotations");
                 });
 
             modelBuilder.Entity("OnlyCars.Domain.Entities.TireSet", b =>

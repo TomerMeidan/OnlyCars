@@ -26,6 +26,9 @@ public class AppDbContext : DbContext, IAppDbContext
     public DbSet<Issue> Issues => Set<Issue>();
     public DbSet<TireSet> TireSets => Set<TireSet>();
     public DbSet<TireMount> TireMounts => Set<TireMount>();
+    public DbSet<TireCheck> TireChecks => Set<TireCheck>();
+    public DbSet<TireMeasurement> TireMeasurements => Set<TireMeasurement>();
+    public DbSet<TireRotation> TireRotations => Set<TireRotation>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

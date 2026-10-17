@@ -48,3 +48,51 @@ public class TireMountConfiguration : IEntityTypeConfiguration<TireMount>
             "([UnmountedAt] IS NULL AND [UnmountOdometerKm] IS NULL) OR ([UnmountedAt] >= [MountedAt] AND [UnmountOdometerKm] >= [MountOdometerKm])"));
     }
 }
+
+public class TireCheckConfiguration : IEntityTypeConfiguration<TireCheck>
+{
+    public void Configure(EntityTypeBuilder<TireCheck> builder)
+    {
+        builder.HasOne(c => c.TireMount)
+            .WithMany(m => m.Checks)
+            .HasForeignKey(c => c.TireMountId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        // One check per mount per date; a repeated or simultaneous check on the same date fails here, whatever its wheels.
+        builder.HasIndex(c => new { c.TireMountId, c.MeasuredAt }).IsUnique();
+    }
+}
+
+public class TireMeasurementConfiguration : IEntityTypeConfiguration<TireMeasurement>
+{
+    public void Configure(EntityTypeBuilder<TireMeasurement> builder)
+    {
+        builder.Property(m => m.PressureBar).HasColumnType("decimal(4,2)");
+        builder.Property(m => m.TreadDepthMm).HasColumnType("decimal(4,1)");
+
+        builder.HasOne(m => m.TireCheck)
+            .WithMany(c => c.Measurements)
+            .HasForeignKey(m => m.TireCheckId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder.HasIndex(m => new { m.TireCheckId, m.Position }).IsUnique();
+        builder.ToTable(t => t.HasCheckConstraint("CK_TireMeasurements_Values",
+            "([PressureBar] IS NOT NULL OR [TreadDepthMm] IS NOT NULL) AND ([PressureBar] IS NULL OR [PressureBar] BETWEEN 0.5 AND 6.0) AND ([TreadDepthMm] IS NULL OR [TreadDepthMm] BETWEEN 0 AND 20)"));
+    }
+}
+
+public class TireRotationConfiguration : IEntityTypeConfiguration<TireRotation>
+{
+    public void Configure(EntityTypeBuilder<TireRotation> builder)
+    {
+        builder.Property(r => r.OdometerKm).HasColumnType("decimal(12,2)");
+        builder.Property(r => r.Notes).HasMaxLength(TireRotation.MaxNotesLength);
+
+        builder.HasOne(r => r.TireMount)
+            .WithMany(t => t.Rotations)
+            .HasForeignKey(r => r.TireMountId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder.HasIndex(r => new { r.TireMountId, r.Date });
+    }
+}

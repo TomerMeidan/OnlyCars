@@ -251,6 +251,23 @@ export interface TireMount {
   unmountedAt: string | null
   unmountOdometerKm: number | null
   kmDriven: number
+  // MVP5-E: filled only on VehicleTires.current.
+  lastCheck?: TireCheck | null
+  lastRotation?: { date: string; odometerKm: number; kmSince: number } | null
+}
+
+// MVP5-E: a check is one date on a mount, with pressure (bar) and tread (mm) per wheel, in this order.
+export type TirePosition = 'FL' | 'FR' | 'RL' | 'RR' | 'Spare'
+export const tirePositions: TirePosition[] = ['FL', 'FR', 'RL', 'RR', 'Spare']
+export interface TireCheck {
+  measuredAt: string
+  items: { position: TirePosition; pressureBar: number | null; treadDepthMm: number | null }[]
+}
+export interface TireRotation {
+  id: string
+  date: string
+  odometerKm: number
+  notes: string | null
 }
 
 // The car's set now, and its earlier mounts newest first (the newest 100).
@@ -280,6 +297,7 @@ export interface Problem {
   index?: number // the 0-based item row of a serviceItem.* or checklistItem.* error
   minDate?: string // the earliest accepted date of a date.tooEarly error
   mountOdometerKm?: number // tireMount.odometerBeforeMount: the odometer when the set went on
+  mountedAt?: string // tireMount.dateBeforeMount: the date the set went on
 }
 
 export class ApiError extends Error {

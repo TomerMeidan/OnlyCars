@@ -77,3 +77,13 @@ public enum TireSeason
     Winter,
     AllSeason
 }
+
+// Declared in display order (FL, FR, RL, RR, Spare); checks list their items in this order.
+public enum TirePosition
+{
+    FL,
+    FR,
+    RL,
+    RR,
+    Spare
+}

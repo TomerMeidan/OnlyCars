@@ -2929,6 +2929,8 @@ for (const s of setups) {
   const isPost = (r) => r.url().endsWith(`/vehicles/${dashCarId}/issues`) && r.request().method() === 'POST'
   const isPut = (r) => r.url().includes('/api/issues/') && r.request().method() === 'PUT'
   const at390 = async (what, shot) => {
+    // A field focused through the resize makes Chrome scroll on the next mousedown, so the click after it misses its button.
+    await page.evaluate(() => document.activeElement?.matches('input, textarea, select') && document.activeElement.blur())
     await page.setViewportSize({ width: 390, height: 844 })
     await noOverflow(what)
     await sweep(what)
@@ -3225,13 +3227,13 @@ for (const s of setups) {
     ? { title: 'צמיגים', newSet: 'סט חדש', empty: 'עדיין אין סטים של צמיגים.', noneOnCar: 'אין סט צמיגים מותקן ברכב הזה.', mount: 'התקנת סט', swap: 'החלפת סט',
         unmount: 'הסרת הסט', storage: 'באחסון', km: (n, u = 'ק״מ') => `נסע ${n0(n)} ${u}`, on: (c, d) => `מותקן ברכב ${c} מאז ${d}`, brand: 'הזינו יצרן של עד 50 תווים.',
         noSets: 'עדיין אין לך סטים של צמיגים. אפשר להוסיף סט בדף הצמיגים.', edit: (x) => `עריכה של ${x}`, del: (x) => `מחיקה של ${x}`,
-        delMount: (x, d) => `מחיקת ההתקנה של ${x} מ־${d}`, confirmSet: 'למחוק את סט הצמיגים הזה? גם היסטוריית ההתקנות שלו תימחק.', summer: 'קיץ',
+        delMount: (x, d) => `מחיקת ההתקנה של ${x} מ־${d}`, confirmSet: 'למחוק את סט הצמיגים הזה? גם היסטוריית ההתקנות, הבדיקות והרוטציות שלו יימחקו.', summer: 'קיץ',
         before: (n, u = 'ק״מ') => `הזינו קילומטראז׳ של ${n0(n)} ${u} לפחות (הקילומטראז׳ בהתקנת הסט).`,
         overlap: 'התאריך לא יכול להיות לפני ההתקנה או ההסרה האחרונה של הסט או של הרכב. בחרו תאריך מאוחר יותר.' }
     : { title: 'Tires', newSet: 'New set', empty: 'No tire sets yet.', noneOnCar: 'No tire set on this car.', mount: 'Mount a set', swap: 'Swap set',
         unmount: 'Unmount', storage: 'In storage', km: (n, u = 'km') => `${n0(n)} ${u} driven`, on: (c, d) => `On ${c} since ${d}`, brand: 'Enter a brand of up to 50 characters.',
         noSets: 'You have no tire sets yet. Add one on the Tires page.', edit: (x) => `Edit ${x}`, del: (x) => `Delete ${x}`,
-        delMount: (x, d) => `Delete the mount of ${x} from ${d}`, confirmSet: 'Delete this tire set? Its mount history is deleted with it.', summer: 'Summer',
+        delMount: (x, d) => `Delete the mount of ${x} from ${d}`, confirmSet: 'Delete this tire set? Its mount history, checks and rotations are deleted with it.', summer: 'Summer',
         before: (n, u = 'km') => `Enter a reading of at least ${n0(n)} ${u}, the odometer when the set went on.`,
         overlap: "The date can't be before this set's or this car's last mount or unmount. Choose a later date." }
   const tiSec = page.locator('section[aria-labelledby=tires]')
@@ -3408,6 +3410,180 @@ for (const s of setups) {
     forget500()
     await unitIs('Km')
   })
+  // MVP5-E: checks and rotations of Nokian, on Dash car since 5 days ago at 501 km below the car's odometer.
+  const TC = he
+    ? { logCheck: 'רישום בדיקה', logRotation: 'רישום רוטציה', noChecks: 'עדיין אין בדיקות.', notRotated: 'עדיין לא בוצעה רוטציה.', last: (d) => `בדיקה אחרונה: ${d}`,
+        fl: 'קדמי שמאלי: 2.4 בר', rr: 'אחורי ימני: 2.25 בר, 6.5 מ״מ', spare: 'גלגל רזרבי: 8 מ״מ', empty: 'יש להזין לחץ או עומק חריצים לגלגל אחד לפחות.',
+        pressure: 'יש להזין לחץ בין 0.5 ל־6 בר, עם עד 2 ספרות אחרי הנקודה.', duplicate: 'כבר יש בדיקה בתאריך הזה. כדי לרשום אותה מחדש, יש למחוק אותה קודם.',
+        delCheck: (d) => `מחיקת הבדיקה מ־${d}`, confirmCheck: 'למחוק את הבדיקה הזו? כל הערכים שנרשמו לגלגלים בתאריך הזה יימחקו.',
+        delRot: (d) => `מחיקת הרוטציה מ־${d}`, confirmRot: 'למחוק את הרוטציה הזו?', at: (n) => `בקילומטראז׳ ${n0(n)} ק״מ`,
+        lastRot: (d, n, u = 'ק״מ') => `רוטציה אחרונה: ${d}, לפני ${n0(n)} ${u}` }
+    : { logCheck: 'Log a check', logRotation: 'Log a rotation', noChecks: 'No checks yet.', notRotated: 'Not rotated yet.', last: (d) => `Last check: ${d}`,
+        fl: 'Front left: 2.4 bar', rr: 'Rear right: 2.25 bar, 6.5 mm', spare: 'Spare: 8 mm', empty: 'Enter a pressure or a tread depth for at least one wheel.',
+        pressure: 'Enter a pressure from 0.5 to 6 bar with up to 2 decimals.', duplicate: 'There is already a check on this date. Delete it to log it again.',
+        delCheck: (d) => `Delete the check from ${d}`, confirmCheck: 'Delete this check? The values of every wheel from this date are deleted.',
+        delRot: (d) => `Delete the rotation from ${d}`, confirmRot: 'Delete this rotation?', at: (n) => `At ${n0(n)} km`,
+        lastRot: (d, n, u = 'km') => `Last rotation: ${d}, ${n0(n)} ${u} ago` }
+  const lastCheck = tiSec.locator('.last-check')
+  const checkRows = tiSec.locator('.checks > li')
+  const rotRows = tiSec.locator('.rotations > li')
+  const isCheckPost = (r) => r.url().endsWith('/checks') && r.request().method() === 'POST'
+  const isRotPost = (r) => r.url().endsWith('/rotations') && r.request().method() === 'POST'
+  const rowsAre = (sel, n) => page.waitForFunction(([sel, n]) => document.querySelectorAll(`section[aria-labelledby=tires] ${sel} > li`).length === n, [sel, n], { timeout: 5000 })
+  await step('tires-check', async () => {
+    // Criteria 5 to 7 and 9: the empty states; focus on the date, Escape back to Log a check; values for some wheels, as typed, as Last check and at the top of Checks.
+    await page.goto(`${BASE}${ckCarPath()}`)
+    await lastCheck.getByText(TC.noChecks, { exact: true }).waitFor()
+    await tiSec.getByText(TC.notRotated, { exact: true }).waitFor()
+    const log = tiSec.getByRole('button', { name: TC.logCheck, exact: true })
+    await log.click()
+    await focusIs('section[aria-labelledby=tires] input[name=date]', 'the date after Log a check')
+    if ((await tiForm.locator('input[name=date]').inputValue()) !== (await localDate())) throw new Error('date not today')
+    if ((await tiForm.locator('fieldset.item').count()) !== 5) throw new Error('not five wheels')
+    await page.keyboard.press('Escape')
+    await focusIs('section[aria-labelledby=tires] button.log-check', 'Log a check after Escape')
+    await log.click()
+    // Nothing typed: the server's empty error under the form.
+    await tiSave.click()
+    const alert = tiForm.locator('[role=alert]')
+    await alert.waitFor()
+    if (plain(await alert.textContent()) !== TC.empty) throw new Error(`empty "${await alert.textContent()}"`)
+    forgetCk(400, '/checks')
+    // A third decimal is stopped by the browser, with the translated message.
+    const flP = tiForm.locator('input[name=pFL]')
+    await flP.fill('2.405')
+    await tiSave.click()
+    if (plain(await flP.evaluate((el) => el.validationMessage)) !== TC.pressure) throw new Error('pressure message')
+    await flP.fill('2.4')
+    await tiForm.locator('input[name=pRR]').fill('2.25')
+    await tiForm.locator('input[name=tRR]').fill('6.5')
+    await tiForm.locator('input[name=tSpare]').fill('8')
+    await at390('the check form', 'tires-check-form')
+    const res = page.waitForResponse(isCheckPost)
+    await tiSave.click()
+    const r = await res
+    const items = JSON.stringify(r.request().postDataJSON().items)
+    const want = JSON.stringify([{ position: 'FL', pressureBar: 2.4, treadDepthMm: null }, { position: 'RR', pressureBar: 2.25, treadDepthMm: 6.5 }, { position: 'Spare', pressureBar: null, treadDepthMm: 8 }])
+    if (r.status() !== 201 || items !== want) throw new Error(`${r.status()} ${items}`)
+    await focusIs('section[aria-labelledby=tires] .last-check', 'Last check after Save')
+    const today = await fmtDay(await localDate())
+    const lc = plain(await lastCheck.textContent())
+    for (const w of [TC.last(today), TC.fl, TC.rr, TC.spare]) if (!lc.includes(w)) throw new Error(`last check "${lc}" lacks "${w}"`)
+    await tiSec.locator('details:has(.checks) > summary').click()
+    const top = plain(await checkRows.first().textContent())
+    if (!top.includes(today) || !top.includes(TC.rr)) throw new Error(`top check "${top}"`)
+    await at390('the car page with a check', 'tires-check')
+  })
+  await step('tires-check-duplicate', async () => {
+    // Criterion 10: a second check on the same date is a 409 on the date field.
+    await tiSec.getByRole('button', { name: TC.logCheck, exact: true }).click()
+    await tiForm.locator('input[name=pFR]').fill('2.3')
+    const res = page.waitForResponse(isCheckPost)
+    await tiSave.click()
+    if ((await res).status() !== 409) throw new Error('not a 409')
+    const alert = tiForm.locator('[role=alert]')
+    const date = tiForm.locator('input[name=date]')
+    await alert.waitFor()
+    if (plain(await alert.textContent()) !== TC.duplicate || (await date.getAttribute('aria-invalid')) !== 'true' || (await date.getAttribute('aria-describedby')) !== (await alert.getAttribute('id'))) {
+      throw new Error(`duplicate "${await alert.textContent()}" not on the date`)
+    }
+    forgetCk(409, '/checks')
+    // An item error's index is into the wheels sent: index 1 of Front right and Rear right is Rear right.
+    await page.route('**/checks', (rt) => rt.fulfill({ status: 400, contentType: 'application/json', body: JSON.stringify({ code: 'tireMeasurement.invalidTread', index: 1 }) }), { times: 1 })
+    const rrT = tiForm.locator('input[name=tRR]')
+    await rrT.fill('5')
+    await tiSave.click()
+    await tiForm.locator('fieldset.item').nth(3).locator('[role=alert]').waitFor()
+    if ((await rrT.getAttribute('aria-invalid')) !== 'true' || (await tiForm.locator('input[name=pFR]').getAttribute('aria-invalid'))) throw new Error('tread error not on Rear right')
+    forgetCk(400, '/checks')
+    // Yesterday saves, and today's check stays Last check.
+    await rrT.fill('')
+    await date.fill(await histDay(-1))
+    await tiSave.click()
+    await rowsAre('.checks', 2)
+    if (!plain(await lastCheck.textContent()).includes(TC.last(await fmtDay(await localDate())))) throw new Error('Last check is not the newest')
+  })
+  await step('tires-check-delete', async () => {
+    const today = await fmtDay(await localDate())
+    const del = await named(checkRows.first().locator('button.link'), TC.delCheck(today))
+    await del.click()
+    if (plain(await checkRows.first().locator('.inline-form p').textContent()) !== TC.confirmCheck) throw new Error('confirm text')
+    await page.keyboard.press('Escape')
+    await focusIs('section[aria-labelledby=tires] .checks button.link', 'Delete after Escape')
+    await del.click()
+    const res = page.waitForResponse((r) => r.url().includes('/checks/') && r.request().method() === 'DELETE')
+    await checkRows.first().locator('button.danger').click()
+    if ((await res).status() !== 204) throw new Error('delete failed')
+    // Yesterday's check takes its place, as the row and as Last check; after the last one, focus goes to Log a check.
+    await rowsAre('.checks', 1)
+    await focusIs('section[aria-labelledby=tires] .checks button.link', 'the next Delete after Delete')
+    if (!plain(await lastCheck.textContent()).includes(TC.last(await fmtDay(await histDay(-1))))) throw new Error('Last check after Delete')
+    await checkRows.first().locator('button.link').click()
+    await checkRows.first().locator('button.danger').click()
+    await lastCheck.getByText(TC.noChecks, { exact: true }).waitFor()
+    await focusIs('section[aria-labelledby=tires] button.log-check', 'Log a check after the last Delete')
+  })
+  await step('tires-rotation', async () => {
+    // Criteria 5 and 6: an odometer below the mount's start errs on the odometer; a rotation 200 km after the start is Last rotation 301 km ago,
+    // with no odometer reading; in miles, the car's odometer typed as shown goes back as its exact km; then both are deleted.
+    const mi = (km) => Math.round(km / 1.609344)
+    const startKm = carKm - 501
+    const log = tiSec.getByRole('button', { name: TC.logRotation, exact: true })
+    await log.click()
+    await focusIs('section[aria-labelledby=tires] input[name=date]', 'the date after Log a rotation')
+    const odo = tiForm.locator('input[name=odometer]')
+    if (Number(await odo.inputValue()) !== carKm) throw new Error('odometer not the car one')
+    await page.keyboard.press('Escape')
+    await focusIs('section[aria-labelledby=tires] button.log-rotation', 'Log a rotation after Escape')
+    await log.click()
+    await odo.fill(String(startKm - 1))
+    await tiSave.click()
+    const alert = tiForm.locator('[role=alert]')
+    await alert.waitFor()
+    if (plain(await alert.textContent()) !== TI.before(startKm) || (await odo.getAttribute('aria-invalid')) !== 'true') throw new Error(`odometer error "${await alert.textContent()}"`)
+    forgetCk(400, '/rotations')
+    await odo.fill(String(startKm + 200))
+    await tiForm.locator('textarea[name=notes]').fill('Front to back')
+    await at390('the rotation form', 'tires-rotation-form')
+    const res = page.waitForResponse(isRotPost)
+    await tiSave.click()
+    const r = await res
+    if (r.status() !== 201 || r.request().postDataJSON().odometerKm !== startKm + 200) throw new Error(`${r.status()} ${r.request().postData()}`)
+    await focusIs('section[aria-labelledby=tires] .last-rotation', 'Last rotation after Save')
+    const today = await fmtDay(await localDate())
+    const lastRot = async () => plain(await tiSec.locator('.last-rotation').textContent())
+    if ((await lastRot()) !== TC.lastRot(today, 301)) throw new Error(`last rotation "${await lastRot()}"`)
+    if ((await apiCall('GET', `/vehicles/${dashCarId}`)).currentOdometerKm !== carKm) throw new Error('a rotation changed the odometer')
+    await tiSec.locator('details:has(.rotations) > summary').click()
+    const row = plain(await rotRows.first().textContent())
+    if (!row.includes(TC.at(startKm + 200)) || !row.includes('Front to back')) throw new Error(`rotation row "${row}"`)
+    await unitIs('Mi')
+    await page.goto(`${BASE}${ckCarPath()}`)
+    await tiSec.locator('.last-rotation').waitFor()
+    if ((await lastRot()) !== TC.lastRot(today, mi(301), UM.mi)) throw new Error(`last rotation in miles "${await lastRot()}"`)
+    await log.click()
+    if (Number(await odo.inputValue()) !== mi(carKm)) throw new Error('odometer not in miles')
+    const res2 = page.waitForResponse(isRotPost)
+    await tiSave.click()
+    const sent = (await res2).request().postDataJSON().odometerKm
+    if (sent !== carKm) throw new Error(`sent ${sent} km, want ${carKm}`)
+    await page.waitForFunction((w) => document.querySelector('section[aria-labelledby=tires] .last-rotation')?.textContent.replace(/\s+/g, ' ').trim() === w,
+      TC.lastRot(today, 0, UM.mi), { timeout: 5000 })
+    // The newer rotation (higher odometer, same date) is on top; deleting it makes the first one Last rotation again.
+    await tiSec.locator('details:has(.rotations) > summary').click()
+    await rowsAre('.rotations', 2)
+    await (await named(rotRows.first().locator('button.link'), TC.delRot(today))).click()
+    if (plain(await rotRows.first().locator('.inline-form p').textContent()) !== TC.confirmRot) throw new Error('confirm text')
+    await rotRows.first().locator('button.danger').click()
+    await rowsAre('.rotations', 1)
+    await focusIs('section[aria-labelledby=tires] .rotations button.link', 'the next Delete after Delete')
+    if ((await lastRot()) !== TC.lastRot(today, mi(301), UM.mi)) throw new Error(`last rotation after Delete "${await lastRot()}"`)
+    await rotRows.first().locator('button.link').click()
+    await rotRows.first().locator('button.danger').click()
+    await tiSec.getByText(TC.notRotated, { exact: true }).waitFor()
+    await focusIs('section[aria-labelledby=tires] button.log-check', 'Log a check after the last Delete')
+    await unitIs('Km')
+  })
   await step('tires-unmount', async () => {
     await page.goto(`${BASE}${ckCarPath()}`)
     await tiSec.getByRole('button', { name: TI.unmount, exact: true }).click()
@@ -3429,10 +3605,15 @@ for (const s of setups) {
     const day = await localDate()
     await apiCall('POST', `/vehicles/${id}/tires/mount`, { tireSetId: idOf('Michelin'), mountedAt: day, odometerKm: 1000 })
     await apiCall('POST', `/vehicles/${id}/tires/mount`, { tireSetId: idOf('Nokian'), mountedAt: day, odometerKm: 1000 })
+    // MVP5-E: its checks show, without Log or Delete.
+    const mountId = (await apiCall('GET', `/vehicles/${id}/tires`)).current.id
+    await apiCall('POST', `/tire-mounts/${mountId}/checks`, { measuredAt: day, items: [{ position: 'FL', pressureBar: 2.5 }] })
     await apiCall('POST', `/vehicles/${id}/archive`)
     await page.goto(`${BASE}/cars/${id}`)
     await tiSec.locator('.current-tires', { hasText: 'Nokian Hakka R5' }).waitFor()
     if (await tiSec.locator('button.mount').count()) throw new Error('Mount or Swap on an archived car')
+    if (await tiSec.locator('button.log-check, button.log-rotation').count()) throw new Error('Log on an archived car')
+    if ((await tiSec.locator('.checks > li').count()) !== 1 || (await tiSec.locator('.checks button').count())) throw new Error('checks missing, or Delete on them')
     if ((await tiSec.locator('.mounts > li').count()) !== 1 || (await tiSec.locator('.mounts button').count())) throw new Error('past mounts missing, or Delete on them')
     await tiSec.getByRole('button', { name: TI.unmount, exact: true }).click()
     await tiSave.click()

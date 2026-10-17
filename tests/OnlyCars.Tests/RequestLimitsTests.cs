@@ -157,6 +157,8 @@ public class RequestLimitsTests
     [InlineData("/test/issues", """{"title":"A","status":2}""", HttpStatusCode.BadRequest)]
     [InlineData("/test/tire-sets", """{"brand":"A","season":"AllSeason"}""", HttpStatusCode.OK)]
     [InlineData("/test/tire-sets", """{"brand":"A","season":1}""", HttpStatusCode.BadRequest)]
+    [InlineData("/test/tire-checks", """{"items":[{"position":"Spare","pressureBar":2.4}]}""", HttpStatusCode.OK)]
+    [InlineData("/test/tire-checks", """{"items":[{"position":0,"pressureBar":2.4}]}""", HttpStatusCode.BadRequest)]
     public async Task EnumValues_BindByNameOnly(string path, string json, HttpStatusCode expected)
     {
         var (app, client) = await StartAsync();
@@ -200,4 +202,7 @@ public class ModelBindingTestController : ControllerBase
 
     [HttpPost("tire-sets")]
     public IActionResult CreateTireSet(TireSetRequest request) => Ok();
+
+    [HttpPost("tire-checks")]
+    public IActionResult CreateTireCheck(TireCheckRequest request) => Ok();
 }

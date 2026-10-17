@@ -308,7 +308,9 @@ details > summary { padding-block: 0.625rem; cursor: pointer; }
 
 /* Tires (MVP5-D): a set's facts wrap as one line of label: value pairs; storage notes keep the user's line breaks */
 .facts { display: flex; flex-wrap: wrap; gap: 0 1rem; }
-.tire-sets .notes { white-space: pre-line; }
+.tire-sets .notes, .rotations .notes { white-space: pre-line; }
 .current-tires { display: grid; gap: 0.25rem; }
+.current-tires + .actions { flex-wrap: wrap; } /* Swap, Unmount and the two Log buttons */
+.tire-check .item > label { flex-basis: 6rem; } /* MVP5-E: both inputs of a wheel side by side at 390px */
 /* MVP5-D criterion 10: the tire forms are one column on a phone */
 @media (max-width: 30rem) { .inline-form.tire-form > label { flex-basis: 100%; } }

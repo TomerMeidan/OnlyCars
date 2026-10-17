@@ -15,4 +15,7 @@ public class TireMount : Entity
     public decimal MountOdometerKm { get; set; }
     public DateOnly? UnmountedAt { get; set; }
     public decimal? UnmountOdometerKm { get; set; }
+
+    public List<TireCheck> Checks { get; set; } = [];
+    public List<TireRotation> Rotations { get; set; } = [];
 }

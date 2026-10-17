@@ -183,4 +183,37 @@ public class MaintenanceSchemaTests : IAsyncLifetime
         await db.Users.Where(u => u.Id == car.UserId).ExecuteDeleteAsync();
         Assert.Equal((0, 0, 0), (await db.Vehicles.CountAsync(), await db.TireSets.CountAsync(), await db.TireMounts.CountAsync()));
     }
+
+    [Fact]
+    public async Task TireChecks_OnSqlServer_DuplicateIs409_ValuesChecked_AndSetDeleteCascades()
+    {
+        // MVP5-E: the unique (mount, date) check index turns a simultaneous duplicate into a 409; deletes cascade in the database.
+        var tires = new TireService(db, new VehicleService(db));
+        var car = await AddCarAsync();
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var set = await tires.CreateAsync(car.UserId, new TireSetRequest("A", null, null, TireSeason.Summer, null, null, null));
+        var mount = (await tires.MountAsync(car.UserId, car.Id, new MountTireSetRequest(set.Id, today, 0))).Current!.Id;
+        var check = await tires.AddCheckAsync(car.UserId, mount, new TireCheckRequest(today, [new(TirePosition.FL, 2.25m, 6.5m)]));
+        await tires.AddRotationAsync(car.UserId, mount, new TireRotationRequest(today, 10, "x"));
+        Assert.Equal(new TireCheckItemDto(TirePosition.FL, 2.25m, 6.5m), Assert.Single(check.Items));
+        db.ChangeTracker.Clear();
+
+        // A simultaneous request that passed the "already a check" query fails on the index even with other wheels (the service maps it to 409).
+        db.TireChecks.Add(new TireCheck { TireMountId = mount, MeasuredAt = today, Measurements = [new() { Position = TirePosition.RR, PressureBar = 2 }] });
+        await Assert.ThrowsAsync<DbUpdateException>(() => db.SaveChangesAsync());
+        db.ChangeTracker.Clear();
+
+        // The same wheel twice in one check, and a wheel with neither value, are refused.
+        var checkId = (await db.TireChecks.SingleAsync()).Id;
+        db.TireMeasurements.Add(new TireMeasurement { TireCheckId = checkId, Position = TirePosition.FL, PressureBar = 2 });
+        await Assert.ThrowsAsync<DbUpdateException>(() => db.SaveChangesAsync());
+        db.ChangeTracker.Clear();
+        db.TireMeasurements.Add(new TireMeasurement { TireCheckId = checkId, Position = TirePosition.FR });
+        await Assert.ThrowsAsync<DbUpdateException>(() => db.SaveChangesAsync());
+        db.ChangeTracker.Clear();
+
+        await tires.DeleteAsync(car.UserId, set.Id);
+        Assert.Equal((0, 0, 0, 0), (await db.TireMounts.CountAsync(), await db.TireChecks.CountAsync(), await db.TireMeasurements.CountAsync(),
+            await db.TireRotations.CountAsync()));
+    }
 }

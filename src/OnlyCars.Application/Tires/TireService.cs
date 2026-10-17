@@ -3,6 +3,7 @@ using OnlyCars.Application.Common;
 using OnlyCars.Application.Common.Exceptions;
 using OnlyCars.Application.Tires.Dtos;
 using OnlyCars.Application.Vehicles;
+using OnlyCars.Domain;
 using OnlyCars.Domain.Entities;
 
 namespace OnlyCars.Application.Tires;
@@ -132,11 +133,193 @@ public class TireService(IAppDbContext db, VehicleService vehicleService)
     /// <summary>Deletes one mount record to fix a mistake; deleting the open one leaves the car with no set.</summary>
     public async Task DeleteMountAsync(Guid userId, Guid id, CancellationToken ct = default)
     {
-        var mount = await db.TireMounts.FirstOrDefaultAsync(m => m.Id == id && m.TireSet!.UserId == userId, ct)
-            ?? throw new NotFoundException(nameof(TireMount), id);
-        db.TireMounts.Remove(mount);
+        db.TireMounts.Remove(await FindMountAsync(userId, id, ct));
         await db.SaveChangesAsync(ct);
     }
+
+    // --- MVP5-E: checks and rotations (decisions.md "Tire measurements and rotations, MVP5-E") ---
+
+    // shortcut: the check list returns the newest 50 dates; page it if users need older ones.
+    public const int MaxCheckDatesListed = 50;
+
+    public async Task<List<TireCheckDto>> ListChecksAsync(Guid userId, Guid mountId, CancellationToken ct = default) =>
+        await ChecksAsync((await FindMountAsync(userId, mountId, ct)).Id, MaxCheckDatesListed, ct);
+
+    public async Task<TireCheckDto> AddCheckAsync(Guid userId, Guid mountId, TireCheckRequest request, CancellationToken ct = default)
+    {
+        var mount = await FindOpenMountAsync(userId, mountId, ct);
+        var date = ValidateDate(request.MeasuredAt);
+        RejectBeforeMount(mount, date);
+        if (request.Items is not { Count: > 0 } items)
+        {
+            throw new ValidationFailedException("tireMeasurement.empty", "Enter a pressure or a tread depth.");
+        }
+
+        var rows = new List<TireMeasurement>();
+        for (var i = 0; i < items.Count; i++)
+        {
+            var item = items[i];
+            if (item?.Position is not { } p)
+            {
+                throw Item("tireMeasurement.invalidPosition", "Pick a wheel.", i);
+            }
+
+            var (pressure, tread) = (item.PressureBar, item.TreadDepthMm);
+
+            if (pressure is null && tread is null)
+            {
+                throw Item("tireMeasurement.empty", "Enter a pressure or a tread depth.", i);
+            }
+
+            // More decimals than the column keeps (2 and 1) is rejected rather than silently rounded.
+            if (pressure is { } bar && (bar is < TireMeasurement.MinPressureBar or > TireMeasurement.MaxPressureBar || bar != Math.Round(bar, 2)))
+            {
+                throw Item("tireMeasurement.invalidPressure",
+                    $"The pressure must be {TireMeasurement.MinPressureBar} to {TireMeasurement.MaxPressureBar} bar, up to 2 decimals.", i);
+            }
+
+            if (tread is { } mm && (mm is < 0 or > TireMeasurement.MaxTreadDepthMm || mm != Math.Round(mm, 1)))
+            {
+                throw Item("tireMeasurement.invalidTread", $"The tread depth must be 0 to {TireMeasurement.MaxTreadDepthMm} mm, up to 1 decimal.", i);
+            }
+
+            if (rows.Any(r => r.Position == p))
+            {
+                throw Item("tireMeasurement.duplicatePosition", "Each wheel can appear once.", i);
+            }
+
+            rows.Add(new TireMeasurement { Position = p, PressureBar = pressure, TreadDepthMm = tread });
+        }
+
+        var checks = db.TireChecks.Where(c => c.TireMountId == mount.Id);
+        if (await checks.AnyAsync(c => c.MeasuredAt == date, ct))
+        {
+            throw DuplicateCheck(date);
+        }
+
+        // shortcut: two simultaneous checks at 199 dates can both pass and make 201; harmless, add a lock if the limit ever matters.
+        if (await checks.CountAsync(ct) >= TireCheck.MaxPerMount)
+        {
+            throw new ValidationFailedException("tireMeasurement.limitReached", $"A mount can have up to {TireCheck.MaxPerMount} checks.");
+        }
+
+        var check = new TireCheck { TireMountId = mount.Id, MeasuredAt = date, Measurements = rows };
+        db.TireChecks.Add(check);
+        try
+        {
+            await db.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateException)
+        {
+            // A simultaneous check on the same date won the unique (mount, date) index.
+            if (await checks.AnyAsync(c => c.MeasuredAt == date && c.Id != check.Id, ct))
+            {
+                throw DuplicateCheck(date);
+            }
+
+            throw;
+        }
+
+        return new TireCheckDto(date, rows.OrderBy(r => r.Position).Select(r => new TireCheckItemDto(r.Position, r.PressureBar, r.TreadDepthMm)).ToList());
+    }
+
+    /// <summary>Deletes the whole check of that date. Allowed on a closed mount and an archived car.</summary>
+    public async Task DeleteCheckAsync(Guid userId, Guid mountId, DateOnly measuredAt, CancellationToken ct = default)
+    {
+        var mount = await FindMountAsync(userId, mountId, ct);
+        // Measurements are loaded so the delete also cascades on providers without database cascades (tests).
+        db.TireChecks.Remove(await db.TireChecks.Include(c => c.Measurements)
+                .FirstOrDefaultAsync(c => c.TireMountId == mount.Id && c.MeasuredAt == measuredAt, ct)
+            ?? throw new NotFoundException(nameof(TireMeasurement), measuredAt));
+        await db.SaveChangesAsync(ct);
+    }
+
+    public async Task<List<TireRotationDto>> ListRotationsAsync(Guid userId, Guid mountId, CancellationToken ct = default)
+    {
+        var mount = await FindMountAsync(userId, mountId, ct);
+        return await Newest(db.TireRotations.Where(r => r.TireMountId == mount.Id))
+            .Select(r => new TireRotationDto(r.Id, r.Date, r.OdometerKm, r.Notes)).ToListAsync(ct);
+    }
+
+    /// <summary>Logs a rotation of the mounted set; like mounts, it adds no odometer reading.</summary>
+    public async Task<TireRotationDto> AddRotationAsync(Guid userId, Guid mountId, TireRotationRequest request, CancellationToken ct = default)
+    {
+        var mount = await FindOpenMountAsync(userId, mountId, ct);
+        var (date, km) = Validate(request.Date, request.OdometerKm);
+        RejectBeforeMount(mount, date);
+        if (km < mount.MountOdometerKm)
+        {
+            throw OdometerBeforeMount(mount.MountOdometerKm);
+        }
+
+        var notes = Optional(request.Notes, TireRotation.MaxNotesLength, "tireRotation.invalidNotes", "Notes");
+
+        // shortcut: two simultaneous rotations at 99 can both pass and make 101; harmless, add a lock if the limit ever matters.
+        if (await db.TireRotations.CountAsync(r => r.TireMountId == mount.Id, ct) >= TireRotation.MaxPerMount)
+        {
+            throw new ValidationFailedException("tireRotation.limitReached", $"A mount can have up to {TireRotation.MaxPerMount} rotations.");
+        }
+
+        var rotation = new TireRotation { TireMountId = mount.Id, Date = date, OdometerKm = km, Notes = notes };
+        db.TireRotations.Add(rotation);
+        await db.SaveChangesAsync(ct);
+        return new TireRotationDto(rotation.Id, rotation.Date, rotation.OdometerKm, rotation.Notes);
+    }
+
+    /// <summary>Allowed on a closed mount and an archived car.</summary>
+    public async Task DeleteRotationAsync(Guid userId, Guid id, CancellationToken ct = default)
+    {
+        db.TireRotations.Remove(await db.TireRotations.FirstOrDefaultAsync(r => r.Id == id && r.TireMount!.TireSet!.UserId == userId, ct)
+            ?? throw new NotFoundException(nameof(TireRotation), id));
+        await db.SaveChangesAsync(ct);
+    }
+
+    // Scoped to the owner through the set, so another user's mount is simply not found.
+    private async Task<TireMount> FindMountAsync(Guid userId, Guid id, CancellationToken ct) =>
+        await db.TireMounts.Include(m => m.Vehicle).FirstOrDefaultAsync(m => m.Id == id && m.TireSet!.UserId == userId, ct)
+        ?? throw new NotFoundException(nameof(TireMount), id);
+
+    // Checks and rotations are logged only for the set on an active car.
+    private async Task<TireMount> FindOpenMountAsync(Guid userId, Guid id, CancellationToken ct)
+    {
+        var mount = await FindMountAsync(userId, id, ct);
+        if (mount.Vehicle!.IsArchived)
+        {
+            throw new ValidationFailedException("tireMount.vehicleArchived", "This car is archived.");
+        }
+
+        return mount.UnmountedAt is null ? mount : throw new ValidationFailedException("tireMount.notOpen", "This set is no longer on the car.");
+    }
+
+    private static void RejectBeforeMount(TireMount mount, DateOnly date)
+    {
+        if (date < mount.MountedAt)
+        {
+            throw new ValidationFailedException("tireMount.dateBeforeMount", "The date is before the set was mounted.")
+            {
+                Extensions = { ["mountedAt"] = mount.MountedAt }
+            };
+        }
+    }
+
+    private static ValidationFailedException Item(string code, string message, int index) => new(code, message) { Extensions = { ["index"] = index } };
+
+    private static ConflictException DuplicateCheck(DateOnly date) =>
+        new("tireMeasurement.duplicate", "There is already a check on this date. Delete it to log it again.") { Extensions = { ["measuredAt"] = date } };
+
+    private static ValidationFailedException OdometerBeforeMount(decimal mountOdometerKm) =>
+        new("tireMount.odometerBeforeMount", "The odometer is below the odometer at mount.") { Extensions = { ["mountOdometerKm"] = mountOdometerKm } };
+
+    // Newest first: by date, then odometer.
+    private static IQueryable<TireRotation> Newest(IQueryable<TireRotation> rotations) =>
+        rotations.OrderByDescending(r => r.Date).ThenByDescending(r => r.OdometerKm);
+
+    // The newest `count` checks of the mount, wheels in FL, FR, RL, RR, Spare order.
+    private async Task<List<TireCheckDto>> ChecksAsync(Guid mountId, int count, CancellationToken ct) =>
+        await db.TireChecks.Where(c => c.TireMountId == mountId).OrderByDescending(c => c.MeasuredAt).Take(count)
+            .Select(c => new TireCheckDto(c.MeasuredAt, c.Measurements.OrderBy(m => m.Position)
+                .Select(m => new TireCheckItemDto(m.Position, m.PressureBar, m.TreadDepthMm)).ToList()))
+            .ToListAsync(ct);
 
     private static ValidationFailedException Overlap() =>
         new("tireMount.overlap", "The date overlaps an earlier mount of this set or car.");
@@ -145,10 +328,7 @@ public class TireService(IAppDbContext db, VehicleService vehicleService)
     {
         if (km < open.MountOdometerKm)
         {
-            throw new ValidationFailedException("tireMount.odometerBeforeMount", "The odometer is below the odometer at mount.")
-            {
-                Extensions = { ["mountOdometerKm"] = open.MountOdometerKm }
-            };
+            throw OdometerBeforeMount(open.MountOdometerKm);
         }
 
         (open.UnmountedAt, open.UnmountOdometerKm, open.UpdatedAt) = (date, km, DateTimeOffset.UtcNow);
@@ -156,21 +336,22 @@ public class TireService(IAppDbContext db, VehicleService vehicleService)
 
     private static (DateOnly Date, decimal Km) Validate(DateOnly? date, decimal? odometerKm)
     {
-        // Same one day of slack as readings: the client sends its local date.
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
-        var d = date ?? today;
-        DateRules.RejectTooEarly(d);
-        if (d > today.AddDays(1))
-        {
-            throw new ValidationFailedException("tireMount.futureDate", "The date can't be in the future.");
-        }
-
+        var d = ValidateDate(date);
         if (odometerKm is not { } km || km is < 0 or > OdometerReading.MaxValueKm)
         {
             throw new ValidationFailedException("odometer.invalidValue", $"The odometer must be between 0 and {OdometerReading.MaxValueKm} km.");
         }
 
         return (d, km);
+    }
+
+    private static DateOnly ValidateDate(DateOnly? date)
+    {
+        // Same one day of slack as readings: the client sends its local date.
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var d = date ?? today;
+        DateRules.RejectTooEarly(d);
+        return d > today.AddDays(1) ? throw new ValidationFailedException("tireMount.futureDate", "The date can't be in the future.") : d;
     }
 
     private static void Apply(TireSet set, TireSetRequest r)
@@ -222,6 +403,17 @@ public class TireService(IAppDbContext db, VehicleService vehicleService)
         var mounts = db.TireMounts.Where(m => m.VehicleId == vehicleId);
         var current = await ProjectMounts(mounts.Where(m => m.UnmountedAt == null)).FirstOrDefaultAsync(ct);
         var past = await ProjectMounts(mounts.Where(m => m.UnmountedAt != null)).Take(MaxPastMountsListed).ToListAsync(ct);
+        if (current is not null)
+        {
+            var lastCheck = (await ChecksAsync(current.Id, 1, ct)).FirstOrDefault();
+            var lastRotation = await Newest(db.TireRotations.Where(r => r.TireMountId == current.Id))
+                .Select(r => new LastTireRotationDto(r.Date, r.OdometerKm, r.TireMount!.Vehicle!.CurrentOdometerKm > r.OdometerKm
+                    ? r.TireMount.Vehicle.CurrentOdometerKm - r.OdometerKm
+                    : 0))
+                .FirstOrDefaultAsync(ct);
+            current = current with { LastCheck = lastCheck, LastRotation = lastRotation };
+        }
+
         return new VehicleTiresDto(current, past);
     }
 
