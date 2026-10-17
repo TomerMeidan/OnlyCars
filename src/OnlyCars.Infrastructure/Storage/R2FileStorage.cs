@@ -48,12 +48,19 @@ public sealed class R2FileStorage(IAmazonS3 s3, string bucket) : IFileStorage
     public async Task DeleteAsync(string key, CancellationToken ct = default) =>
         await s3.DeleteObjectAsync(bucket, key, ct);
 
-    public string GetSignedUrl(string key, TimeSpan validFor) =>
-        s3.GetPreSignedURL(new GetPreSignedUrlRequest
+    public string GetSignedUrl(string key, TimeSpan validFor, string? contentType = null, string? contentDisposition = null)
+    {
+        var request = new GetPreSignedUrlRequest
         {
             BucketName = bucket,
             Key = key,
             Verb = HttpVerb.GET,
             Expires = DateTime.UtcNow.Add(validFor)
-        });
+        };
+        request.ResponseHeaderOverrides.ContentType = contentType;
+        request.ResponseHeaderOverrides.ContentDisposition = contentDisposition;
+        // Private files: a shared cache must not keep them, and the browser may not keep them past the URL.
+        request.ResponseHeaderOverrides.CacheControl = "private, max-age=3600";
+        return s3.GetPreSignedURL(request);
+    }
 }

@@ -204,7 +204,8 @@ export default function HistoryPage() {
             {page.items.map((r) => {
               const car = cars?.find((c) => c.id === r.vehicleId)
               return (
-                <ServiceRow key={r.id} car={car!} record={r} url="" readOnly onEdited={none} onDeleted={none} onGone={none}
+                <ServiceRow key={r.id} car={car!} record={r} url="" readOnly openOnly onEdited={none} onDeleted={none} onGone={() => load(0)}
+                  onFiles={(record) => setPage((p) => p && { ...p, items: p.items.map((x) => (x.id === record.id ? record : x)) })}
                   head={(
                     <div className="row">
                       <Link to={`/cars/${r.vehicleId}`} className="car">{car?.nickname}</Link>

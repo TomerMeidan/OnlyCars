@@ -361,3 +361,12 @@ details > summary { padding-block: 0.625rem; cursor: pointer; }
   .report a { text-decoration: none; min-height: 0; }
   .month-chart span, .category-chart span { print-color-adjust: exact; }
 }
+
+/* FILE-2: a service's files; a long name without spaces wraps (body's overflow-wrap) inside its shrinkable link */
+.files { display: grid; gap: 0.25rem; }
+.files > span { font-size: 0.95rem; }
+.files ul { list-style: none; padding: 0; margin: 0; }
+.files li { display: flex; flex-wrap: wrap; align-items: center; gap: 0 0.75rem; }
+.files li > a { display: inline-flex; align-items: center; min-height: 2.75rem; min-width: 0; }
+.files li > a bdi, .files li > bdi { min-width: 0; }
+.files > button { justify-self: start; }

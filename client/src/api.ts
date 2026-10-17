@@ -102,6 +102,16 @@ export interface ServiceRecord {
   notes: string | null
   tasks: Pick<MaintenanceTask, 'id' | 'name' | 'category'>[]
   items: ServiceItem[] // when not empty, totalCost is their sum
+  attachments: Attachment[] // upload order
+}
+
+// FILE-2: a file on a service record. url is a signed GET URL valid for an hour (a credential: never log or store it), null without storage.
+export interface Attachment {
+  id: string
+  fileName: string
+  contentType: string
+  sizeBytes: number
+  url: string | null
 }
 
 // GET /service-records: one page of matches; the count and total cover every match.
@@ -375,15 +385,16 @@ export const isGuid = (s: string | undefined) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a
 // The API's answer for a car that doesn't exist, used without a request when the route id can't be one.
 export const carNotFound = () => new ApiError(404, { code: 'vehicle.notFound' }, 'Not Found')
 
-// The car photo's limits, as the API's (docs/contracts/FILE-1.md), checked before sending: over about 10 MB the server drops the connection.
+// The upload limits, as the API's (docs/contracts/FILE-1.md and FILE-2.md), checked before sending: over about 10 MB the server drops the connection.
 export const photoTypes = 'image/jpeg,image/png,image/webp'
-export const maxPhotoBytes = 10_485_760
+export const attachmentTypes = `${photoTypes},application/pdf`
+export const maxFileBytes = 10_485_760
 // The API's error for this file, or null. The type is the browser's guess from the name, empty when it has no known
 // extension (a phone's "IMG_0001"): that one goes to the API, which decides by the content.
-export const photoError = (file: File) =>
+export const fileError = (file: File, types = photoTypes) =>
   file.size === 0 ? new ApiError(400, { code: 'file.required' }, 'Bad Request')
-  : file.size > maxPhotoBytes ? new ApiError(413, { code: 'file.tooLarge' }, 'Payload Too Large')
-  : file.type && !photoTypes.split(',').includes(file.type) ? new ApiError(400, { code: 'file.unsupportedType' }, 'Bad Request')
+  : file.size > maxFileBytes ? new ApiError(413, { code: 'file.tooLarge' }, 'Payload Too Large')
+  : file.type && !types.split(',').includes(file.type) ? new ApiError(400, { code: 'file.unsupportedType' }, 'Bad Request')
   : null
 
 // Where the run page sends the user back to: the checklist whose Run button gets focus, and the flagged count after a Save.

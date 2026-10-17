@@ -18,6 +18,7 @@ public class AppDbContext : DbContext, IAppDbContext
     public DbSet<ServiceRecord> ServiceRecords => Set<ServiceRecord>();
     public DbSet<ServiceRecordTask> ServiceRecordTasks => Set<ServiceRecordTask>();
     public DbSet<ServiceItem> ServiceItems => Set<ServiceItem>();
+    public DbSet<Attachment> Attachments => Set<Attachment>();
     public DbSet<ChecklistTemplate> ChecklistTemplates => Set<ChecklistTemplate>();
     public DbSet<ChecklistTemplateItem> ChecklistTemplateItems => Set<ChecklistTemplateItem>();
     public DbSet<VehicleChecklist> VehicleChecklists => Set<VehicleChecklist>();

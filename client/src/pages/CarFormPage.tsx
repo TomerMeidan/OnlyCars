@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { errorMessage } from '../i18n'
 import { useNavigate, useParams } from 'react-router-dom'
-import { api, carNotFound, fuelTypes, isGuid, localToday, photoError, photoTypes, type FuelType, type Vehicle, type VehicleInput } from '../api'
+import { api, carNotFound, fuelTypes, isGuid, localToday, fileError, photoTypes, type FuelType, type Vehicle, type VehicleInput } from '../api'
 import { useDistance } from '../auth'
 import { usePage } from '../usePage'
 import { CarError, CarPhoto } from './CarPage'
@@ -113,7 +113,7 @@ function PhotoField({ car, setCar }: { car: Vehicle; setCar: (car: Vehicle) => v
     if (!file) return
     refocus.current = true
     await row.run(async () => {
-      const invalid = photoError(file)
+      const invalid = fileError(file)
       if (invalid) throw invalid
       const body = new FormData()
       body.append('file', file)

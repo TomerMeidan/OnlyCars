@@ -7,6 +7,9 @@ public interface IFileStorage
 
     Task DeleteAsync(string key, CancellationToken ct = default);
 
-    /// <summary>A GET URL for <paramref name="key"/> that expires after <paramref name="validFor"/>; computed locally, no network call.</summary>
-    string GetSignedUrl(string key, TimeSpan validFor);
+    /// <summary>
+    /// A GET URL for <paramref name="key"/> that expires after <paramref name="validFor"/>; computed locally, no network call.
+    /// When given, the response carries <paramref name="contentType"/> and <paramref name="contentDisposition"/> as its headers.
+    /// </summary>
+    string GetSignedUrl(string key, TimeSpan validFor, string? contentType = null, string? contentDisposition = null);
 }

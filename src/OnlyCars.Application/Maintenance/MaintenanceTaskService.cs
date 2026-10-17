@@ -1,5 +1,6 @@
 using System.Globalization;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using OnlyCars.Application.Checklists;
 using OnlyCars.Application.Common;
 using OnlyCars.Application.Common.Exceptions;
@@ -11,7 +12,7 @@ using OnlyCars.Domain.Entities;
 
 namespace OnlyCars.Application.Maintenance;
 
-public class MaintenanceTaskService(IAppDbContext db, VehicleService vehicleService)
+public partial class MaintenanceTaskService(IAppDbContext db, VehicleService vehicleService, IOptions<StorageOptions>? storageOptions = null)
 {
     public async Task<List<TaskTemplateDto>> TemplatesAsync(CancellationToken ct = default)
     {
@@ -154,11 +155,12 @@ public class MaintenanceTaskService(IAppDbContext db, VehicleService vehicleServ
         var records = await NewestFirst(db.ServiceRecords
             .Include(r => r.Tasks).ThenInclude(j => j.MaintenanceTask)
             .Include(r => r.Items)
+            .Include(r => r.Attachments)
             .AsSplitQuery()
             .Where(r => r.VehicleId == vehicleId && !r.IsVoided))
             .ToListAsync(ct);
 
-        return records.Select(ToDto).ToList();
+        return records.Select(r => ToDto(r, userId)).ToList();
     }
 
     // One order for the car page and /history, so same-day records line up on both.
@@ -215,11 +217,12 @@ public class MaintenanceTaskService(IAppDbContext db, VehicleService vehicleServ
         var page = await NewestFirst(query
             .Include(r => r.Tasks).ThenInclude(j => j.MaintenanceTask)
             .Include(r => r.Items)
+            .Include(r => r.Attachments)
             .AsSplitQuery())
             .Skip(skip).Take(take)
             .ToListAsync(ct);
 
-        return new(page.Select(ToDto).ToList(), totalCount, totalCost);
+        return new(page.Select(r => ToDto(r, userId)).ToList(), totalCount, totalCost);
     }
 
     /// <summary>
@@ -338,7 +341,7 @@ public class MaintenanceTaskService(IAppDbContext db, VehicleService vehicleServ
         LogServiceReading(vehicle, readings, reading);
 
         await db.SaveChangesAsync(ct);
-        return new(ToDto(record), linked.Select(t => ToDto(t, vehicle, today)).ToList());
+        return new(ToDto(record, userId), linked.Select(t => ToDto(t, vehicle, today)).ToList());
     }
 
     // Matched in memory against this car's tasks, so another car's (or user's) task id is not found; duplicates are ignored.
@@ -360,6 +363,7 @@ public class MaintenanceTaskService(IAppDbContext db, VehicleService vehicleServ
         var record = await db.ServiceRecords
             .Include(r => r.Tasks).ThenInclude(j => j.MaintenanceTask)
             .Include(r => r.Items)
+            .Include(r => r.Attachments)
             .AsSplitQuery()
             .FirstOrDefaultAsync(r => r.Id == recordId && r.VehicleId == vehicle.Id, ct)
             ?? throw new NotFoundException(nameof(ServiceRecord), recordId);
@@ -384,7 +388,7 @@ public class MaintenanceTaskService(IAppDbContext db, VehicleService vehicleServ
 
         var carTasks = await db.MaintenanceTasks.Where(t => t.VehicleId == vehicle.Id).ToListAsync(ct);
         var wanted = request.TaskIds is null ? null : Resolve(carTasks, request.TaskIds);
-        var response = () => new CreateServiceRecordResponse(ToDto(record),
+        var response = () => new CreateServiceRecordResponse(ToDto(record, userId),
             carTasks.OrderByDescending(t => t.IsEnabled).ThenBy(t => t.Name).Select(t => ToDto(t, vehicle, today)).ToList());
 
         // A no-op edit doesn't save, so UpdatedAt (the concurrency token) doesn't move and a void right after still succeeds (L70).
@@ -540,6 +544,10 @@ public class MaintenanceTaskService(IAppDbContext db, VehicleService vehicleServ
         }
         OdometerService.Recompute(vehicle, readings);
 
+        // "Deleting a record deletes its prefix" (owner): the rows go with the void, the objects after it.
+        var attachments = await db.Attachments.Where(a => a.ServiceRecordId == record.Id).ToListAsync(ct);
+        db.Attachments.RemoveRange(attachments);
+
         try
         {
             await db.SaveChangesAsync(ct);
@@ -553,6 +561,11 @@ public class MaintenanceTaskService(IAppDbContext db, VehicleService vehicleServ
             }
 
             throw;
+        }
+
+        foreach (var attachment in attachments)
+        {
+            await vehicleService.DeleteQuietlyAsync(AttachmentKey(attachment, userId, vehicle.Id));
         }
 
         var today = TodayUtc();
@@ -715,12 +728,14 @@ public class MaintenanceTaskService(IAppDbContext db, VehicleService vehicleServ
         OdometerService.Recompute(vehicle, readings);
     }
 
-    private static ServiceRecordDto ToDto(ServiceRecord r) => new(r.Id, r.Date, r.OdometerKm, r.ShopName, r.TotalCost, r.Notes,
+    // userId is the caller's, already checked to own the record's car; it only builds the attachment key check.
+    private ServiceRecordDto ToDto(ServiceRecord r, Guid userId) => new(r.Id, r.Date, r.OdometerKm, r.ShopName, r.TotalCost, r.Notes,
         r.Tasks.Where(j => j.MaintenanceTask is not null).Select(j => j.MaintenanceTask!)
             .OrderBy(t => t.Name).Select(t => new ServiceRecordTaskDto(t.Id, t.Name, t.Category)).ToList(),
         r.Items.OrderBy(i => i.SortOrder)
             .Select(i => new ServiceItemDto(i.Id, i.Description, i.Brand, i.PartNumber, i.Quantity, i.UnitCost, i.IsLabor)).ToList(),
-        r.VehicleId);
+        r.VehicleId,
+        r.Attachments.OrderBy(a => a.CreatedAt).ThenBy(a => a.Id).Select(a => ToDto(a, userId, r.VehicleId)).ToList());
 
     // Scoped to the owned vehicle, so another car's task id is simply not found.
     private async Task<MaintenanceTask> FindAsync(Guid vehicleId, Guid taskId, CancellationToken ct) =>

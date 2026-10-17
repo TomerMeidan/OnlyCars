@@ -205,11 +205,14 @@ public class VehicleService(IAppDbContext db, IFileStorage? storage = null, ILog
         await DeleteQuietlyAsync(key);
     }
 
-    private IFileStorage Storage() =>
+    // Shared with the service record attachments (FILE-2): one storage, one 503, one logged delete.
+    internal IFileStorage? Files => storage;
+
+    internal IFileStorage Storage() =>
         storage ?? throw new ServiceUnavailableException("file.storageUnavailable", "File storage is not configured.");
 
     // shortcut: a failed delete leaves an orphaned object (logged); add the orphan sweep (decisions.md "not now") if they pile up.
-    private async Task DeleteQuietlyAsync(string? key)
+    internal async Task DeleteQuietlyAsync(string? key)
     {
         if (key is null)
         {
@@ -235,7 +238,7 @@ public class VehicleService(IAppDbContext db, IFileStorage? storage = null, ILog
     {
         var prefix = $"users/{v.UserId}/vehicles/{v.Id}/photo/";
         return v.PhotoUrl is { } key && key.StartsWith(prefix, StringComparison.Ordinal)
-                                     && Regex.IsMatch(key.AsSpan(prefix.Length), @"^[0-9a-f]{32}\.(jpg|png|webp)$")
+                                     && Regex.IsMatch(key.AsSpan(prefix.Length), @"^[0-9a-f]{32}\.(jpg|png|webp)\z")
             ? key
             : null;
     }

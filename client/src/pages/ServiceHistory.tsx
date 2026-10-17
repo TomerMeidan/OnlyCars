@@ -1,7 +1,7 @@
-import { useEffect, useId, useLayoutEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
+import { useEffect, useId, useLayoutEffect, useRef, useState, type FormEvent, type MouseEvent, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
-import { api, ApiError, isGoneRecord, isOrderError, itemsTotal, limit, localToday, type MaintenanceTask, type ServiceItem, type ServiceRecord, type Vehicle } from '../api'
+import { api, ApiError, attachmentTypes, fileError, isGoneRecord, isOrderError, itemsTotal, limit, localToday, type Attachment, type MaintenanceTask, type ServiceItem, type ServiceRecord, type Vehicle } from '../api'
 import { useAuth, useDistance } from '../auth'
 import { errorMessage, fmtDate, money } from '../i18n'
 import { useItemErrors } from '../useItemErrors'
@@ -132,6 +132,7 @@ export function ServiceHistory({ car, onChanged }: { car: Vehicle; onChanged: ()
                 focusNext.current = [`.services > li:nth-child(${i + 1}) button.delete-service`, '.services > li button.delete-service']
                 changed()
               }}
+              onFiles={(record) => setRecords((rs) => rs && rs.map((x) => (x.id === record.id ? record : x)))}
               onGone={onGone}
               onTaskGone={onChanged}
               onEditing={(n) => setEditing((x) => x + n)}
@@ -346,12 +347,14 @@ function RecordForm({ car, url, row, record, onSaved, onGone, onTaskGone }: {
 }
 
 // Also the rows of /history, read-only, with the car's name and tag as `head`.
-export function ServiceRow({ car, record: r, url, readOnly, onEdited, onDeleted, onGone, onTaskGone, onEditing, head }: {
+export function ServiceRow({ car, record: r, url, readOnly, openOnly, onEdited, onFiles, onDeleted, onGone, onTaskGone, onEditing, head }: {
   car: Vehicle
   record: ServiceRecord
   head?: ReactNode
   url: string
   readOnly: boolean
+  openOnly?: boolean // files can only be opened (/history)
+  onFiles: (record: ServiceRecord) => void // its files changed, or got fresh links
   onEdited: (record: ServiceRecord) => void
   onDeleted: () => void
   onGone: () => void
@@ -418,6 +421,8 @@ export function ServiceRow({ car, record: r, url, readOnly, onEdited, onDeleted,
         </ul>
       )}
 
+      <Attachments record={r} url={url} canAdd={!readOnly} canDelete={!openOnly} addLabel={t('addFileTo', vars)} onChange={onFiles} onGone={onGone} />
+
       {!readOnly && mode === 'view' && (
         <div className="actions">
           <button className="link edit-service" aria-label={t('editServiceOf', vars)} aria-describedby={describedBy} disabled={voided}
@@ -428,7 +433,7 @@ export function ServiceRow({ car, record: r, url, readOnly, onEdited, onDeleted,
       )}
       {mode === 'delete' && (
         <div className="inline-form" onKeyDown={(e) => !busy && e.key === 'Escape' && open('view')}>
-          <p>{t('confirmDeleteService')}</p>
+          <p>{t('confirmDeleteService')}{r.attachments.length > 0 && ` ${t('filesDeletedToo')}`}</p>
           {error != null && !isGoneRecord(error) && <p className="error" role="alert">{errorMessage(error)}</p>}
           <div className="actions">
             <button className="danger" disabled={busy || voided}
@@ -443,5 +448,155 @@ export function ServiceRow({ car, record: r, url, readOnly, onEdited, onDeleted,
         </div>
       )}
     </li>
+  )
+}
+
+const MAX_FILES = 10
+// When each file's signed URL arrived. The URL lasts an hour, so an Open after 55 minutes fetches a fresh one first.
+const signedAt = new WeakMap<Attachment, number>()
+const isStale = (a: Attachment) => Date.now() - (signedAt.get(a) ?? 0) >= 55 * 60_000
+// Signed storage links are https; anything else (javascript:, data:, http:) is never opened.
+const isHttps = (u: string) => { try { return new URL(u).protocol === 'https:' } catch { return false } }
+
+// FILE-2: a service's files under its row. Open everywhere; Delete on the car page; Add file there too, unless the car is archived.
+// Each change saves at once. Focus returns to Add file after an upload, and to the list (or Add file when it empties) after a delete.
+function Attachments({ record, url, canAdd, canDelete, addLabel, onChange, onGone }: {
+  record: ServiceRecord
+  url: string // the record's path
+  canAdd: boolean
+  canDelete: boolean
+  addLabel: string
+  onChange: (record: ServiceRecord) => void
+  onGone: () => void
+}) {
+  const { t, i18n } = useTranslation()
+  const lng = i18n.resolvedLanguage
+  // The mode is the id of the file whose Delete is being confirmed.
+  const row = useRow<string>()
+  const { mode, busy, error, opener } = row
+  const [uploading, setUploading] = useState(false)
+  const input = useRef<HTMLInputElement>(null)
+  const pick = useRef<HTMLButtonElement>(null)
+  const group = useRef<HTMLDivElement>(null)
+  const refocus = useRef<'add' | 'list' | null>(null)
+  const files = record.attachments
+
+  useEffect(() => { for (const a of files) if (!signedAt.has(a)) signedAt.set(a, Date.now()) }, [files])
+
+  useEffect(() => {
+    if (busy || mode !== 'view' || !refocus.current) return
+    const target = refocus.current === 'list' && files.length ? group.current : pick.current ?? group.current
+    refocus.current = null
+    target?.focus()
+  }, [busy, mode, error, files])
+
+  async function upload(file: File | undefined) {
+    if (input.current) input.current.value = '' // so the same file can be chosen again
+    if (!file) return
+    refocus.current = 'add'
+    setUploading(true)
+    const err = await row.run(async () => {
+      const invalid = fileError(file, attachmentTypes)
+      if (invalid) throw invalid
+      const body = new FormData()
+      body.append('file', file)
+      try {
+        onChange(await api<ServiceRecord>(`${url}/attachments`, 'POST', body))
+      } catch (e) {
+        // Raced a Delete or another upload: the message stays, over the files as they are now (or the record is gone).
+        if (e instanceof ApiError && e.problem.code === 'concurrency.conflict') await reload()
+        throw e
+      }
+    })
+    setUploading(false)
+    if (isGoneRecord(err)) onGone()
+  }
+
+  async function remove(a: Attachment, retryFrom: HTMLElement) {
+    const err = await row.run(() => api(`${url}/attachments/${encodeURIComponent(a.id)}`, 'DELETE'), retryFrom)
+    // Already deleted (another tab): it goes from the list too, with the message.
+    if (err && !(err instanceof ApiError && err.problem.code === 'attachment.notFound')) return
+    refocus.current = 'list'
+    onChange({ ...record, attachments: files.filter((x) => x.id !== a.id) })
+    row.close()
+  }
+
+  // A link older than 55 minutes would land on the storage's expired-link error: the window opens now, in the click, so pop-up
+  // blockers allow it, and gets the fresh URL once the records are reloaded.
+  // shortcut: reloads all of the car's records for one fresh URL (there is no single-record GET); add one if cars get thousands of services.
+  async function open(e: MouseEvent<HTMLAnchorElement>, a: Attachment) {
+    if (!isStale(a)) return
+    e.preventDefault()
+    const w = window.open('', '_blank')
+    if (w) w.opener = null // as rel="noopener"
+    const err = await row.run(async () => {
+      const href = (await reload()).attachments.find((x) => x.id === a.id)?.url
+      if (!href || !isHttps(href)) throw new ApiError(404, { code: 'attachment.notFound' }, 'Not Found')
+      // Blocked: the link now holds the fresh URL, for a second tap.
+      if (w) w.location.href = href
+    })
+    if (err) w?.close()
+    if (isGoneRecord(err)) onGone()
+  }
+
+  // The record as stored now, with fresh links; serviceRecord.notFound once it's deleted.
+  async function reload() {
+    const fresh = (await api<ServiceRecord[]>(`/vehicles/${encodeURIComponent(record.vehicleId)}/service-records`)).find((x) => x.id === record.id)
+    if (!fresh) throw new ApiError(404, { code: 'serviceRecord.notFound' }, 'Not Found')
+    onChange(fresh)
+    return fresh
+  }
+
+  // file.* name the car photo; here they get the files' wording.
+  const code = error instanceof ApiError ? error.problem.code ?? '' : ''
+  const message = code.startsWith('file.') ? t(`errors.attachmentFile.${code.slice(5)}`, { defaultValue: errorMessage(error) }) : errorMessage(error)
+  const size = (b: number) => {
+    const [n, unit] = b < 1_048_576 ? [Math.max(b / 1024, 0.1), 'kb' as const] : [b / 1_048_576, 'mb' as const]
+    return <><bdi>{n.toLocaleString(lng, { maximumFractionDigits: 1 })}</bdi> {t(unit)}</>
+  }
+
+  if (!canDelete && files.length === 0) return null
+  return (
+    <div className="files" role="group" aria-label={t('attachments')} tabIndex={-1} ref={group}>
+      {files.length > 0 && (
+        <>
+          <span className="muted" aria-hidden="true">{t('attachments')}</span>
+          <ul>
+            {files.map((a) => (
+              <li key={a.id}>
+                {/* No URL without storage (or not https): the name only. */}
+                {a.url && isHttps(a.url) ? (
+                  <a href={a.url} target="_blank" rel="noopener noreferrer" onClick={(e) => open(e, a)}><bdi>{a.fileName}</bdi></a>
+                ) : <bdi>{a.fileName}</bdi>}
+                <span className="muted">{size(a.sizeBytes)}</span>
+                {canDelete && mode !== a.id && (
+                  <button type="button" className="link" aria-label={t('deleteFileOf', { name: a.fileName })} disabled={busy}
+                    ref={opener(a.id)} onClick={() => row.open(a.id)}>{t('delete')}</button>
+                )}
+                {mode === a.id && (
+                  <div className="inline-form" onKeyDown={(e) => !busy && e.key === 'Escape' && row.open('view')}>
+                    <p>{t('confirmDeleteFile')}</p>
+                    <div className="actions">
+                      <button type="button" className="danger" aria-busy={busy} disabled={busy} onClick={(e) => remove(a, e.currentTarget)}>{t('delete')}</button>
+                      <button type="button" className="link" disabled={busy} onClick={() => row.open('view')} autoFocus>{t('cancel')}</button>
+                    </div>
+                  </div>
+                )}
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+      {canAdd && files.length < MAX_FILES && (
+        <>
+          <button type="button" className="add-file" ref={pick} aria-label={uploading ? undefined : addLabel} aria-busy={uploading} aria-disabled={busy}
+            onClick={() => !busy && input.current?.click()}>
+            {t(uploading ? 'uploadingFile' : 'addFile')}
+          </button>
+          <input ref={input} type="file" accept={attachmentTypes} hidden onChange={(e) => upload(e.target.files?.[0])} />
+        </>
+      )}
+      {error != null && !isGoneRecord(error) && <p className="error" role="alert">{message}</p>}
+    </div>
   )
 }

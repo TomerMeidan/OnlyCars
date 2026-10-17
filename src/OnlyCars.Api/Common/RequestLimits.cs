@@ -18,8 +18,8 @@ public static class RequestLimits
     /// <summary>Applied to login and register, which share one bucket per IP.</summary>
     public const string AuthPolicy = "auth";
 
-    /// <summary>Applied to the car photo upload: per signed-in user, 2 at once and <c>PhotoUploadPermitLimit</c> per window.</summary>
-    public const string PhotoUploadPolicy = "photoUpload";
+    /// <summary>Applied to every file upload (car photo, service record attachments), one budget per signed-in user: 2 at once and <c>UploadPermitLimit</c> per window.</summary>
+    public const string UploadPolicy = "upload";
 
     /// <summary>App-wide request body limit (L37): a larger body is a 413 <c>http.413</c>. Auth keeps its smaller attribute.</summary>
     public const long MaxBodyBytes = 65_536;
@@ -33,7 +33,7 @@ public static class RequestLimits
             .Validate(o => new[]
                 {
                     o.AuthPermitLimit, o.AuthWindowSeconds, o.GlobalPermitLimit, o.GlobalWindowSeconds,
-                    o.FailedLoginLimit, o.FailedLoginWindowSeconds, o.PhotoUploadPermitLimit, o.PhotoUploadWindowSeconds
+                    o.FailedLoginLimit, o.FailedLoginWindowSeconds, o.UploadPermitLimit, o.UploadWindowSeconds
                 }.All(v => v > 0), "Every RateLimiting value must be positive.")
             .ValidateOnStart();
         var limits = section.Get<RateLimitOptions>() ?? new RateLimitOptions();
@@ -59,12 +59,12 @@ public static class RequestLimits
             // rejection on an auth endpoint still gets http.429.
             o.AddPolicy(AuthPolicy, new AuthLimitPolicy(limits));
             // Concurrency first, so a request it turns away doesn't use up the window. Rejections get http.429 (OnRejected below).
-            o.AddPolicy(PhotoUploadPolicy, ctx => RateLimitPartition.Get(UserKey(ctx), _ => RateLimiter.CreateChained(
+            o.AddPolicy(UploadPolicy, ctx => RateLimitPartition.Get(UserKey(ctx), _ => RateLimiter.CreateChained(
                 new ConcurrencyLimiter(new ConcurrencyLimiterOptions { PermitLimit = 2, QueueLimit = 0 }),
                 new FixedWindowRateLimiter(new FixedWindowRateLimiterOptions
                 {
-                    PermitLimit = limits.PhotoUploadPermitLimit,
-                    Window = TimeSpan.FromSeconds(limits.PhotoUploadWindowSeconds),
+                    PermitLimit = limits.UploadPermitLimit,
+                    Window = TimeSpan.FromSeconds(limits.UploadWindowSeconds),
                     QueueLimit = 0
                 }))));
             o.OnRejected = (context, ct) => RejectAsync(context, "http.429", ct);

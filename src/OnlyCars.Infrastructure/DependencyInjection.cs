@@ -20,6 +20,9 @@ public static class DependencyInjection
         services.Configure<JwtOptions>(configuration.GetSection(JwtOptions.SectionName));
         services.AddScoped<IJwtTokenService, JwtTokenService>();
 
+        services.AddOptions<StorageOptions>().Bind(configuration.GetSection(StorageOptions.SectionName))
+            .Validate(o => o.UserQuotaBytes > 0, "Storage:UserQuotaBytes must be positive.").ValidateOnStart();
+
         // Not registered without the R2 settings, so a fresh clone still starts (VehicleService then gets null).
         if (R2FileStorage.FromConfiguration(configuration) is { } storage)
         {

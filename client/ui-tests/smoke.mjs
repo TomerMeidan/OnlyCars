@@ -1490,9 +1490,11 @@ for (const s of setups) {
   const i18nSrc = readFileSync(new URL('../src/i18n.ts', import.meta.url), 'utf8')
   const copy = (re) => plain([...i18nSrc.matchAll(re)][he ? 1 : 0][2])
   const key = (k) => copy(new RegExp(`^ +${k}: (['"])(.*)\\1,$`, 'gm'))
+  // A key inside one of `errors`' blocks (file and attachmentFile share key names).
+  const inBlock = (block, k) => copy(new RegExp(`^ {4}${block}: \\{[^}]*?^ +${k}: (['"])([^\\n]*)\\1,$`, 'gms'))
   const PH = {
     add: key('addPhoto'), change: key('changePhoto'), uploading: key('uploadingPhoto'), confirm: key('confirmRemovePhoto'),
-    tooLarge: key('tooLarge'), unsupported: key('unsupportedType'), required: key('required'), unavailable: key('storageUnavailable'),
+    tooLarge: inBlock('file', 'tooLarge'), unsupported: inBlock('file', 'unsupportedType'), required: inBlock('file', 'required'), unavailable: inBlock('file', 'storageUnavailable'),
     archived: copy(/vehiclePhoto: \{\s*vehicleArchived: (['"])(.*)\1,/g),
     tooMany: copy(/http: \{ 413: '[^']*', 429: (['"])(.*)\1 \}/g),
   }
@@ -1683,6 +1685,240 @@ for (const s of setups) {
       await page.unroute(carUrl)
       await page.unroute('**/__photo/*')
       await page.unroute('**/photo')
+    }
+  })
+  // FILE-2: files on a service record, on the car's newest service. The client checks, a text .pdf, an image and a PDF go to the real
+  // API and R2 (3 uploads, with FILE-1's 3 inside the per-user budget of 10); every file is deleted at the end, and again in a finally.
+  // The server errors, 10 files, no storage, the archived car, /history and the expired link are mocked.
+  const AF = {
+    add: key('addFile'), uploading: key('uploadingFile'), confirm: key('confirmDeleteFile'),
+    tooLarge: inBlock('attachmentFile', 'tooLarge'), unsupported: inBlock('attachmentFile', 'unsupportedType'), unavailable: inBlock('attachmentFile', 'storageUnavailable'),
+    quota: inBlock('attachmentFile', 'quotaExceeded'), conflict: inBlock('concurrency', 'conflict'), gone: key('serviceGone'),
+    tooMany: inBlock('attachment', 'tooMany'), archived: inBlock('attachment', 'vehicleArchived'), notFound: inBlock('attachment', 'notFound'),
+    rate: PH.tooMany,
+  }
+  let fileRecord, filesPath
+  const FILES = () => `.services > li[data-id="${fileRecord.id}"] .files`
+  const ADD = () => `${FILES()} button.add-file`
+  const fileRequests = []
+  page.on('request', (r) => r.url().includes('/attachments') && fileRequests.push(r.method()))
+  async function chooseFile(file) {
+    const [chooser] = await Promise.all([page.waitForEvent('filechooser'), page.click(ADD())])
+    await chooser.setFiles(file)
+  }
+  async function fileAlertIs(want, what) {
+    let got
+    for (const end = Date.now() + 5000; Date.now() < end; await page.waitForTimeout(100)) {
+      got = plain((await page.locator(`${FILES()} p.error[role=alert]`).textContent({ timeout: 5000 }).catch(() => '')) ?? '')
+      if (got === want) return
+    }
+    throw new Error(`${what}: "${got}"`)
+  }
+  const pdf = Buffer.from('%PDF-1.4\n1 0 obj << /Type /Catalog >> endobj\ntrailer << /Root 1 0 R >>\n%%EOF\n')
+  const longName = `${'receipt-'.repeat(15)}.png` // 124 characters, no spaces
+  const heName = 'חשבונית מס מוסך.pdf'
+  async function deleteAllFiles() {
+    if (!fileRecord) return
+    const rs = await (await page.request.get(`${BASE}/api${filesPath}`, { headers: photoAuth })).json()
+    for (const a of rs.find((x) => x.id === fileRecord.id)?.attachments ?? [])
+      await page.request.delete(`${BASE}/api${filesPath}/${fileRecord.id}/attachments/${a.id}`, { headers: photoAuth })
+  }
+  await step('files-client-checks', async () => {
+    await page.setViewportSize({ width: 390, height: 844 })
+    filesPath = `/vehicles/${photoCarId}/service-records`
+    const rs = await (await page.request.get(`${BASE}/api${filesPath}`, { headers: photoAuth })).json()
+    fileRecord = rs[0]
+    if (!fileRecord) throw new Error('the car has no service to attach files to')
+    if (fileRecord.attachments?.length !== 0) throw new Error(`attachments ${JSON.stringify(fileRecord.attachments)}`)
+    await page.goto(`${BASE}/cars/${photoCarId}`)
+    await page.locator(ADD()).waitFor()
+    if (plain(await page.locator(ADD()).textContent()) !== AF.add) throw new Error(`button "${await page.locator(ADD()).textContent()}"`)
+    if (await page.locator(`${FILES()} ul`).count()) throw new Error('a list shows with no files')
+    const accept = await page.getAttribute(`${FILES()} input[type=file]`, 'accept')
+    if (accept !== 'image/jpeg,image/png,image/webp,application/pdf') throw new Error(`accept "${accept}"`)
+    fileRequests.length = 0
+    await chooseFile({ name: 'big.pdf', mimeType: 'application/pdf', buffer: Buffer.alloc(12_000_000) })
+    await fileAlertIs(AF.tooLarge, '12 MB file')
+    await focusIs(ADD(), 'Add file after the size error')
+    if (fileRequests.length) throw new Error(`requests sent: ${fileRequests}`)
+    // A text file named .pdf passes the browser's type; the API rejects it by its content.
+    const post = page.waitForResponse((r) => r.url().endsWith('/attachments'))
+    await chooseFile({ name: 'notes.pdf', mimeType: 'application/pdf', buffer: Buffer.from('hello, this is not a PDF') })
+    if ((await post).status() !== 400) throw new Error(`text .pdf: ${(await post).status()}`)
+    await fileAlertIs(AF.unsupported, 'text file named .pdf')
+    await focusIs(ADD(), 'Add file after the type error')
+    await sweep('the car page with a file error at 390px')
+    await noOverflow('the file errors')
+  })
+  await step('files-upload-open-delete', async () => {
+    try {
+      await page.setViewportSize({ width: 390, height: 844 })
+      const post = () => page.waitForResponse((r) => r.url().endsWith('/attachments') && r.request().method() === 'POST')
+      let res = post()
+      await chooseFile({ name: longName, mimeType: 'image/png', buffer: await image('image/png') })
+      if ((await res).status() !== 200) throw new Error(`image upload ${(await res).status()}`)
+      await page.locator(`${FILES()} li`).waitFor()
+      await focusIs(ADD(), 'Add file after the upload')
+      if (await page.locator(`${FILES()} p.error`).count()) throw new Error('the error stayed after the upload')
+      res = post()
+      await chooseFile({ name: heName, mimeType: 'application/pdf', buffer: pdf })
+      if ((await res).status() !== 200) throw new Error(`PDF upload ${(await res).status()}`)
+      await page.locator(`${FILES()} li >> nth=1`).waitFor()
+      await focusIs(ADD(), 'Add file after the second upload')
+      // After a reload both are there, in upload order, with their sizes, opening in a new tab.
+      await page.reload()
+      await page.locator(`${FILES()} li >> nth=1`).waitFor()
+      const names = await page.locator(`${FILES()} li a bdi`).allTextContents()
+      if (JSON.stringify(names) !== JSON.stringify([longName, heName])) throw new Error(`names ${JSON.stringify(names)}`)
+      for (const a of await page.locator(`${FILES()} li a`).all()) {
+        if ((await a.getAttribute('target')) !== '_blank' || (await a.getAttribute('rel')) !== 'noopener noreferrer') throw new Error('a link does not open in a new tab')
+      }
+      const sizes = (await page.locator(`${FILES()} li > span.muted`).allTextContents()).map(plain)
+      if (!sizes.every((x) => /^[\d.,]+ (KB|ק״ב)$/.test(x))) throw new Error(`sizes ${JSON.stringify(sizes)}`)
+      // Each signed URL serves its file inline with its type and name (checked without printing the URL).
+      for (const [i, type] of [[0, 'image/png'], [1, 'application/pdf']]) {
+        const r = await page.request.get(await page.locator(`${FILES()} li a >> nth=${i}`).getAttribute('href'))
+        if (r.status() !== 200 || r.headers()['content-type'] !== type || !r.headers()['content-disposition']?.startsWith('inline')) throw new Error(`file ${i}: ${r.status()} ${r.headers()['content-type']}`)
+      }
+      const [popup] = await Promise.all([page.waitForEvent('popup'), page.click(`${FILES()} li a >> nth=0`)])
+      await popup.waitForURL((u) => u.pathname.endsWith('.png'), { timeout: 10000 })
+      await popup.close()
+      await sweep('the files at 390px')
+      await noOverflow('a 124-character and a Hebrew file name')
+      await page.screenshot({ path: `${OUT}/${s.name}-files-list-390.png`, fullPage: true })
+      // Delete: the confirm, Escape back to Delete, then delete; focus goes to the list.
+      const del1 = page.locator(`${FILES()} li >> nth=0`).locator('button.link')
+      await del1.click()
+      if (plain(await page.locator(`${FILES()} .inline-form p`).textContent()) !== AF.confirm) throw new Error('confirm text')
+      await focusIs(`${FILES()} .inline-form button.link`, 'Cancel on the confirm')
+      await page.keyboard.press('Escape')
+      await focusIs(`${FILES()} li:first-child button.link`, 'Delete after Escape')
+      await del1.click()
+      await page.screenshot({ path: `${OUT}/${s.name}-files-delete-confirm.png`, fullPage: true })
+      const del = page.waitForResponse((r) => r.url().includes('/attachments/') && r.request().method() === 'DELETE')
+      await page.click(`${FILES()} button.danger`)
+      if ((await del).status() !== 204) throw new Error(`delete ${(await del).status()}`)
+      await page.waitForFunction((sel) => document.querySelectorAll(`${sel} li`).length === 1, FILES(), { timeout: 5000 })
+      await focusIs(FILES(), 'the list after a delete')
+      // The last one: focus goes to Add file.
+      await page.locator(`${FILES()} li button.link`).click()
+      await page.click(`${FILES()} button.danger`)
+      await page.locator(`${FILES()} ul`).waitFor({ state: 'detached' })
+      await focusIs(ADD(), 'Add file after the list empties')
+    } finally {
+      await deleteAllFiles()
+      await page.setViewportSize(s.viewport)
+    }
+  })
+  await step('files-states', async () => {
+    const listUrl = `**/api${filesPath}`
+    const historyGet = (u) => u.pathname === '/api/service-records'
+    const problem = (status, code) => ({ status, contentType: 'application/problem+json', body: JSON.stringify({ status, code }) })
+    const realList = await (await page.request.get(`${BASE}/api${filesPath}`, { headers: photoAuth })).json()
+    const file = (i, url = `https://files.test/__file/${i}.pdf`) => ({ id: `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`, fileName: `scan-${i}.pdf`, contentType: 'application/pdf', sizeBytes: 1_500_000 + i, url })
+    const withFiles = (attachments) => ({ contentType: 'application/json', body: JSON.stringify(realList.map((r) => (r.id === fileRecord.id ? { ...r, attachments } : r))) })
+    try {
+      await page.route('**/__file/*', (r) => r.fulfill({ contentType: 'text/plain', body: new URL(r.request().url()).pathname }))
+      // Busy while uploading, then the server's errors, translated.
+      await page.goto(`${BASE}/cars/${photoCarId}`)
+      await page.locator(ADD()).waitFor()
+      const png = await image('image/png')
+      for (const [status, code, want] of [[503, 'file.storageUnavailable', AF.unavailable], [400, 'attachment.tooMany', AF.tooMany], [400, 'attachment.vehicleArchived', AF.archived], [429, 'http.429', AF.rate], [400, 'file.quotaExceeded', AF.quota], [409, 'concurrency.conflict', AF.conflict]]) {
+        await page.route('**/attachments', async (r) => { await page.waitForTimeout(600); await r.fulfill(problem(status, code)) }, { times: 1 })
+        await chooseFile({ name: 'r.png', mimeType: 'image/png', buffer: png })
+        await page.waitForFunction((sel) => document.querySelector(sel)?.getAttribute('aria-busy') === 'true', ADD(), { timeout: 3000 })
+        if (plain(await page.locator(ADD()).textContent()) !== AF.uploading) throw new Error(`busy button "${await page.locator(ADD()).textContent()}"`)
+        await fileAlertIs(want, code)
+        if ((await page.getAttribute(ADD(), 'aria-busy')) !== 'false') throw new Error(`still busy after ${code}`)
+        await focusIs(ADD(), `Add file after ${code}`)
+      }
+      // 10 files, some without storage (no URL): no Add file, those names plain text.
+      await page.route(listUrl, (r) => r.fulfill(withFiles([...Array(10)].map((_, i) => file(i, { 1: 'javascript:alert(1)', 3: `http://files.test/__file/${i}.pdf` }[i] ?? (i % 2 ? null : undefined))))))
+      await page.reload()
+      await page.locator(`${FILES()} li >> nth=9`).waitFor()
+      if (await page.locator(ADD()).count()) throw new Error('Add file shows with 10 files')
+      if ((await page.locator(`${FILES()} li a`).count()) !== 5) throw new Error('files without a URL are links')
+      await sweep('10 files')
+      await page.screenshot({ path: `${OUT}/${s.name}-files-ten.png`, fullPage: true })
+      // A file deleted elsewhere: the message, and it leaves the list.
+      await page.route('**/attachments/*', (r) => r.fulfill(problem(404, 'attachment.notFound')), { times: 1 })
+      await page.locator(`${FILES()} li >> nth=0`).locator('button.link').click()
+      await page.click(`${FILES()} button.danger`)
+      await fileAlertIs(AF.notFound, '404 on delete')
+      if ((await page.locator(`${FILES()} li`).count()) !== 9) throw new Error('the missing file stayed')
+      // An archived car: no Add file, Delete works.
+      await page.route(`**/api/vehicles/${photoCarId}`, async (r) => { const res = await r.fetch(); await r.fulfill({ response: res, json: { ...(await res.json()), isArchived: true } }) })
+      await page.route(listUrl, (r) => r.fulfill(withFiles([file(1)])))
+      await page.reload()
+      await page.locator(`${FILES()} li`).waitFor()
+      if (await page.locator(ADD()).count()) throw new Error('Add file shows on an archived car')
+      await page.route('**/attachments/*', (r) => r.fulfill({ status: 204 }), { times: 1 })
+      await page.locator(`${FILES()} li button.link`).click()
+      await page.click(`${FILES()} button.danger`)
+      await page.locator(`${FILES()} ul`).waitFor({ state: 'detached' })
+      await focusIs(FILES(), 'the files group after the last delete on an archived car')
+      await page.unroute(`**/api/vehicles/${photoCarId}`)
+      // /history: names and Open only.
+      await page.route(historyGet, async (r) => {
+        const res = await r.fetch()
+        const body = await res.json()
+        await r.fulfill({ response: res, json: { ...body, items: body.items.map((x) => (x.id === fileRecord.id ? { ...x, attachments: [file(1), file(2, null)] } : x)) } })
+      })
+      await page.goto(`${BASE}/history?vehicleId=${photoCarId}`)
+      await page.locator(FILES()).waitFor()
+      if (await page.locator(`${FILES()} button`).count()) throw new Error('/history has file buttons')
+      if ((await page.locator(`${FILES()} li a`).count()) !== 1) throw new Error('/history: want one link')
+      await page.unroute(historyGet)
+    } finally {
+      await page.unroute(listUrl)
+      await page.unroute('**/attachments')
+      await page.unroute('**/attachments/*')
+      await page.unroute(`**/api/vehicles/${photoCarId}`)
+      await page.unroute(historyGet)
+      await page.unroute('**/__file/*')
+    }
+  })
+  await step('files-stale-link', async () => {
+    // A link older than 55 minutes: Open fetches the records first and the new tab gets the fresh URL (fake clock, own context).
+    const ctx2 = await browser.newContext({ storageState: await ctx.storageState(), viewport: s.viewport, colorScheme: s.colorScheme, isMobile: s.isMobile, hasTouch: s.hasTouch })
+    try {
+      const p = await ctx2.newPage()
+      await p.clock.install()
+      const realList = await (await p.request.get(`${BASE}/api${filesPath}`, { headers: photoAuth })).json()
+      let gets = 0, fresh = false, gone = false
+      await ctx2.route('**/__file/*', (r) => r.fulfill({ contentType: 'text/plain', body: 'ok' }))
+      await p.route(`**/api${filesPath}`, (r) => {
+        gets++
+        const url = `https://files.test/__file/${fresh ? 'fresh' : 'old'}.pdf`
+        return r.fulfill(gone ? { contentType: 'application/json', body: JSON.stringify(realList.filter((x) => x.id !== fileRecord.id)) } : { contentType: 'application/json', body: JSON.stringify(realList.map((x) => (x.id === fileRecord.id ? { ...x, attachments: [{ id: '00000000-0000-4000-8000-000000000001', fileName: 'r.pdf', contentType: 'application/pdf', sizeBytes: 9, url }] } : x))) })
+      })
+      await p.goto(`${BASE}/cars/${photoCarId}`)
+      const link = p.locator(`${FILES()} li a`)
+      await link.waitFor()
+      await p.waitForLoadState('networkidle')
+      const loads = gets
+      let [tab] = await Promise.all([p.waitForEvent('popup'), link.click()])
+      await tab.waitForURL('**/old.pdf', { timeout: 5000 })
+      if (gets !== loads) throw new Error(`${gets - loads} reloads on a fresh link`)
+      await tab.close()
+      fresh = true
+      await p.clock.fastForward('56:00')
+      ;[tab] = await Promise.all([p.waitForEvent('popup'), link.click()])
+      await tab.waitForURL('**/fresh.pdf', { timeout: 5000 })
+      if (gets !== loads + 1) throw new Error(`${gets - loads} reloads, want 1`)
+      if (!(await link.getAttribute('href')).endsWith('/fresh.pdf')) throw new Error('the link kept the old URL')
+      // The record deleted elsewhere meanwhile: the new tab closes, the row leaves the list with the "already deleted" note.
+      await tab.close()
+      gone = true
+      await p.clock.fastForward('56:00')
+      ;[tab] = await Promise.all([p.waitForEvent('popup'), link.click()])
+      await tab.waitForEvent('close', { timeout: 5000 })
+      await p.locator(`.services > li[data-id="${fileRecord.id}"]`).waitFor({ state: 'detached', timeout: 5000 })
+      const note = plain(await p.locator('section[aria-labelledby=service-history] > p[role=status]').textContent())
+      if (note !== AF.gone) throw new Error(`gone note "${note}"`)
+      if (await p.locator('.files p.error').count()) throw new Error('a file error shows for a deleted service')
+    } finally {
+      await ctx2.close()
     }
   })
   // SET-1: settings. Each setup forces the theme opposite to its OS one, at 390px wide.

@@ -17,6 +17,7 @@ public interface IAppDbContext
     DbSet<ServiceRecord> ServiceRecords { get; }
     DbSet<ServiceRecordTask> ServiceRecordTasks { get; }
     DbSet<ServiceItem> ServiceItems { get; }
+    DbSet<Attachment> Attachments { get; }
     DbSet<ChecklistTemplate> ChecklistTemplates { get; }
     DbSet<ChecklistTemplateItem> ChecklistTemplateItems { get; }
     DbSet<VehicleChecklist> VehicleChecklists { get; }

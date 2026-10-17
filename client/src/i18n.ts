@@ -135,6 +135,16 @@ const en = {
   deleteServiceOf: 'Delete the service from {{date}} at {{value}} {{distUnit}}, {{shop}}',
   confirmDeleteService: 'Delete this service? Its tasks and odometer reading go back to how they were before it.',
   serviceGone: 'This service was already deleted.',
+  // FILE-2: files on a service record.
+  attachments: 'Files',
+  addFile: 'Add file',
+  addFileTo: 'Add file to the service from {{date}} at {{value}} {{distUnit}}, {{shop}}',
+  uploadingFile: 'Uploading…',
+  deleteFileOf: 'Delete {{name}}',
+  confirmDeleteFile: 'Delete this file?',
+  filesDeletedToo: 'Its files are deleted too.',
+  kb: 'KB',
+  mb: 'MB',
   taskGone: 'A task you ticked was deleted, and the task list has been updated. Check your selection and save again.',
   items: 'Parts and labour',
   addPart: 'Add part',
@@ -397,6 +407,19 @@ const en = {
       tooLarge: 'The photo is too large. It must be 10 MB or smaller.',
       unsupportedType: 'Choose a JPEG, PNG or WebP image.',
       storageUnavailable: "Photos can't be saved right now. Try again later.",
+    },
+    attachment: {
+      tooMany: 'This service already has 10 files. Delete one to add another.',
+      vehicleArchived: "This car is archived, so files can't be added. They can still be deleted.",
+      notFound: 'This file was not found. It may have been deleted already.',
+    },
+    // Not an API code: the file.* messages for a service's files instead of the car photo.
+    attachmentFile: {
+      required: 'Choose a file to upload.',
+      tooLarge: 'The file is too large. It must be 10 MB or smaller.',
+      unsupportedType: 'Choose a JPEG, PNG or WebP image, or a PDF.',
+      storageUnavailable: "Files can't be saved right now. Try again later.",
+      quotaExceeded: "You've reached the 1 GB storage limit for files. Delete some files to add more.",
     },
     odometer: {
       lowerThanPrevious:
@@ -680,6 +703,15 @@ const he: typeof en = {
   deleteServiceOf: 'מחיקת הטיפול מ־{{date}} ב־{{value}} {{distUnit}}, {{shop}}',
   confirmDeleteService: 'למחוק את הטיפול הזה? המשימות והקילומטראז׳ יחזרו למצב שלפני הטיפול.',
   serviceGone: 'הטיפול הזה כבר נמחק.',
+  attachments: 'קבצים',
+  addFile: 'הוספת קובץ',
+  addFileTo: 'הוספת קובץ לטיפול מ־{{date}} ב־{{value}} {{distUnit}}, {{shop}}',
+  uploadingFile: 'מעלה את הקובץ…',
+  deleteFileOf: 'מחיקת ⁨{{name}}⁩',
+  confirmDeleteFile: 'למחוק את הקובץ הזה?',
+  filesDeletedToo: 'גם הקבצים שלו יימחקו.',
+  kb: 'ק״ב',
+  mb: 'מ״ב',
   taskGone: 'אחת המשימות שסומנו נמחקה, ורשימת המשימות עודכנה. יש לבדוק את הבחירה ולשמור שוב.',
   items: 'חלקים ועבודה',
   addPart: 'הוספת חלק',
@@ -937,6 +969,18 @@ const he: typeof en = {
       tooLarge: 'התמונה גדולה מדי. הגודל המרבי הוא ⁦10⁩ מ״ב.',
       unsupportedType: 'יש לבחור תמונה מסוג JPEG‏, PNG‏ או WebP.',
       storageUnavailable: 'אי אפשר לשמור תמונות כרגע. אפשר לנסות שוב מאוחר יותר.',
+    },
+    attachment: {
+      tooMany: 'לטיפול הזה כבר יש ⁦10⁩ קבצים. כדי להוסיף קובץ, יש למחוק אחד מהם.',
+      vehicleArchived: 'הרכב בארכיון, ולכן אי אפשר להוסיף קבצים. עדיין אפשר למחוק קבצים קיימים.',
+      notFound: 'הקובץ לא נמצא. ייתכן שהוא כבר נמחק.',
+    },
+    attachmentFile: {
+      required: 'יש לבחור קובץ להעלאה.',
+      tooLarge: 'הקובץ גדול מדי. הגודל המרבי הוא ⁦10⁩ מ״ב.',
+      unsupportedType: 'יש לבחור תמונה מסוג JPEG‏, PNG‏ או WebP‏, או קובץ PDF.',
+      storageUnavailable: 'אי אפשר לשמור קבצים כרגע. אפשר לנסות שוב מאוחר יותר.',
+      quotaExceeded: 'נפח האחסון לקבצים (⁦1⁩ ג״ב) מלא. כדי להוסיף קבצים, יש למחוק חלק מהקבצים הקיימים.',
     },
     odometer: {
       lowerThanPrevious:

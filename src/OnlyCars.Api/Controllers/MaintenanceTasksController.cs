@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.ModelBinding;
+using Microsoft.AspNetCore.RateLimiting;
 using OnlyCars.Api.Common;
 using OnlyCars.Application.Maintenance;
 using OnlyCars.Application.Maintenance.Dtos;
@@ -64,4 +65,22 @@ public class MaintenanceTasksController(MaintenanceTaskService taskService) : Co
     [HttpPost("vehicles/{vehicleId:guid}/service-records/{recordId:guid}/void")]
     public async Task<ActionResult<List<MaintenanceTaskDto>>> Void(Guid vehicleId, Guid recordId, CancellationToken ct) =>
         Ok(await taskService.VoidAsync(User.GetUserId(), vehicleId, recordId, ct));
+
+    /// <summary>Multipart with one file field <c>file</c>: JPEG, PNG, WebP or PDF by content, up to 10 MB. Shares the photo's upload limit.</summary>
+    [HttpPost("vehicles/{vehicleId:guid}/service-records/{recordId:guid}/attachments")]
+    [EnableRateLimiting(RequestLimits.UploadPolicy)]
+    [DisableFormValueBinding]
+    [RequestSizeLimit(MaintenanceTaskService.MaxAttachmentBytes + 64 * 1024)] // the file plus the multipart framing; the service checks the file itself
+    public async Task<ActionResult<ServiceRecordDto>> AddAttachment(Guid vehicleId, Guid recordId, CancellationToken ct)
+    {
+        var (content, fileName) = await UploadedFile.ReadAsync(Request, MaintenanceTaskService.AttachmentTooLarge, ct);
+        return Ok(await taskService.AddAttachmentAsync(User.GetUserId(), vehicleId, recordId, content, fileName, ct));
+    }
+
+    [HttpDelete("vehicles/{vehicleId:guid}/service-records/{recordId:guid}/attachments/{attachmentId:guid}")]
+    public async Task<IActionResult> DeleteAttachment(Guid vehicleId, Guid recordId, Guid attachmentId, CancellationToken ct)
+    {
+        await taskService.DeleteAttachmentAsync(User.GetUserId(), vehicleId, recordId, attachmentId, ct);
+        return NoContent();
+    }
 }

@@ -56,7 +56,10 @@ public record ServiceRecordTaskDto(Guid Id, string Name, TaskCategory Category);
 
 // A null ShopName is DIY; a null TotalCost was skipped. Tasks are the linked tasks that still exist.
 public record ServiceRecordDto(Guid Id, DateOnly Date, decimal OdometerKm, string? ShopName, decimal? TotalCost, string? Notes,
-    List<ServiceRecordTaskDto> Tasks, List<ServiceItemDto> Items, Guid VehicleId);
+    List<ServiceRecordTaskDto> Tasks, List<ServiceItemDto> Items, Guid VehicleId, List<AttachmentDto> Attachments);
+
+// Url is a signed GET URL valid for 1 hour (inline, with FileName), or null without storage; the storage key is never returned.
+public record AttachmentDto(Guid Id, string FileName, string ContentType, long SizeBytes, string? Url);
 
 // One page of GET /api/service-records; TotalCount and TotalCost (null costs as 0) cover every match, not just the page.
 public record ServiceRecordPageDto(List<ServiceRecordDto> Items, int TotalCount, decimal TotalCost);

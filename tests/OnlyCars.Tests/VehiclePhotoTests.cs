@@ -61,31 +61,34 @@ public class FakeFileStorage : IFileStorage
         return Task.CompletedTask;
     }
 
-    public string GetSignedUrl(string key, TimeSpan validFor) => $"https://signed.test/{key}?expires={validFor.TotalSeconds}";
+    public string GetSignedUrl(string key, TimeSpan validFor, string? contentType = null, string? contentDisposition = null) =>
+        $"https://signed.test/{key}?expires={validFor.TotalSeconds}"
+        + (contentType is null ? "" : $"&type={contentType}&disposition={contentDisposition}");
 }
 
-public class VehiclePhotoTests
+/// <summary>Shared by the upload tests: one InMemory store, the fake storage, image fixtures and the HTTP host.</summary>
+public abstract class FileTestBase
 {
-    private readonly string dbName = Guid.NewGuid().ToString();
-    private readonly AppDbContext db;
-    private readonly FakeFileStorage storage = new();
-    private readonly VehicleService vehicles;
-    private readonly Guid userId = Guid.NewGuid();
+    protected readonly string dbName = Guid.NewGuid().ToString();
+    protected readonly AppDbContext db;
+    protected readonly FakeFileStorage storage = new();
+    protected readonly VehicleService vehicles;
+    protected readonly Guid userId = Guid.NewGuid();
 
-    public VehiclePhotoTests()
+    protected FileTestBase()
     {
         db = NewDb();
         vehicles = new VehicleService(db, storage);
     }
 
     // One store shared by name: the HTTP host gets its own contexts, since DI disposes what it creates.
-    private AppDbContext NewDb() => new(new DbContextOptionsBuilder<AppDbContext>().UseInMemoryDatabase(dbName).Options);
+    protected AppDbContext NewDb() => new(new DbContextOptionsBuilder<AppDbContext>().UseInMemoryDatabase(dbName).Options);
 
     // A real 1x1 PNG.
-    private static readonly byte[] Png1x1 = Convert.FromBase64String(
+    protected static readonly byte[] Png1x1 = Convert.FromBase64String(
         "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==");
 
-    private static byte[] Chunk(string type, byte[] data)
+    protected static byte[] Chunk(string type, byte[] data)
     {
         var chunk = new byte[12 + data.Length];
         BinaryPrimitives.WriteUInt32BigEndian(chunk, (uint)data.Length);
@@ -95,13 +98,13 @@ public class VehiclePhotoTests
     }
 
     /// <summary>The 1x1 PNG with a tEXt chunk (and optional padding inside it) after IHDR, plus junk after IEND.</summary>
-    private static byte[] PngWithText(int textBytes = 20)
+    protected static byte[] PngWithText(int textBytes = 20)
     {
         var text = Encoding.ASCII.GetBytes("Comment\0SECRET-TEXT" + new string('x', Math.Max(0, textBytes - 19)));
         return [.. Png1x1[..33], .. Chunk("tEXt", text), .. Png1x1[33..], .. "AFTER-IEND"u8.ToArray()];
     }
 
-    private static byte[] Segment(byte marker, byte[] payload)
+    protected static byte[] Segment(byte marker, byte[] payload)
     {
         var s = new byte[4 + payload.Length];
         s[0] = 0xFF;
@@ -112,7 +115,7 @@ public class VehiclePhotoTests
     }
 
     /// <summary>A JPEG with EXIF (Orientation 6 and a GPS IFD), XMP, a comment, scan data and an MPF-like trailer after EOI.</summary>
-    private static byte[] JpegWithGps()
+    protected static byte[] JpegWithGps()
     {
         // Little-endian TIFF: IFD0 at 8 with Orientation=6 and GPSInfo -> GPS IFD at 38 holding GPSLatitudeRef "N" and a marker.
         var tiff = new byte[80];
@@ -151,11 +154,77 @@ public class VehiclePhotoTests
         ];
     }
 
-    private static bool Contains(byte[] data, string text) => data.AsSpan().IndexOf(Encoding.ASCII.GetBytes(text)) >= 0;
+    protected static bool Contains(byte[] data, string text) => data.AsSpan().IndexOf(Encoding.ASCII.GetBytes(text)) >= 0;
 
-    private Task<VehicleDto> CarAsync(Guid? owner = null) => vehicles.CreateAsync(owner ?? userId,
+    protected Task<VehicleDto> CarAsync(Guid? owner = null) => vehicles.CreateAsync(owner ?? userId,
         new CreateVehicleRequest("Corolla", null, null, null, null, null, null, null, null, null, null));
 
+    // ---- HTTP: the real controllers on Kestrel, with the app's body limits, error handler and a header-based test login.
+
+    protected sealed class HeaderAuth(IOptionsMonitor<AuthenticationSchemeOptions> o, ILoggerFactory l, UrlEncoder e)
+        : AuthenticationHandler<AuthenticationSchemeOptions>(o, l, e)
+    {
+        protected override Task<AuthenticateResult> HandleAuthenticateAsync() =>
+            Task.FromResult(Request.Headers.TryGetValue("X-Test-User", out var user)
+                ? AuthenticateResult.Success(new AuthenticationTicket(
+                    new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.NameIdentifier, user!)], "test")), "test"))
+                : AuthenticateResult.NoResult());
+    }
+
+    protected async Task<(WebApplication App, HttpClient Client)> StartAsync(bool withStorage = true, int uploadLimit = 10)
+    {
+        var builder = WebApplication.CreateBuilder();
+        builder.WebHost.UseUrls("http://127.0.0.1:0");
+        builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["RateLimiting:AuthPermitLimit"] = "100", ["RateLimiting:AuthWindowSeconds"] = "60",
+            ["RateLimiting:GlobalPermitLimit"] = "1000", ["RateLimiting:GlobalWindowSeconds"] = "60",
+            ["RateLimiting:FailedLoginLimit"] = "100", ["RateLimiting:UploadPermitLimit"] = uploadLimit.ToString(),
+        });
+        builder.Services.AddControllers().AddJsonOptions(ApiJson.Configure).AddApplicationPart(typeof(VehiclesController).Assembly);
+        builder.Services.AddProblemDetails(o => o.CustomizeProblemDetails = c =>
+            c.ProblemDetails.Extensions.TryAdd("code", GlobalExceptionHandler.FallbackCode(c.ProblemDetails.Status)));
+        builder.Services.AddApplication();
+        builder.Services.AddScoped<IAppDbContext>(_ => NewDb());
+        if (withStorage)
+        {
+            builder.Services.AddSingleton<IFileStorage>(storage);
+        }
+
+        builder.Services.AddAuthentication("test").AddScheme<AuthenticationSchemeOptions, HeaderAuth>("test", null);
+        builder.Services.AddAuthorization();
+        builder.Services.AddRequestLimits(builder.Configuration);
+        builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
+        builder.Services.AddCors(o => o.AddPolicy("test", p => p.WithOrigins("http://client.test")));
+
+        var app = builder.Build();
+        app.UseExceptionHandler(_ => { });
+        app.UseRequestLimits("test"); // the same call as Program.cs, authentication included
+        app.UseAuthorization();
+        app.MapControllers();
+        await app.StartAsync();
+
+        var client = new HttpClient { BaseAddress = new Uri(app.Urls.First()) };
+        client.DefaultRequestHeaders.Add("X-Test-User", userId.ToString());
+        return (app, client);
+    }
+
+    protected static MultipartFormDataContent Form(byte[] data, string fileName, string contentType = "image/jpeg")
+    {
+        var file = new ByteArrayContent(data);
+        file.Headers.ContentType = new MediaTypeHeaderValue(contentType);
+        return new MultipartFormDataContent { { file, "file", fileName } };
+    }
+
+    protected static async Task<(HttpStatusCode Status, JsonElement Body)> ReadAsync(HttpResponseMessage response)
+    {
+        var text = await response.Content.ReadAsStringAsync();
+        return (response.StatusCode, text.Length == 0 ? default : JsonDocument.Parse(text).RootElement);
+    }
+}
+
+public class VehiclePhotoTests : FileTestBase
+{
     [Fact]
     public void Jpeg_LosesExifGpsXmpAndComments_KeepsOrientationIccAndScanData()
     {
@@ -286,7 +355,8 @@ public class VehiclePhotoTests
             $"users/{Guid.NewGuid()}/vehicles/{otherCar.Id}/photo/{Guid.NewGuid():N}.jpg", // another user's prefix
             $"users/{userId}/vehicles/{otherCar.Id}/photo/{Guid.NewGuid():N}.jpg", // another car
             $"users/{userId}/vehicles/{car.Id}/photo/../../../../other.jpg", // escapes the prefix
-            $"users/{userId}/vehicles/{car.Id}/photo/sub/{Guid.NewGuid():N}.jpg"
+            $"users/{userId}/vehicles/{car.Id}/photo/sub/{Guid.NewGuid():N}.jpg",
+            $"users/{userId}/vehicles/{car.Id}/photo/{Guid.NewGuid():N}.jpg\n" // "$" would match before the final newline
         };
 
         foreach (var key in foreign)
@@ -473,69 +543,12 @@ public class VehiclePhotoTests
         Assert.StartsWith("https://acct.r2.cloudflarestorage.com/bucket/users/u/vehicles/v/photo/f.jpg?", url);
         Assert.Contains("X-Amz-Expires=3600", url);
         Assert.DoesNotContain("fake-secret", url);
-    }
 
-    // ---- HTTP: the real VehiclesController on Kestrel, with the app's body limits, error handler and a header-based test login.
-
-    private sealed class HeaderAuth(IOptionsMonitor<AuthenticationSchemeOptions> o, ILoggerFactory l, UrlEncoder e)
-        : AuthenticationHandler<AuthenticationSchemeOptions>(o, l, e)
-    {
-        protected override Task<AuthenticateResult> HandleAuthenticateAsync() =>
-            Task.FromResult(Request.Headers.TryGetValue("X-Test-User", out var user)
-                ? AuthenticateResult.Success(new AuthenticationTicket(
-                    new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.NameIdentifier, user!)], "test")), "test"))
-                : AuthenticateResult.NoResult());
-    }
-
-    private async Task<(WebApplication App, HttpClient Client)> StartAsync(bool withStorage = true, int photoUploadLimit = 10)
-    {
-        var builder = WebApplication.CreateBuilder();
-        builder.WebHost.UseUrls("http://127.0.0.1:0");
-        builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
-        {
-            ["RateLimiting:AuthPermitLimit"] = "100", ["RateLimiting:AuthWindowSeconds"] = "60",
-            ["RateLimiting:GlobalPermitLimit"] = "1000", ["RateLimiting:GlobalWindowSeconds"] = "60",
-            ["RateLimiting:FailedLoginLimit"] = "100", ["RateLimiting:PhotoUploadPermitLimit"] = photoUploadLimit.ToString(),
-        });
-        builder.Services.AddControllers().AddJsonOptions(ApiJson.Configure).AddApplicationPart(typeof(VehiclesController).Assembly);
-        builder.Services.AddProblemDetails(o => o.CustomizeProblemDetails = c =>
-            c.ProblemDetails.Extensions.TryAdd("code", GlobalExceptionHandler.FallbackCode(c.ProblemDetails.Status)));
-        builder.Services.AddApplication();
-        builder.Services.AddScoped<IAppDbContext>(_ => NewDb());
-        if (withStorage)
-        {
-            builder.Services.AddSingleton<IFileStorage>(storage);
-        }
-
-        builder.Services.AddAuthentication("test").AddScheme<AuthenticationSchemeOptions, HeaderAuth>("test", null);
-        builder.Services.AddAuthorization();
-        builder.Services.AddRequestLimits(builder.Configuration);
-        builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
-        builder.Services.AddCors(o => o.AddPolicy("test", p => p.WithOrigins("http://client.test")));
-
-        var app = builder.Build();
-        app.UseExceptionHandler(_ => { });
-        app.UseRequestLimits("test"); // the same call as Program.cs, authentication included
-        app.UseAuthorization();
-        app.MapControllers();
-        await app.StartAsync();
-
-        var client = new HttpClient { BaseAddress = new Uri(app.Urls.First()) };
-        client.DefaultRequestHeaders.Add("X-Test-User", userId.ToString());
-        return (app, client);
-    }
-
-    private static MultipartFormDataContent Form(byte[] data, string fileName, string contentType = "image/jpeg")
-    {
-        var file = new ByteArrayContent(data);
-        file.Headers.ContentType = new MediaTypeHeaderValue(contentType);
-        return new MultipartFormDataContent { { file, "file", fileName } };
-    }
-
-    private static async Task<(HttpStatusCode Status, JsonElement Body)> ReadAsync(HttpResponseMessage response)
-    {
-        var text = await response.Content.ReadAsStringAsync();
-        return (response.StatusCode, text.Length == 0 ? default : JsonDocument.Parse(text).RootElement);
+        // FILE-2: the response headers ride in the signed query string.
+        var pdf = Build(r2).GetRequiredService<IFileStorage>().GetSignedUrl("users/u/f.pdf", TimeSpan.FromHours(1), "application/pdf",
+            "inline; filename*=UTF-8''%D7%90.pdf");
+        Assert.Contains("response-content-type=application%2Fpdf", pdf);
+        Assert.Contains("response-content-disposition=inline%3B%20filename%2A%3DUTF-8%27%27%25D7%2590.pdf", pdf);
     }
 
     [Fact]
@@ -642,7 +655,7 @@ public class VehiclePhotoTests
         var car = await CarAsync();
         var otherUser = Guid.NewGuid();
         var otherCar = await CarAsync(otherUser);
-        var (app, client) = await StartAsync(photoUploadLimit: 2);
+        var (app, client) = await StartAsync(uploadLimit: 2);
         await using var _ = app;
 
         Assert.Equal(HttpStatusCode.OK, (await client.PutAsync($"/api/vehicles/{car.Id}/photo", Form(Png1x1, "car.png"))).StatusCode);

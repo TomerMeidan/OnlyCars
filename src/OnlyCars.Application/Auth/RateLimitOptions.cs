@@ -13,9 +13,9 @@ public class RateLimitOptions
     public int GlobalPermitLimit { get; set; } = 300;
     public int GlobalWindowSeconds { get; set; } = 60;
 
-    /// <summary>Car photo uploads per signed-in user per window (FILE-1); at most 2 run at once per user.</summary>
-    public int PhotoUploadPermitLimit { get; set; } = 10;
-    public int PhotoUploadWindowSeconds { get; set; } = 10 * 60;
+    /// <summary>File uploads (car photo, service record attachments) per signed-in user per window (FILE-1, FILE-2); at most 2 run at once per user.</summary>
+    public int UploadPermitLimit { get; set; } = 10;
+    public int UploadWindowSeconds { get; set; } = 10 * 60;
 
     /// <summary>Failed logins per normalized email per window; a success does not count.</summary>
     public int FailedLoginLimit { get; set; } = 10;

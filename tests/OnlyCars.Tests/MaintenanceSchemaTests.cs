@@ -137,6 +137,32 @@ public class MaintenanceSchemaTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Attachments_OnSqlServer_AreIndexedByRecord_AndCascadeFromRecordAndVehicle()
+    {
+        // FILE-2: rows go with their record, and with the vehicle; IX_Attachments_ServiceRecordId exists.
+        var car = await AddCarAsync();
+        ServiceRecord NewRecord() => new()
+        {
+            VehicleId = car.Id, Date = DateOnly.FromDateTime(DateTime.UtcNow), OdometerKm = 1_000,
+            Attachments = { new Attachment { FileUrl = "k", FileName = "r.pdf", ContentType = "application/pdf", SizeBytes = 5 } }
+        };
+        var record = NewRecord();
+        db.ServiceRecords.AddRange(record, NewRecord());
+        await db.SaveChangesAsync();
+        Assert.Equal(2, await db.Attachments.CountAsync());
+
+        await db.ServiceRecords.Where(r => r.Id == record.Id).ExecuteDeleteAsync();
+        Assert.Equal(1, await db.Attachments.CountAsync());
+        await db.Vehicles.Where(v => v.Id == car.Id).ExecuteDeleteAsync();
+        Assert.Equal(0, await db.Attachments.CountAsync());
+
+        var index = await db.Database.SqlQuery<string>(
+            $"SELECT c.name AS Value FROM sys.indexes i JOIN sys.index_columns ic ON ic.object_id = i.object_id AND ic.index_id = i.index_id JOIN sys.columns c ON c.object_id = ic.object_id AND c.column_id = ic.column_id WHERE i.name = 'IX_Attachments_ServiceRecordId'")
+            .ToListAsync();
+        Assert.Equal(["ServiceRecordId"], index);
+    }
+
+    [Fact]
     public async Task Checklists_ClearTheRunItemLinkOnItemDelete_DeleteRunReadings_AndCascadeVehicleDeleteWithoutCycles()
     {
         // MVP5-B: the no-cascade paths (template item and reading) are handled by the services on SQL Server too.
@@ -312,6 +338,94 @@ public class MaintenanceSchemaTests : IAsyncLifetime
         await using var check = Context();
         Assert.Equal((1, 1, 1), (await check.Vehicles.CountAsync(v => v.Vin == "VIN1"), await check.Vehicles.CountAsync(v => v.Vin == "VIN2"),
             await check.Users.CountAsync(u => u.Email == "same@x.test")));
+    }
+
+    // --- FILE-2: uploads racing on the real database (InMemory has no transactions, so a failed save there keeps its insert). ---
+
+    private static readonly byte[] Pdf = "%PDF-1.7\n%%EOF\n"u8.ToArray();
+    private readonly FakeFileStorage storage = new();
+
+    // Each racer gets its own context, as two requests would; the fake storage is shared.
+    private MaintenanceTaskService Racer()
+    {
+        var context = Context();
+        return new MaintenanceTaskService(context, new VehicleService(context, storage));
+    }
+
+    private async Task WaitForPutsAsync(int count)
+    {
+        var waited = Task.Run(async () =>
+        {
+            while (storage.Waiting < count)
+            {
+                await Task.Delay(10);
+            }
+        });
+        Assert.Same(waited, await Task.WhenAny(waited, Task.Delay(TimeSpan.FromSeconds(10))));
+    }
+
+    private static async Task<Exception?> Settle(Task task)
+    {
+        try
+        {
+            await task;
+            return null;
+        }
+        catch (Exception ex)
+        {
+            return ex;
+        }
+    }
+
+    private async Task<(Vehicle Car, Guid Record)> RecordWithFilesAsync(int files)
+    {
+        var car = await AddCarAsync();
+        var record = (await Racer().CreateRecordAsync(car.UserId, car.Id, new CreateServiceRecordRequest(null, 1_000, null, null, null, []))).Record.Id;
+        for (var i = 0; i < files; i++)
+        {
+            await Racer().AddAttachmentAsync(car.UserId, car.Id, record, Pdf, $"{i}.pdf");
+        }
+
+        return (car, record);
+    }
+
+    [Fact]
+    public async Task Attachment_OnSqlServer_AVoidThatSavesDuringTheUpload_Wins_TheUploadIsAConcurrencyException_AndItsObjectIsDeleted()
+    {
+        var (car, record) = await RecordWithFilesAsync(0);
+        storage.PutGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var upload = Task.Run(() => Racer().AddAttachmentAsync(car.UserId, car.Id, record, Pdf, "late.pdf"));
+        await WaitForPutsAsync(1);
+        await Racer().VoidAsync(car.UserId, car.Id, record);
+        storage.PutGate.SetResult();
+
+        // The handler turns it into 409 concurrency.conflict (GlobalExceptionHandlerTests).
+        await Assert.ThrowsAsync<DbUpdateConcurrencyException>(() => upload);
+        await using var check = Context();
+        Assert.Empty(check.Attachments);
+        Assert.Empty(storage.Objects);
+        Assert.True((await check.ServiceRecords.SingleAsync(r => r.Id == record)).IsVoided);
+    }
+
+    [Fact]
+    public async Task Attachment_OnSqlServer_TwoSimultaneousUploadsAtNineFiles_OnlyOneSaves_TheOthersObjectIsDeleted()
+    {
+        var (car, record) = await RecordWithFilesAsync(Attachment.MaxPerServiceRecord - 1);
+        storage.PutGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var first = Task.Run(() => Racer().AddAttachmentAsync(car.UserId, car.Id, record, Pdf, "a.pdf"));
+        var second = Task.Run(() => Racer().AddAttachmentAsync(car.UserId, car.Id, record, Pdf, "b.pdf"));
+        await WaitForPutsAsync(2);
+        storage.PutGate.SetResult();
+
+        var results = await Task.WhenAll(Settle(first), Settle(second));
+        Assert.Single(results, e => e is null);
+        Assert.Single(results, e => e is DbUpdateConcurrencyException);
+        await using var check = Context();
+        var keys = await check.Attachments.Select(a => a.FileUrl).ToListAsync();
+        Assert.Equal(Attachment.MaxPerServiceRecord, keys.Count);
+        Assert.Equal(keys.Order(), storage.Objects.Keys.Order());
     }
 
     /// <summary>Simulates another request saving first: runs <see cref="Next"/> once, at the start of the next save.</summary>

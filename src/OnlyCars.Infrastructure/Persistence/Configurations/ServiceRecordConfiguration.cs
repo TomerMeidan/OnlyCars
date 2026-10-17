@@ -71,3 +71,20 @@ public class ServiceItemConfiguration : IEntityTypeConfiguration<ServiceItem>
         });
     }
 }
+
+public class AttachmentConfiguration : IEntityTypeConfiguration<Attachment>
+{
+    public void Configure(EntityTypeBuilder<Attachment> builder)
+    {
+        builder.Property(a => a.FileUrl).HasMaxLength(300);
+        builder.Property(a => a.FileName).HasMaxLength(Attachment.MaxFileNameLength);
+        builder.Property(a => a.ContentType).HasMaxLength(100);
+
+        builder.HasOne(a => a.ServiceRecord)
+            .WithMany(r => r.Attachments)
+            .HasForeignKey(a => a.ServiceRecordId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder.HasIndex(a => a.ServiceRecordId);
+    }
+}

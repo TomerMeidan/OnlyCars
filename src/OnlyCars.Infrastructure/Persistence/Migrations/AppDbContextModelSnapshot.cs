@@ -22,6 +22,46 @@ namespace OnlyCars.Infrastructure.Persistence.Migrations
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
 
+            modelBuilder.Entity("OnlyCars.Domain.Entities.Attachment", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ContentType")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("FileName")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
+
+                    b.Property<string>("FileUrl")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
+                    b.Property<Guid?>("ServiceRecordId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("SizeBytes")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ServiceRecordId");
+
+                    b.ToTable("Attachments");
+                });
+
             modelBuilder.Entity("OnlyCars.Domain.Entities.ChecklistRun", b =>
                 {
                     b.Property<Guid>("Id")
@@ -993,6 +1033,16 @@ namespace OnlyCars.Infrastructure.Persistence.Migrations
                     b.ToTable("VehicleChecklists");
                 });
 
+            modelBuilder.Entity("OnlyCars.Domain.Entities.Attachment", b =>
+                {
+                    b.HasOne("OnlyCars.Domain.Entities.ServiceRecord", "ServiceRecord")
+                        .WithMany("Attachments")
+                        .HasForeignKey("ServiceRecordId")
+                        .OnDelete(DeleteBehavior.Cascade);
+
+                    b.Navigation("ServiceRecord");
+                });
+
             modelBuilder.Entity("OnlyCars.Domain.Entities.ChecklistRun", b =>
                 {
                     b.HasOne("OnlyCars.Domain.Entities.OdometerReading", "OdometerReading")
@@ -1251,6 +1301,8 @@ namespace OnlyCars.Infrastructure.Persistence.Migrations
 
             modelBuilder.Entity("OnlyCars.Domain.Entities.ServiceRecord", b =>
                 {
+                    b.Navigation("Attachments");
+
                     b.Navigation("Items");
 
                     b.Navigation("Tasks");
