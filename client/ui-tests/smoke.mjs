@@ -357,9 +357,9 @@ for (const s of setups) {
   await step('tasks-empty-and-picker', async () => {
     await page.setViewportSize({ width: 390, height: 844 })
     await tasks.locator('p.muted').filter({ hasText: he ? 'עדיין אין משימות תחזוקה.' : 'No maintenance tasks yet.' }).waitFor()
-    // Maintenance first, then To-dos (MVP5-C), Checklists (MVP5-B), the service history and the odometer history.
+    // Maintenance first, then To-dos (MVP5-C), Checklists (MVP5-B), Tires (MVP5-D), the service history and the odometer history.
     const order = await page.evaluate(() => [...document.querySelectorAll('main section h2')].map((h) => h.id).join())
-    if (order !== 'maintenance,todos,checklists,service-history,odometer-history') throw new Error(`sections: ${order}`)
+    if (order !== 'maintenance,todos,checklists,tires,service-history,odometer-history') throw new Error(`sections: ${order}`)
     await tasks.getByRole('button', { name: TK.add }).click()
     const options = await tasks.locator('.picker li button').allTextContents()
     if (options.length !== 13) throw new Error(`${options.length} picker options`)
@@ -1906,9 +1906,13 @@ for (const s of setups) {
     await rec({ date: await histDay(-10), odometerKm: 70000, notes: 'Topped up washer fluid' })
     histAll = await apiCall('GET', '/service-records?take=100')
     // Criterion 11: a loading line on the first load.
-    await page.route((url) => isHistoryGet(url.href), async (r) => { await page.waitForTimeout(700); await r.continue().catch(() => {}) }, { times: 1 }) // the request may be gone by then
+    // Every list GET waits (dev StrictMode loads twice; delaying only the first let the second finish before Loading was seen).
+    const slow = async (r) => { await page.waitForTimeout(700); await r.continue().catch(() => {}) } // the request may be gone by then
+    const listGet = (url) => isHistoryGet(url.href)
+    await page.route(listGet, slow)
     await page.click('header a[href="/history"]')
     await histStatus.filter({ hasText: he ? 'טוען' : 'Loading' }).waitFor()
+    await page.unroute(listGet, slow)
     await arrivedAt(HS.title)
     // Criterion 5: every car's records, newest first, with the count and total of all matches.
     await summaryIs(histAll.totalCount, histAll.totalCost)
@@ -3214,6 +3218,251 @@ for (const s of setups) {
     forgetCk(409, '/checklist-templates/')
     await page.reload()
     await clRow('Monthly quick check').waitFor()
+  })
+  // MVP5-D: tire sets on /tires and on Dash car's page: create, edit, mount, swap, unmount, km per set, delete a mount and a set.
+  const n0 = (x) => x.toLocaleString('en')
+  const TI = he
+    ? { title: 'צמיגים', newSet: 'סט חדש', empty: 'עדיין אין סטים של צמיגים.', noneOnCar: 'אין סט צמיגים מותקן ברכב הזה.', mount: 'התקנת סט', swap: 'החלפת סט',
+        unmount: 'הסרת הסט', storage: 'באחסון', km: (n, u = 'ק״מ') => `נסע ${n0(n)} ${u}`, on: (c, d) => `מותקן ברכב ${c} מאז ${d}`, brand: 'הזינו יצרן של עד 50 תווים.',
+        noSets: 'עדיין אין לך סטים של צמיגים. אפשר להוסיף סט בדף הצמיגים.', edit: (x) => `עריכה של ${x}`, del: (x) => `מחיקה של ${x}`,
+        delMount: (x, d) => `מחיקת ההתקנה של ${x} מ־${d}`, confirmSet: 'למחוק את סט הצמיגים הזה? גם היסטוריית ההתקנות שלו תימחק.', summer: 'קיץ',
+        before: (n, u = 'ק״מ') => `הזינו קילומטראז׳ של ${n0(n)} ${u} לפחות (הקילומטראז׳ בהתקנת הסט).`,
+        overlap: 'התאריך לא יכול להיות לפני ההתקנה או ההסרה האחרונה של הסט או של הרכב. בחרו תאריך מאוחר יותר.' }
+    : { title: 'Tires', newSet: 'New set', empty: 'No tire sets yet.', noneOnCar: 'No tire set on this car.', mount: 'Mount a set', swap: 'Swap set',
+        unmount: 'Unmount', storage: 'In storage', km: (n, u = 'km') => `${n0(n)} ${u} driven`, on: (c, d) => `On ${c} since ${d}`, brand: 'Enter a brand of up to 50 characters.',
+        noSets: 'You have no tire sets yet. Add one on the Tires page.', edit: (x) => `Edit ${x}`, del: (x) => `Delete ${x}`,
+        delMount: (x, d) => `Delete the mount of ${x} from ${d}`, confirmSet: 'Delete this tire set? Its mount history is deleted with it.', summer: 'Summer',
+        before: (n, u = 'km') => `Enter a reading of at least ${n0(n)} ${u}, the odometer when the set went on.`,
+        overlap: "The date can't be before this set's or this car's last mount or unmount. Choose a later date." }
+  const tiSec = page.locator('section[aria-labelledby=tires]')
+  const tiForm = tiSec.locator('form')
+  const tiSave = tiForm.locator('.actions button:not(.link)')
+  const setForm = page.locator('main form')
+  const setSave = setForm.locator('.actions button:not(.link)')
+  const setRow = (name) => page.locator('.tire-sets > li').filter({ has: page.locator('.name', { hasText: new RegExp(`^${name}$`) }) })
+  const setText = async (name) => plain(await setRow(name).textContent())
+  const isMountPost = (r) => r.url().includes(`/vehicles/${dashCarId}/tires/`) && r.request().method() === 'POST'
+  const goTires = async () => { await page.click('header nav a[href="/tires"]'); await arrivedAt(TI.title) }
+  let carKm
+  await step('tires-empty', async () => {
+    // Criterion 8: no set on the car; Mount with no sets links to /tires.
+    carKm = (await apiCall('GET', `/vehicles/${dashCarId}`)).currentOdometerKm
+    await page.goto(`${BASE}${ckCarPath()}`)
+    await tiSec.getByText(TI.noneOnCar, { exact: true }).waitFor()
+    await tiSec.getByRole('button', { name: TI.mount, exact: true }).click()
+    const p = tiSec.locator('.inline-form p')
+    if (plain(await p.textContent()) !== TI.noSets) throw new Error(`no sets "${await p.textContent()}"`)
+    await page.keyboard.press('Escape')
+    await focusIs('section[aria-labelledby=tires] button.mount', 'Mount after Escape')
+    await tiSec.getByRole('button', { name: TI.mount, exact: true }).click()
+    await tiSec.locator('.inline-form a[href="/tires"]').click()
+    await arrivedAt(TI.title)
+    // A failed load shows the error with Retry; Retry focuses the h1 and shows the empty state with New set.
+    await page.route('**/api/tire-sets', (r) => r.fulfill({ status: 500, contentType: 'application/json', body: '{}' }))
+    await page.reload()
+    const alert = page.locator('main [role=alert]')
+    await alert.waitFor()
+    if (plain(await alert.textContent()) !== HS.generic) throw new Error(`load error "${await alert.textContent()}"`)
+    await page.unroute('**/api/tire-sets')
+    forget500()
+    await page.getByRole('button', { name: HS.retry, exact: true }).click()
+    await focusIs('main h1', 'h1 after Retry')
+    await page.getByText(TI.empty, { exact: true }).waitFor()
+    await at390('the empty tires page', 'tires-empty')
+  })
+  await step('tires-create', async () => {
+    // Criteria 6 and 10: focus on Brand when the form opens; Escape goes back to New set; an empty brand is stopped by the browser.
+    const add = page.getByRole('button', { name: TI.newSet, exact: true })
+    await add.click()
+    await focusIs('main form input[name=brand]', 'Brand after New set')
+    await page.keyboard.press('Escape')
+    await focusIs('main button.add', 'New set after Escape')
+    await add.click()
+    await setSave.click()
+    const msg = await setForm.locator('input[name=brand]').evaluate((el) => el.validationMessage)
+    if (plain(msg) !== TI.brand) throw new Error(`brand message "${msg}"`)
+    await setForm.locator('input[name=brand]').fill('Michelin')
+    await setForm.locator('input[name=model]').fill('Pilot Sport 4')
+    await setForm.locator('input[name=size]').fill('205/55 R16')
+    await setForm.locator('input[name=dotCode]').fill('DOT 2321')
+    await setForm.locator('input[name=purchaseDate]').fill(await histDay(-400))
+    await setForm.locator('textarea[name=notes]').fill('Garage loft\nleft side')
+    await at390('the new tire set form', 'tires-form')
+    const res = page.waitForResponse((r) => r.url().endsWith('/api/tire-sets') && r.request().method() === 'POST')
+    await setSave.click()
+    const r = await res
+    const body = r.request().postDataJSON()
+    if (r.status() !== 201 || body.season !== 'Summer' || body.size !== '205/55 R16') throw new Error(`${r.status()} ${JSON.stringify(body)}`)
+    await focusIs(`.tire-sets li[data-id="${(await r.json()).id}"] button.edit`, 'Edit after Save')
+    const text = await setText('Michelin Pilot Sport 4')
+    if (!text.includes(TI.storage) || !text.includes(TI.km(0)) || !text.includes('205/55 R16')) throw new Error(`row "${text}"`)
+    // A Latin size and DOT code read left to right in Hebrew.
+    if ((await setRow('Michelin Pilot Sport 4').locator('.facts span[dir=auto]').count()) !== 2) throw new Error('size or DOT code without dir=auto')
+    // A second set, Winter.
+    await add.click()
+    await setForm.locator('input[name=brand]').fill('Nokian')
+    await setForm.locator('input[name=model]').fill('Hakka R5')
+    await setForm.locator('select[name=season]').selectOption('Winter')
+    await setSave.click()
+    await setRow('Nokian Hakka R5').waitFor()
+  })
+  await step('tires-edit', async () => {
+    const row = setRow('Nokian Hakka R5')
+    await (await named(row.locator('button.edit'), TI.edit('Nokian Hakka R5'))).click()
+    await focusIs('main form input[name=brand]', 'Brand on Edit')
+    await page.keyboard.press('Escape')
+    await focusIs('.tire-sets button.edit', 'Edit after Escape')
+    await row.locator('button.edit').click()
+    if ((await setForm.locator('select[name=season]').inputValue()) !== 'Winter') throw new Error('season not prefilled')
+    await setForm.locator('input[name=size]').fill('195/65 R15')
+    const res = page.waitForResponse((r) => r.url().includes('/api/tire-sets/') && r.request().method() === 'PUT')
+    await setSave.click()
+    if ((await res).status() !== 200) throw new Error('PUT failed')
+    await focusIs('.tire-sets button.edit', 'Edit after Save')
+    if (!(await setText('Nokian Hakka R5')).includes('195/65 R15')) throw new Error('size not saved')
+  })
+  await step('tires-mount', async () => {
+    // Criterion 7: mount Michelin 20 days ago at 2,000 km below the car's odometer; the date and odometer default to today and the car's odometer.
+    await page.goto(`${BASE}${ckCarPath()}`)
+    await tiSec.getByRole('button', { name: TI.mount, exact: true }).click()
+    await focusIs('section[aria-labelledby=tires] select[name=tireSetId]', 'the set picker after Mount')
+    if ((await tiForm.locator('input[name=date]').inputValue()) !== (await localDate())) throw new Error('date not today')
+    if (Number(await tiForm.locator('input[name=odometer]').inputValue()) !== carKm) throw new Error('odometer not the car one')
+    if ((await tiForm.locator('select option').count()) !== 2) throw new Error('both sets not offered')
+    await tiForm.locator('select').selectOption({ label: `Michelin Pilot Sport 4, 205/55 R16, ${TI.summer}` })
+    // At 390px before typing: resizing back with the odometer focused made Chrome rescroll when the button took focus, so the click missed.
+    await at390('the mount form', 'tires-mount-form')
+    await tiForm.locator('input[name=date]').fill(await histDay(-20))
+    await tiForm.locator('input[name=odometer]').fill(String(carKm - 2000))
+    const res = page.waitForResponse(isMountPost)
+    await tiSave.click()
+    if ((await res).status() !== 200) throw new Error('mount failed')
+    await focusIs('section[aria-labelledby=tires] button.mount', 'Swap after Mount')
+    const cur = plain(await tiSec.locator('.current-tires').textContent())
+    if (!cur.includes('Michelin Pilot Sport 4') || !cur.includes(TI.km(2000))) throw new Error(`current "${cur}"`)
+    await tiSec.getByRole('button', { name: TI.swap, exact: true }).waitFor()
+  })
+  await step('tires-swap', async () => {
+    // Errors on their fields: an odometer below the mount's start, then a date before it; then the swap 5 days ago at 501 below the car's odometer.
+    await tiSec.getByRole('button', { name: TI.swap, exact: true }).click()
+    if ((await tiForm.locator('select option').count()) !== 1) throw new Error('the mounted set is offered')
+    await tiForm.locator('input[name=date]').fill(await histDay(-5))
+    const odo = tiForm.locator('input[name=odometer]')
+    await odo.fill(String(carKm - 3000))
+    await tiSave.click()
+    const alert = tiForm.locator('[role=alert]')
+    await alert.waitFor()
+    if (plain(await alert.textContent()) !== TI.before(carKm - 2000)) throw new Error(`odometer error "${await alert.textContent()}"`)
+    if ((await odo.getAttribute('aria-invalid')) !== 'true' || (await odo.getAttribute('aria-describedby')) !== (await alert.getAttribute('id'))) throw new Error('odometer error not on the odometer')
+    await odo.fill(String(carKm - 501))
+    const date = tiForm.locator('input[name=date]')
+    await date.fill(await histDay(-30))
+    await tiSave.click()
+    await alert.filter({ hasText: TI.overlap.slice(0, 20) }).waitFor()
+    if (plain(await alert.textContent()) !== TI.overlap || (await date.getAttribute('aria-invalid')) !== 'true') throw new Error(`date error "${await alert.textContent()}"`)
+    forgetCk(400, '/tires/mount')
+    await date.fill(await histDay(-5))
+    await tiSave.click()
+    await tiSec.locator('.current-tires', { hasText: 'Nokian Hakka R5' }).waitFor()
+    if (!plain(await tiSec.locator('.current-tires').textContent()).includes(TI.km(501))) throw new Error('Nokian km')
+    // The old set is in storage on /tires with its km; the new one is on Dash car.
+    await goTires()
+    const mich = await setText('Michelin Pilot Sport 4')
+    if (!mich.includes(TI.storage) || !mich.includes(TI.km(1499))) throw new Error(`Michelin "${mich}"`)
+    const nok = await setText('Nokian Hakka R5')
+    if (!nok.includes(TI.on('Dash car', await fmtDay(await histDay(-5)))) || !nok.includes(TI.km(501))) throw new Error(`Nokian "${nok}"`)
+    // The set's mount history: the car, from and to, the km.
+    await setRow('Michelin Pilot Sport 4').locator('details > summary').click()
+    const hist = setRow('Michelin Pilot Sport 4').locator('.mounts > li')
+    await hist.waitFor()
+    const h = plain(await hist.textContent())
+    if (!h.includes('Dash car') || !h.includes(TI.km(1499))) throw new Error(`history "${h}"`)
+    await at390('the tires page with mounts', 'tires-list')
+  })
+  await step('tires-miles', async () => {
+    // Miles follow the setting: a set's km driven, and the swap's odometer message with the mount's start in miles.
+    // Nokian went on at 50,999 km, shown as 31,689 mi, which converts back to 50,998: typed as shown, the mount's own km must go back (toKm's keepKm).
+    const mi = (km) => Math.round(km / 1.609344)
+    const startKm = carKm - 501
+    await unitIs('Mi')
+    await goTires()
+    const mich = await setText('Michelin Pilot Sport 4')
+    if (!mich.includes(TI.km(mi(1499), UM.mi))) throw new Error(`Michelin in miles "${mich}"`)
+    await page.goto(`${BASE}${ckCarPath()}`)
+    await tiSec.getByRole('button', { name: TI.swap, exact: true }).click()
+    const odo = tiForm.locator('input[name=odometer]')
+    await odo.fill(String(mi(startKm) - 1))
+    await tiSave.click()
+    const alert = tiForm.locator('[role=alert]')
+    await alert.waitFor()
+    if (plain(await alert.textContent()) !== TI.before(mi(startKm), UM.mi)) throw new Error(`odometer error in miles "${await alert.textContent()}"`)
+    forgetCk(400, '/tires/mount')
+    // Exactly the shown start: the request carries the mount's km. Answered with a 500, so Nokian stays on for the next steps.
+    await page.route('**/tires/mount', (r) => r.fulfill({ status: 500, contentType: 'application/json', body: '{}' }), { times: 1 })
+    const req = page.waitForRequest((r) => r.url().endsWith(`/vehicles/${dashCarId}/tires/mount`) && r.method() === 'POST')
+    await odo.fill(String(mi(startKm)))
+    await tiSave.click()
+    const sent = (await req).postDataJSON().odometerKm
+    if (sent !== startKm) throw new Error(`sent ${sent} km, want ${startKm}`)
+    await alert.filter({ hasText: HS.generic }).waitFor()
+    forget500()
+    await unitIs('Km')
+  })
+  await step('tires-unmount', async () => {
+    await page.goto(`${BASE}${ckCarPath()}`)
+    await tiSec.getByRole('button', { name: TI.unmount, exact: true }).click()
+    await focusIs('section[aria-labelledby=tires] input[name=date]', 'the date after Unmount')
+    if (await tiForm.locator('select').count()) throw new Error('a set picker on Unmount')
+    const res = page.waitForResponse(isMountPost)
+    await tiSave.click()
+    if ((await res).request().postDataJSON().odometerKm !== carKm) throw new Error('unmount odometer')
+    await tiSec.getByText(TI.noneOnCar, { exact: true }).waitFor()
+    await tiSec.locator('details > summary').click()
+    if ((await tiSec.locator('.mounts > li').count()) !== 2) throw new Error('not two past mounts')
+    await at390('the car page tires', 'tires-car')
+  })
+  await step('tires-archived', async () => {
+    // An archived car: Unmount only, no Mount or Swap, and no Delete on past mounts; Unmount still works, so a set is never stuck.
+    const sets = await apiCall('GET', '/tire-sets')
+    const idOf = (brand) => sets.find((x) => x.brand === brand).id
+    const id = (await apiCall('POST', '/vehicles', { nickname: 'Tire archive', initialOdometerKm: 1000, readingDate: await localDate() })).id
+    const day = await localDate()
+    await apiCall('POST', `/vehicles/${id}/tires/mount`, { tireSetId: idOf('Michelin'), mountedAt: day, odometerKm: 1000 })
+    await apiCall('POST', `/vehicles/${id}/tires/mount`, { tireSetId: idOf('Nokian'), mountedAt: day, odometerKm: 1000 })
+    await apiCall('POST', `/vehicles/${id}/archive`)
+    await page.goto(`${BASE}/cars/${id}`)
+    await tiSec.locator('.current-tires', { hasText: 'Nokian Hakka R5' }).waitFor()
+    if (await tiSec.locator('button.mount').count()) throw new Error('Mount or Swap on an archived car')
+    if ((await tiSec.locator('.mounts > li').count()) !== 1 || (await tiSec.locator('.mounts button').count())) throw new Error('past mounts missing, or Delete on them')
+    await tiSec.getByRole('button', { name: TI.unmount, exact: true }).click()
+    await tiSave.click()
+    await tiSec.getByText(TI.noneOnCar, { exact: true }).waitFor()
+    if (await tiSec.locator('button').count()) throw new Error('a button on an archived car with no set')
+  })
+  await step('tires-delete-mount', async () => {
+    await page.goto(`${BASE}${ckCarPath()}`)
+    await tiSec.locator('details > summary').click()
+    const del = await named(tiSec.locator('.mounts > li').first().locator('button.link'), TI.delMount('Nokian Hakka R5', await fmtDay(await histDay(-5))))
+    await del.click()
+    await page.keyboard.press('Escape')
+    await focusIs('section[aria-labelledby=tires] .mounts button.link', 'Delete after Escape')
+    await del.click()
+    await tiSec.locator('.mounts button.danger').click()
+    await page.waitForFunction(() => document.querySelectorAll('section[aria-labelledby=tires] .mounts > li').length === 1, null, { timeout: 5000 })
+    await goTires()
+    if (!(await setText('Nokian Hakka R5')).includes(TI.km(0))) throw new Error('Nokian km after deleting its mount')
+  })
+  await step('tires-delete', async () => {
+    const row = setRow('Michelin Pilot Sport 4')
+    await (await named(row.locator('.actions button.link').nth(1), TI.del('Michelin Pilot Sport 4'))).click()
+    if (plain(await row.locator('.inline-form p').textContent()) !== TI.confirmSet) throw new Error('confirm text')
+    await row.locator('button.danger').click()
+    await row.waitFor({ state: 'detached' })
+    await focusIs('.tire-sets button.edit', 'the next Edit after Delete')
+    await setRow('Nokian Hakka R5').locator('.actions button.link').nth(1).click()
+    await page.locator('.tire-sets button.danger').click()
+    await page.getByText(TI.empty, { exact: true }).waitFor()
+    await focusIs('main button.add', 'New set after the last Delete')
   })
   await step('switch-language', async () => {
     const before = await page.getAttribute('html', 'dir')

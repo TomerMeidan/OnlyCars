@@ -305,3 +305,10 @@ details > summary { padding-block: 0.625rem; cursor: pointer; }
 /* To-dos on a car (MVP5-C): the title, the user's line breaks kept in the description */
 .issues .name { font-weight: 600; }
 .issues .notes { white-space: pre-line; }
+
+/* Tires (MVP5-D): a set's facts wrap as one line of label: value pairs; storage notes keep the user's line breaks */
+.facts { display: flex; flex-wrap: wrap; gap: 0 1rem; }
+.tire-sets .notes { white-space: pre-line; }
+.current-tires { display: grid; gap: 0.25rem; }
+/* MVP5-D criterion 10: the tire forms are one column on a phone */
+@media (max-width: 30rem) { .inline-form.tire-form > label { flex-basis: 100%; } }

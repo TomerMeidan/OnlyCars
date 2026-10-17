@@ -11,8 +11,9 @@ import { ChecklistsSection } from './ChecklistsSection'
 import { IssuesSection } from './IssuesSection'
 import { ServiceHistory } from './ServiceHistory'
 import { TasksSection, type TaskUndo } from './TasksSection'
+import { TiresSection } from './TiresSection'
 
-// Car detail page: maintenance tasks, to-dos, checklists, the service history, then the odometer history.
+// Car detail page: maintenance tasks, to-dos, checklists, tires, the service history, then the odometer history.
 export default function CarPage() {
   const { t } = useTranslation()
   const d = useDistance()
@@ -86,6 +87,7 @@ export default function CarPage() {
       <TasksSection car={car} undo={undo} setUndo={setUndo} onOdometerChanged={load} />
       <IssuesSection car={car} version={issuesVersion} />
       <ChecklistsSection car={car} onChanged={load} onIssuesChanged={() => setIssuesVersion((v) => v + 1)} />
+      <TiresSection car={car} />
       <ServiceHistory car={car} onChanged={() => { setUndo(null); load() }} />
 
       <section className="card" aria-labelledby="odometer-history" ref={historyRef}>

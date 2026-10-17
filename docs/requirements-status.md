@@ -1,21 +1,22 @@
 # OnlyCars: Requirements Status
 
-**Audit date:** 2026-10-16 (nineteenth audit, short sign-off of LOW-3, the Low backlog L27 to L65; backend committed in `5326e14`, frontend and fixes not committed yet)
-**Overall:** MVP steps 1 to 4 are complete apart from the car photo and attachments (both blocked on R2). Step 5: checklists are done apart from photos on runs (R2), including flagged items becoming per-car to-dos. Tires, reports and notifications are not started. LOW-3 (the Low backlog L27 to L65) is signed off. Next: tires (MVP5-D). No deployment tickets until the owner asks.
+**Audit date:** 2026-10-17 (twentieth audit, short sign-off of MVP5-D, tire sets, mounts and km per set; backend committed in `5940442`, frontend not committed yet)
+**Overall:** MVP steps 1 to 4 are complete apart from the car photo and attachments (both blocked on R2). Step 5: checklists are done apart from photos on runs (R2); tires are done apart from pressure, tread depth and rotations (MVP5-E, next). Reports and notifications are not started. No deployment tickets until the owner asks.
 
 | Status | Count |
 |---|---|
-| Done | 30 |
+| Done | 34 |
 | API only | 0 |
 | Partial | 6 |
-| Missing | 15 |
+| Missing | 11 |
 | Deferred | 6 |
 | **Total** | **57** |
 
-How this was checked (nineteenth audit, short sign-off of LOW-3 per decisions.md "Faster pipeline (owner)"; I re-ran no test suites and no browser scripts):
-- Reported by other agents, not re-run by me: `dotnet test` 440 of 440; client build clean; lint 0 errors and 0 warnings; smoke 78 of 78 (the engineer's own run); code review with no High and every row L27 to L65 addressed; 2 Mediums and 1 Low fixed in the fix round; the Hebrew reviewer reworded `concurrency.conflict`.
-- **No browser QA.** The owner stopped the ui-tester (decisions.md, "No ui-tester jobs (owner)"). LOW-3 is the second ticket shipped without a QA pass.
-- I checked in code: the service record concurrency token (`src/OnlyCars.Infrastructure/Persistence/Configurations/ServiceRecordConfiguration.cs:16`) and its empty migration, the RTL run value (`client/src/pages/ChecklistsSection.tsx:469-476`), the `date.tooEarly` field mapping (`client/src/pages/RunPage.tsx:15`, `client/src/pages/ServiceHistory.tsx:13`), and the new car form's local date (`client/src/pages/CarFormPage.tsx:45`).
+How this was checked (twentieth audit, short sign-off of MVP5-D per decisions.md "Faster pipeline (owner)"; I re-ran no test suites and no browser scripts):
+- Reported by other agents, not re-run by me: `dotnet test` 468 of 468 (a plain run before the commit); client build clean; lint 0 errors and 0 warnings; smoke with `SMOKE_ALL=1` 88 of 88 in each of the 4 setups, twice; code review with no High; 2 Mediums and 3 Lows fixed in the fix round; the Hebrew reviewer changed 5 strings.
+- The reviewer's `--no-build` count of 422 was a stale build; a plain `dotnet test` before the commit gave 468 of 468.
+- **No browser QA.** The ui-tester is still stopped by the owner (decisions.md, "No ui-tester jobs (owner)"). MVP5-D is the third ticket shipped without a QA pass.
+- I checked in code: the archived and concurrency rules (`src/OnlyCars.Application/Tires/TireService.cs:72,109`), the no-odometer-reading `shortcut:` (`TireService.cs:11`), km per set with 0 for an odometer below the mount (`TireService.cs:233,246`), the `/tires` route and header link (`client/src/App.tsx:43,59`), `dir="auto"` and `bdi` on brand, size and DOT code (`client/src/pages/TiresPage.tsx:120-137`, `client/src/pages/TiresSection.tsx:30-43`), the error-to-field map (`TiresSection.tsx:12-18`), Escape on every tire form, Retry on a failed load (`TiresPage.tsx:187`), and the smoke steps `tires-empty`, `tires-create`, `tires-edit`, `tires-delete`, `tires-mount`, `tires-swap`, `tires-unmount`, `tires-delete-mount`, `tires-miles` and `tires-archived`.
 - The notes from earlier audits are in git history.
 
 ## 1. Vehicles
@@ -69,11 +70,11 @@ How this was checked (nineteenth audit, short sign-off of LOW-3 per decisions.md
 
 | Requirement | Status | Evidence | What's missing |
 |---|---|---|---|
-| Tire sets: brand, model, size, season, purchase year, DOT code | **Missing** | none | Everything; next ticket MVP5-D |
-| Which set is mounted on which car, with mount and unmount dates | **Missing** | none | Everything; MVP5-D |
-| Km driven per set (auto-calculated) | **Missing** | none | Everything; MVP5-D |
-| Tire pressure log, tread depth log, rotation tracking | **Missing** | none | Everything; MVP5-E |
-| Storage notes for the off-season set | **Missing** | none | Everything; MVP5-D (the set's Notes) |
+| Tire sets: brand, model, size, season, purchase year, DOT code | **Done** | MVP5-D (backend `5940442`, contract `docs/contracts/MVP5-D.md`; frontend not committed). `TireSet` with every Part 2 field, `/api/tire-sets` CRUD with coded validation and a 50-set cap (`TireService.cs`, `TireTests.cs`). UI: `/tires` from the header (`App.tsx:43,59`), New set, Edit and Delete with a confirm (`TiresPage.tsx`); Latin values in `dir="auto"`. Smoke `tires-empty`, `tires-create`, `tires-edit`, `tires-delete`. Smoke 88 of 88 in 4 setups (reported). **No browser QA** (ui-tester stopped). | Purchase is a full date, not a year (decided). Lows L74, L76, L77. |
+| Which set is mounted on which car, with mount and unmount dates | **Done** | MVP5-D (backend `5940442`, contract `docs/contracts/MVP5-D.md`; frontend not committed). `TireMount` with one open mount per car and per set (filtered unique indexes, migration `AddTires`); mount, swap in one step, unmount (allowed on archived cars), delete a mount; 409 `tireMount.setMounted`, `concurrency.conflict` on a race (`TireService.cs:72,109`). UI: the Tires section on `/cars/:id` (`TiresSection.tsx`), "On <car> since <date>" or "In storage" on `/tires`, mount history per set. Smoke `tires-mount`, `tires-swap`, `tires-unmount`, `tires-delete-mount`, `tires-archived`. Smoke 88 of 88 in 4 setups (reported). **No browser QA** (ui-tester stopped). | Mounts add no odometer reading (decided shortcut). Lows L73, L75, L78. |
+| Km driven per set (auto-calculated) | **Done** | MVP5-D (backend `5940442`, contract `docs/contracts/MVP5-D.md`; frontend not committed). Computed on read: closed mounts plus `max(0, current - mount)` for the open one (`TireService.cs:233,246`), tested. UI: km driven on `/tires` and on the car's mount rows in the user's unit (`TiresPage.tsx:136`, `TiresSection.tsx:43`); smoke `tires-miles` checks miles and the exact km sent back. Smoke 88 of 88 in 4 setups (reported). **No browser QA** (ui-tester stopped). | Nothing for this bullet. |
+| Tire pressure log, tread depth log, rotation tracking | **Missing** | none | Everything; next ticket MVP5-E |
+| Storage notes for the off-season set | **Done** | MVP5-D (backend `5940442`, contract `docs/contracts/MVP5-D.md`; frontend not committed). `TireSet.Notes` (up to 1,000) as a labelled storage-notes textarea on the set form, shown on the row (`TiresPage.tsx:137,264`). Smoke 88 of 88 in 4 setups (reported). **No browser QA** (ui-tester stopped). | Nothing for this bullet. |
 
 ## 7. Custom Inspection Checklists
 
@@ -147,6 +148,7 @@ How this was checked (nineteenth audit, short sign-off of LOW-3 per decisions.md
 - Done (MVP2-C): `ServiceRecord` and `ServiceRecordTask`, with the index on ServiceRecord(VehicleId, Date DESC). There are three recorded deviations: `ServiceRecordTask.PreviousLastDone*` (the Undo snapshot), `OdometerReading.ServiceRecordId`, and a nullable `TotalCost`. Deleting a task keeps its records and their readings (`MaintenanceSchemaTests.cs`, on SQL Server).
 - MVP3-A added no schema: records with their own date and odometer use the MVP2-C tables, and `serviceRecord.notLatest` is retired.
 - Done (MVP3-B): `ServiceItem` with all spec fields plus `SortOrder` and `CreatedAt`, cascading from `ServiceRecord` (`ServiceRecordConfiguration.cs:50`).
+- Done (MVP5-D): `TireSet` and `TireMount` with the Part 2 fields, one open mount per vehicle and per set (filtered unique indexes), an index on `(TireSetId, MountedAt)`, cascade from `TireSet` (`TireConfiguration.cs`, migration `20261016083205_AddTires`). `TireMeasurement` and `TireRotation` are MVP5-E.
 - Done (MVP5-C): `Issue` with the Part 2 fields, a filtered unique index on `SourceRunItemId`, and the source cleared (not cascaded) when a run is deleted (`20261016031303_AddIssues.cs`).
 - Not started: `Attachment` (blocked on R2) and the rest of Part 2.
 - Not started: `VehicleShare` (optional).
@@ -162,15 +164,15 @@ How this was checked (nineteenth audit, short sign-off of LOW-3 per decisions.md
 | Deploy gate | **SEC-1 signed off.** Nothing else blocks a first deploy except the owner's Azure account. The owner said not to deploy yet (decisions.md, 2026-10-15, "When to deploy"), so no deployment tickets are queued. |
 | 3. Service history with costs | **Complete apart from attachments (blocked on R2). MVP3-A, MVP3-B, MVP3-C and MVP3-D are signed off.** Working end to end in EN and HE: the service history on `/cars/:id`, recording a past service (date, odometer, shop or DIY, cost, notes, several tasks, parts and labour) with the date-order rules, editing everything on a record (shop, cost, notes, items, date, odometer and tasks, with the car's odometer and the tasks' last done following), deleting any record, and a `/history` page that filters and searches all cars. LOW-1 (the first Low batch) is signed off too. |
 | 4. Dashboard with due/overdue status | **Complete. MVP4-A and LOW-2 are signed off; "Start a checklist" came with MVP5-B.** The dashboard on `/`: overdue and due-soon counts, this month's spend linking to `/history`, and per-car cards with the next 3 tasks, one-tap Mark done with Undo, quick odometer entry and Start a checklist, in EN and HE. |
-| 5. Checklists, tires, reports, notifications | **Started. Checklists are done apart from photos on runs (R2): MVP5-A (templates and items), MVP5-B (schedules on cars, runs with flags, run history, Start a checklist) and MVP5-C (a flagged item becomes a per-car to-do; shipped without browser QA) are signed off. LOW-3 (the Low backlog) is signed off.** Next: tires (MVP5-D sets and mounts, MVP5-E pressure, tread and rotations), then reports and notifications. |
+| 5. Checklists, tires, reports, notifications | **Started. Checklists are done apart from photos on runs (R2): MVP5-A, MVP5-B and MVP5-C are signed off. Tires: MVP5-D (sets, mounts, swap, km per set, storage notes) is signed off. LOW-3 is signed off. MVP5-C, LOW-3 and MVP5-D shipped without browser QA.** Next: MVP5-E (pressure, tread depth, rotations), then LOW-4, then reports and notifications. |
 
 ## Ticket queue
 
 | Order | Ticket | Who | State |
 |---|---|---|---|
-| 1 | MVP5-D: tire sets, mounts and km per set (spec 6 bullets 1, 2, 3, 5) | BE, then FE | **Next** (written below) |
-| 2 | MVP5-E: tire pressure, tread depth and rotations (spec 6 bullet 4) | BE, then FE | After MVP5-D |
-| 3 | LOW-4: the Low backlog (L66 to L72) | BE, then FE | After MVP5-E |
+| 1 | MVP5-E: tire pressure, tread depth and rotations (spec 6 bullet 4) | BE, then FE | **Next** (written below) |
+| 2 | LOW-4: the Low backlog (L66 to L79) | BE, then FE | After MVP5-E |
+| 3 | Reports (spec 8) | BE, then FE | After LOW-4 |
 
 ## Signed-off tickets
 
@@ -262,9 +264,15 @@ How this was checked (nineteenth audit, short sign-off of LOW-3 per decisions.md
   - Accepted without code (decisions.md, "LOW-3 sign-off"): the contract's 413 example has a stale title; `client/.oxlintrc.json` lists `useAuth` and `useDistance` in `allowExportNames` for two pre-existing warnings instead of moving them; a no-op service record edit bumps `UpdatedAt` (L70).
   - The new Lows are L66 to L72.
 
+- **MVP5-D (backend commit `5940442`; the frontend and fixes are not committed yet): signed off 2026-10-17, without browser QA.** Short sign-off under "Faster pipeline (owner)"; I re-ran no suites.
+  - Reported evidence: `dotnet test` 468 of 468 (plain run before the commit); build clean; lint 0 errors and 0 warnings; smoke `SMOKE_ALL=1` 88 of 88 in all 4 setups, twice; code review with no High; the Hebrew reviewer changed `onCarSince`, `confirmDeleteTireSet`, `bought`, `confirmDeleteMount` and `errors.tireMount.odometerBeforeMount`.
+  - Fix round: 2 Mediums fixed with the new smoke steps `tires-miles` (the miles path and the exact km sent back) and `tires-archived`. 3 Lows fixed: `tireMount.notFound` reloads the section and closes the form; the desktop Mount real click is restored; the flaky `history-page` step (a StrictMode double request).
+  - AC1 to AC5 [BE] are signed off from tests and the code checks above; AC6 to AC11 [FE] from code, review and smoke. **Not verified in a browser:** the layout at 390px, 44px targets, focus and the Hebrew/RTL reading order.
+  - Decided (decisions.md, "MVP5-D sign-off" and "Hebrew form of address"). The new Lows are L73 to L79.
+
 ## Low issues backlog
 
-Every Low finding from QA and review lands here (decisions.md, "Faster pipeline (owner)"). They are fixed together in a batch ticket LOW-n about every 3 tickets. LOW-1 closed L1 to L12, LOW-2 closed L13 to L26, LOW-3 closed L27 to L65 (those rows are in git history). Open:
+Every Low finding from QA and review lands here (decisions.md, "Faster pipeline (owner)"). They are fixed together in a batch ticket LOW-n about every 3 tickets. LOW-1 closed L1 to L12, LOW-2 closed L13 to L26, LOW-3 closed L27 to L65 (those rows are in git history). Open (LOW-4 takes them all):
 
 | # | From | Issue | Area |
 |---|---|---|---|
@@ -274,69 +282,78 @@ Every Low finding from QA and review lands here (decisions.md, "Faster pipeline 
 | L69 | LOW-3 review | Concurrency is tested only on the EF InMemory provider, not on real SQL Server. Add one SQL Server test, or accept. | Tests |
 | L70 | LOW-3 review | A service record edit that changes nothing still bumps `UpdatedAt`, so a void at the same moment gets a 409 (the user retries). Skip the save when nothing changed, or accept. | BE |
 | L71 | LOW-3 review | The L59 shortcut: after Save on the run page returns with `navigate(-1)`, if the car page then fails to load, the "Run saved" note may be stale. | FE, run page |
+| L73 | MVP5-D review | A 409 `tireMount.setMounted` when the user picked the last free set hides the error text behind the "all your sets are on cars" box (`client/src/pages/TiresSection.tsx` ~115-127). Show the error even when no set is left to pick. | FE, car page |
+| L74 | MVP5-D review | After Edit Save on `/tires` the row shows the old values until the list reloads (`client/src/pages/TiresPage.tsx:50,113`). Replace the row in place from the PUT response. | FE, /tires |
+| L75 | MVP5-D review | `concurrency.conflict`, `tireSet.limitReached` and `tireMount.limitReached` are never driven in the browser. Add mocked smoke steps. | Smoke |
+| L76 | MVP5-D review | `const noItems: never[] = []` is duplicated in `TiresPage.tsx:22` and `TiresSection.tsx:20`. Share one. | FE |
+| L77 | MVP5-D review | `client/src/index.css:314` `@media (max-width: 30rem)` is desktop-first, unlike the mobile-first rules near it. Rewrite it as `min-width`. | FE, CSS |
+| L78 | MVP5-D review | The stale-Unmount close path (`tireMount.notFound` closes the form and focuses Mount) has no smoke step. | Smoke |
+| L79 | MVP5-D Hebrew review | The Hebrew strings mix singular (לך, שלך) and plural (לכם, שלכם) forms of address. Use the singular everywhere, or an impersonal form (decisions.md, "Hebrew form of address"); the Hebrew reviewer does the pass. | FE, he strings |
 | L72 | LOW-3 housekeeping | The local dev DB has leftover test users (`low3-*`, `lowcheck-*`, `ui-*`, and `sec-*` from SEC-1). Housekeeping only; clear them once delete-account exists, or with a one-off script. | Dev DB |
 
 ## Next ticket
 
-### MVP5-D: Tire sets, which set is on which car, and km per set
+### MVP5-E: Tire pressure, tread depth and rotations
 
-**Goal:** As a user, I can keep a list of my tire sets (brand, model, size, season, purchase date, DOT code, storage notes), record which set is on which car and when it was swapped, and see how many km each set has driven.
+**Goal:** As a user, I can log a tire check (pressure and tread depth per wheel) and a rotation for the set on my car, and see the latest check and the history on the car page.
 
-**Spec:** section 6 bullets 1, 2, 3 and 5; Part 2 `TireSet` and `TireMount`; the constraint "at most one open TireMount per vehicle and per tire set". Bullet 4 (pressure, tread and rotation: `TireMeasurement`, `TireRotation`) is MVP5-E.
+**Spec:** section 6 bullet 4; Part 2 `TireMeasurement` (TireMountId, Position FL/FR/RL/RR/Spare, PressureBar, TreadDepthMm, MeasuredAt) and `TireRotation` (TireMountId, Date, OdometerKm, Notes); "TireMount 1-N TireMeasurement".
 
-**Binding decisions:** decisions.md "Tires scope and split, MVP5-D (delegated)" (every rule below), "No ui-tester jobs (owner)", "Faster pipeline (owner)", "LOW-3 choices" (`date.tooEarly`, the 64 KB limit, enums by name, `concurrency.conflict`), the km/miles rules (stored in km, shown in the user's unit), the MVP1-C focus and Escape rules.
+**Binding decisions:** decisions.md "Tire measurements and rotations, MVP5-E (delegated)" (every rule below), "Tires scope and split, MVP5-D", "No ui-tester jobs (owner)", "Faster pipeline (owner)", "LOW-3 choices" (`date.tooEarly`, the 64 KB limit, enums by name, `concurrency.conflict`), the km/miles rules, the MVP1-C focus and Escape rules.
 
 **Scope**
 
-*Backend (backend-engineer, runs first; publishes `docs/contracts/MVP5-D.md`):*
-- **Entities** (Part 2 names; Id, CreatedAt, UpdatedAt on both; migration `AddTires`):
-  - `TireSet`: `UserId`, `Brand` (required, 1 to 50, trimmed), `Model` (optional, up to 50), `Size` (optional, up to 30, free text such as "205/55 R16"), `Season` (enum `Summer`, `Winter`, `AllSeason`, required), `PurchaseDate` (optional date, not in the future, not before 1900-01-01), `DotCode` (optional, up to 20, free text, no format check), `Notes` (optional, up to 1,000; storage notes go here). Up to 50 sets per user (`tireSet.limitReached`).
-  - `TireMount`: `TireSetId`, `VehicleId`, `MountedAt` (date), `MountOdometerKm`, `UnmountedAt` (nullable), `UnmountOdometerKm` (nullable). Filtered unique indexes: one open mount per vehicle and one per tire set (`UnmountedAt IS NULL`); an index on `(TireSetId, MountedAt)`. Cascade delete from `TireSet`. Up to 500 mounts per set.
-- **Endpoints** (all scoped to the caller; another user's ids are 404):
-  - `GET /api/tire-sets`: the caller's sets, sorted by brand, then model, then creation time, each with `kmDriven` (in km), the open mount if any (`vehicleId`, the car's nickname, `mountedAt`, `mountOdometerKm`) and `mountCount`.
-  - `POST /api/tire-sets`, `PUT /api/tire-sets/{id}`, `DELETE /api/tire-sets/{id}` (hard delete with its mounts; the UI confirms).
-  - `GET /api/tire-sets/{id}/mounts`: the set's mounts, newest first, each with the car's nickname and the km for that mount.
-  - `GET /api/vehicles/{id}/tires`: the car's open mount (with its set) or null, plus the car's past mounts, newest first, capped at the newest 100 (`shortcut:` comment).
-  - `POST /api/vehicles/{id}/tires/mount` with `tireSetId`, `mountedAt`, `odometerKm`: mounts the set. If the car already has a set on, that mount is closed in the same transaction at the same date and odometer (a swap). Rejects: the set is on another car, 409 `tireMount.setMounted`; an archived car, 400 `tireMount.vehicleArchived`; a date before the open mount's `MountedAt` or before the latest `UnmountedAt` of the set or of the car, 400 `tireMount.overlap`; an odometer outside 0 to 10,000,000, 400 `odometer.invalidValue`; an odometer below the start of the mount being closed, 400 `tireMount.odometerBeforeMount`; a future date with the existing future-date code, and before 1900 `date.tooEarly`. Two simultaneous mounts hit the unique index and the loser gets 409 `concurrency.conflict`, not 500.
-  - `POST /api/vehicles/{id}/tires/unmount` with `unmountedAt`, `odometerKm`: closes the open mount (allowed on an archived car too, so a set is never stuck). Same date and odometer rules; no open mount is 404 `tireMount.notFound`.
-  - `DELETE /api/tire-mounts/{id}`: deletes one mount record, to fix a mistake (deleting the open mount leaves the car with no set).
-- **Km per set:** the sum over its mounts of `UnmountOdometerKm - MountOdometerKm`, plus for the open mount `max(0, vehicle.CurrentOdometerKm - MountOdometerKm)`. Computed on read, not stored.
-- Mount and unmount **do not** add odometer readings (decided; a `shortcut:` comment in the service).
-- **Tests:** CRUD and validation of every field; caller scoping on every endpoint; mount, swap, unmount, overlap, set on another car, archived car (mount rejected, unmount allowed); km with closed and open mounts, including a car odometer below the mount odometer (0, not negative); delete set cascades; delete mount; the 50-set and 500-mount caps; a numeric `season` is 400.
+*Backend (backend-engineer, runs first; publishes `docs/contracts/MVP5-E.md`):*
+- **Entities** (Part 2 names; Id, CreatedAt on both; migration `AddTireMeasurements`; both cascade from `TireMount`, so deleting a mount or a set deletes them):
+  - `TireMeasurement`: `TireMountId`, `Position` (enum `FL`, `FR`, `RL`, `RR`, `Spare`, by name), `PressureBar` (nullable, 0.5 to 6.0, decimal(4,2)), `TreadDepthMm` (nullable, 0 to 20, decimal(4,1)), `MeasuredAt` (date). Unique `(TireMountId, MeasuredAt, Position)`: one check per mount per date.
+  - `TireRotation`: `TireMountId`, `Date`, `OdometerKm`, `Notes` (optional, up to 500). Index `(TireMountId, Date)`.
+- **Endpoints** (all scoped to the caller; another user's ids are 404 `tireMount.notFound`):
+  - `GET /api/tire-mounts/{id}/checks`: the mount's checks, newest date first, capped at the newest 50 dates (`shortcut:` comment); each check is `{ measuredAt, items: [{ position, pressureBar, treadDepthMm }] }` with items in the order FL, FR, RL, RR, Spare.
+  - `POST /api/tire-mounts/{id}/checks` with `measuredAt` and `items` (1 to 5, each position at most once, each with at least one of the two values). Rejects: a closed mount or an archived car, 400 `tireMount.notOpen` / `tireMount.vehicleArchived`; a date before the mount's `MountedAt`, 400 `tireMount.dateBeforeMount`; a future date with the existing future-date code and before 1900 `date.tooEarly`; a value out of range, 400 `tireMeasurement.invalidPressure` or `tireMeasurement.invalidTread` (with the item index); an empty item, 400 `tireMeasurement.empty`; a repeated position, 400 `tireMeasurement.duplicatePosition`; a check already on that date, 409 `tireMeasurement.duplicate` (a simultaneous duplicate is also 409, never 500); over 200 check dates per mount, 400 `tireMeasurement.limitReached`.
+  - `DELETE /api/tire-mounts/{id}/checks/{measuredAt}`: deletes every row of that date (allowed on closed mounts and archived cars); none is 404 `tireMeasurement.notFound`.
+  - `GET /api/tire-mounts/{id}/rotations`: the mount's rotations, newest first (by date, then odometer), with `id`, `date`, `odometerKm` and `notes`.
+  - `POST /api/tire-mounts/{id}/rotations` with `date`, `odometerKm`, `notes`. Same open-mount, archived, date and pre-1900 rules; `odometer.invalidValue` outside 0 to 10,000,000; below the mount's `MountOdometerKm`, 400 `tireMount.odometerBeforeMount`; over 100 per mount, 400 `tireRotation.limitReached`. Adds **no** odometer reading (same `shortcut:` as mounts).
+  - `DELETE /api/tire-rotations/{id}`: allowed on closed mounts and archived cars.
+  - `GET /api/vehicles/{id}/tires` gains, on the open mount, `lastCheck` (the newest check or null) and `lastRotation` (`date`, `odometerKm`, `kmSince` = `max(0, current odometer - rotation odometer)`, or null).
+- **Tests:** scoping on every endpoint; each validation code; the unique date per mount (including a simultaneous duplicate on SQL Server or a mapped `DbUpdateException`); cascade on mount delete and set delete; closed mount and archived car rejected on create, allowed on delete; `kmSince` never negative; a numeric `position` is 400.
 
-*Frontend (frontend-engineer, builds against `docs/contracts/MVP5-D.md`):*
-- **`/tires` page,** linked from the header next to Checklists: the list of sets (brand and model, size, season, purchase date, DOT code, "On <car> since <date>" or "In storage", km driven in the user's unit); New set and Edit forms with every field (season as a select, notes as a textarea labelled as storage notes); Delete with a confirm that says the set's history goes too. Each set can expand to its mount history (car, from, to, km).
-- **Car page `/cars/:id`:** a Tires section with the set on the car (or "No tire set on this car"); Mount, or Swap when a set is on (pick from the user's sets not on another car; the date defaults to today's local date, the odometer to the car's current odometer in the user's unit); Unmount (date and odometer); the car's past mounts with Delete (confirm). On an archived car only Unmount is shown.
-- Every error code above in `en` and `he`, shown on its field (`date.*` and `tireMount.overlap` on the date, odometer codes on the odometer).
+*Frontend (frontend-engineer, builds against `docs/contracts/MVP5-E.md`):*
+- **Car page Tires section, under the set on the car:**
+  - "Last check": the date and, per position, pressure in bar and tread in mm, or "No checks yet". "Last rotation: <date>, <n km> ago" in the user's distance unit, or "Not rotated yet".
+  - **Log a check:** a form with the date (defaults to today's local date) and five rows (Front left, Front right, Rear left, Rear right, Spare), each with Pressure (bar) and Tread (mm) number inputs (`inputMode="decimal"`; pressure to 2 decimals, tread to 1); empty rows are not sent; at least one value is required.
+  - **Log a rotation:** date (today), odometer (the car's current odometer in the user's unit, sent back in exact km as in `tires-miles`), notes.
+  - **History:** "Checks" and "Rotations" lists, newest first, each row with Delete (confirm).
+  - All of this only while a set is on the car; on an archived car the lists show but Log buttons and Delete are hidden (as for runs).
+- The Delete confirm for a mount (car page) and a set (`/tires`) now says its checks and rotations go too.
+- Every error code above in `en` and `he`, shown on its field (`date.*`, `tireMount.dateBeforeMount` and `tireMeasurement.duplicate` on the date; odometer codes on the odometer; value codes on that row's input); `tireMount.notOpen` and `tireMount.notFound` reload the section and close the form, as in MVP5-D.
 
 **Acceptance criteria**
-1. [BE] Every endpoint above is scoped to the caller; another user's set, mount or car is 404 (tests).
-2. [BE] A set with only Brand and Season saves; Brand empty or over 50, Model over 50, Size over 30, DOT code over 20, Notes over 1,000, a future or pre-1900 purchase date, and a 51st set each return 400 with their own code.
-3. [BE] Mounting on a car that has a set on closes the old mount at the same date and odometer; a set on another car is 409 `tireMount.setMounted`; a date before the open mount's start is 400 `tireMount.overlap`; two simultaneous mounts give one success and one 409, never 500.
-4. [BE] `kmDriven` is right for a set with two closed mounts and one open mount; an open mount whose odometer is above the car's current odometer adds 0.
-5. [BE] Deleting a set deletes its mounts; deleting the open mount leaves the car with no set; mount and unmount add no odometer reading.
-6. [FE] On `/tires` a user can add, edit and delete a set, and sees each set's car or "In storage" and its km driven, in km or miles as set in Settings.
-7. [FE] On `/cars/:id` a user can mount a set, swap it for another (the old one then shows "In storage" on `/tires` with its km), unmount it, and delete a past mount; every server error shows on its field.
-8. [FE] Empty states: no sets ("No tire sets yet" with New set), no set on the car, and no sets to pick (with a link to `/tires`). Loading states on both pages; a failed load shows the error with Retry.
-9. [FE] Hebrew and RTL: every new string in `en` and `he`; a Latin brand, size or DOT code reads correctly in Hebrew (`dir="auto"` or `bdi`); the Hebrew reviewer approves the strings.
-10. [FE] At 390px both screens fit with no sideways scroll, forms in one column, every control at least 44 by 44px; focus moves into a form when it opens and back to the button that opened it on Cancel or Escape.
-11. [BE+FE] No regressions: build clean, lint 0 errors and 0 warnings, `dotnet test` passes, smoke passes in all 4 setups with new steps for `/tires` (create, edit, delete) and the car page (mount, swap, unmount).
+1. [BE] Every new endpoint is scoped to the caller; another user's mount, check or rotation is 404 (tests).
+2. [BE] A check with only FL pressure saves; out-of-range pressure or tread, an empty item, a repeated position, a date before the mount or in the future or before 1900, and a closed mount each return 400 with their own code; a second check on the same date is 409, also when two arrive at once.
+3. [BE] A rotation saves with its date, odometer and notes and adds no odometer reading; an odometer below the mount's start is 400 `tireMount.odometerBeforeMount`; `lastRotation.kmSince` is 0, not negative, when the car's odometer is lower.
+4. [BE] Deleting a mount or a set deletes its checks and rotations; delete of a check or rotation works on a closed mount and an archived car.
+5. [FE] On `/cars/:id` with a set on, a user can log a check with values for some wheels, see it as "Last check" and at the top of Checks, log a rotation and see "Last rotation ... ago" in km or miles as set in Settings, and delete each (confirm).
+6. [FE] Values show with their unit (bar, mm) and the decimal the user typed (pressure 2.4 stays 2.4 and 2.25 shows 2.25; tread 6.5 stays 6.5), in the user's locale format; a miles user's rotation odometer round-trips to the exact km.
+7. [FE] Empty states: "No checks yet", "Not rotated yet"; no set on the car shows no check or rotation controls. Loading states; a failed load shows the error with Retry; every server error shows on its field.
+8. [FE] Hebrew and RTL: every new string in `en` and `he` (position names translated, not FL/FR); numbers and units read in the right order (`bdi`); the Hebrew reviewer approves, using the singular form of address (decisions.md, "Hebrew form of address").
+9. [FE] At 390px the check form is one wheel per row with both inputs visible, no sideways scroll, every control at least 44 by 44px; focus moves into a form when it opens and back to its opener on Cancel or Escape; after Save focus goes to the new row or "Last check".
+10. [BE+FE] No regressions: build clean, lint 0 errors and 0 warnings, a plain `dotnet test` (not `--no-build`) passes with the count reported, smoke passes in all 4 setups with new steps `tires-check`, `tires-check-delete`, `tires-rotation` (miles included) and `tires-check-duplicate` (the 409 on the date field).
 
-**Out of scope:** pressure, tread depth and rotations (MVP5-E); tire positions; adding an odometer reading from a mount; tires on the dashboard; tire reminders; photos (R2); a tire catalogue; data export and delete-account (later; they must include tires); the L66 to L72 Lows (LOW-4).
+**Out of scope:** psi or other pressure units (bar only for now); a low-tread or wrong-pressure warning; tracking which physical tire moves where on a rotation; editing a check or rotation (delete and log again); checks on a set that is in storage; tire reminders and anything on the dashboard; photos (R2); data export and delete-account (they must include these later); the L66 to L79 Lows (LOW-4).
 
-**Open questions:** none blocking; the rules above are recorded as delegated decisions. For the owner's review: Mount and Swap don't add an odometer reading, and a set's purchase is a full date (Part 2 `PurchaseDate`) although the spec's bullet says "purchase year".
+**Open questions** (none blocking; recorded as delegated decisions, for the owner's review): should miles users see pressure in psi; should tread below a limit (for example 1.6 mm, the legal minimum in Israel and the EU) be flagged; should a rotation create or reset a "Tire rotation" maintenance task.
 
 ---
 
 ### Later
-- **Tire pressure, tread depth and rotations (spec 6 bullet 4), MVP5-E;** then LOW-4 (L66 to L72); then reports (spec 8), then notifications (spec 9).
+- **LOW-4 (L66 to L79);** then reports (spec 8), then notifications (spec 9).
 - **Car photo upload, attachments and run photos:** blocked until the owner creates the Cloudflare R2 credentials.
 - **Predicted due date** from `AvgKmPerDay` (spec 2.3, optional).
 - **Data export and delete-account** (spec 12): must include checklists, runs, to-dos and tires.
 
 ## Changed since last audit
-- **Signed off:** LOW-3 (backend `5326e14`; frontend and fixes not committed yet), closing L27 to L65, **without browser QA** (the ui-tester is still stopped by the owner).
-- **Status changes:** none; LOW-3 is polish and hardening. Counts unchanged: Done 30, Partial 6, Missing 15, Deferred 6.
-- **Backlog:** L27 to L65 closed and removed from the table (git history has them); L66 to L72 added.
-- **New decisions** (`docs/decisions.md`, 2026-10-16): "LOW-3 sign-off", "Tires scope and split, MVP5-D".
-- **Next ticket:** MVP5-D (tire sets, mounts and km per set), written in full. The LOW-3 ticket text is in git history (`6a5fb19`).
+- **Signed off:** MVP5-D (backend `5940442`; frontend and fixes not committed yet), **without browser QA** (the ui-tester is still stopped by the owner).
+- **Status changes:** spec 6 bullets 1, 2, 3 and 5 (tire sets, mounts, km per set, storage notes) Missing to Done. Counts: Done 34 (+4), Partial 6, Missing 11 (-4), Deferred 6.
+- **Backlog:** L73 to L79 added.
+- **New decisions** (`docs/decisions.md`, 2026-10-17): "MVP5-D sign-off", "Hebrew form of address", "Tire measurements and rotations, MVP5-E".
+- **Next ticket:** MVP5-E (tire pressure, tread depth and rotations), written in full. The MVP5-D ticket text is in git history (`3f32518`).

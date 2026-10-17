@@ -217,6 +217,50 @@ export interface Issue {
   source: { runItemId: string; runId: string; runAt: string; checklistName: string; label: string } | null
 }
 
+// Tire sets (MVP5-D): owned by the user, on one car at a time. Every km value is in km; kmDriven is computed on read.
+export type Season = 'Summer' | 'Winter' | 'AllSeason'
+export const seasons: Season[] = ['Summer', 'Winter', 'AllSeason']
+
+export interface TireSet {
+  id: string
+  brand: string
+  model: string | null
+  size: string | null
+  season: Season
+  purchaseDate: string | null
+  dotCode: string | null
+  notes: string | null // the storage notes
+  createdAt: string
+  kmDriven: number
+  openMount: { vehicleId: string; vehicleNickname: string; mountedAt: string; mountOdometerKm: number } | null // null = in storage
+  mountCount: number
+}
+
+// One stretch of a set on a car; unmounted* are null while it is on.
+export interface TireMount {
+  id: string
+  tireSetId: string
+  brand: string
+  model: string | null
+  size: string | null
+  season: Season
+  vehicleId: string
+  vehicleNickname: string
+  mountedAt: string
+  mountOdometerKm: number
+  unmountedAt: string | null
+  unmountOdometerKm: number | null
+  kmDriven: number
+}
+
+// The car's set now, and its earlier mounts newest first (the newest 100).
+export interface VehicleTires {
+  current: TireMount | null
+  past: TireMount[]
+}
+
+export const tireName = (x: Pick<TireSet, 'brand' | 'model'>) => [x.brand, x.model].filter(Boolean).join(' ')
+
 // The server's automatic flag, live on the run form: Not OK, or a number outside the range (the bounds themselves are inside).
 export const autoFlag = (i: Pick<ChecklistRunItem, 'boolValue' | 'numberValue' | 'minValue' | 'maxValue'>): 'notOk' | 'below' | 'above' | null =>
   i.boolValue === false ? 'notOk'
@@ -235,6 +279,7 @@ export interface Problem {
   currentKm?: number
   index?: number // the 0-based item row of a serviceItem.* or checklistItem.* error
   minDate?: string // the earliest accepted date of a date.tooEarly error
+  mountOdometerKm?: number // tireMount.odometerBeforeMount: the odometer when the set went on
 }
 
 export class ApiError extends Error {

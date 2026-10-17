@@ -11,6 +11,7 @@ import ChecklistsPage from './pages/ChecklistsPage'
 import HistoryPage from './pages/HistoryPage'
 import RunPage from './pages/RunPage'
 import SettingsPage from './pages/SettingsPage'
+import TiresPage from './pages/TiresPage'
 
 export default function App() {
   const { t, i18n } = useTranslation()
@@ -39,6 +40,7 @@ export default function App() {
           </button>
           {user && <Link to="/history">{t('serviceHistory')}</Link>}
           {user && <Link to="/checklists">{t('checklists')}</Link>}
+          {user && <Link to="/tires">{t('tires')}</Link>}
           {user && <Link to="/settings">{t('settings')}</Link>}
           {user && <button className="link" onClick={logout}>{t('logout')}</button>}
         </nav>
@@ -54,6 +56,7 @@ export default function App() {
             <Route path="/cars/:id/checklists/:checklistId/run" element={<RunPage />} />
             <Route path="/history" element={<HistoryPage />} />
             <Route path="/checklists" element={<ChecklistsPage />} />
+            <Route path="/tires" element={<TiresPage />} />
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
