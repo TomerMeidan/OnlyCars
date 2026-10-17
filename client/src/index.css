@@ -344,3 +344,16 @@ details > summary { padding-block: 0.625rem; cursor: pointer; }
 .category-chart > div { display: grid; grid-template-columns: 1fr auto; gap: 0.125rem 0.75rem; }
 .category-chart bdi { font-variant-numeric: tabular-nums; }
 .category-chart span { grid-column: 1 / -1; block-size: 0.75rem; background: var(--muted); border-radius: 3px; }
+/* RPT-3 export: the two buttons wrap under the filters at 390px; the CSV error sits next to its Retry */
+.filters > .export { flex-basis: 100%; flex-wrap: wrap; gap: 0.5rem 0.75rem; }
+.print-only { display: none; }
+/* Print (Save as PDF): black on white in either theme, no navigation, filters or buttons; links print as text */
+@media print {
+  :root, :root[data-theme] { color-scheme: light; --bg: #fff; --surface: #fff; --ink: #000; }
+  header, .filters, main button { display: none; }
+  .print-only { display: block; }
+  main { max-width: none; padding: 0; }
+  .card { padding: 0; break-inside: avoid; }
+  .report a { text-decoration: none; min-height: 0; }
+  .month-chart span, .category-chart span { print-color-adjust: exact; }
+}

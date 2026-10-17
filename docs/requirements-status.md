@@ -1,21 +1,21 @@
 # OnlyCars: Requirements Status
 
-**Audit date:** 2026-10-17 (twenty-fourth audit, short sign-off of RPT-2, the report charts; nothing committed yet)
-**Overall:** MVP steps 1 to 4 are complete apart from the car photo and attachments (both blocked on R2). Step 5: checklists are done apart from photos on runs (R2); tires are done; the cost reports and their charts (RPT-1 and RPT-2, spec 8 bullets 1 to 3) are done. Next is RPT-3 (export to CSV and PDF). Notifications are not started. No deployment tickets until the owner asks.
+**Audit date:** 2026-10-17 (twenty-fifth audit, short sign-off of RPT-3, report export; nothing committed yet)
+**Overall:** MVP steps 1 to 4 are complete apart from the car photo and attachments (both blocked on R2). Step 5: checklists are done apart from photos on runs (R2); tires are done; reports are done (RPT-1 to RPT-3, all of spec 8). Next is LOW-5 (the Low backlog), then notifications, which are not started. No deployment tickets until the owner asks.
 
 | Status | Count |
 |---|---|
-| Done | 38 |
+| Done | 39 |
 | API only | 0 |
 | Partial | 6 |
-| Missing | 7 |
+| Missing | 6 |
 | Deferred | 6 |
 | **Total** | **57** |
 
-How this was checked (twenty-fourth audit, short sign-off of RPT-2 per decisions.md "Faster pipeline (owner)"; I re-ran no test suites and no browser scripts):
-- Reported by other agents, not re-run by me: client build clean; lint 0 warnings; smoke with `SMOKE_ALL=1` 104 steps per setup, all pass after the fix round (new step `reports-charts`). Code review: no High; one Medium (month labels at 390px had 0.67px to spare) and one Low (no test of the 2px minimum bar) fixed. Frontend only: no API change, no new dependency, no new strings, so no Hebrew review.
-- **No browser QA.** The ui-tester is still stopped by the owner (decisions.md, "No ui-tester jobs (owner)"). RPT-2 is the seventh ticket shipped without a QA pass.
-- I checked in code (uncommitted diff): `client/src/pages/ReportsPage.tsx:88-123`: short month names from `Intl` (`toLocaleDateString` with `month: 'short'`) in the UI language; bars scaled to the highest month and the highest category, a non-zero value at least 2px, 0 at 0 (`:91-93`); the month chart only when some month is above 0; always 12 slots (one per `byMonth` row); category bars in the API's order with "No task" for `null`; both charts `aria-hidden="true"` above the unchanged `dl.figures` rows and their `/history` links. `client/src/index.css:333-346`: a 12-column grid and `inline-size` bars, so both follow the page direction in Hebrew; a fixed 8rem chart height; bars in `--muted` (about 6.0:1 light and 6.3:1 dark against the card, computed by hand by the engineer, not by a tool); below 40em every other month label is hidden. `client/package.json` unchanged.
+How this was checked (twenty-fifth audit, short sign-off of RPT-3 per decisions.md "Faster pipeline (owner)"; I re-ran no test suites and no browser scripts):
+- Reported by other agents, not re-run by me: client build clean; lint 0 warnings; smoke with `SMOKE_ALL=1` 108 steps per setup, all pass after the fix round; `dotnet test` 517 of 517 (code reviewer). Code review and security review: no High or Medium; their Lows fixed (see Signed-off tickets). Hebrew review: the print line changed to "שנת …". Frontend only: no API change, no new dependency.
+- **No browser QA.** The ui-tester is still stopped by the owner (decisions.md, "No ui-tester jobs (owner)"). RPT-3 is the eighth ticket shipped without a QA pass. Nobody has opened the CSV in real Excel or used the real print dialog.
+- I checked in code (uncommitted diff): `client/src/csv.ts:1-11`: BOM, CRLF, quoting of `"`, `,`, `;`, CR and LF with doubled quotes, and the `'` formula guard (also after leading whitespace or control characters, and full-width forms). `client/src/pages/ReportsPage.tsx:78-109`: paging with `take=100` until `totalCount` (an empty page ends the loop), the year and car from the shown report, oldest first, header row in the UI language with the unit in the odometer header, odometer through `useDistance`, cost with 2 decimals or empty, the user's currency code, the DIY label for an empty shop, nothing downloaded after a failure or after leaving the page, a filename-safe car name. `:204-239`: the print-only line (year, car or All cars, date); both buttons `aria-disabled` while loading or after an error, hidden in the empty state; busy label; error with Retry. `client/src/index.css:347-359`: `@media print` forces the light palette on white (`color-scheme: light`, so the `--muted` bars and text use the light values), hides the header, filters and buttons, keeps cards whole, prints links as plain text, `print-color-adjust: exact` on the bars. `client/package.json` unchanged.
 - The notes from earlier audits are in git history.
 
 ## 1. Vehicles
@@ -93,7 +93,7 @@ How this was checked (twenty-fourth audit, short sign-off of RPT-2 per decisions
 | Cost per car, per category, per month and per year | **Done** (no browser QA) | RPT-1 (not committed; contract `docs/contracts/RPT-1.md`): `GET /api/reports/costs?year=&vehicleId=` (`ReportsController.cs:16`, `ReportService.cs:16-75`), no migration; `CostReportTests.cs`. UI: `/reports` from the header (`App.tsx:43,60`) with Year and Car in the URL, the year summary with the unpriced count, By month (12 rows), By category (equal split, "No task"), By car, each total with records linking to `/history` (`ReportsPage.tsx:78-118`). Smoke `SMOKE_ALL=1` 103 per setup (reported). | Not checked in a browser (ui-tester stopped). Lows L92 to L98. |
 | Cost per km and total cost of ownership | **Done** (no browser QA) | RPT-1: per car, all time: service total, km driven (from the first reading, clamped at 0), cost per km (4 decimals, null at 0 km) and TCO = purchase price + service total (null without a price) (`ReportService.cs:62-70`, tested). UI: the All time section with cost per km or per mile in the user's unit, "Not enough odometer readings", and "Add a purchase price" linking to the car's edit page (`ReportsPage.tsx:119-137`). | Fuel and tire purchases are not included (decided). The Hebrew term for TCO is open for the owner. Not checked in a browser. |
 | Charts: spending over time, cost by category | **Done** (no browser QA) | RPT-2 (not committed; frontend only): on `/reports`, 12 vertical month bars over the By month rows and a horizontal bar per category over the By category rows, scaled to the highest value, `aria-hidden` over the unchanged rows, following the page direction in Hebrew (`ReportsPage.tsx:88-123`, `index.css:333-346`); no chart library. Smoke `reports-charts` (bar heights and lengths, RTL, the 2px minimum, label overlap and edges at 390px including a 20px root font), `SMOKE_ALL=1` 104 per setup (reported). | Not checked in a browser (ui-tester stopped). Lows L99 to L102. |
-| Export to CSV and PDF | **Missing** | none | Everything |
+| Export to CSV and PDF | **Done** (no browser QA) | RPT-3 (not committed; frontend only): Export CSV on `/reports` downloads `onlycars-{year}[-{car}].csv`, one row per service record of the chosen year and car, built in the browser from the paged `/api/service-records` (`ReportsPage.tsx:78-109`, `client/src/csv.ts`); "Print or save as PDF" calls `window.print()` with a `@media print` stylesheet and a print-only line with year, car and date (`index.css:347-359`). Smoke `SMOKE_ALL=1` 108 per setup with CSV content, Hebrew header, print-media screenshots and `page.pdf()` steps (reported). | Not checked in a browser (ui-tester stopped); the CSV not opened in real Excel, the real print dialog not used (L105, owner). Lows L103, L104, L106. |
 
 ## 9. Reminders and Notifications
 
@@ -164,15 +164,14 @@ How this was checked (twenty-fourth audit, short sign-off of RPT-2 per decisions
 | Deploy gate | **SEC-1 signed off.** Nothing else blocks a first deploy except the owner's Azure account. The owner said not to deploy yet (decisions.md, 2026-10-15, "When to deploy"), so no deployment tickets are queued. |
 | 3. Service history with costs | **Complete apart from attachments (blocked on R2). MVP3-A, MVP3-B, MVP3-C and MVP3-D are signed off.** Working end to end in EN and HE: the service history on `/cars/:id`, recording a past service (date, odometer, shop or DIY, cost, notes, several tasks, parts and labour) with the date-order rules, editing everything on a record (shop, cost, notes, items, date, odometer and tasks, with the car's odometer and the tasks' last done following), deleting any record, and a `/history` page that filters and searches all cars. LOW-1 (the first Low batch) is signed off too. |
 | 4. Dashboard with due/overdue status | **Complete. MVP4-A and LOW-2 are signed off; "Start a checklist" came with MVP5-B.** The dashboard on `/`: overdue and due-soon counts, this month's spend linking to `/history`, and per-car cards with the next 3 tasks, one-tap Mark done with Undo, quick odometer entry and Start a checklist, in EN and HE. |
-| 5. Checklists, tires, reports, notifications | **Started. Checklists are done apart from photos on runs (R2): MVP5-A, MVP5-B and MVP5-C are signed off. Tires are done: MVP5-D (sets, mounts, swap, km per set, storage notes) and MVP5-E (pressure, tread depth, rotations) are signed off. LOW-3 and LOW-4 are signed off. Reports: RPT-1 (cost per car, category, month and year, cost per km, TCO) and RPT-2 (charts) are signed off. MVP5-C, LOW-3, MVP5-D, MVP5-E, LOW-4, RPT-1 and RPT-2 shipped without browser QA.** Next: RPT-3 (export to CSV and PDF), LOW-5, then notifications. |
+| 5. Checklists, tires, reports, notifications | **Started. Checklists are done apart from photos on runs (R2): MVP5-A, MVP5-B and MVP5-C are signed off. Tires are done: MVP5-D (sets, mounts, swap, km per set, storage notes) and MVP5-E (pressure, tread depth, rotations) are signed off. LOW-3 and LOW-4 are signed off. Reports are done: RPT-1 (cost per car, category, month and year, cost per km, TCO), RPT-2 (charts) and RPT-3 (CSV and PDF export) are signed off. MVP5-C, LOW-3, MVP5-D, MVP5-E, LOW-4, RPT-1, RPT-2 and RPT-3 shipped without browser QA.** Remaining: notifications (spec 9) and photos on runs (R2). Next: LOW-5, then notifications. |
 
 ## Ticket queue
 
 | Order | Ticket | Who | State |
 |---|---|---|---|
-| 1 | RPT-3: export to CSV and PDF (spec 8 bullet 4) | FE only (existing APIs; a print stylesheet for PDF) | **Next** (written below) |
-| 2 | LOW-5: the Lows from L87 on | BE, then FE | After RPT-3 (three tickets after LOW-4) |
-| 3 | Notifications (spec 9) | BE, then FE | After LOW-5 |
+| 1 | LOW-5: L87 to L106 (not L72, L98, L105) | BE, then FE | **Next** (written below) |
+| 2 | Notifications (spec 9) | BE, then FE | After LOW-5; needs the owner's email provider choice (decisions.md, "Ticket after RPT-3") |
 
 ## Signed-off tickets
 
@@ -296,9 +295,15 @@ How this was checked (twenty-fourth audit, short sign-off of RPT-2 per decisions
   - AC1 and AC2 (bar heights and lengths) signed off from code (`ReportsPage.tsx:91-93`) and the reported smoke step; AC3 from code (both charts are drawn from the shown report; the month chart hides when every month is 0; the category section stays hidden with no categories); AC4 (RTL) from the CSS (grid columns and `inline-size` follow `dir`) and smoke; AC5 from the engineer's hand-computed contrast of `--muted` (about 6.0:1 light, 6.3:1 dark), not tool-checked; AC6 from the fix and smoke (the charts hold nothing focusable); AC7 from code; AC8 from the reported runs and the unchanged `package.json`. **Not verified in a browser:** how the bars look in both themes, the 390px layout in he and en, and that the RTL order reads right.
   - Accepted (decisions.md, "RPT-2 sign-off"): below 40em only every other month name shows under the bars. The new Lows are L99 to L102.
 
+- **RPT-3 (not committed yet): signed off 2026-10-17, without browser QA.** Short sign-off under "Faster pipeline (owner)"; I re-ran no suites. Frontend only: no contract, no migration, no new dependency.
+  - Reported evidence: build clean; lint 0 warnings; smoke `SMOKE_ALL=1` 108 steps per setup, all pass after the fix round; `dotnet test` 517 of 517 (reviewer); code and security reviews with no High or Medium; the Hebrew review changed the print line to "שנת …".
+  - Lows fixed in the round: security: `;` is quoted; the formula guard runs after leading whitespace and control characters and covers the full-width = + - @; the file name strips bidi, zero-width and C1 characters and trims - and . at the ends. Code review: no download after leaving the page mid-export; the busy state is keyed to the filters; the car name comes from `report.cars`.
+  - AC1 to AC4 signed off from `csv.ts`, `ReportsPage.tsx:78-109` and the reported smoke steps; AC5 from `index.css:347-359`, the print line and the reported print-media screenshots and `page.pdf()`; AC6 from code (`aria-disabled` rather than `disabled`, accepted); AC7 from smoke (390px, 44px) and code (real buttons after the filters); AC8 from the reported runs and the unchanged `package.json`. **Not verified:** the CSV in real Excel, the real print dialog and "Save as PDF", and the printed page in a real browser.
+  - Accepted (decisions.md, "RPT-3 sign-off"): the print stylesheet is global; `aria-disabled` buttons; `;` quoting and the wider formula guard. The new Lows are L103 to L106.
+
 ## Low issues backlog
 
-Every Low finding from QA and review lands here (decisions.md, "Faster pipeline (owner)"). They are fixed together in a batch ticket LOW-n about every 3 tickets. LOW-1 closed L1 to L12, LOW-2 closed L13 to L26, LOW-3 closed L27 to L65, LOW-4 closed L66 to L86 (L86 accepted; L72, the dev DB cleanup, waits on the owner); those rows are in git history. Open (for LOW-5: L87 to L102, and L72 with the owner):
+Every Low finding from QA and review lands here (decisions.md, "Faster pipeline (owner)"). They are fixed together in a batch ticket LOW-n about every 3 tickets. LOW-1 closed L1 to L12, LOW-2 closed L13 to L26, LOW-3 closed L27 to L65, LOW-4 closed L66 to L86 (L86 accepted; L72, the dev DB cleanup, waits on the owner); those rows are in git history. Open (for LOW-5: L87 to L106 except L98, a watch item, and L105; L72 and L105 are the owner's):
 
 | # | From | Issue | Area |
 |---|---|---|---|
@@ -318,54 +323,68 @@ Every Low finding from QA and review lands here (decisions.md, "Faster pipeline 
 | L100 | RPT-2 review | The comment at `ReportsPage.tsx:103` is broader than what it covers. Make it say what is decorative and why. | FE, reports |
 | L101 | RPT-2 review | Only a 20px root font was tested at 390px; a blocked web font (a wider fallback font) was reasoned about, not tested. Add a smoke variant, or accept it in writing. | Smoke |
 | L102 | RPT-2 review | No automated contrast check: the 6.0:1 and 6.3:1 for `--muted` on the card were computed by hand. Add a small contrast assertion from the computed colours to `reports-charts`. | Smoke |
+| L103 | RPT-3 | The print line's date is fixed at page load (a documented shortcut), so a page left open past midnight prints yesterday's date. Set it on `beforeprint`. | FE, reports |
+| L104 | RPT-3 review | Changing a filter while a CSV export runs re-enables the button for the new filters, so a second export can run at the same time. Allow one export at a time. | FE, reports |
+| L105 | RPT-3 | Nobody has opened the exported CSV in real Excel (Hebrew, the BOM, `;` locales) or used the real print dialog and "Save as PDF". No agent can; the owner checks once (CHECKLIST.md, "Waiting on the owner"). | Owner |
+| L106 | RPT-3 review | No smoke step for leaving `/reports` mid-export (no download must follow). | Smoke |
 | L72 | LOW-3 housekeeping | The local dev DB has leftover test users. `scripts/cleanup-test-users.sql` was written in LOW-4 but never run; the owner decides (CHECKLIST.md, "Waiting on the owner"). | Dev DB (owner) |
 
 ## Next ticket
 
-### RPT-3: Export reports to CSV and PDF (spec 8 bullet 4)
+### LOW-5: Low backlog batch (L87 to L106)
 
-**Goal:** As a user, on Reports I can download the service records behind the figures I'm looking at as a CSV file for a spreadsheet, and save or print the report itself as a PDF, in Hebrew or English.
+**Goal:** As a user, the task form, the Reports page and its export behave better in the corners (focus after a failed save, a clean year list, the right print date, one export at a time), and the pipeline's checks cover what the last five tickets added.
 
-**Spec:** section 8 bullet 4. This is the report export only. The account data export of spec 12 ("data export and delete-account") and spec 11 ("Full data import/export", optional) are separate tickets.
+**Spec:** no new requirement; fixes to sections 3, 8 and the test suite. The backlog rows L87 to L106 in this file are the source; each item below names its row.
 
-**Binding decisions:** decisions.md "Report export, RPT-3" (the CSV is built in the browser from the existing `/api/service-records`; the PDF comes from the browser's print dialog with a print stylesheet, with no PDF library and no server PDF; what the CSV holds), "Cost reports, RPT-1" and "RPT-1 sign-off" (what counts), "Charts, RPT-2", the settings rules (one currency, km or miles), "Hebrew form of address", "Faster pipeline (owner)", "No ui-tester jobs (owner)".
+**Binding decisions:** "Faster pipeline (owner)", "No ui-tester jobs (owner)", "RPT-1 sign-off", "RPT-2 sign-off", "RPT-3 sign-off", "Hebrew form of address".
 
 **Scope**
 
-*Backend:* none. The CSV uses `GET /api/service-records?from=&to=&vehicleId=&skip=&take=` (contract `docs/contracts/MVP3-C.md`: `items` of `ServiceRecordDto` with `vehicleId`, `date`, `odometerKm`, `shopName`, `totalCost`, `notes`, `tasks`, plus `totalCount`; `take` is at most 100; voided records are not returned, as in the report) and the car list the page already loads (`/vehicles?includeArchived=true`, for `Nickname`). If the CSV needs something `ServiceRecordDto` doesn't have, stop and report it rather than changing the API; the column can be dropped.
+*Backend (backend-engineer, runs first; no API change, no migration, no contract):*
+- L93: `ReportService.cs:70` rounds cost per km with `MidpointRounding.AwayFromZero`, as the rest of the codebase.
+- L92: tests for the All time cars order (active first, then nickname), the `byCategory` and `byVehicle` tie order, the `kmDriven` clamp at 0, and the `CreatedAt` tie-break of the first reading.
+- L89: the LocalDB concurrency test asserts the 409 `concurrency.conflict` code, or its name says it checks the EF exception and points to the test of the mapping.
+- L97: `scripts/cleanup-test-users.sql` matches the RPT test users (`rpt1-a-*`, `rpt1-b-*@example.com`, `ui-rpt-*`, `probe-rpt-*`, `ui-rptdbg-*`) and any RPT-2 or RPT-3 smoke prefixes, with tight patterns and its self-checks kept. Do not run it in delete mode (L72 is the owner's).
 
-*Frontend (frontend-engineer, `client/src/pages/ReportsPage.tsx`, `client/src/index.css`, `client/src/i18n.ts`):*
-- **Export CSV** button on `/reports`, in or under the filters card. It fetches every record of the chosen year (`from={year}-01-01`, `to={year}-12-31`) and car (or all cars), page by page with `take=100` until `totalCount` is reached, and downloads `onlycars-{year}.csv` (`onlycars-{year}-{nickname}.csv` with a car chosen; the nickname made filename-safe).
-- **CSV content:** one row per service record, oldest first, with a header row in the UI language: Date (`yyyy-MM-dd`), Car (`Nickname`), Odometer (in the user's unit, whole numbers, the unit in the header, for example "Odometer (mi)"), Shop (`ShopName`, or the DIY label when empty, as the history page shows it), Tasks (task names joined with "; "), Total cost (a plain number with a dot and 2 decimals; empty when `TotalCost` is null), Currency (the user's currency code), Notes. RFC 4180 quoting (a field with a comma, quote, CR or LF goes in double quotes, with quotes doubled), CRLF line ends, and a UTF-8 BOM so Excel opens Hebrew correctly. A text field that starts with `=`, `+`, `-`, `@`, tab or CR gets a leading `'` (spreadsheet formula injection). The CSV builder is a small pure function with a self-check (smoke step or assert).
-- **Export PDF** (label like "Print or save as PDF") calls `window.print()`. A `@media print` stylesheet: no header navigation, filters or buttons; cards without shadows or backgrounds, black text on white in either theme; a print-only line under the title with the chosen year, the car (or "All cars") and the date printed; the charts print (bars keep a solid fill, `print-color-adjust: exact`); cards avoid breaking across pages where possible; the `/history` links print as plain text. Hebrew prints right to left.
-- Both buttons are disabled while the report loads or after it failed, and hidden in the empty state (no service costs yet). While the CSV is being built the button shows a busy label and is disabled; a failed fetch shows an error next to it with Retry and downloads nothing.
-- New en and he strings for the two buttons, the busy label, the error, the CSV headers and the print line (the Hebrew reviewer approves; impersonal form of address).
+*Frontend (frontend-engineer, `client/src`, `client/ui-tests/smoke.mjs`):*
+- L87: after a failed task save on the car page, focus stays in the form (on the field the error is tied to, else the first field), so Escape still closes it.
+- L94: remove the duplicate `.report a` 44px rule (keep `index.css:226`).
+- L95: the year from the URL is normalised (`02025` shows and requests 2025, one option); a non-number stays invalid as now.
+- L99, L100: remove the dead `topCategory > 0` guard and the `Math.max(0, …)` seed in `ReportsPage.tsx`; make the chart comment say exactly what is decorative and why.
+- L103: the print line's date is set when printing starts (`beforeprint`), not at page load; remove the shortcut comment.
+- L104: one CSV export at a time: while one runs, the button stays busy for any filters, and a new export can start only after it ends.
+- Smoke: L88 (the "Run saved" note cleared when the car page fails to load after a run Save), L91 (`SV.editHint` holds the current Hebrew string, so its "not shown" assertion can fail), L96 (old figures keep their own `vehicleId` links while a new filter loads), L101 (`reports-charts` at 390px with web fonts blocked, so the fallback font is tested), L102 (a contrast assertion for `--muted` on the card from the computed colours, at least 4.5:1, both themes), L106 (leave `/reports` mid-export: no download follows).
+- L90: the engineer reads the 390px Hebrew smoke screenshots of the L79 and L84 strings and reports whether any wraps badly; a shorter string only if one does (the Hebrew reviewer approves it).
 
 **Acceptance criteria**
-1. [FE] With 3 records in the chosen year on two cars (one with a comma and a quote in its notes, one with no cost, one with notes starting with `=`), Export CSV downloads `onlycars-{year}.csv` that starts with a UTF-8 BOM and has the header row and 3 data rows oldest first, quoted and doubled correctly, the cost empty for the unpriced record, and `'` before the `=` notes.
-2. [FE] With a car chosen, the file has only that car's records and the car's name in the file name; with more than 100 records in the year, every record is in the file (paging works).
-3. [FE] A miles user gets the odometer in miles with "(mi)" in the header; costs are never converted and carry the user's currency code.
-4. [FE] In Hebrew the header row is in Hebrew and Hebrew text survives (read as UTF-8; the BOM is there).
-5. [FE] Export PDF opens the print dialog. In print media (Playwright `page.emulateMedia({ media: 'print' })` and `page.pdf()`) the header, filters and buttons are hidden, the print line shows year, car and date, the charts and all sections show black on white in both themes, and the Hebrew page prints right to left.
-6. [FE] States: both buttons disabled while loading and after a report error; hidden in the empty state; the CSV button busy while building; a failed records fetch shows an error with Retry and no download.
-7. [FE] At 390px in he and en the buttons fit with no sideways scroll and are at least 44px tall; they are real `button`s, in tab order after the filters, with visible focus.
-8. [FE] No regressions: build clean, lint 0 warnings, no new dependency in `client/package.json`, smoke `SMOKE_ALL=1` passes in all 4 setups with new steps for the CSV content (AC1 to AC3), a Hebrew CSV header, print-media screenshots in he and en (the engineer reads them and says so), and a `page.pdf()` that completes without error.
+1. [BE] Cost per km exactly halfway at the 5th decimal rounds away from zero (test).
+2. [BE] The L92 tests exist and pass; the L89 test's name or assertion matches what it checks.
+3. [BE] The cleanup script's patterns match every RPT test-user prefix and none of the owner's accounts (its self-checks still pass); it is not run in delete mode.
+4. [FE] After a failed task save (for example a 400 on the name), `document.activeElement` is inside the form and Escape closes it (smoke, he and en).
+5. [FE] `/reports?year=02025` shows one 2025 option and the 2025 figures (smoke).
+6. [FE] The print line shows the date at the moment printing starts (a smoke check that changes the clock, then dispatches `beforeprint`, or an equivalent).
+7. [FE] Starting an export and then changing a filter leaves the CSV button busy until the first export ends; exactly one download follows (smoke).
+8. [FE] The smoke steps for L88, L91, L96, L101, L102 and L106 exist and pass; L102 asserts at least 4.5:1 in light and dark.
+9. [FE] L94, L99 and L100 change no rendering: `reports-charts` and the other reports steps pass unchanged, including 44px links at 390px.
+10. [FE] L90 is reported (screenshots named; fine or fixed).
+11. [BE+FE] No regressions: `dotnet test` all pass, build clean, lint 0 warnings, no new dependency, smoke `SMOKE_ALL=1` passes in all 4 setups.
 
-**Out of scope:** a server-side PDF or any PDF library; a CSV of the report's summary tables (the PDF carries them); an Excel (.xlsx) file; exporting checklists, odometer readings, tires or to-dos; the account data export (spec 12) and import (spec 11); emailing a report; any backend change.
+**Out of scope:** L72 (running the cleanup, the owner's); L98 (a flaky dashboard step seen once; look into it only if it shows up again in this ticket's runs, and say so); L105 (Excel and the real print dialog, the owner's); any new feature; any API or schema change.
 
-**Open questions:** none blocking. The owner may revisit "Report export, RPT-3" (a records CSV rather than the summary tables; the PDF through the browser's print dialog).
+**Open questions:** none.
 
 ---
 
 ### Later
-- **After RPT-3:** LOW-5 (L87 to L102), then notifications (spec 9).
+- **After LOW-5:** notifications (spec 9): email when a task is due soon or overdue, non-mileage reminders (insurance, inspection, registration, licence), snooze and lead time (`NotificationRule`, `Notification` in Part 2). The ticket will ask the owner which email provider to use and for its credentials; the in-app parts (reminders, lead time, snooze) can start before them.
 - **Car photo upload, attachments and run photos:** blocked until the owner creates the Cloudflare R2 credentials.
 - **Predicted due date** from `AvgKmPerDay` (spec 2.3, optional).
 - **Data export and delete-account** (spec 12): must include checklists, runs, to-dos and tires.
 
 ## Changed since last audit
-- **Signed off:** RPT-2 (not committed yet), **without browser QA** (the ui-tester is still stopped by the owner).
-- **Status changes:** spec 8 "Charts: spending over time, cost by category" goes from Missing to Done (no browser QA). Counts: Done 38 (was 37), Partial 6, Missing 7 (was 8), Deferred 6.
-- **Backlog:** L99 to L102 added (RPT-2 review); L87 to L98 and L72 stay open.
-- **New decisions** (`docs/decisions.md`, 2026-10-17): "RPT-2 sign-off", "Report export, RPT-3".
-- **Next ticket:** RPT-3 (CSV and PDF export, spec 8 bullet 4), frontend only, written in full. The RPT-2 ticket text is in git history once this sign-off is committed.
+- **Signed off:** RPT-3 (not committed yet), **without browser QA** (the ui-tester is still stopped by the owner).
+- **Status changes:** spec 8 "Export to CSV and PDF" goes from Missing to Done (no browser QA). All of spec 8 is now Done. Counts: Done 39 (was 38), Partial 6, Missing 6 (was 7), Deferred 6.
+- **Backlog:** L103 to L106 added (RPT-3); L105 is the owner's (open the CSV in Excel, try the print dialog once).
+- **New decisions** (`docs/decisions.md`, 2026-10-17): "RPT-3 sign-off", "Ticket after RPT-3" (LOW-5 before notifications).
+- **Next ticket:** LOW-5 (L87 to L106), written in full. The RPT-3 ticket text is in git history once this sign-off is committed.

@@ -2,6 +2,15 @@
 // Usage (API + Vite must be running): node ui-tests/smoke.mjs
 import { chromium } from 'playwright'
 import { mkdirSync, readFileSync } from 'node:fs'
+import assert from 'node:assert/strict'
+import { toCsv } from '../src/csv.ts'
+
+// RPT-3: the CSV builder's RFC 4180 quoting, CRLF, BOM and formula guard (text only; numbers stay as they are).
+assert.equal(toCsv([['a,b', 'say "hi"', 'x\r\ny', 5, -5], ['=1', '+1', '-1', '@a', '\tt', '\rr', 'ok']]),
+  '﻿"a,b","say ""hi""","x\r\ny",5,-5\r\n\'=1,\'+1,\'-1,\'@a,\'\tt,"\'\rr",ok\r\n')
+// ; is quoted (semicolon-locale Excel); = after spaces or control characters, full-width forms, and a leading LF are guarded.
+assert.equal(toCsv([['a;b', ' =1', ' +1', '　-1', '\x01@a', '＝1', '＋1', '－1', '＠a', '\nx', 'a=1']]),
+  '﻿"a;b",\' =1,\' +1,\'　-1,\'\x01@a,\'＝1,\'＋1,\'－1,\'＠a,"\'\nx",a=1\r\n')
 
 const BASE = process.env.BASE_URL ?? 'http://localhost:5173'
 const OUT = process.env.OUT_DIR ?? 'ui-tests/out'
@@ -3785,6 +3794,8 @@ for (const s of setups) {
     await arrivedAt(RP.title)
     await page.getByText(RP.empty, { exact: true }).waitFor()
     await page.locator('main .report a[href="/"]', { hasText: RP.goCars }).waitFor()
+    // RPT-3 criterion 6: no export buttons in the empty state.
+    if (await page.locator('main .export button').count()) throw new Error('export buttons in the empty state')
     ly = await page.evaluate(() => new Date().getFullYear() - 1)
     if ((await page.inputValue(yearSel)) !== String(ly + 1)) throw new Error(`year ${await page.inputValue(yearSel)}`)
   })
@@ -3984,6 +3995,164 @@ for (const s of setups) {
     await page.waitForFunction(() => document.querySelectorAll('main .category-chart > div').length === 3, null, { timeout: 5000 })
     const tiny = await chartsAre({ months: m({ 2: 1, 4: 0.02 }), categories: `${a}${await rpMoney(150)}=1,${b}${await rpMoney(150)}=1,${RP.noTask}${await rpMoney(0.5)}=${(await rpCharts()).categories?.[2]?.w}` }, `${ly}, Corolla, tiny`)
     if (tiny.months[4].px !== 2 || tiny.categories[2].px !== 2) throw new Error(`tiny bars ${tiny.months[4].px}px and ${tiny.categories[2].px}px`)
+  })
+  // RPT-3: CSV export and print. A year of its own with 3 records on two cars, so the whole file is known.
+  const XP = he
+    ? { csv: 'ייצוא ל־CSV', busy: 'קובץ ה־CSV בהכנה…', pdf: 'הדפסה או שמירה כ־PDF', failed: 'ייצוא ה־CSV נכשל.', diy: 'טיפול עצמי', allCars: 'כל הרכבים',
+        header: (u) => `תאריך,רכב,קילומטראז׳ (${u === 'mi' ? 'מייל' : 'ק״מ'}),מוסך,משימות,עלות כוללת,מטבע,הערות`, line: (y, car, date) => `שנת ${y}, ${car}, הודפס ב־${date}` }
+    : { csv: 'Export CSV', busy: 'Preparing the CSV…', pdf: 'Print or save as PDF', failed: 'The CSV was not exported.', diy: 'DIY', allCars: 'All cars',
+        header: (u) => `Date,Car,Odometer (${u}),Shop,Tasks,Total cost,Currency,Notes`, line: (y, car, date) => `Year ${y}, ${car}, printed ${date}` }
+  const xBtns = page.locator('main .filters .export button')
+  const xState = () => xBtns.evaluateAll((bs) => bs.slice(0, 2).map((b) => `${b.textContent}:${b.getAttribute('aria-disabled')}`).join('|'))
+  const xStateIs = async (want, when) => {
+    await page.waitForFunction(([w]) => [...document.querySelectorAll('main .filters .export button')].slice(0, 2).map((b) => `${b.textContent}:${b.getAttribute('aria-disabled')}`).join('|') === w, [want], { timeout: 5000 })
+      .catch(async () => { throw new Error(`${when}: buttons ${await xState()}, want ${want}`) })
+  }
+  const xReady = () => xStateIs(`${XP.csv}:false|${XP.pdf}:false`, 'ready')
+  let downloads = 0
+  page.on('download', () => downloads++)
+  const exportCsv = async () => {
+    await xReady()
+    const [dl] = await Promise.all([page.waitForEvent('download', { timeout: 15000 }), xBtns.first().click()])
+    const buf = readFileSync(await dl.path())
+    if (buf[0] !== 0xef || buf[1] !== 0xbb || buf[2] !== 0xbf) throw new Error('no UTF-8 BOM')
+    const text = buf.toString('utf8').slice(1)
+    if (/[^\r]\n/.test(text) || !text.endsWith('\r\n')) throw new Error('lines do not end in CRLF')
+    return { name: dl.suggestedFilename(), lines: text.split('\r\n').slice(0, -1) }
+  }
+  const ey = ly - 2
+  let xA, xB, xM, xCur
+  const xRows = (u) => {
+    const odo = (km) => (u === 'mi' ? Math.round(km / 1.609344) : km)
+    return [
+      `${ey}-02-01,Export One,${odo(1500)},Garage,"Oil; Brakes",12.50,${xCur},"Oil, ""synthetic"""`,
+      `${ey}-03-01,Export Car/2,${odo(2000)},${XP.diy},,,${xCur},החלפת שמן`,
+      `${ey}-04-01,Export One,${odo(2500)},Shop,,100.00,${xCur},'=SUM(A1)`,
+    ]
+  }
+  const sameTasks = (l) => l.replace('Brakes; Oil', 'Oil; Brakes') // the API's task order isn't promised
+  const linesAre = (got, want, what) => { if (got.map(sameTasks).join('\n') !== want.join('\n')) throw new Error(`${what}:\n${got.join('\n')}\nwant\n${want.join('\n')}`) }
+  await step('reports-csv', async () => {
+    // Criteria 1 and 4: oldest first, quoting, no cost empty, ' before =, the header in the UI language, Hebrew kept.
+    xCur = (await histUser()).currency
+    xA = (await apiCall('POST', '/vehicles', { nickname: 'Export One', initialOdometerKm: 1000, readingDate: `${ey}-01-01` })).id
+    xB = (await apiCall('POST', '/vehicles', { nickname: 'Export Car/2', initialOdometerKm: 1000, readingDate: `${ey}-01-01` })).id
+    const task = async (name) => (await apiCall('POST', `/vehicles/${xA}/tasks`, { name, category: name, intervalKm: 10000, intervalDays: null, dueSoonPercent: 10, lastDoneOdometerKm: 1000, lastDoneDate: `${ey}-01-01` })).id
+    await apiCall('POST', `/vehicles/${xA}/service-records`, { date: `${ey}-02-01`, odometerKm: 1500, totalCost: 12.5, shopName: 'Garage', notes: 'Oil, "synthetic"', taskIds: [await task('Oil'), await task('Brakes')] })
+    await apiCall('POST', `/vehicles/${xB}/service-records`, { date: `${ey}-03-01`, odometerKm: 2000, notes: 'החלפת שמן' })
+    await apiCall('POST', `/vehicles/${xA}/service-records`, { date: `${ey}-04-01`, odometerKm: 2500, totalCost: 100, shopName: 'Shop', notes: '=SUM(A1)' })
+    await page.goto(`${BASE}/reports?year=${ey}`)
+    const all = await exportCsv()
+    if (all.name !== `onlycars-${ey}.csv`) throw new Error(`file name ${all.name}`)
+    linesAre(all.lines, [XP.header('km'), ...xRows('km')], 'all cars, km')
+    // Criterion 3: miles for the odometer only; costs and currency unchanged.
+    await unitIs('Mi')
+    await page.goto(`${BASE}/reports?year=${ey}`)
+    linesAre((await exportCsv()).lines, [XP.header('mi'), ...xRows('mi')], 'all cars, miles')
+    await unitIs('Km')
+    // Criterion 2: a chosen car has only its records and its name, made filename-safe.
+    await page.goto(`${BASE}/reports?year=${ey}&vehicleId=${xB}`)
+    const one = await exportCsv()
+    if (one.name !== `onlycars-${ey}-Export-Car-2.csv`) throw new Error(`car file name ${one.name}`)
+    linesAre(one.lines, [XP.header('km'), xRows('km')[1]], 'one car')
+  })
+  await step('reports-csv-paging', async () => {
+    // Criterion 2: 101 records is two pages, and every one is in the file, oldest first.
+    xM = (await apiCall('POST', '/vehicles', { nickname: 'Export Many', initialOdometerKm: 1000, readingDate: `${ey}-01-01` })).id
+    const day = (i) => new Date(Date.UTC(ey, 0, 2 + i)).toISOString().slice(0, 10)
+    for (let i = 0; i < 101; i++) await apiCall('POST', `/vehicles/${xM}/service-records`, { date: day(i), odometerKm: 1010 + i * 10, totalCost: 1 })
+    await page.goto(`${BASE}/reports?year=${ey}&vehicleId=${xM}`)
+    const skips = []
+    const onReq = (r) => r.url().includes('/api/service-records?') && skips.push(new URL(r.url()).searchParams.get('skip'))
+    page.on('request', onReq)
+    const many = await exportCsv()
+    page.off('request', onReq)
+    if (skips.join() !== '0,100') throw new Error(`pages fetched at skip ${skips}`)
+    if (many.name !== `onlycars-${ey}-Export-Many.csv` || many.lines.length !== 102) throw new Error(`${many.name}: ${many.lines.length} lines`)
+    if (many.lines[1] !== `${day(0)},Export Many,1010,${XP.diy},,1.00,${xCur},` || !many.lines[101].startsWith(`${day(100)},Export Many,2010,`)) throw new Error(`first ${many.lines[1]}, last ${many.lines[101]}`)
+  })
+  await step('reports-export-states', async () => {
+    // Criterion 6: busy while building; a failed page shows the error with Retry and downloads nothing; Retry downloads.
+    const recs = '**/api/service-records?**'
+    const slow = async (r) => { await page.waitForTimeout(700); await r.continue().catch(() => {}) }
+    await page.route(recs, slow)
+    await xReady()
+    const dl = page.waitForEvent('download', { timeout: 15000 })
+    await xBtns.first().click()
+    await xStateIs(`${XP.busy}:true|${XP.pdf}:false`, 'building the CSV')
+    await focusIs('main .filters .export button:first-child', 'the CSV button while busy')
+    await dl
+    await page.unroute(recs, slow)
+    await page.route(recs, (r) => (r.request().url().includes('skip=100') ? r.fulfill({ status: 500, contentType: 'application/json', body: '{}' }) : r.continue()))
+    const before = downloads
+    await xBtns.first().click()
+    const alert = page.locator('main .filters .export [role=alert]')
+    if (plain(await alert.textContent()) !== `${XP.failed} ${HS.generic}`) throw new Error(`CSV error "${await alert.textContent()}"`)
+    await page.waitForTimeout(300)
+    if (downloads !== before) throw new Error('a failed export downloaded a file')
+    await page.unroute(recs)
+    forget500()
+    const retried = page.waitForEvent('download', { timeout: 15000 })
+    await page.locator('main .filters .export [role=alert] + button', { hasText: HS.retry }).click()
+    if ((await (await retried).suggestedFilename()) !== `onlycars-${ey}-Export-Many.csv`) throw new Error('Retry file name')
+    await alert.waitFor({ state: 'detached' })
+    // Both buttons disabled while the report loads and after it failed.
+    const costs = '**/api/reports/costs?**'
+    const slowCosts = async (r) => { await page.waitForTimeout(700); await r.continue().catch(() => {}) }
+    await page.route(costs, slowCosts)
+    await page.selectOption(rpCarSel, '') // All cars; the chosen car has no other year
+    await xStateIs(`${XP.csv}:true|${XP.pdf}:true`, 'while the report loads')
+    await page.unroute(costs, slowCosts)
+    await page.route(costs, (r) => r.fulfill({ status: 500, contentType: 'application/json', body: '{}' }))
+    await page.reload()
+    await page.locator('main [role=alert]').waitFor()
+    await xStateIs(`${XP.csv}:true|${XP.pdf}:true`, 'after a report error')
+    await page.unroute(costs)
+    forget500()
+    // Criterion 7: real buttons, in tab order after the filters, with a visible focus ring; 44px and no sideways scroll at 390px.
+    await page.goto(`${BASE}/reports?year=${ey}`)
+    await xReady()
+    await page.focus(rpCarSel)
+    await page.keyboard.press('Tab')
+    await focusIs('main .filters .export button:first-child', 'Export CSV after the Car filter')
+    await page.keyboard.press('Tab')
+    await focusIs('main .filters .export button:nth-child(2)', 'Export PDF after Export CSV')
+    if ((await page.evaluate(() => getComputedStyle(document.activeElement).outlineStyle)) !== 'solid') throw new Error('no focus ring')
+    await at390('the reports export buttons', 'reports-export-390')
+  })
+  await step('reports-print', async () => {
+    // Criterion 5: Export PDF opens the print dialog (stubbed: a real one blocks the page).
+    await page.goto(`${BASE}/reports?year=${ey}`)
+    await page.evaluate(() => { window.printed = 0; window.print = () => window.printed++ })
+    await xReady()
+    await xBtns.nth(1).click()
+    if ((await page.evaluate(() => window.printed)) !== 1) throw new Error('print not called')
+    await page.emulateMedia({ media: 'print' })
+    const got = await page.evaluate(() => {
+      const css = (sel, p) => { const el = document.querySelector(sel); return el && getComputedStyle(el)[p] }
+      return {
+        hidden: ['header', 'main .filters', 'main button'].filter((sel) => [...document.querySelectorAll(sel)].some((el) => el.checkVisibility())),
+        line: document.querySelector('main .print-only')?.checkVisibility() ? document.querySelector('main .print-only').textContent : null,
+        colors: [css('html', 'backgroundColor'), css('main .card', 'backgroundColor'), css('main h2', 'color'), css('main .figures dd', 'color')].join(),
+        bar: [css('main .month-chart span[style]', 'backgroundColor'), css('main .month-chart span[style]', 'printColorAdjust')].join(),
+        link: css('main .report a', 'textDecorationLine'),
+        dir: getComputedStyle(document.querySelector('main')).direction,
+      }
+    })
+    if (got.hidden.length) throw new Error(`printed: ${got.hidden}`)
+    const date = await page.evaluate((l) => new Date().toLocaleDateString(l, { dateStyle: 'medium' }), s.lng)
+    if (plain(got.line ?? '') !== XP.line(ey, XP.allCars, date)) throw new Error(`print line "${got.line}"`)
+    if (got.colors !== 'rgb(255, 255, 255),rgb(255, 255, 255),rgb(0, 0, 0),rgb(0, 0, 0)') throw new Error(`print colors ${got.colors}`)
+    if (!got.bar.endsWith(',exact') || got.bar.startsWith('rgba(0, 0, 0, 0)')) throw new Error(`chart bar ${got.bar}`)
+    if (got.link !== 'none' || got.dir !== (he ? 'rtl' : 'ltr')) throw new Error(`link ${got.link}, direction ${got.dir}`)
+    await page.screenshot({ path: `${OUT}/${s.name}-reports-print.png`, fullPage: true })
+    await page.pdf({ path: `${OUT}/${s.name}-reports.pdf` })
+    // With a car chosen, the line names it.
+    await page.goto(`${BASE}/reports?year=${ey}&vehicleId=${xB}`)
+    await page.locator('main .categories, main .car-costs').first().waitFor()
+    const carLine = plain(await page.locator('main .print-only').textContent())
+    if (carLine !== XP.line(ey, 'Export Car/2', date)) throw new Error(`car print line "${carLine}"`)
+    await page.emulateMedia({ media: null })
   })
   await step('switch-language', async () => {
     const before = await page.getAttribute('html', 'dir')

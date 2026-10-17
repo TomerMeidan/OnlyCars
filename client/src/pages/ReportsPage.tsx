@@ -1,8 +1,9 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link, useSearchParams } from 'react-router-dom'
-import { api, ApiError, type CostReport, type Vehicle } from '../api'
+import { api, ApiError, type CostReport, type ServiceRecord, type ServiceRecordPage, type Vehicle } from '../api'
 import { useAuth, useDistance } from '../auth'
+import { toCsv } from '../csv'
 import { errorMessage, money } from '../i18n'
 import { KM_PER_MI } from '../units'
 import { usePage } from '../usePage'
@@ -21,6 +22,8 @@ export default function ReportsPage() {
   const id = useId()
   const [params, setParams] = useSearchParams()
   const [thisYear] = useState(() => String(new Date().getFullYear())) // the local year at page load
+  // shortcut: the print line's date is the page load's, so a page left open past midnight prints yesterday's; set it on beforeprint if that matters
+  const [today] = useState(() => new Date())
   const year = params.get('year') || thisYear
   const vehicleId = params.get('vehicleId') ?? ''
   const [cars, setCars] = useState<Vehicle[] | null>(null)
@@ -30,6 +33,9 @@ export default function ReportsPage() {
   const [shown, setShown] = useState<{ key: string; vehicleId: string; report?: CostReport; error?: unknown } | null>(null)
   // After Retry or an error's way out the button is gone, so focus goes to the h1.
   const refocus = useRef(false)
+  // The CSV export for the filters it ran with (`at`), so a filter change drops a stale error.
+  const [csv, setCsv] = useState<{ at: string; busy?: boolean; error?: unknown } | null>(null)
+  const csvButton = useRef<HTMLButtonElement>(null)
   usePage(t('reports'))
 
   useEffect(() => {
@@ -60,6 +66,47 @@ export default function ReportsPage() {
     setParams(next)
   }
   const leave = (name: 'year' | 'vehicleId') => { refocus.current = true; update(name, '') }
+  // With a car chosen, its All time figures still show.
+  const isEmpty = (r: CostReport, vehicleId: string) => !vehicleId && r.years.every((y) => y.total === 0)
+  // From the report, not the cached car list, so a car renamed elsewhere shows its current name; r.cars holds every car, archived too.
+  const nickname = (r: CostReport, id: string) => r.cars.find((c) => c.vehicleId === id)?.nickname ?? ''
+  const csvBusy = csv?.at === key && !!csv.busy
+  // Leaving the page mid-export must not download.
+  const mounted = useRef(true)
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false } }, [])
+
+  // Every record of the report's year and car, page by page, oldest first, as a downloaded CSV; nothing downloads if a page fails.
+  async function exportCsv(r: CostReport, vehicleId: string) {
+    if (csvBusy) return // aria-disabled rather than disabled, so the button keeps focus
+    setCsv({ at: key, busy: true })
+    try {
+      const q = { from: `${r.year}-01-01`, to: `${r.year}-12-31`, ...(vehicleId && { vehicleId }), take: '100' }
+      const records: ServiceRecord[] = []
+      for (let total = 1; records.length < total;) {
+        const page = await api<ServiceRecordPage>(`/service-records?${new URLSearchParams({ ...q, skip: String(records.length) })}`)
+        records.push(...page.items)
+        total = page.items.length ? page.totalCount : 0 // an empty page (records deleted meanwhile) ends the loop
+      }
+      const rows = [
+        [t('csvDate'), t('car'), `${t('odometer')} (${d.vars.distUnit})`, t('shop'), t('csvTasks'), t('csvCost'), t('currency'), t('notes')],
+        ...records.reverse().map((s) => [s.date.slice(0, 10), nickname(r, s.vehicleId), d.value(s.odometerKm), s.shopName || t('diy'),
+          s.tasks.map((k) => k.name).join('; '), s.totalCost?.toFixed(2) ?? '', user?.currency ?? '', s.notes ?? '']),
+      ]
+      if (!mounted.current) return
+      // Filename-safe: no path, reserved, control, zero-width or bidi characters, and no leading or trailing - or .
+      const safe = vehicleId && nickname(r, vehicleId)
+        .replace(/[\\/:*?"<>|\s\x00-\x1f\x7f-\x9f​-‏‪-‮⁦-⁩]+/g, '-') // eslint-disable-line no-control-regex
+        .replace(/^[-.]+|[-.]+$/g, '')
+      const a = document.createElement('a')
+      a.href = URL.createObjectURL(new Blob([toCsv(rows)], { type: 'text/csv;charset=utf-8' }))
+      a.download = `onlycars-${r.year}${safe ? `-${safe}` : ''}.csv`
+      a.click()
+      setTimeout(() => URL.revokeObjectURL(a.href))
+      setCsv(null)
+    } catch (error) {
+      setCsv({ at: key, error })
+    }
+  }
 
   const years = [...new Set([...(report?.years.map((y) => String(y.year)) ?? []), thisYear, ...(/^\d+$/.test(year) ? [year] : [])])].sort().reverse()
   const carOptions = cars && [...cars].sort((a, b) => Number(a.isArchived) - Number(b.isArchived))
@@ -76,8 +123,7 @@ export default function ReportsPage() {
 
   // vehicleId is the one the report was asked for, so links and By car match the figures while another filter loads.
   function body(r: CostReport, vehicleId: string) {
-    // With a car chosen, its All time figures still show.
-    if (!vehicleId && r.years.every((y) => y.total === 0)) return (
+    if (isEmpty(r, vehicleId)) return (
       <div className="card">
         <p>{t('reportsEmpty')}</p>
         <div className="actions"><Link to="/">{t('goToCars')}</Link></div>
@@ -155,9 +201,13 @@ export default function ReportsPage() {
     )
   }
 
+  const canExport = !busy && report != null
   return (
     <>
       <h1 tabIndex={-1}>{t('reports')}</h1>
+      {report && <p className="print-only">{t('printLine', {
+        year: report.year, car: shown.vehicleId ? nickname(report, shown.vehicleId) : t('allCars'), date: today.toLocaleDateString(lng, { dateStyle: 'medium' }),
+      })}</p>}
       <div className="card inline-form filters" role="search">
         <label>
           {t('reportYear')}
@@ -173,6 +223,20 @@ export default function ReportsPage() {
           </select>
         </label>
         <p className="muted" role="status">{busy && t('loading')}</p>
+        {!(report && isEmpty(report, shown.vehicleId)) && (
+          <div className="actions export">
+            <button type="button" ref={csvButton} aria-disabled={!canExport || csvBusy} onClick={() => canExport && exportCsv(report, shown.vehicleId)}>
+              {csvBusy ? t('exportCsvBusy') : t('exportCsv')}
+            </button>
+            <button type="button" aria-disabled={!canExport} onClick={() => canExport && window.print()}>{t('exportPdf')}</button>
+          </div>
+        )}
+        {csv?.at === key && csv.error != null && (
+          <div className="actions export">
+            <p className="error" role="alert">{t('csvFailed')} {errorMessage(csv.error)}</p>
+            <button type="button" onClick={() => { csvButton.current?.focus(); if (canExport) exportCsv(report, shown.vehicleId) }}>{t('retry')}</button>
+          </div>
+        )}
       </div>
       {shown?.error != null && (
         <div className="card">
