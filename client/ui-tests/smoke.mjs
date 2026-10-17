@@ -1420,6 +1420,7 @@ for (const s of setups) {
     // LOW-2 L13: the Maintenance list drops it too, without a page reload.
     await taskRow('Oil').waitFor({ state: 'detached', timeout: 5000 }).catch(() => { throw new Error('the Maintenance list still shows the deleted task') })
     if ((await form.locator('[role=alert]').textContent()) !== SV.taskGone) throw new Error(`notFound error "${await form.locator('[role=alert]').textContent()}"`)
+    await form.locator('[role=alert]').screenshot({ path: `${OUT}/${s.name}-service-task-gone-error.png` }) // LOW-5 L90: a long L79 string, for a read at 390px
     if ((await form.locator('input[name=shopName]').inputValue()) !== 'Kept shop' || (await form.getByRole('checkbox', { name: 'Brakes', exact: true }).isChecked())) throw new Error('notFound lost the input')
     forgetExpected(404)
     await form.locator(':scope > .actions button.link').click()
@@ -3444,9 +3445,9 @@ for (const s of setups) {
   const mocked = (status, code) => (r) => r.fulfill({ status, contentType: 'application/json', body: JSON.stringify({ code }) })
   const TE = he
     ? { taken: 'הסט הזה מותקן ברכב. יש להסיר אותו משם קודם.', setLimit: 'אפשר לשמור עד 50 סטים של צמיגים.', mountLimit: 'אפשר לשמור עד 500 רשומות התקנה לסט.',
-        conflict: 'הנתונים שונו במקביל במקום אחר. יש לרענן את הדף ולנסות שוב.' }
+        conflict: 'הנתונים שונו במקביל במקום אחר. יש לרענן את הדף ולנסות שוב.', archived: 'הרכב בארכיון, ולכן אי אפשר להתקין בו סט צמיגים או לרשום בדיקות ורוטציות.' }
     : { taken: 'This set is on a car. Unmount it there first.', setLimit: 'You can have up to 50 tire sets.', mountLimit: 'A tire set can have up to 500 mount records.',
-        conflict: 'This was changed at the same time somewhere else. Reload and try again.' }
+        conflict: 'This was changed at the same time somewhere else. Reload and try again.', archived: "This car is archived, so a tire set can't be mounted on it and checks and rotations can't be logged." }
   await step('tires-set-taken', async () => {
     // LOW-4 L73: Nokian, the last free set, is taken meanwhile: after the reload no set is left to pick, and the 409 still shows above that box.
     await tiSec.getByRole('button', { name: TI.swap, exact: true }).click()
@@ -3469,11 +3470,13 @@ for (const s of setups) {
     await page.goto(`${BASE}${ckCarPath()}`)
     await tiSec.getByRole('button', { name: TI.swap, exact: true }).click()
     const alert = tiForm.locator('[role=alert]')
-    for (const [code, want] of [['tireMount.limitReached', TE.mountLimit], ['concurrency.conflict', TE.conflict]]) {
+    for (const [code, want] of [['tireMount.limitReached', TE.mountLimit], ['tireMount.vehicleArchived', TE.archived], ['concurrency.conflict', TE.conflict]]) {
       await page.route('**/tires/mount', mocked(409, code), { times: 1 })
       await tiSave.click()
       await alert.filter({ hasText: want.slice(0, 10) }).waitFor() // before the Hebrew number's isolate marks
       if (plain(await alert.textContent()) !== want) throw new Error(`${code} "${await alert.textContent()}"`)
+      // LOW-5 L90: the long L84 string, for a read at 390px.
+      if (code === 'tireMount.vehicleArchived') await tiForm.screenshot({ path: `${OUT}/${s.name}-tires-archived-error.png` })
     }
     await page.waitForLoadState('networkidle')
     if (!(await alert.count())) throw new Error('the conflict error went with the reload')

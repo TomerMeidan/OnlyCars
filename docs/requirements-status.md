@@ -1,7 +1,7 @@
 # OnlyCars: Requirements Status
 
-**Audit date:** 2026-10-17 (twenty-fifth audit, short sign-off of RPT-3, report export; nothing committed yet)
-**Overall:** MVP steps 1 to 4 are complete apart from the car photo and attachments (both blocked on R2). Step 5: checklists are done apart from photos on runs (R2); tires are done; reports are done (RPT-1 to RPT-3, all of spec 8). Next is LOW-5 (the Low backlog), then notifications, which are not started. No deployment tickets until the owner asks.
+**Audit date:** 2026-10-17 (twenty-sixth audit, short sign-off of LOW-5; most of its code is in `2180eb7`, the L90 smoke screenshots are not committed yet)
+**Overall:** MVP steps 1 to 4 are complete apart from the car photo and attachments; R2 is set up now, so both can be built. Step 5: checklists are done apart from photos on runs; tires and reports are done; notifications are not started. Browser QA is back and its catch-up pass over the eight tickets shipped without it found no High or Medium. Next: FILE-1 (car photo and the shared file storage). No deployment tickets until the owner asks.
 
 | Status | Count |
 |---|---|
@@ -12,10 +12,11 @@
 | Deferred | 6 |
 | **Total** | **57** |
 
-How this was checked (twenty-fifth audit, short sign-off of RPT-3 per decisions.md "Faster pipeline (owner)"; I re-ran no test suites and no browser scripts):
-- Reported by other agents, not re-run by me: client build clean; lint 0 warnings; smoke with `SMOKE_ALL=1` 108 steps per setup, all pass after the fix round; `dotnet test` 517 of 517 (code reviewer). Code review and security review: no High or Medium; their Lows fixed (see Signed-off tickets). Hebrew review: the print line changed to "שנת …". Frontend only: no API change, no new dependency.
-- **No browser QA.** The ui-tester is still stopped by the owner (decisions.md, "No ui-tester jobs (owner)"). RPT-3 is the eighth ticket shipped without a QA pass. Nobody has opened the CSV in real Excel or used the real print dialog.
-- I checked in code (uncommitted diff): `client/src/csv.ts:1-11`: BOM, CRLF, quoting of `"`, `,`, `;`, CR and LF with doubled quotes, and the `'` formula guard (also after leading whitespace or control characters, and full-width forms). `client/src/pages/ReportsPage.tsx:78-109`: paging with `take=100` until `totalCount` (an empty page ends the loop), the year and car from the shown report, oldest first, header row in the UI language with the unit in the odometer header, odometer through `useDistance`, cost with 2 decimals or empty, the user's currency code, the DIY label for an empty shop, nothing downloaded after a failure or after leaving the page, a filename-safe car name. `:204-239`: the print-only line (year, car or All cars, date); both buttons `aria-disabled` while loading or after an error, hidden in the empty state; busy label; error with Retry. `client/src/index.css:347-359`: `@media print` forces the light palette on white (`color-scheme: light`, so the `--muted` bars and text use the light values), hides the header, filters and buttons, keeps cards whole, prints links as plain text, `print-color-adjust: exact` on the bars. `client/package.json` unchanged.
+How this was checked (twenty-sixth audit, short sign-off of LOW-5 per decisions.md "Faster pipeline (owner)"; I re-ran no test suites and no browser scripts):
+- Reported by other agents, not re-run by me: `dotnet test` 522 of 522 (no backend change this round); client build and lint clean; smoke `SMOKE_ALL=1` 112 of 112 in all 4 setups, three runs each; L98 (the flaky dashboard step) did not recur. Code review: no High or Medium.
+- **Browser QA is back** (decisions.md, "Browser QA back (owner)"). The ui-tester passed LOW-5 AC4 to AC9 by hand in 4 setups and did the catch-up pass over MVP5-C, LOW-3, MVP5-D, MVP5-E, LOW-4, RPT-1, RPT-2 and RPT-3: no High or Medium, 0px horizontal overflow everywhere. Its Lows are L110 to L113. Its two scripts (`client/ui-tests/qa-low5-catchup.mjs`, `qa-print-edges.mjs`) are not kept (decisions.md, "LOW-5 sign-off").
+- L90: the Hebrew L79 and L84 strings wrap fine at 390px (`out/mobile-dark-he-tires-archived-error.png`, `out/mobile-dark-he-service-task-gone-error.png`, from two new screenshot steps in `smoke.mjs:1423,3478`, uncommitted; plus QA's noCars, noChecklists and interval-hint screenshots). No string changed.
+- I checked in code: `client/src/i18n.ts:818-819` (the Hebrew `issueFromRun` now holds an RLM and FSI/PDI isolates, decided below), the `smoke.mjs` diff, and `scripts/cleanup-test-users.sql:27-53` (the RPT prefixes are covered, so CHECKLIST's owner item is corrected).
 - The notes from earlier audits are in git history.
 
 ## 1. Vehicles
@@ -69,11 +70,11 @@ How this was checked (twenty-fifth audit, short sign-off of RPT-3 per decisions.
 
 | Requirement | Status | Evidence | What's missing |
 |---|---|---|---|
-| Tire sets: brand, model, size, season, purchase year, DOT code | **Done** | MVP5-D (backend `5940442`, contract `docs/contracts/MVP5-D.md`; frontend not committed). `TireSet` with every Part 2 field, `/api/tire-sets` CRUD with coded validation and a 50-set cap (`TireService.cs`, `TireTests.cs`). UI: `/tires` from the header (`App.tsx:43,59`), New set, Edit and Delete with a confirm (`TiresPage.tsx`); Latin values in `dir="auto"`. Smoke `tires-empty`, `tires-create`, `tires-edit`, `tires-delete`. Smoke 88 of 88 in 4 setups (reported). **No browser QA** (ui-tester stopped). | Purchase is a full date, not a year (decided). Lows L74, L76, L77. |
-| Which set is mounted on which car, with mount and unmount dates | **Done** | MVP5-D (backend `5940442`, contract `docs/contracts/MVP5-D.md`; frontend not committed). `TireMount` with one open mount per car and per set (filtered unique indexes, migration `AddTires`); mount, swap in one step, unmount (allowed on archived cars), delete a mount; 409 `tireMount.setMounted`, `concurrency.conflict` on a race (`TireService.cs:72,109`). UI: the Tires section on `/cars/:id` (`TiresSection.tsx`), "On <car> since <date>" or "In storage" on `/tires`, mount history per set. Smoke `tires-mount`, `tires-swap`, `tires-unmount`, `tires-delete-mount`, `tires-archived`. Smoke 88 of 88 in 4 setups (reported). **No browser QA** (ui-tester stopped). | Mounts add no odometer reading (decided shortcut). Lows L73, L75, L78. |
-| Km driven per set (auto-calculated) | **Done** | MVP5-D (backend `5940442`, contract `docs/contracts/MVP5-D.md`; frontend not committed). Computed on read: closed mounts plus `max(0, current - mount)` for the open one (`TireService.cs:233,246`), tested. UI: km driven on `/tires` and on the car's mount rows in the user's unit (`TiresPage.tsx:136`, `TiresSection.tsx:43`); smoke `tires-miles` checks miles and the exact km sent back. Smoke 88 of 88 in 4 setups (reported). **No browser QA** (ui-tester stopped). | Nothing for this bullet. |
-| Tire pressure log, tread depth log, rotation tracking | **Done** | MVP5-E (not committed; contract `docs/contracts/MVP5-E.md`). `TireCheck` (one per mount per date) owning a `TireMeasurement` per wheel, and `TireRotation`; migration `20261017054806_AddTireMeasurements` (`TireConfiguration.cs:52-96`). `/api/tire-mounts/{id}/checks` and `/rotations` with create, list and delete; `lastCheck` and `lastRotation` with `kmSince` on the car's tires (`TiresController.cs:56-79`, `TireService.cs`, `TireTests.cs`). UI: Last check, Last rotation ... ago, Log a check, Log a rotation, Checks and Rotations history with Delete, in the car page's Tires section (`TiresSection.tsx`). Smoke `tires-check`, `tires-check-duplicate`, `tires-check-delete`, `tires-rotation` (miles included); 368 of 368 (reported). **No browser QA** (ui-tester stopped). | Pressure in bar only, no low-tread warning (decided). The mount and date sit on a `TireCheck` header, not on each measurement (decided deviation). Lows L80 to L86. |
-| Storage notes for the off-season set | **Done** | MVP5-D (backend `5940442`, contract `docs/contracts/MVP5-D.md`; frontend not committed). `TireSet.Notes` (up to 1,000) as a labelled storage-notes textarea on the set form, shown on the row (`TiresPage.tsx:137,264`). Smoke 88 of 88 in 4 setups (reported). **No browser QA** (ui-tester stopped). | Nothing for this bullet. |
+| Tire sets: brand, model, size, season, purchase year, DOT code | **Done** | MVP5-D (backend `5940442`, contract `docs/contracts/MVP5-D.md`; frontend not committed). `TireSet` with every Part 2 field, `/api/tire-sets` CRUD with coded validation and a 50-set cap (`TireService.cs`, `TireTests.cs`). UI: `/tires` from the header (`App.tsx:43,59`), New set, Edit and Delete with a confirm (`TiresPage.tsx`); Latin values in `dir="auto"`. Smoke `tires-empty`, `tires-create`, `tires-edit`, `tires-delete`. Smoke 88 of 88 in 4 setups (reported). Browser QA catch-up passed (2026-10-17, 4 setups, no High or Medium, 0px overflow). | Purchase is a full date, not a year (decided). Lows L74, L76, L77. |
+| Which set is mounted on which car, with mount and unmount dates | **Done** | MVP5-D (backend `5940442`, contract `docs/contracts/MVP5-D.md`; frontend not committed). `TireMount` with one open mount per car and per set (filtered unique indexes, migration `AddTires`); mount, swap in one step, unmount (allowed on archived cars), delete a mount; 409 `tireMount.setMounted`, `concurrency.conflict` on a race (`TireService.cs:72,109`). UI: the Tires section on `/cars/:id` (`TiresSection.tsx`), "On <car> since <date>" or "In storage" on `/tires`, mount history per set. Smoke `tires-mount`, `tires-swap`, `tires-unmount`, `tires-delete-mount`, `tires-archived`. Smoke 88 of 88 in 4 setups (reported). Browser QA catch-up passed (2026-10-17, 4 setups, no High or Medium, 0px overflow). | Mounts add no odometer reading (decided shortcut). Lows L73, L75, L78. |
+| Km driven per set (auto-calculated) | **Done** | MVP5-D (backend `5940442`, contract `docs/contracts/MVP5-D.md`; frontend not committed). Computed on read: closed mounts plus `max(0, current - mount)` for the open one (`TireService.cs:233,246`), tested. UI: km driven on `/tires` and on the car's mount rows in the user's unit (`TiresPage.tsx:136`, `TiresSection.tsx:43`); smoke `tires-miles` checks miles and the exact km sent back. Smoke 88 of 88 in 4 setups (reported). Browser QA catch-up passed (2026-10-17, 4 setups, no High or Medium, 0px overflow). | Nothing for this bullet. |
+| Tire pressure log, tread depth log, rotation tracking | **Done** | MVP5-E (not committed; contract `docs/contracts/MVP5-E.md`). `TireCheck` (one per mount per date) owning a `TireMeasurement` per wheel, and `TireRotation`; migration `20261017054806_AddTireMeasurements` (`TireConfiguration.cs:52-96`). `/api/tire-mounts/{id}/checks` and `/rotations` with create, list and delete; `lastCheck` and `lastRotation` with `kmSince` on the car's tires (`TiresController.cs:56-79`, `TireService.cs`, `TireTests.cs`). UI: Last check, Last rotation ... ago, Log a check, Log a rotation, Checks and Rotations history with Delete, in the car page's Tires section (`TiresSection.tsx`). Smoke `tires-check`, `tires-check-duplicate`, `tires-check-delete`, `tires-rotation` (miles included); 368 of 368 (reported). Browser QA catch-up passed (2026-10-17, 4 setups, no High or Medium, 0px overflow). | Pressure in bar only, no low-tread warning (decided). The mount and date sit on a `TireCheck` header, not on each measurement (decided deviation). Lows L80 to L86. |
+| Storage notes for the off-season set | **Done** | MVP5-D (backend `5940442`, contract `docs/contracts/MVP5-D.md`; frontend not committed). `TireSet.Notes` (up to 1,000) as a labelled storage-notes textarea on the set form, shown on the row (`TiresPage.tsx:137,264`). Smoke 88 of 88 in 4 setups (reported). Browser QA catch-up passed (2026-10-17, 4 setups, no High or Medium, 0px overflow). | Nothing for this bullet. |
 
 ## 7. Custom Inspection Checklists
 
@@ -83,17 +84,17 @@ How this was checked (twenty-fifth audit, short sign-off of RPT-3 per decisions.
 | Items: checkbox, numeric or text | **Done** | MVP5-A: Check, Number (unit, min, max) and Text items, reorder with up and down buttons, in-place update keeping item ids (`ChecklistTemplateService.cs:32,62`); smoke `checklist-create`, `checklist-edit` (`smoke.mjs:2418,2498`); Hebrew strings (`i18n.ts:609`) | none |
 | Per-checklist schedule: by km, by time, or manual only | **Done** | MVP5-B: `VehicleChecklist` with optional `IntervalKm`/`IntervalDays` (both empty is manual only), status as tasks with 10% due soon (`VehicleChecklistsController.cs`, `ChecklistRunTests.cs`); the Checklists section on `/cars/:id` with Add, Edit (intervals, on/off) and Remove (`ChecklistsSection.tsx:18,138`); smoke `checklist-attach` (`smoke.mjs:2610`) in 4 setups | none |
 | Run a checklist: tick items, add notes or photos, flag issues | **Partial** | MVP5-B: the run page (`RunPage.tsx:32`) with OK / Not OK, numbers, text, hand flags, live auto flags with the reason, notes, and an odometer under the date-order rules; flags computed on the server; smoke `checklist-run` (`smoke.mjs:2672`) | Photos (wait for R2) |
-| Failed items can create a to-do or a maintenance task | **Done** (no browser QA) | MVP5-C: a flagged item in the run history gets Create to-do, prefilled and editable (`client/src/pages/ChecklistsSection.tsx:429-442`); one to-do per run item, also under a race (409 `issue.duplicate`); run delete keeps the to-do and clears its source (`IssueService.cs`, `IssueTests.cs`). Smoke step `issue-from-flag` (`smoke.mjs:2796`). A to-do, not a maintenance task, as decided (decisions.md, "Flagged checklist items, MVP5-C"). | Verified from code and reported tests only; no browser QA (owner stopped the ui-tester). The stale "To-do created" after its to-do is deleted (L60) was fixed in LOW-3. |
+| Failed items can create a to-do or a maintenance task | **Done** | MVP5-C: a flagged item in the run history gets Create to-do, prefilled and editable (`client/src/pages/ChecklistsSection.tsx:429-442`); one to-do per run item, also under a race (409 `issue.duplicate`); run delete keeps the to-do and clears its source (`IssueService.cs`, `IssueTests.cs`). Smoke step `issue-from-flag` (`smoke.mjs:2796`). A to-do, not a maintenance task, as decided (decisions.md, "Flagged checklist items, MVP5-C"). | Browser QA catch-up passed (2026-10-17, 4 setups, no High or Medium, 0px overflow). The Hebrew prefill keeps invisible direction marks in the description (decisions.md, "Direction marks in the to-do prefill"). The stale "To-do created" after its to-do is deleted (L60) was fixed in LOW-3. |
 | Run history per car | **Done** | MVP5-B: collapsed history per checklist on `/cars/:id`, newest first; each run expands to its label snapshots, values and flags; Delete with confirm and recompute (`ChecklistsSection.tsx:287,343`); smoke `checklist-run-history` (`smoke.mjs:2771`) | none |
 
 ## 8. Costs and Reports
 
 | Requirement | Status | Evidence | What's missing |
 |---|---|---|---|
-| Cost per car, per category, per month and per year | **Done** (no browser QA) | RPT-1 (not committed; contract `docs/contracts/RPT-1.md`): `GET /api/reports/costs?year=&vehicleId=` (`ReportsController.cs:16`, `ReportService.cs:16-75`), no migration; `CostReportTests.cs`. UI: `/reports` from the header (`App.tsx:43,60`) with Year and Car in the URL, the year summary with the unpriced count, By month (12 rows), By category (equal split, "No task"), By car, each total with records linking to `/history` (`ReportsPage.tsx:78-118`). Smoke `SMOKE_ALL=1` 103 per setup (reported). | Not checked in a browser (ui-tester stopped). Lows L92 to L98. |
-| Cost per km and total cost of ownership | **Done** (no browser QA) | RPT-1: per car, all time: service total, km driven (from the first reading, clamped at 0), cost per km (4 decimals, null at 0 km) and TCO = purchase price + service total (null without a price) (`ReportService.cs:62-70`, tested). UI: the All time section with cost per km or per mile in the user's unit, "Not enough odometer readings", and "Add a purchase price" linking to the car's edit page (`ReportsPage.tsx:119-137`). | Fuel and tire purchases are not included (decided). The Hebrew term for TCO is open for the owner. Not checked in a browser. |
-| Charts: spending over time, cost by category | **Done** (no browser QA) | RPT-2 (not committed; frontend only): on `/reports`, 12 vertical month bars over the By month rows and a horizontal bar per category over the By category rows, scaled to the highest value, `aria-hidden` over the unchanged rows, following the page direction in Hebrew (`ReportsPage.tsx:88-123`, `index.css:333-346`); no chart library. Smoke `reports-charts` (bar heights and lengths, RTL, the 2px minimum, label overlap and edges at 390px including a 20px root font), `SMOKE_ALL=1` 104 per setup (reported). | Not checked in a browser (ui-tester stopped). Lows L99 to L102. |
-| Export to CSV and PDF | **Done** (no browser QA) | RPT-3 (not committed; frontend only): Export CSV on `/reports` downloads `onlycars-{year}[-{car}].csv`, one row per service record of the chosen year and car, built in the browser from the paged `/api/service-records` (`ReportsPage.tsx:78-109`, `client/src/csv.ts`); "Print or save as PDF" calls `window.print()` with a `@media print` stylesheet and a print-only line with year, car and date (`index.css:347-359`). Smoke `SMOKE_ALL=1` 108 per setup with CSV content, Hebrew header, print-media screenshots and `page.pdf()` steps (reported). | Not checked in a browser (ui-tester stopped); the CSV not opened in real Excel, the real print dialog not used (L105, owner). Lows L103, L104, L106. |
+| Cost per car, per category, per month and per year | **Done** | RPT-1 (not committed; contract `docs/contracts/RPT-1.md`): `GET /api/reports/costs?year=&vehicleId=` (`ReportsController.cs:16`, `ReportService.cs:16-75`), no migration; `CostReportTests.cs`. UI: `/reports` from the header (`App.tsx:43,60`) with Year and Car in the URL, the year summary with the unpriced count, By month (12 rows), By category (equal split, "No task"), By car, each total with records linking to `/history` (`ReportsPage.tsx:78-118`). Smoke `SMOKE_ALL=1` 103 per setup (reported). | Browser QA catch-up passed (2026-10-17, 4 setups, no High or Medium, 0px overflow). Lows L95 to L97 closed in LOW-5; `/reports?year=2025abc` shows the error but the Year box shows the current year (L112). |
+| Cost per km and total cost of ownership | **Done** | RPT-1: per car, all time: service total, km driven (from the first reading, clamped at 0), cost per km (4 decimals, null at 0 km) and TCO = purchase price + service total (null without a price) (`ReportService.cs:62-70`, tested). UI: the All time section with cost per km or per mile in the user's unit, "Not enough odometer readings", and "Add a purchase price" linking to the car's edit page (`ReportsPage.tsx:119-137`). | Fuel and tire purchases are not included (decided). The Hebrew term for TCO is open for the owner. Browser QA catch-up passed (2026-10-17, 4 setups, no High or Medium, 0px overflow). |
+| Charts: spending over time, cost by category | **Done** | RPT-2 (not committed; frontend only): on `/reports`, 12 vertical month bars over the By month rows and a horizontal bar per category over the By category rows, scaled to the highest value, `aria-hidden` over the unchanged rows, following the page direction in Hebrew (`ReportsPage.tsx:88-123`, `index.css:333-346`); no chart library. Smoke `reports-charts` (bar heights and lengths, RTL, the 2px minimum, label overlap and edges at 390px including a 20px root font), `SMOKE_ALL=1` 104 per setup (reported). | Browser QA catch-up passed (2026-10-17, 4 setups, no High or Medium, 0px overflow). |
+| Export to CSV and PDF | **Done** | RPT-3 (not committed; frontend only): Export CSV on `/reports` downloads `onlycars-{year}[-{car}].csv`, one row per service record of the chosen year and car, built in the browser from the paged `/api/service-records` (`ReportsPage.tsx:78-109`, `client/src/csv.ts`); "Print or save as PDF" calls `window.print()` with a `@media print` stylesheet and a print-only line with year, car and date (`index.css:347-359`). Smoke `SMOKE_ALL=1` 108 per setup with CSV content, Hebrew header, print-media screenshots and `page.pdf()` steps (reported). | Browser QA catch-up passed (2026-10-17, 4 setups, no High or Medium, 0px overflow). The CSV not opened in real Excel and the real print dialog not used (L105, owner). Lows: a failed export after a filter change is silent (L107); the buttons reflow at 390px Hebrew while busy (L111). |
 
 ## 9. Reminders and Notifications
 
@@ -116,7 +117,7 @@ How this was checked (twenty-fifth audit, short sign-off of RPT-3 per decisions.
 | Requirement | Status | Evidence | What's missing |
 |---|---|---|---|
 | Fuel log and consumption tracking | **Deferred** | none | Optional |
-| Issue / to-do list | **Partial** | MVP5-C: a per-car To-dos section on `/cars/:id` (add, edit, Done, Reopen, delete; `client/src/pages/IssuesSection.tsx`), "N open to-dos" on each dashboard card (`CarsPage.tsx:161-162`), API `IssuesController.cs:15-27`. No browser QA. | Optional. No to-do page across all cars; no due date, priority or cost on a to-do. Not planned. |
+| Issue / to-do list | **Partial** | MVP5-C: a per-car To-dos section on `/cars/:id` (add, edit, Done, Reopen, delete; `client/src/pages/IssuesSection.tsx`), "N open to-dos" on each dashboard card (`CarsPage.tsx:161-162`), API `IssuesController.cs:15-27`. Browser QA catch-up passed. | Optional. No to-do page across all cars; no due date, priority or cost on a to-do. Not planned. |
 | Shared access (partner or family) | **Deferred** | none | Optional |
 | Garage directory | **Deferred** | none | Optional |
 | Parts and warranty tracking | **Deferred** | none | Optional |
@@ -164,14 +165,18 @@ How this was checked (twenty-fifth audit, short sign-off of RPT-3 per decisions.
 | Deploy gate | **SEC-1 signed off.** Nothing else blocks a first deploy except the owner's Azure account. The owner said not to deploy yet (decisions.md, 2026-10-15, "When to deploy"), so no deployment tickets are queued. |
 | 3. Service history with costs | **Complete apart from attachments (blocked on R2). MVP3-A, MVP3-B, MVP3-C and MVP3-D are signed off.** Working end to end in EN and HE: the service history on `/cars/:id`, recording a past service (date, odometer, shop or DIY, cost, notes, several tasks, parts and labour) with the date-order rules, editing everything on a record (shop, cost, notes, items, date, odometer and tasks, with the car's odometer and the tasks' last done following), deleting any record, and a `/history` page that filters and searches all cars. LOW-1 (the first Low batch) is signed off too. |
 | 4. Dashboard with due/overdue status | **Complete. MVP4-A and LOW-2 are signed off; "Start a checklist" came with MVP5-B.** The dashboard on `/`: overdue and due-soon counts, this month's spend linking to `/history`, and per-car cards with the next 3 tasks, one-tap Mark done with Undo, quick odometer entry and Start a checklist, in EN and HE. |
-| 5. Checklists, tires, reports, notifications | **Started. Checklists are done apart from photos on runs (R2): MVP5-A, MVP5-B and MVP5-C are signed off. Tires are done: MVP5-D (sets, mounts, swap, km per set, storage notes) and MVP5-E (pressure, tread depth, rotations) are signed off. LOW-3 and LOW-4 are signed off. Reports are done: RPT-1 (cost per car, category, month and year, cost per km, TCO), RPT-2 (charts) and RPT-3 (CSV and PDF export) are signed off. MVP5-C, LOW-3, MVP5-D, MVP5-E, LOW-4, RPT-1, RPT-2 and RPT-3 shipped without browser QA.** Remaining: notifications (spec 9) and photos on runs (R2). Next: LOW-5, then notifications. |
+| 5. Checklists, tires, reports, notifications | **Started. Checklists are done apart from photos on runs (R2): MVP5-A, MVP5-B and MVP5-C are signed off. Tires are done: MVP5-D (sets, mounts, swap, km per set, storage notes) and MVP5-E (pressure, tread depth, rotations) are signed off. LOW-3, LOW-4 and LOW-5 are signed off. Reports are done: RPT-1 (cost per car, category, month and year, cost per km, TCO), RPT-2 (charts) and RPT-3 (CSV and PDF export) are signed off. The browser QA catch-up over MVP5-C to RPT-3 passed.** Remaining: notifications (spec 9) and photos on runs. Order (decisions.md, "Order after LOW-5"): FILE-1, FILE-2 and FILE-3 first (they close the step 1 and 3 gaps), then LOW-6, then notifications. |
 
 ## Ticket queue
 
 | Order | Ticket | Who | State |
 |---|---|---|---|
-| 1 | LOW-5: L87 to L106 (not L72, L98, L105) | BE, then FE | **Next** (written below) |
-| 2 | Notifications (spec 9) | BE, then FE | After LOW-5; needs the owner's email provider choice (decisions.md, "Ticket after RPT-3") |
+| 1 | FILE-1: file storage and the car photo (spec 1, 12) | BE, then FE | **Next** (written below) |
+| 2 | FILE-2: attachments on service records (spec 5, 12) | BE, then FE | After FILE-1 |
+| 3 | FILE-3: photos on checklist runs (spec 7) | BE, then FE | After FILE-2 |
+| 4 | LOW-6: the Low backlog (L107 onward) | BE, then FE | After FILE-3 |
+| 5 | NOT-1: in-app reminders (documents, lead time, snooze) | BE, then FE | After LOW-6; no owner input needed |
+| 6 | NOT-2: email when due | BE | Needs the owner's email provider and credentials (open question) |
 
 ## Signed-off tickets
 
@@ -301,90 +306,85 @@ How this was checked (twenty-fifth audit, short sign-off of RPT-3 per decisions.
   - AC1 to AC4 signed off from `csv.ts`, `ReportsPage.tsx:78-109` and the reported smoke steps; AC5 from `index.css:347-359`, the print line and the reported print-media screenshots and `page.pdf()`; AC6 from code (`aria-disabled` rather than `disabled`, accepted); AC7 from smoke (390px, 44px) and code (real buttons after the filters); AC8 from the reported runs and the unchanged `package.json`. **Not verified:** the CSV in real Excel, the real print dialog and "Save as PDF", and the printed page in a real browser.
   - Accepted (decisions.md, "RPT-3 sign-off"): the print stylesheet is global; `aria-disabled` buttons; `;` quoting and the wider formula guard. The new Lows are L103 to L106.
 
+- **LOW-5 (code in `2180eb7`; the two L90 screenshot steps in `smoke.mjs` are not committed yet): signed off 2026-10-17.** Short sign-off under "Faster pipeline (owner)"; I re-ran no suites. Closes L87 to L106, except L105 and L72 (both the owner's).
+  - Reported evidence: `dotnet test` 522 of 522; build and lint clean; smoke `SMOKE_ALL=1` 112 of 112 in all 4 setups, three runs; code review with no High or Medium; the ui-tester passed AC4 to AC9 by hand in 4 setups.
+  - AC1 to AC3 [BE] signed off from the reported tests and the cleanup script (`scripts/cleanup-test-users.sql:27-53`); AC4 to AC9 [FE] from QA and smoke; AC10: L90 reported, the strings wrap fine, no change; AC11 from the reported runs. L98 did not recur in twelve setup runs and is closed as not reproduced.
+  - Decided (decisions.md, "LOW-5 sign-off" and "Direction marks in the to-do prefill"): the Hebrew `issueFromRun` direction marks, which landed in `2180eb7` without a ticket, are kept; QA's one-off scripts are not kept. The new Lows are L107 to L113.
+
 ## Low issues backlog
 
-Every Low finding from QA and review lands here (decisions.md, "Faster pipeline (owner)"). They are fixed together in a batch ticket LOW-n about every 3 tickets. LOW-1 closed L1 to L12, LOW-2 closed L13 to L26, LOW-3 closed L27 to L65, LOW-4 closed L66 to L86 (L86 accepted; L72, the dev DB cleanup, waits on the owner); those rows are in git history. Open (for LOW-5: L87 to L106 except L98, a watch item, and L105; L72 and L105 are the owner's):
+Every Low finding from QA and review lands here (decisions.md, "Faster pipeline (owner)"). They are fixed together in a batch ticket LOW-n about every 3 tickets. LOW-1 closed L1 to L12, LOW-2 L13 to L26, LOW-3 L27 to L65, LOW-4 L66 to L86, LOW-5 L87 to L106 (L98 closed as not reproduced); those rows are in git history. Open (for LOW-6: L107 to L113; L72 and L105 are the owner's):
 
 | # | From | Issue | Area |
 |---|---|---|---|
-| L87 | LOW-4 review | After a failed task save, focus drops to `body`, so Escape no longer closes the form (existing behaviour). Keep focus in the form (on the field the error is tied to, or the first field). | FE, car page tasks |
-| L88 | LOW-4 review | L71 (the "Run saved" note cleared when the car page fails to load after a run Save) has no smoke step. | Smoke |
-| L89 | LOW-4 review | The LocalDB L69 test asserts `DbUpdateConcurrencyException`, not the 409 `concurrency.conflict` (the mapping is tested elsewhere, on InMemory). Assert the code, or say so in the test name. | Tests |
-| L90 | LOW-4 review | Nobody has checked the long new Hebrew strings (L79, L84) for wrapping at 390px. Read the 390px screenshots, or leave it to browser QA when the owner restarts it. | FE, he strings |
-| L91 | LOW-4 review | `client/ui-tests/smoke.mjs` `SV.editHint` still holds an old plural Hebrew string. It is only used in a "not shown" assertion, so that assertion always passes. Update it to the current string. | Smoke |
-| L92 | RPT-1 review | Missing tests: the All time cars order, the `byCategory` and `byVehicle` tie order, the `kmDriven` clamp at 0, and the `CreatedAt` tie-break of the first reading. | Tests |
-| L93 | RPT-1 review | `ReportService.cs:70` `Math.Round(serviceTotal / kmDriven, 4)` uses the default ToEven; the codebase uses `MidpointRounding.AwayFromZero`. | BE |
-| L94 | RPT-1 review | The `.report a` 44px rule duplicates `index.css:226`. Remove the duplicate. | FE, CSS |
-| L95 | RPT-1 review | `/reports?year=02025` shows a second, duplicate-looking year option. Normalise the year from the URL (or treat a non-canonical one as invalid). | FE, reports |
-| L96 | RPT-1 review | The M2 fix (old figures keep their own `vehicleId` while a new filter loads) has no smoke step. | Smoke |
-| L97 | RPT-1 housekeeping | More test users in the dev DB: `rpt1-a-*` and `rpt1-b-*@example.com`, `ui-rpt-*`, `probe-rpt-*`, `ui-rptdbg-*`. Check that `scripts/cleanup-test-users.sql` matches them (add tight prefixes if not); running it stays with the owner (L72). | Scripts |
-| L98 | RPT-1 smoke run | One flaky desktop-light-en failure of `dashboard-mark-done` and `dashboard-quick-odometer` in one run, not reproduced. Watch for it; investigate if it recurs. | Smoke |
-| L99 | RPT-2 review | Dead guards in `ReportsPage.tsx`: `topCategory > 0` (`:117`) and the `Math.max(0, …)` seed (`:92`); the backend never sends a zero category, and the section already hides when there are none. Remove them. | FE, reports |
-| L100 | RPT-2 review | The comment at `ReportsPage.tsx:103` is broader than what it covers. Make it say what is decorative and why. | FE, reports |
-| L101 | RPT-2 review | Only a 20px root font was tested at 390px; a blocked web font (a wider fallback font) was reasoned about, not tested. Add a smoke variant, or accept it in writing. | Smoke |
-| L102 | RPT-2 review | No automated contrast check: the 6.0:1 and 6.3:1 for `--muted` on the card were computed by hand. Add a small contrast assertion from the computed colours to `reports-charts`. | Smoke |
-| L103 | RPT-3 | The print line's date is fixed at page load (a documented shortcut), so a page left open past midnight prints yesterday's date. Set it on `beforeprint`. | FE, reports |
-| L104 | RPT-3 review | Changing a filter while a CSV export runs re-enables the button for the new filters, so a second export can run at the same time. Allow one export at a time. | FE, reports |
+| L107 | LOW-5 review | `ReportsPage.tsx:115,240`: a CSV export that fails after a filter change shows no error and downloads nothing. Show the export error (for the filters it ran with, or the current ones), never fail silently. | FE, reports |
+| L108 | LOW-5 review | `smoke.mjs:3990`: the L96 check passes vacuously when the report has no `/history` links. Assert at least one link first. | Smoke |
+| L109 | LOW-5 review | `TasksSection.tsx:10`: a stale comment about `fieldOf` and `task.invalidLastDone`. Fix or remove it. | FE, comment |
+| L110 | Catch-up QA | "Last run on" shows the attach date, not the actual run, when the only runs are dated before the day the checklist was attached (`VehicleChecklistService.cs:183` keeps the attach values; `ChecklistsSection.tsx:249` labels them "Last run" whenever `runCount > 0`). Label it from the latest run, or say "Counting from <date>" when the attach date wins. | BE+FE, checklists |
+| L111 | Catch-up QA | At 390px in Hebrew the two export buttons reflow while the CSV is busy (the busy label is longer). Keep the layout stable. | FE, reports |
+| L112 | Catch-up QA | `/reports?year=2025abc` shows the invalid-year error, but the Year box shows the current year. Show no year selected while the URL year is invalid. | FE, reports |
+| L113 | Catch-up QA | The dashboard car card's Edit link is 28px wide (en) and 40px (he) at mobile width, under 44px (existing since MVP4-A). | FE, dashboard |
 | L105 | RPT-3 | Nobody has opened the exported CSV in real Excel (Hebrew, the BOM, `;` locales) or used the real print dialog and "Save as PDF". No agent can; the owner checks once (CHECKLIST.md, "Waiting on the owner"). | Owner |
-| L106 | RPT-3 review | No smoke step for leaving `/reports` mid-export (no download must follow). | Smoke |
-| L72 | LOW-3 housekeeping | The local dev DB has leftover test users. `scripts/cleanup-test-users.sql` was written in LOW-4 but never run; the owner decides (CHECKLIST.md, "Waiting on the owner"). | Dev DB (owner) |
+| L72 | LOW-3 housekeeping | The local dev DB has leftover test users. `scripts/cleanup-test-users.sql` covers them (RPT prefixes added in LOW-5) but was never run; the owner decides (CHECKLIST.md, "Waiting on the owner"). | Dev DB (owner) |
 
 ## Next ticket
 
-### LOW-5: Low backlog batch (L87 to L106)
+### FILE-1: File storage and the car photo
 
-**Goal:** As a user, the task form, the Reports page and its export behave better in the corners (focus after a failed save, a clean year list, the right print date, one export at a time), and the pipeline's checks cover what the last five tickets added.
+**Goal:** As a user, I can add a photo of my car, see it on the car page, replace it and remove it, and nobody else can see it.
 
-**Spec:** no new requirement; fixes to sections 3, 8 and the test suite. The backlog rows L87 to L106 in this file are the source; each item below names its row.
+**Spec:** section 1 "Fields: … photo" (Part 2 `Vehicle.PhotoUrl`), and the foundation for section 12 "Receipt image storage with size limits". It builds the storage that FILE-2 (attachments) and FILE-3 (run photos) reuse.
 
-**Binding decisions:** "Faster pipeline (owner)", "No ui-tester jobs (owner)", "RPT-1 sign-off", "RPT-2 sign-off", "RPT-3 sign-off", "Hebrew form of address".
+**Binding decisions:** "Where to store photos and receipts", "File storage layout and rules (owner)", "Car photo, FILE-1", "Browser QA back (owner)", "Faster pipeline (owner)", "Hebrew form of address".
 
 **Scope**
 
-*Backend (backend-engineer, runs first; no API change, no migration, no contract):*
-- L93: `ReportService.cs:70` rounds cost per km with `MidpointRounding.AwayFromZero`, as the rest of the codebase.
-- L92: tests for the All time cars order (active first, then nickname), the `byCategory` and `byVehicle` tie order, the `kmDriven` clamp at 0, and the `CreatedAt` tie-break of the first reading.
-- L89: the LocalDB concurrency test asserts the 409 `concurrency.conflict` code, or its name says it checks the EF exception and points to the test of the mapping.
-- L97: `scripts/cleanup-test-users.sql` matches the RPT test users (`rpt1-a-*`, `rpt1-b-*@example.com`, `ui-rpt-*`, `probe-rpt-*`, `ui-rptdbg-*`) and any RPT-2 or RPT-3 smoke prefixes, with tight patterns and its self-checks kept. Do not run it in delete mode (L72 is the owner's).
+*Backend (backend-engineer, runs first; publishes `docs/contracts/FILE-1.md`):*
+- A file storage interface in Application (put, delete, signed GET URL) with an R2 implementation in Infrastructure over AWSSDK.S3 (service URL `https://{AccountId}.r2.cloudflarestorage.com`, path-style), configured from `R2:AccountId`, `R2:AccessKeyId`, `R2:SecretAccessKey` and `R2:BucketName` (already in the API project's user-secrets; never print, log or commit them). Tests use an in-memory fake; nothing in `dotnet test` talks to R2.
+- `PUT /api/vehicles/{id}/photo` (multipart, one file field `file`): ownership (404 `vehicle.notFound` for another user's car); an archived car gives 409 `vehiclePhoto.vehicleArchived` (the `<entity>.vehicleArchived` pattern of `issue`, `tireMount` and `vehicleChecklist`); over 10 MB gives 413 `file.tooLarge` (a `[RequestSizeLimit]` on this endpoint only; the 64 KB global limit in `RequestLimits.cs:20` stays); the type is checked by content, not by name or header (JPEG, PNG or WebP magic bytes; anything else 400 `file.unsupportedType`; an empty or missing file 400 `file.required`). All metadata (EXIF including GPS, XMP) is stripped before upload. Uploads to `users/{userId}/vehicles/{vehicleId}/photo/{fileId}.{ext}` with a random `fileId`; only after the upload succeeds is the key stored in `Vehicle.PhotoUrl`, then the previous photo's object is deleted (a failed delete of the old object is logged, not an error). Returns the vehicle DTO.
+- `DELETE /api/vehicles/{id}/photo`: clears `PhotoUrl` and deletes the object; 204; allowed on an archived car.
+- Every vehicle DTO returns `photoUrl` as a signed GET URL valid for 1 hour (null without a photo), never the key. `POST` and `PUT /api/vehicles` ignore any `photoUrl` in the body, so a client can't point a car at another object.
+- Without R2 settings (a fresh clone) the API still starts; the photo endpoints return 503 `file.storageUnavailable` and DTOs return `photoUrl` null.
+- No migration (the column exists; it now holds a key). Tests: ownership, archived, size, type by content (a PNG named `.jpg` works, a text file named `.jpg` is rejected), metadata stripped (a JPEG with GPS EXIF comes out without it), replace deletes the old object, delete, the DTO never returns the key, POST and PUT ignore `photoUrl`, 503 without storage.
+- The engineer checks once by hand against the real `onlycars-dev` bucket (upload, open the signed URL, delete) and reports it, without printing any secret.
 
 *Frontend (frontend-engineer, `client/src`, `client/ui-tests/smoke.mjs`):*
-- L87: after a failed task save on the car page, focus stays in the form (on the field the error is tied to, else the first field), so Escape still closes it.
-- L94: remove the duplicate `.report a` 44px rule (keep `index.css:226`).
-- L95: the year from the URL is normalised (`02025` shows and requests 2025, one option); a non-number stays invalid as now.
-- L99, L100: remove the dead `topCategory > 0` guard and the `Math.max(0, …)` seed in `ReportsPage.tsx`; make the chart comment say exactly what is decorative and why.
-- L103: the print line's date is set when printing starts (`beforeprint`), not at page load; remove the shortcut comment.
-- L104: one CSV export at a time: while one runs, the button stays busy for any filters, and a new export can start only after it ends.
-- Smoke: L88 (the "Run saved" note cleared when the car page fails to load after a run Save), L91 (`SV.editHint` holds the current Hebrew string, so its "not shown" assertion can fail), L96 (old figures keep their own `vehicleId` links while a new filter loads), L101 (`reports-charts` at 390px with web fonts blocked, so the fallback font is tested), L102 (a contrast assertion for `--muted` on the card from the computed colours, at least 4.5:1, both themes), L106 (leave `/reports` mid-export: no download follows).
-- L90: the engineer reads the 390px Hebrew smoke screenshots of the L79 and L84 strings and reports whether any wraps badly; a shorter string only if one does (the Hebrew reviewer approves it).
+- The car page (`/cars/:id`) shows the photo at the top (a fixed aspect box, `object-fit: cover`, `alt` = the car's nickname), or nothing when there is none.
+- On the car form's Edit mode: "Add photo" or "Change photo" (a file input with `accept="image/jpeg,image/png,image/webp"`, so iPhones send JPEG) and "Remove photo" with a confirm. The upload starts when the file is chosen, with a busy state, and the new photo shows when it is done. The form stops sending `photoUrl`. A new car gets its photo after it is created (Edit, or the car page).
+- A client-side check of size (10 MB) and type before sending, with the same translated messages as the server codes.
+- Errors translated in en and he: `file.tooLarge`, `file.unsupportedType`, `file.required`, `file.storageUnavailable` and `vehiclePhoto.vehicleArchived`. A signed URL that expired while the page stayed open: the image's `onError` reloads the car once.
 
 **Acceptance criteria**
-1. [BE] Cost per km exactly halfway at the 5th decimal rounds away from zero (test).
-2. [BE] The L92 tests exist and pass; the L89 test's name or assertion matches what it checks.
-3. [BE] The cleanup script's patterns match every RPT test-user prefix and none of the owner's accounts (its self-checks still pass); it is not run in delete mode.
-4. [FE] After a failed task save (for example a 400 on the name), `document.activeElement` is inside the form and Escape closes it (smoke, he and en).
-5. [FE] `/reports?year=02025` shows one 2025 option and the 2025 figures (smoke).
-6. [FE] The print line shows the date at the moment printing starts (a smoke check that changes the clock, then dispatches `beforeprint`, or an equivalent).
-7. [FE] Starting an export and then changing a filter leaves the CSV button busy until the first export ends; exactly one download follows (smoke).
-8. [FE] The smoke steps for L88, L91, L96, L101, L102 and L106 exist and pass; L102 asserts at least 4.5:1 in light and dark.
-9. [FE] L94, L99 and L100 change no rendering: `reports-charts` and the other reports steps pass unchanged, including 44px links at 390px.
-10. [FE] L90 is reported (screenshots named; fine or fixed).
-11. [BE+FE] No regressions: `dotnet test` all pass, build clean, lint 0 warnings, no new dependency, smoke `SMOKE_ALL=1` passes in all 4 setups.
+1. [BE] Upload, replace and delete work for the owner's car; another user's car gives 404; covered by `dotnet test`, none of it touching R2.
+2. [BE] Over 10 MB gives 413 `file.tooLarge`; non-image content gives 400 `file.unsupportedType` whatever the file name; other endpoints keep their current body limits (test).
+3. [BE] The stored object has no EXIF or XMP (test with a GPS-tagged JPEG).
+4. [BE] No vehicle response contains the storage key; `photoUrl` is a signed URL or null; POST and PUT ignore `photoUrl` (tests).
+5. [BE] Without R2 settings the API starts and the photo endpoints return 503 `file.storageUnavailable` (test).
+6. [BE] The manual check against `onlycars-dev` is reported (upload, view through the signed URL, delete); no secret in the repo, the logs or the report.
+7. [FE] Add, change and remove a photo from the UI; the photo shows on the car page after a reload (smoke, against the real API with storage or with the upload mocked; say which).
+8. [FE] A 12 MB file and a text file renamed `.jpg` show the translated error next to the control, the first without any request (smoke, he and en).
+9. [FE] Loading (busy button, `aria-busy`), error and no-photo states; the remove confirm; focus returns to the photo control after upload, change and remove.
+10. [FE] Hebrew/RTL and 390px: no horizontal overflow, 44px targets, the photo box keeps its aspect ratio (smoke, and browser QA in 4 setups).
+11. [BE+FE] No regressions: `dotnet test` all pass, build clean, lint 0 warnings, smoke `SMOKE_ALL=1` passes in all 4 setups. New dependencies only for S3 (AWSSDK.S3) and metadata stripping (a .NET image library, or a hand-written strip of the metadata segments; record which, with its licence).
 
-**Out of scope:** L72 (running the cleanup, the owner's); L98 (a flaky dashboard step seen once; look into it only if it shows up again in this ticket's runs, and say so); L105 (Excel and the real print dialog, the owner's); any new feature; any API or schema change.
+**Out of scope:** the photo on dashboard cards or the car list (later); thumbnails and resizing; HEIC; attachments (FILE-2) and run photos (FILE-3); account delete and data export (they will have to delete the user's prefix); a production bucket; an orphan sweep.
 
-**Open questions:** none.
+**Open questions:** none; the FILE-1 choices are recorded in decisions.md ("Car photo, FILE-1").
 
 ---
 
 ### Later
-- **After LOW-5:** notifications (spec 9): email when a task is due soon or overdue, non-mileage reminders (insurance, inspection, registration, licence), snooze and lead time (`NotificationRule`, `Notification` in Part 2). The ticket will ask the owner which email provider to use and for its credentials; the in-app parts (reminders, lead time, snooze) can start before them.
-- **Car photo upload, attachments and run photos:** blocked until the owner creates the Cloudflare R2 credentials.
+- **FILE-2:** attachments on service records (spec 5: receipt photos, PDFs, invoices; Part 2 `Attachment`) with the original file name: add, list, open and delete in the car page's service history.
+- **FILE-3:** photos on checklist runs (spec 7), the same `Attachment` table with `ChecklistRunId`.
+- **LOW-6:** L107 to L113, plus the Lows from FILE-1 to FILE-3.
+- **NOT-1, then NOT-2:** notifications (spec 9). NOT-1 is in-app: `VehicleDocument` (insurance, inspection, registration, licence, with an expiry date), `NotificationRule` lead days and lead km, `Notification` with snooze, shown on the dashboard. NOT-2 sends the email and needs the owner's provider and credentials.
 - **Predicted due date** from `AvgKmPerDay` (spec 2.3, optional).
-- **Data export and delete-account** (spec 12): must include checklists, runs, to-dos and tires.
+- **Data export and delete-account** (spec 12): must include checklists, runs, to-dos, tires and stored files; the export strips the direction marks from to-do descriptions (decisions.md, "Direction marks in the to-do prefill").
 
 ## Changed since last audit
-- **Signed off:** RPT-3 (not committed yet), **without browser QA** (the ui-tester is still stopped by the owner).
-- **Status changes:** spec 8 "Export to CSV and PDF" goes from Missing to Done (no browser QA). All of spec 8 is now Done. Counts: Done 39 (was 38), Partial 6, Missing 6 (was 7), Deferred 6.
-- **Backlog:** L103 to L106 added (RPT-3); L105 is the owner's (open the CSV in Excel, try the print dialog once).
-- **New decisions** (`docs/decisions.md`, 2026-10-17): "RPT-3 sign-off", "Ticket after RPT-3" (LOW-5 before notifications).
-- **Next ticket:** LOW-5 (L87 to L106), written in full. The RPT-3 ticket text is in git history once this sign-off is committed.
+- **Signed off:** LOW-5 (code in `2180eb7`; the L90 screenshot steps not committed yet).
+- **Browser QA is back:** the catch-up pass over MVP5-C, LOW-3, MVP5-D, MVP5-E, LOW-4, RPT-1, RPT-2 and RPT-3 passed with no High or Medium. The "no browser QA" notes on the spec 6, 7, 8 and 11 rows are replaced.
+- **Status changes:** none. Counts: Done 39, Partial 6, Missing 6, Deferred 6.
+- **Backlog:** L87 to L106 closed (L98 not reproduced); L107 to L113 added; L72 and L105 stay with the owner.
+- **New decisions** (`docs/decisions.md`, 2026-10-17): "LOW-5 sign-off", "Direction marks in the to-do prefill", "Order after LOW-5", "Car photo, FILE-1".
+- **Next ticket:** FILE-1 (file storage and the car photo), written in full. The LOW-5 ticket text is in git history.
