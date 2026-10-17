@@ -130,7 +130,7 @@ for (const s of setups) {
     ? { title: 'היסטוריית טיפולים', empty: 'עדיין לא נרשמו טיפולים.', noMatches: 'אין טיפולים שתואמים לסינון.', clear: 'ניקוי הסינון', showMore: 'הצגת עוד', retry: 'ניסיון חוזר',
         archived: 'בארכיון', searchAll: 'חיפוש בכל ההיסטוריה', labels: ['רכב', 'משימה', 'מתאריך', 'עד תאריך', 'חיפוש'],
         dates: 'תאריך ההתחלה לא יכול להיות אחרי תאריך הסיום.', tooLong: 'יש להזין חיפוש של עד 100 תווים.', generic: 'משהו השתבש. אפשר לנסות שוב.',
-        summary: (n, total) => `${n === 1 ? 'טיפול אחד' : `${n.toLocaleString('he')} טיפולים`}, סה״כ ${total}` }
+        summary: (n, total) => `${n === 1 ? 'טיפול אחד' : n === 2 ? 'שני טיפולים' : `${n.toLocaleString('he')} טיפולים`}, סה״כ ${total}` }
     : { title: 'Service history', empty: 'No services recorded yet.', noMatches: 'No services match these filters.', clear: 'Clear filters', showMore: 'Show more', retry: 'Retry',
         archived: 'Archived', searchAll: 'Search all history', labels: ['Car', 'Task', 'From date', 'To date', 'Search'],
         dates: 'The start date must not be after the end date.', tooLong: 'Enter a search of up to 100 characters.', generic: 'Something went wrong. Please try again.',
@@ -3752,6 +3752,162 @@ for (const s of setups) {
     await page.locator('.tire-sets button.danger').click()
     await page.getByText(TI.empty, { exact: true }).waitFor()
     await focusIs('main button.add', 'New set after the last Delete')
+  })
+  // RPT-1: /reports, for a fresh user so every figure is known. The records are last year's, so none is in the future.
+  const RP = he
+    ? { title: 'דוחות', empty: 'עדיין אין עלויות טיפולים.', goCars: 'מעבר לרכבים', notFound: 'הרכב לא נמצא.', allCars: 'כל הרכבים', vanArchived: 'Report Van (בארכיון)',
+        unpriced: 'לטיפול אחד אין עלות', noTask: 'ללא משימה', oil: 'שמן', brakes: 'בלמים', driven: 'מרחק נסיעה', perKm: 'עלות לק״מ', perMi: 'עלות למייל',
+        tco: 'עלות בעלות כוללת', addPrice: 'הוספת מחיר רכישה', notEnough: 'אין מספיק קריאות קילומטראז׳', badYear: 'יש לבחור שנה בין 1900 לשנה הנוכחית.', thisYear: 'הצגת השנה הנוכחית' }
+    : { title: 'Reports', empty: 'No service costs yet.', goCars: 'Go to the cars', notFound: 'This car was not found.', allCars: 'All cars', vanArchived: 'Report Van (archived)',
+        unpriced: '1 service has no cost', noTask: 'No task', oil: 'Oil', brakes: 'Brakes', driven: 'Distance driven', perKm: 'Cost per km', perMi: 'Cost per mile',
+        tco: 'Total cost of ownership', addPrice: 'Add a purchase price', notEnough: 'Not enough odometer readings', badYear: 'Choose a year from 1900 to this year.', thisYear: 'Show this year' }
+  const yearSel = 'main .filters select >> nth=0'
+  const rpCarSel = 'main .filters select >> nth=1'
+  const rpFig = (scope, label) => scope.locator('.figures > div').filter({ has: page.locator('dt', { hasText: new RegExp(`^${label}$`) }) }).locator('dd')
+  const rpText = async (scope, label) => plain(await rpFig(scope, label).textContent())
+  const rpCar = (name) => page.locator('main .car-costs').filter({ has: page.locator('h3', { hasText: name }) })
+  const rpMoney = async (v) => plain(await moneyText(v))
+  // Cost per km and per mile keep up to 4 decimals.
+  const rpMoney4 = async (v) => plain(await page.evaluate(([v, l, c]) => v.toLocaleString(l, { style: 'currency', currency: c, maximumFractionDigits: 4 }), [v, s.lng, (await histUser()).currency]))
+  const rpIs = async (scope, label, want) => { const got = await rpText(scope, label); if (got !== plain(want)) throw new Error(`${label}: "${got}", want "${plain(want)}"`) }
+  const rpCats = page.locator('main section', { has: page.locator('.categories') })
+  let ly, rpA, rpV, rpN
+  await step('reports-empty', async () => {
+    // Criterion 7: no priced records says so and links to the cars; the year defaults to the local one.
+    await page.click('header nav button.link >> nth=1')
+    await page.locator('input[name=email]').waitFor()
+    await page.goto(`${BASE}/register`)
+    await page.fill('input[name=email]', `ui-rpt-${s.name}-${Date.now()}@onlycars.test`)
+    await page.fill('input[name=password]', 'Passw0rd!')
+    await page.click('form button:not(.link)')
+    await page.locator('a[href="/cars/new"]').waitFor()
+    await page.click('header a[href="/reports"]')
+    await arrivedAt(RP.title)
+    await page.getByText(RP.empty, { exact: true }).waitFor()
+    await page.locator('main .report a[href="/"]', { hasText: RP.goCars }).waitFor()
+    ly = await page.evaluate(() => new Date().getFullYear() - 1)
+    if ((await page.inputValue(yearSel)) !== String(ly + 1)) throw new Error(`year ${await page.inputValue(yearSel)}`)
+  })
+  await step('reports-year', async () => {
+    rpA = (await apiCall('POST', '/vehicles', { nickname: 'Report Corolla', initialOdometerKm: 40000, readingDate: `${ly}-01-01`, purchasePrice: 20000 })).id
+    const task = async (name) => (await apiCall('POST', `/vehicles/${rpA}/tasks`, { name, category: name, intervalKm: 10000, intervalDays: null, dueSoonPercent: 10, lastDoneOdometerKm: 40000, lastDoneDate: `${ly}-01-01` })).id
+    await apiCall('POST', `/vehicles/${rpA}/service-records`, { date: `${ly}-03-10`, odometerKm: 50000, totalCost: 300, taskIds: [await task('Oil'), await task('Brakes')] })
+    rpV = (await apiCall('POST', '/vehicles', { nickname: 'Report Van', initialOdometerKm: 10000, readingDate: `${ly}-01-01` })).id
+    await apiCall('POST', `/vehicles/${rpV}/service-records`, { date: `${ly}-03-20`, odometerKm: 13000, totalCost: 100.5 })
+    await apiCall('POST', `/vehicles/${rpV}/service-records`, { date: `${ly}-07-05`, odometerKm: 13000 })
+    await apiCall('POST', `/vehicles/${rpV}/archive`)
+    rpN = (await apiCall('POST', '/vehicles', { nickname: 'Report New', initialOdometerKm: 500 })).id
+    // Criterion 7: this year has no records: 12 months of 0, not an error.
+    await page.reload()
+    const months = page.locator('main .months > div')
+    await months.nth(11).waitFor()
+    if ((await months.count()) !== 12) throw new Error(`${await months.count()} months`)
+    const zero = await rpMoney(0)
+    if ((await months.locator('dd').allTextContents()).some((t) => plain(t) !== zero)) throw new Error('a month of this year is not 0')
+    // Criterion 5: the year goes to the URL and survives a reload.
+    await page.selectOption(yearSel, String(ly))
+    await page.waitForURL((u) => u.searchParams.get('year') === String(ly))
+    await rpCats.waitFor()
+    await page.reload()
+    await rpCats.waitFor()
+    if ((await page.inputValue(yearSel)) !== String(ly)) throw new Error('year lost on reload')
+    // Criterion 4: 300 on Oil and Brakes is 150 each; the Van's record with no task is No task.
+    for (const [label, v] of [[RP.brakes, 150], [RP.oil, 150], [RP.noTask, 100.5]]) await rpIs(rpCats, label, await rpMoney(v))
+    const summary = plain(await page.locator('main .report section >> nth=0').locator('p >> nth=0').textContent())
+    if (summary !== plain(HS.summary(3, await moneyText(400.5)))) throw new Error(`summary "${summary}"`)
+    await page.getByText(RP.unpriced, { exact: true }).waitFor()
+    if ((await page.locator('main .by-car > div').count()) !== 2) throw new Error('by car rows')
+    // A month's total opens /history for that month, with the same total.
+    const march = await page.evaluate(([y, l]) => new Date(y, 2, 1).toLocaleDateString(l, { month: 'long' }), [ly, s.lng])
+    await months.filter({ has: page.locator('dt', { hasText: march }) }).locator('dd a').click()
+    await arrivedAt(HS.title)
+    if (new URL(page.url()).search !== `?from=${ly}-03-01&to=${ly}-03-31`) throw new Error(`history URL ${page.url()}`)
+    await summaryIs(2, 400.5)
+  })
+  await step('reports-car', async () => {
+    await page.goBack()
+    await rpCats.waitFor()
+    const opts = await page.locator(rpCarSel).locator('option').allTextContents()
+    if (opts.length !== 4 || opts[0] !== RP.allCars || opts[3] !== RP.vanArchived) throw new Error(`car options ${opts}`)
+    // Criterion 5: the car goes to the URL with the year; By car goes away and All time holds that car only.
+    await page.selectOption(rpCarSel, rpA)
+    await page.waitForURL((u) => u.searchParams.get('vehicleId') === rpA && u.searchParams.get('year') === String(ly))
+    await page.waitForFunction(() => document.querySelectorAll('main .car-costs').length === 1 && !document.querySelector('main .by-car'), null, { timeout: 5000 })
+    await page.reload()
+    await page.waitForFunction(() => document.querySelectorAll('main .car-costs').length === 1, null, { timeout: 5000 })
+    if ((await page.inputValue(rpCarSel)) !== rpA) throw new Error('car lost on reload')
+    await rpIs(rpCats, RP.oil, await rpMoney(150))
+    // Criterion 7: a stale car shows vehicle.notFound and a way back to All cars.
+    await page.goto(`${BASE}/reports?year=${ly}&vehicleId=00000000-0000-0000-0000-000000000001`)
+    const alert = page.locator('main [role=alert]')
+    if (plain(await alert.textContent()) !== RP.notFound) throw new Error(`stale car "${await alert.textContent()}"`)
+    await page.getByRole('button', { name: RP.allCars, exact: true }).click()
+    await page.waitForURL((u) => !u.searchParams.has('vehicleId') && u.searchParams.get('year') === String(ly))
+    await page.locator('main .by-car').waitFor()
+    await focusIs('main h1', 'h1 after All cars')
+    forgetCk(404, '/reports/costs')
+    // Not a car id at all (model binding's 400): the same message and way back.
+    await page.goto(`${BASE}/reports?year=${ly}&vehicleId=abc`)
+    if (plain(await alert.textContent()) !== RP.notFound) throw new Error(`non-guid car "${await alert.textContent()}"`)
+    await page.getByRole('button', { name: RP.allCars, exact: true }).click()
+    await page.locator('main .by-car').waitFor()
+    forgetCk(400, '/reports/costs')
+    // A bad year in the URL: its message and a way to this year.
+    await page.goto(`${BASE}/reports?year=abc`)
+    if (plain(await alert.textContent()) !== RP.badYear) throw new Error(`bad year "${await alert.textContent()}"`)
+    await page.getByRole('button', { name: RP.thisYear, exact: true }).click()
+    await page.locator('main .months').waitFor()
+    if ((await page.inputValue(yearSel)) !== String(ly + 1)) throw new Error('not this year')
+    forgetCk(400, '/reports/costs')
+  })
+  await step('reports-all-time', async () => {
+    // Criterion 6, km: distance and cost per km; TCO, or a link to add the purchase price; no km driven, no cost per km.
+    await page.goto(`${BASE}/reports?year=${ly}`)
+    const corolla = rpCar('Report Corolla')
+    await corolla.waitFor()
+    await rpIs(corolla, RP.driven, `10,000 ${UM.km}`)
+    await rpIs(corolla, RP.perKm, await rpMoney4(0.03))
+    await rpIs(corolla, RP.tco, await rpMoney(20300))
+    const van = rpCar('Report Van')
+    await rpIs(van, RP.perKm, await rpMoney4(0.0335))
+    const add = rpFig(van, RP.tco).locator('a')
+    if ((await add.getAttribute('href')) !== `/cars/${rpV}/edit` || plain(await add.textContent()) !== RP.addPrice) throw new Error('Add a purchase price link')
+    await rpIs(rpCar('Report New'), RP.perKm, RP.notEnough)
+    // A chosen car with no costs still shows its All time figures, not the empty state.
+    await page.goto(`${BASE}/reports?year=${ly}&vehicleId=${rpN}`)
+    await rpCar('Report New').waitFor()
+    if (await page.getByText(RP.empty, { exact: true }).count()) throw new Error('empty state with a car chosen')
+  })
+  await step('reports-miles', async () => {
+    // Criterion 6, miles: distance in miles and cost per mile.
+    await unitIs('Mi')
+    await page.goto(`${BASE}/reports?year=${ly}`)
+    const corolla = rpCar('Report Corolla')
+    await corolla.waitFor()
+    await rpIs(corolla, RP.driven, `6,214 ${UM.mi}`)
+    await rpIs(corolla, RP.perMi, await rpMoney4(0.03 * 1.609344))
+    await unitIs('Km')
+  })
+  await step('reports-loading-error', async () => {
+    // Criterion 7: a loading line, then an error with Retry; Retry focuses the h1.
+    const costs = '**/api/reports/costs?**'
+    const slow = async (r) => { await page.waitForTimeout(700); await r.continue().catch(() => {}) }
+    await page.route(costs, slow)
+    await page.goto(`${BASE}/reports?year=${ly}`)
+    await page.locator('main .filters [role=status]', { hasText: he ? 'טוען' : 'Loading' }).waitFor()
+    await page.unroute(costs, slow)
+    await rpCats.waitFor()
+    await page.route(costs, (r) => r.fulfill({ status: 500, contentType: 'application/json', body: '{}' }))
+    await page.reload()
+    const alert = page.locator('main [role=alert]')
+    if (plain(await alert.textContent()) !== HS.generic) throw new Error(`load error "${await alert.textContent()}"`)
+    await page.unroute(costs)
+    forget500()
+    await page.getByRole('button', { name: HS.retry, exact: true }).click()
+    await rpCats.waitFor()
+    await focusIs('main h1', 'h1 after Retry')
+    // Criterion 9: 390px, no sideways scroll, 44px targets.
+    await at390('the reports page', 'reports-390')
   })
   await step('switch-language', async () => {
     const before = await page.getAttribute('html', 'dir')

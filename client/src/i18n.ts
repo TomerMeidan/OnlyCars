@@ -164,6 +164,25 @@ const en = {
   noMatches: 'No services match these filters.',
   showMore: 'Show more',
   retry: 'Retry',
+  reports: 'Reports',
+  reportYear: 'Year',
+  reportsEmpty: 'No service costs yet.',
+  goToCars: 'Go to the cars',
+  showThisYear: 'Show this year',
+  unpricedCount_one: '{{count, number}} service has no cost',
+  unpricedCount_two: '{{count, number}} services have no cost',
+  unpricedCount_other: '{{count, number}} services have no cost',
+  byMonth: 'By month',
+  byCategory: 'By category',
+  byCar: 'By car',
+  noTask: 'No task',
+  allTime: 'All time',
+  serviceTotal: 'Service costs',
+  distanceDriven: 'Distance driven',
+  costPer: { Km: 'Cost per km', Mi: 'Cost per mile' },
+  totalCostOfOwnership: 'Total cost of ownership',
+  addPurchasePrice: 'Add a purchase price',
+  notEnoughReadings: 'Not enough odometer readings',
   dashboard: 'Dashboard',
   overdueCount_zero: 'Nothing overdue',
   overdueCount_one: '{{count, number}} overdue',
@@ -499,6 +518,9 @@ const en = {
     date: {
       tooEarly: "The date can't be before {{minDate}}.",
     },
+    report: {
+      invalidYear: 'Choose a year from 1900 to this year.',
+    },
     concurrency: {
       conflict: 'This was changed at the same time somewhere else. Reload and try again.',
     },
@@ -664,6 +686,25 @@ const he: typeof en = {
   noMatches: 'אין טיפולים שתואמים לסינון.',
   showMore: 'הצגת עוד',
   retry: 'ניסיון חוזר',
+  reports: 'דוחות',
+  reportYear: 'שנה',
+  reportsEmpty: 'עדיין אין עלויות טיפולים.',
+  goToCars: 'מעבר לרכבים',
+  showThisYear: 'הצגת השנה הנוכחית',
+  unpricedCount_one: 'לטיפול אחד אין עלות',
+  unpricedCount_two: 'לשני טיפולים אין עלות',
+  unpricedCount_other: 'ל־⁦{{count, number}}⁩ טיפולים אין עלות',
+  byMonth: 'לפי חודש',
+  byCategory: 'לפי קטגוריה',
+  byCar: 'לפי רכב',
+  noTask: 'ללא משימה',
+  allTime: 'כל התקופה',
+  serviceTotal: 'עלות הטיפולים',
+  distanceDriven: 'מרחק נסיעה',
+  costPer: { Km: 'עלות לק״מ', Mi: 'עלות למייל' },
+  totalCostOfOwnership: 'עלות בעלות כוללת',
+  addPurchasePrice: 'הוספת מחיר רכישה',
+  notEnoughReadings: 'אין מספיק קריאות קילומטראז׳',
   dashboard: 'לוח בקרה',
   overdueCount_zero: 'אין משימות באיחור',
   overdueCount_one: 'משימה אחת באיחור',
@@ -992,6 +1033,9 @@ const he: typeof en = {
     date: {
       tooEarly: 'התאריך לא יכול להיות לפני {{minDate}}.',
     },
+    report: {
+      invalidYear: 'יש לבחור שנה בין ⁦1900⁩ לשנה הנוכחית.',
+    },
     concurrency: {
       conflict: 'הנתונים שונו במקביל במקום אחר. יש לרענן את הדף ולנסות שוב.',
     },
@@ -1041,7 +1085,9 @@ export function errorMessage(err: unknown, n?: number) {
 // A calendar date (a record's, a run's); formatted in UTC so the viewer's time zone can't shift the day.
 export const fmtDate = (date: string, lng: string | undefined) => new Date(date).toLocaleDateString(lng, { dateStyle: 'medium', timeZone: 'UTC' })
 
-export const money = (v: number, lng: string | undefined, currency: string | undefined) => (currency ? v.toLocaleString(lng, { style: 'currency', currency }) : v)
+// `maxDigits` lets a small figure (cost per km) keep more decimals than the currency's default.
+export const money = (v: number, lng: string | undefined, currency: string | undefined, maxDigits?: number) =>
+  (currency ? v.toLocaleString(lng, { style: 'currency', currency, maximumFractionDigits: maxDigits }) : v)
 
 export const toLocale = (lng: string | undefined): User['locale'] => (lng === 'he' ? 'He' : 'En')
 

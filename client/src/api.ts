@@ -286,6 +286,19 @@ export const autoFlag = (i: Pick<ChecklistRunItem, 'boolValue' | 'numberValue' |
     : i.maxValue != null && i.numberValue > i.maxValue ? 'above'
     : null
 
+// GET /reports/costs: the year's figures (byMonth always 12 rows) and each car's all-time figures; amounts never converted, distances in km.
+export interface CostReport {
+  years: { year: number; total: number; recordCount: number }[]
+  year: number
+  total: number
+  recordCount: number
+  unpricedCount: number
+  byMonth: { month: number; total: number; recordCount: number }[]
+  byCategory: { category: TaskCategory | null; total: number }[]
+  byVehicle: { vehicleId: string; nickname: string; isArchived: boolean; total: number; recordCount: number }[]
+  cars: { vehicleId: string; nickname: string; isArchived: boolean; serviceTotal: number; kmDriven: number; costPerKm: number | null; purchasePrice: number | null; totalCostOfOwnership: number | null }[]
+}
+
 // ProblemDetails from the API; `code` is translated by errorMessage() in i18n.ts.
 export interface Problem {
   title?: string
@@ -298,6 +311,7 @@ export interface Problem {
   minDate?: string // the earliest accepted date of a date.tooEarly error
   mountOdometerKm?: number // tireMount.odometerBeforeMount: the odometer when the set went on
   mountedAt?: string // tireMount.dateBeforeMount: the date the set went on
+  errors?: Record<string, string[]> // model binding's 400 (http.400), by field
 }
 
 export class ApiError extends Error {

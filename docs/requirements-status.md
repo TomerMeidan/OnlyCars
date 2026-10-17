@@ -1,22 +1,22 @@
 # OnlyCars: Requirements Status
 
-**Audit date:** 2026-10-17 (twenty-second audit, short sign-off of LOW-4, the Low backlog L66 to L86; nothing committed yet)
-**Overall:** MVP steps 1 to 4 are complete apart from the car photo and attachments (both blocked on R2). Step 5: checklists are done apart from photos on runs (R2); tires are done; LOW-4 closed the Low backlog (L66 to L86). Next is RPT-1, the first reports ticket (spec 8). Notifications are not started. No deployment tickets until the owner asks.
+**Audit date:** 2026-10-17 (twenty-third audit, short sign-off of RPT-1, the cost reports; nothing committed yet)
+**Overall:** MVP steps 1 to 4 are complete apart from the car photo and attachments (both blocked on R2). Step 5: checklists are done apart from photos on runs (R2); tires are done; the cost reports (RPT-1, spec 8 bullets 1 and 2) are done. Next is RPT-2 (charts), then RPT-3 (export). Notifications are not started. No deployment tickets until the owner asks.
 
 | Status | Count |
 |---|---|
-| Done | 35 |
+| Done | 37 |
 | API only | 0 |
 | Partial | 6 |
-| Missing | 10 |
+| Missing | 8 |
 | Deferred | 6 |
 | **Total** | **57** |
 
-How this was checked (twenty-second audit, short sign-off of LOW-4 per decisions.md "Faster pipeline (owner)"; I re-ran no test suites and no browser scripts):
-- Reported by other agents, not re-run by me: a plain `dotnet test` 500 of 500 (orchestrator, after the fix round); client build clean; lint 0 warnings; smoke with `SMOKE_ALL=1` 97 steps per setup, all pass (the frontend engineer's run), and 97 of 97 in 2 setups re-run by the Hebrew reviewer after the Hebrew pass. Code review: no High; the Medium (the cleanup script's patterns) and two Lows fixed.
-- **No browser QA.** The ui-tester is still stopped by the owner (decisions.md, "No ui-tester jobs (owner)"). LOW-4 is the fifth ticket shipped without a QA pass.
-- I checked in code (`git diff`, uncommitted): L66 catches the unique-key `DbUpdateException` and returns the normal duplicate code only when a competing row exists, else rethrows (`src/OnlyCars.Application/Vehicles/VehicleService.cs:116-135`, `src/OnlyCars.Application/Auth/AuthService.cs:62-80`); L67 `DateRules.RejectTooEarly` on the to-do `ResolvedAt` (`src/OnlyCars.Application/Issues/IssueService.cs:88-91`) and on a changed `lastDoneDate` (`src/OnlyCars.Application/Maintenance/MaintenanceTaskService.cs:777-780`), mapped to the Last done date field (`client/src/pages/TasksSection.tsx`, `fieldOf`); L70 the no-op edit returns before saving (`MaintenanceTaskService.cs`, "A no-op edit doesn't save"); L81 `FindMountAsync(..., withVehicle, ...)` (`src/OnlyCars.Application/Tires/TireService.cs`); L71 `runReturn.current = null` when the car page fails (`client/src/pages/CarPage.tsx`); L73 the Mount error shown with no free set, L80 `afterDelete(..., 'button.log-rotation')`, L83 one `afterDelete` for checks, rotations and mounts, L85 `.check-items` (`client/src/pages/TiresSection.tsx`); L74 the row replaced from the PUT response (`client/src/pages/TiresPage.tsx`); L76 one `noItems` (`client/src/useItemErrors.ts`); L77 mobile-first `min-width: 30.0625rem` (`client/src/index.css:316-317`; the tire forms have no `label.inline`, so the higher specificity changes nothing); L84 `errors.tireMount.vehicleArchived` in en and he (`client/src/i18n.ts:474,967`); no plural address (the לכם, שלכם, אתכם forms) left in `client/src/i18n.ts`; the tests in `tests/OnlyCars.Tests/LowFourTests.cs`, `MaintenanceSchemaTests.cs` (LocalDB races) and `TireTests.cs` (L82).
-- L72: `scripts/cleanup-test-users.sql` (one tight LIKE per generated prefix, self-checks that THROW if an owner account or a near miss would match, a LocalDB-only guard on `SERVERPROPERTY('InstanceName')`) was **never run**, not even the dry run: the permission check blocked it. The owner decides.
+How this was checked (twenty-third audit, short sign-off of RPT-1 per decisions.md "Faster pipeline (owner)"; I re-ran no test suites and no browser scripts):
+- Reported by other agents, not re-run by me: a plain `dotnet test` 517 of 517 (the engineer's and the reviewer's runs); client build clean; lint 0 warnings; smoke with `SMOKE_ALL=1` 103 steps per setup, all pass after the fix round. Code review: no High; M1, M2 and three Lows fixed. The Hebrew reviewer changed nothing.
+- **No browser QA.** The ui-tester is still stopped by the owner (decisions.md, "No ui-tester jobs (owner)"). RPT-1 is the sixth ticket shipped without a QA pass.
+- I checked in code (uncommitted): `ReportService.CostsAsync` (`src/OnlyCars.Application/Reports/ReportService.cs:16-75`): the caller's cars only, 404 for a car that isn't theirs (`:26-31`), non-voided records with `TotalCost ?? 0` and a priced flag (`:35-38`), the first reading by date then save time (`:40-43`), 12 months (`:49-53`), the equal category split with the remainder on the first by name, so the parts sum to the cost (`Split`, `:81-87`), `kmDriven` clamped at 0, `costPerKm` null at 0 km, TCO null without a purchase price (`:62-70`); `GET /api/reports/costs` (`src/OnlyCars.Api/Controllers/ReportsController.cs:16`); tests in `tests/OnlyCars.Tests/CostReportTests.cs` (10 tests: split, voided, unpriced, archived, 12 zero months, km driven and TCO, one car, another user's car and records, the year bounds, no cars). UI `client/src/pages/ReportsPage.tsx`: header link and route (`client/src/App.tsx:43,60`); Year and Car in the URL (`:57-61`); the summary, By month, By category, By car and All time sections as label and amount rows (`:78-139`); cost per mile = cost per km x 1.609344 with up to 4 decimals (`:127-129`); the empty state only without a car chosen (`:80-85`); `vehicle.notFound` or a non-guid id offers All cars, `report.invalidYear` offers this year, else Retry (`:161-168`); en and he strings (`client/src/i18n.ts:167-182,689-704`).
+- Seen in code, accepted: a record whose tasks were all deleted counts as "No task" (deleting a task removes its join rows, `src/OnlyCars.Application/Maintenance/MaintenanceTaskService.cs`, `DeleteAsync`), so its cost leaves its old category.
 - The notes from earlier audits are in git history.
 
 ## 1. Vehicles
@@ -91,8 +91,8 @@ How this was checked (twenty-second audit, short sign-off of LOW-4 per decisions
 
 | Requirement | Status | Evidence | What's missing |
 |---|---|---|---|
-| Cost per car, per category, per month and per year | **Missing** | none | Everything (MVP step 5) |
-| Cost per km and total cost of ownership | **Missing** | none | Everything. `PurchasePrice` is already stored, which helps with TCO later. |
+| Cost per car, per category, per month and per year | **Done** (no browser QA) | RPT-1 (not committed; contract `docs/contracts/RPT-1.md`): `GET /api/reports/costs?year=&vehicleId=` (`ReportsController.cs:16`, `ReportService.cs:16-75`), no migration; `CostReportTests.cs`. UI: `/reports` from the header (`App.tsx:43,60`) with Year and Car in the URL, the year summary with the unpriced count, By month (12 rows), By category (equal split, "No task"), By car, each total with records linking to `/history` (`ReportsPage.tsx:78-118`). Smoke `SMOKE_ALL=1` 103 per setup (reported). | Not checked in a browser (ui-tester stopped). Lows L92 to L98. |
+| Cost per km and total cost of ownership | **Done** (no browser QA) | RPT-1: per car, all time: service total, km driven (from the first reading, clamped at 0), cost per km (4 decimals, null at 0 km) and TCO = purchase price + service total (null without a price) (`ReportService.cs:62-70`, tested). UI: the All time section with cost per km or per mile in the user's unit, "Not enough odometer readings", and "Add a purchase price" linking to the car's edit page (`ReportsPage.tsx:119-137`). | Fuel and tire purchases are not included (decided). The Hebrew term for TCO is open for the owner. Not checked in a browser. |
 | Charts: spending over time, cost by category | **Missing** | none | Everything |
 | Export to CSV and PDF | **Missing** | none | Everything |
 
@@ -165,17 +165,16 @@ How this was checked (twenty-second audit, short sign-off of LOW-4 per decisions
 | Deploy gate | **SEC-1 signed off.** Nothing else blocks a first deploy except the owner's Azure account. The owner said not to deploy yet (decisions.md, 2026-10-15, "When to deploy"), so no deployment tickets are queued. |
 | 3. Service history with costs | **Complete apart from attachments (blocked on R2). MVP3-A, MVP3-B, MVP3-C and MVP3-D are signed off.** Working end to end in EN and HE: the service history on `/cars/:id`, recording a past service (date, odometer, shop or DIY, cost, notes, several tasks, parts and labour) with the date-order rules, editing everything on a record (shop, cost, notes, items, date, odometer and tasks, with the car's odometer and the tasks' last done following), deleting any record, and a `/history` page that filters and searches all cars. LOW-1 (the first Low batch) is signed off too. |
 | 4. Dashboard with due/overdue status | **Complete. MVP4-A and LOW-2 are signed off; "Start a checklist" came with MVP5-B.** The dashboard on `/`: overdue and due-soon counts, this month's spend linking to `/history`, and per-car cards with the next 3 tasks, one-tap Mark done with Undo, quick odometer entry and Start a checklist, in EN and HE. |
-| 5. Checklists, tires, reports, notifications | **Started. Checklists are done apart from photos on runs (R2): MVP5-A, MVP5-B and MVP5-C are signed off. Tires are done: MVP5-D (sets, mounts, swap, km per set, storage notes) and MVP5-E (pressure, tread depth, rotations) are signed off. LOW-3 and LOW-4 are signed off. MVP5-C, LOW-3, MVP5-D, MVP5-E and LOW-4 shipped without browser QA.** Next: reports (RPT-1, then charts and export), then notifications. |
+| 5. Checklists, tires, reports, notifications | **Started. Checklists are done apart from photos on runs (R2): MVP5-A, MVP5-B and MVP5-C are signed off. Tires are done: MVP5-D (sets, mounts, swap, km per set, storage notes) and MVP5-E (pressure, tread depth, rotations) are signed off. LOW-3 and LOW-4 are signed off. Reports: RPT-1 (cost per car, category, month and year, cost per km, TCO) is signed off. MVP5-C, LOW-3, MVP5-D, MVP5-E, LOW-4 and RPT-1 shipped without browser QA.** Next: RPT-2 (charts), RPT-3 (export), LOW-5, then notifications. |
 
 ## Ticket queue
 
 | Order | Ticket | Who | State |
 |---|---|---|---|
-| 1 | RPT-1: cost reports per car, category, month and year, cost per km and total cost of ownership (spec 8 bullets 1 and 2) | BE, then FE | **Next** (written below) |
-| 2 | RPT-2: charts, spending over time and cost by category (spec 8 bullet 3) | FE (BE only if RPT-1's response lacks something) | After RPT-1 |
-| 3 | RPT-3: export to CSV and PDF (spec 8 bullet 4) | BE, then FE | After RPT-2 |
-| 4 | LOW-5: the Lows from L87 on | BE, then FE | About three tickets after LOW-4 |
-| 5 | Notifications (spec 9) | BE, then FE | After reports |
+| 1 | RPT-2: charts, spending over time and cost by category (spec 8 bullet 3) | FE only (RPT-1's response has the data) | **Next** (written below) |
+| 2 | RPT-3: export to CSV and PDF (spec 8 bullet 4) | BE, then FE | After RPT-2 |
+| 3 | LOW-5: the Lows from L87 on | BE, then FE | After RPT-3 (three tickets after LOW-4) |
+| 4 | Notifications (spec 9) | BE, then FE | After LOW-5 |
 
 ## Signed-off tickets
 
@@ -287,6 +286,12 @@ How this was checked (twenty-second audit, short sign-off of LOW-4 per decisions
   - **L72 not done:** the script exists but was never run (the permission check blocked even the dry run); it stays with the owner (CHECKLIST.md, "Waiting on the owner").
   - Accepted (decisions.md, "LOW-4 sign-off"): L86 (the caps can be passed by one under a race); the to-do's own 2000-01-01 minimum stays. The new Lows are L87 to L91.
 
+- **RPT-1 (not committed yet): signed off 2026-10-17, without browser QA.** Short sign-off under "Faster pipeline (owner)"; I re-ran no suites. Contract `docs/contracts/RPT-1.md`; no migration.
+  - Reported evidence: a plain `dotnet test` 517 of 517 (engineer and reviewer); build clean; lint 0 warnings; smoke `SMOKE_ALL=1` 103 steps per setup, all pass after the fix round; code review with no High; the Hebrew reviewer changed nothing.
+  - Fix round: M1 (cost per km or mile showed only 2 decimals, often 0.00) fixed: up to 4 decimals through `money()`'s new `maxDigits`. M2 (while a new filter loaded, the old figures got the new filter's links and By car) fixed: the stored report keeps the `vehicleId` it was asked for. Lows fixed: a non-guid `vehicleId` offers All cars; with a car chosen there is no empty state (its All time block shows, the year sections at 0); refocus is cleared on any answer.
+  - AC1 to AC3 [BE] signed off from tests and the code checks above; AC4 [BE+FE] from the split test and the code; AC5 to AC9 [FE] from code, review and smoke; AC10 from the reported runs. AC7 is met as amended in the fix round: the "no service costs yet" state shows only for All cars. **Not verified in a browser:** the layout at 390px, 44px targets, focus and the RTL reading order of amounts and month names.
+  - Accepted (decisions.md, "RPT-1 sign-off"): the year allows the current UTC year plus a day of slack; a car whose records that year are all unpriced is left out of By car; `kmDriven` is clamped at 0; `costPerKm` is rounded to 4 decimals; the All time cars are ordered active first, then by nickname; a record whose tasks were deleted counts as "No task". The new Lows are L92 to L98.
+
 ## Low issues backlog
 
 Every Low finding from QA and review lands here (decisions.md, "Faster pipeline (owner)"). They are fixed together in a batch ticket LOW-n about every 3 tickets. LOW-1 closed L1 to L12, LOW-2 closed L13 to L26, LOW-3 closed L27 to L65, LOW-4 closed L66 to L86 (L86 accepted; L72, the dev DB cleanup, waits on the owner); those rows are in git history. Open (for LOW-5):
@@ -298,65 +303,62 @@ Every Low finding from QA and review lands here (decisions.md, "Faster pipeline 
 | L89 | LOW-4 review | The LocalDB L69 test asserts `DbUpdateConcurrencyException`, not the 409 `concurrency.conflict` (the mapping is tested elsewhere, on InMemory). Assert the code, or say so in the test name. | Tests |
 | L90 | LOW-4 review | Nobody has checked the long new Hebrew strings (L79, L84) for wrapping at 390px. Read the 390px screenshots, or leave it to browser QA when the owner restarts it. | FE, he strings |
 | L91 | LOW-4 review | `client/ui-tests/smoke.mjs` `SV.editHint` still holds an old plural Hebrew string. It is only used in a "not shown" assertion, so that assertion always passes. Update it to the current string. | Smoke |
+| L92 | RPT-1 review | Missing tests: the All time cars order, the `byCategory` and `byVehicle` tie order, the `kmDriven` clamp at 0, and the `CreatedAt` tie-break of the first reading. | Tests |
+| L93 | RPT-1 review | `ReportService.cs:70` `Math.Round(serviceTotal / kmDriven, 4)` uses the default ToEven; the codebase uses `MidpointRounding.AwayFromZero`. | BE |
+| L94 | RPT-1 review | The `.report a` 44px rule duplicates `index.css:226`. Remove the duplicate. | FE, CSS |
+| L95 | RPT-1 review | `/reports?year=02025` shows a second, duplicate-looking year option. Normalise the year from the URL (or treat a non-canonical one as invalid). | FE, reports |
+| L96 | RPT-1 review | The M2 fix (old figures keep their own `vehicleId` while a new filter loads) has no smoke step. | Smoke |
+| L97 | RPT-1 housekeeping | More test users in the dev DB: `rpt1-a-*` and `rpt1-b-*@example.com`, `ui-rpt-*`, `probe-rpt-*`, `ui-rptdbg-*`. Check that `scripts/cleanup-test-users.sql` matches them (add tight prefixes if not); running it stays with the owner (L72). | Scripts |
+| L98 | RPT-1 smoke run | One flaky desktop-light-en failure of `dashboard-mark-done` and `dashboard-quick-odometer` in one run, not reproduced. Watch for it; investigate if it recurs. | Smoke |
 | L72 | LOW-3 housekeeping | The local dev DB has leftover test users. `scripts/cleanup-test-users.sql` was written in LOW-4 but never run; the owner decides (CHECKLIST.md, "Waiting on the owner"). | Dev DB (owner) |
 
 ## Next ticket
 
-### RPT-1: Cost reports (spec 8 bullets 1 and 2)
+### RPT-2: Charts, spending over time and cost by category (spec 8 bullet 3)
 
-**Goal:** As a user, I open Reports and see what my cars cost me: per car, per category, per month and per year, plus each car's cost per km (or mile) and its total cost of ownership.
+**Goal:** As a user, I open Reports and see at a glance when my money went (a bar per month of the chosen year) and on what (a bar per category), without reading the rows of numbers.
 
-**Spec:** section 8 bullets 1 and 2. Charts (bullet 3) are RPT-2 and export to CSV and PDF (bullet 4) is RPT-3 (decisions.md, "Reports scope and split").
+**Spec:** section 8 bullet 3. Export (bullet 4) is RPT-3 (decisions.md, "Reports scope and split").
 
-**Binding decisions:** decisions.md "Cost reports, RPT-1" (what counts, the category split, km driven, TCO), "Reports scope and split", "Dashboard, MVP4-A" (the month spend: non-voided `TotalCost`, archived cars included), the settings rules (one currency per user, old amounts not converted; km or miles, every distance converted), "Hebrew form of address", the MVP1-C focus and Escape rules, "Faster pipeline (owner)", "No ui-tester jobs (owner)".
+**Binding decisions:** decisions.md "Charts, RPT-2" (no chart library, simple bars drawn with HTML/CSS or inline SVG; the number rows stay as the text alternative; bars follow the page direction), "Cost reports, RPT-1" and "RPT-1 sign-off" (what the numbers mean), the settings rules (one currency, km or miles), "Hebrew form of address", "Faster pipeline (owner)", "No ui-tester jobs (owner)".
 
 **Scope**
 
-*Backend (backend-engineer, runs first; publishes `docs/contracts/RPT-1.md` with the response shape and codes):*
-- No new entity and no migration. Reads `ServiceRecord` (`VehicleId`, `Date`, `TotalCost`, `IsVoided`), `ServiceRecordTask` with `MaintenanceTask.Category`, `Vehicle` (`Nickname`, `PurchasePrice`, `CurrentOdometerKm`, `IsArchived`) and `OdometerReading` (the car's first reading).
-- `GET /api/reports/costs?year=YYYY&vehicleId=<optional>`, scoped to the caller. Response:
-  - `years`: every year that has a non-voided record (for the filter), each `{ year, total, recordCount }`, newest first.
-  - for the chosen `year`: `total`, `recordCount`, `unpricedCount` (records with no `TotalCost`), `byMonth` (always 12 rows, `{ month, total, recordCount }`, zeros included), `byCategory` (`{ category, total }`, `category` one of the `TaskCategory` names or `null` for records with no tasks; highest total first; categories with 0 left out), `byVehicle` (`{ vehicleId, nickname, isArchived, total, recordCount }`, highest total first; cars with 0 left out).
-  - `cars`, all time (not limited by `year`): per car `{ vehicleId, nickname, isArchived, serviceTotal, kmDriven, costPerKm, purchasePrice, totalCostOfOwnership }`.
-  - With `vehicleId`, every block holds that car only.
-- Rules (from the decision): non-voided records only; a record without `TotalCost` counts as 0 and is counted in `unpricedCount`; archived cars are included; month and year by the record's `Date`. A record's cost is split equally over the distinct categories of its tasks (2-decimal rounding, the remainder cents on the first category by name), so `byCategory` sums to `total`; a record without tasks goes to `category: null`. `kmDriven` = `CurrentOdometerKm` minus the car's first odometer reading by date (then save time); `costPerKm` = `serviceTotal / kmDriven`, `null` when `kmDriven` is 0. `totalCostOfOwnership` = `purchasePrice + serviceTotal`, `null` when `PurchasePrice` is not set.
-- Codes: 400 `report.invalidYear` for a missing or non-numeric year, or a year before 1900 or after the server's current year; 404 `vehicle.notFound` for a car that is not the caller's or does not exist (the existing code).
-- Tests: the category split (one category, two, none; the rounding remainder), voided and unpriced records, archived cars, the 12 months with zeros, `kmDriven` 0 gives `costPerKm` null, no purchase price gives TCO null, another user's car is 404 and another user's records never count, the year validation.
+*Backend:* none. RPT-1's `GET /api/reports/costs` already returns `byMonth` (12 rows, `{ month, total, recordCount }`) and `byCategory` (`{ category, total }`, highest first) for the chosen year and car (`docs/contracts/RPT-1.md`). If the frontend engineer finds something missing, stop and report it rather than changing the API.
 
-*Frontend (frontend-engineer, builds against `docs/contracts/RPT-1.md`):*
-- A new page `/reports`, linked from the header after Service history (signed-in users only), with a page title and focus on the heading as on the other routes.
-- Filters: Year (from `years`, the current local year by default and when `years` is empty) and Car (All cars, then active cars, then archived ones marked as archived); both kept in the URL (`?year=&vehicleId=`), like `/history`.
-- Sections for the chosen year: a summary (total, record count, and "N records have no cost" when `unpricedCount` > 0); By month (12 rows, month names from `Intl` in the UI language); By category (the existing category labels, "No task" for `null`); By car (hidden when one car is chosen). Each total that has records links to `/history` filtered to that month, or to that car and year.
-- An "All time" section per car: service total, km driven and cost per km in the user's unit (cost per mile = cost per km x 1.609344; km driven converted), purchase price, and total cost of ownership; "Add a purchase price" links to the car's edit page when it is missing; "Not enough odometer readings" when `costPerKm` is null.
-- Amounts with the user's currency formatter, numbers in `bdi`, en and he strings for everything new (Hebrew reviewer approves).
+*Frontend (frontend-engineer, `client/src/pages/ReportsPage.tsx` and `client/src/index.css`):*
+- **Spending over time:** in the By month section, above its rows, 12 vertical bars for January to December of the chosen year, each bar's height proportional to `byMonth[i].total` against the year's highest month; short month names from `Intl` in the UI language under the bars. A month at 0 shows an empty slot (a baseline only), not a missing column. When every month is 0, no chart (the rows already say 0).
+- **Cost by category:** in the By category section, above its rows, one horizontal bar per `byCategory` row in the API's order, the bar's length proportional to the highest category, labelled with the category name ("No task" for `null`) and its amount.
+- No new dependency. Bars use theme tokens (a new `--chart-bar` for light and dark if none fits) with at least 3:1 contrast against the card in both themes.
+- The bars are decorative over the data: the chart is `aria-hidden="true"` and the existing label and amount rows stay as they are, so screen readers and the links to `/history` are unchanged.
+- While a new filter loads, the charts show the last report (with the rest of the page, `aria-busy`), and update with it; no layout jump between loads (fixed chart height).
+- en and he strings only if a visible label is needed (Hebrew reviewer approves).
 
 **Acceptance criteria**
-1. [BE] The endpoint returns the blocks above with the decided rules; `byCategory` and `byMonth` each sum to `total` for the year (tests).
-2. [BE] Voided records never count; unpriced records count as 0 and in `unpricedCount`; archived cars count (tests).
-3. [BE] Another user's car is 404 `vehicle.notFound` and another user's records never appear in any block; a bad year is 400 `report.invalidYear` (tests).
-4. [BE+FE] With one record of 300 on two tasks in Oil and Brakes, By category shows 150 for each, in en and he.
-5. [FE] Changing Year or Car updates the URL, and reloading the page keeps the filters; a link from a month total opens `/history` with the same total.
-6. [FE] A miles user sees km driven and cost per mile converted; a km user sees km and cost per km.
-7. [FE] Empty: with no priced records the page says there are no service costs yet and links to the cars; a chosen year with no records shows 0 for each month, not an error. Loading: a loading line, no layout jump. Error: a message with Retry; a stale `vehicleId` in the URL shows the `vehicle.notFound` message and a way back to All cars.
-8. [FE] Hebrew/RTL: labels, month names and amounts read right to left with numbers and currency in the right order; no plural form of address.
-9. [FE] At 390px nothing scrolls sideways (no wide tables: label and amount rows), touch targets are at least 44 by 44px, and focus is visible.
-10. [BE+FE] No regressions: build clean, lint 0 warnings, a plain `dotnet test` passes with the count reported, smoke passes in all 4 setups with new steps for the reports page (filters in the URL, the category split, a miles user, the empty state, a 390px shot in he and en).
+1. [FE] With records of 100 in March and 300 in July of the chosen year, the month chart shows 12 slots, July's bar full height, March's a third of it, the other 10 empty; the rows below still show every month's amount.
+2. [FE] With one record of 300 on Oil and Brakes and one of 100 with no task, the category chart shows Oil 150 and Brakes 150 at full length and "No task" 100 at two thirds, in the API's order.
+3. [FE] Changing Year or Car redraws both charts for the new figures; a year with no costs shows no month chart and no category section, as now.
+4. [FE] Hebrew/RTL: the month chart runs right to left (January at the right), the category bars grow from the right, and amounts and names read in the right order; in English January is at the left and bars grow from the left.
+5. [FE] Light and dark themes: bars are visible with at least 3:1 contrast against the card; nothing relies on colour alone (the rows carry the numbers).
+6. [FE] At 390px, in he and en, both charts fit the card with no sideways scroll; month labels don't overlap (shorter names or every other label if needed); the chart takes no focus and the page's tab order is unchanged.
+7. [FE] Accessibility: both charts are `aria-hidden`; the label and amount rows and their `/history` links are unchanged.
+8. [FE] No regressions: build clean, lint 0 warnings, no new dependency in `client/package.json`, smoke `SMOKE_ALL=1` passes in all 4 setups with new steps: the month bar heights for a known data set, the category bar lengths, the RTL direction in he, and a 390px screenshot in he and en (the engineer reads them and says so).
 
-**Out of scope:** charts (RPT-2); CSV and PDF export (RPT-3); fuel costs (the fuel log is optional and not built); tire set purchase prices (not stored); currency conversion; reports on the dashboard beyond the existing month spend.
+**Out of scope:** a multi-year chart (the Year filter covers other years); pie or donut charts; tooltips, hover or click on bars; cost per km over time; charts on the dashboard; export (RPT-3); any backend change.
 
-**Open questions:** none blocking; the rules are delegated decisions (decisions.md, "Cost reports, RPT-1") the owner may revisit: the equal split of a record over its task categories, km driven from the first reading, and TCO as purchase price plus service costs only.
+**Open questions:** none blocking. The owner may revisit "Charts, RPT-2" (bars only, no chart library, right to left in Hebrew).
 
 ---
 
 ### Later
-- **Reports (spec 8):** RPT-2 (charts) and RPT-3 (CSV and PDF export) after RPT-1, then notifications (spec 9).
+- **Reports (spec 8):** RPT-3 (CSV and PDF export) after RPT-2, then LOW-5, then notifications (spec 9).
 - **Car photo upload, attachments and run photos:** blocked until the owner creates the Cloudflare R2 credentials.
 - **Predicted due date** from `AvgKmPerDay` (spec 2.3, optional).
 - **Data export and delete-account** (spec 12): must include checklists, runs, to-dos and tires.
 
 ## Changed since last audit
-- **Signed off:** LOW-4 (not committed yet), **without browser QA** (the ui-tester is still stopped by the owner). L66 to L86 closed; L72's script is written but not run (owner).
-- **Status changes:** none (LOW-4 fixed rough edges inside items already Done). Counts unchanged: Done 35, Partial 6, Missing 10, Deferred 6.
-- **Backlog:** L66 to L86 closed; L87 to L91 added; L72 stays open with the owner.
-- **New decisions** (`docs/decisions.md`, 2026-10-17): "LOW-4 sign-off", "Reports scope and split", "Cost reports, RPT-1".
-- **Next ticket:** RPT-1 (cost reports, spec 8 bullets 1 and 2), written in full. The LOW-4 ticket text is in git history once this sign-off is committed.
+- **Signed off:** RPT-1 (not committed yet), **without browser QA** (the ui-tester is still stopped by the owner).
+- **Status changes:** spec 8 "Cost per car, per category, per month and per year" and "Cost per km and total cost of ownership" go from Missing to Done (no browser QA). Counts: Done 37 (was 35), Partial 6, Missing 8 (was 10), Deferred 6.
+- **Backlog:** L92 to L98 added (RPT-1 review, housekeeping and one smoke flake); L87 to L91 and L72 stay open.
+- **New decisions** (`docs/decisions.md`, 2026-10-17): "RPT-1 sign-off", "Charts, RPT-2".
+- **Next ticket:** RPT-2 (charts, spec 8 bullet 3), frontend only, written in full. The RPT-1 ticket text is in git history once this sign-off is committed.

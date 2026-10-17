@@ -318,3 +318,15 @@ details > summary { padding-block: 0.625rem; cursor: pointer; }
 /* MVP5-E (L85): a check's wheels, each reading label then value with a normal space */
 .check-items { list-style: none; padding: 0; margin: 0; display: grid; gap: 0.125rem; }
 .check-items bdi { font-variant-numeric: tabular-nums; }
+
+/* RPT-1 reports: label and value rows instead of tables, so nothing scrolls sideways at 390px */
+.filters > p[role='status'] { min-block-size: 1.55em; } /* holds the loading line's place */
+.report { display: grid; gap: 1.25rem; }
+.report a { display: inline-flex; align-items: center; min-height: 2.75rem; }
+.report h3 { margin: 0; font-size: 1.05rem; }
+.car-costs { display: grid; gap: 0.25rem; }
+.figures { margin: 0; }
+.figures > div { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 0 0.75rem; min-block-size: 2.75rem; border-block-end: 1px solid var(--line); }
+.figures > div:last-child { border-block-end: none; }
+.figures dd { margin: 0; font-weight: 600; font-variant-numeric: tabular-nums; }
+.figures bdi { direction: ltr; }

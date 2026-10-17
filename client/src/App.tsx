@@ -9,6 +9,7 @@ import CarFormPage from './pages/CarFormPage'
 import CarsPage from './pages/CarsPage'
 import ChecklistsPage from './pages/ChecklistsPage'
 import HistoryPage from './pages/HistoryPage'
+import ReportsPage from './pages/ReportsPage'
 import RunPage from './pages/RunPage'
 import SettingsPage from './pages/SettingsPage'
 import TiresPage from './pages/TiresPage'
@@ -39,6 +40,7 @@ export default function App() {
             {otherLang === 'he' ? 'עברית' : 'English'}
           </button>
           {user && <Link to="/history">{t('serviceHistory')}</Link>}
+          {user && <Link to="/reports">{t('reports')}</Link>}
           {user && <Link to="/checklists">{t('checklists')}</Link>}
           {user && <Link to="/tires">{t('tires')}</Link>}
           {user && <Link to="/settings">{t('settings')}</Link>}
@@ -55,6 +57,7 @@ export default function App() {
             <Route path="/cars/:id/edit" element={<CarFormPage />} />
             <Route path="/cars/:id/checklists/:checklistId/run" element={<RunPage />} />
             <Route path="/history" element={<HistoryPage />} />
+            <Route path="/reports" element={<ReportsPage />} />
             <Route path="/checklists" element={<ChecklistsPage />} />
             <Route path="/tires" element={<TiresPage />} />
             <Route path="/settings" element={<SettingsPage />} />
