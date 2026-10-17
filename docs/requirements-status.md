@@ -1,22 +1,21 @@
 # OnlyCars: Requirements Status
 
-**Audit date:** 2026-10-17 (twenty-third audit, short sign-off of RPT-1, the cost reports; nothing committed yet)
-**Overall:** MVP steps 1 to 4 are complete apart from the car photo and attachments (both blocked on R2). Step 5: checklists are done apart from photos on runs (R2); tires are done; the cost reports (RPT-1, spec 8 bullets 1 and 2) are done. Next is RPT-2 (charts), then RPT-3 (export). Notifications are not started. No deployment tickets until the owner asks.
+**Audit date:** 2026-10-17 (twenty-fourth audit, short sign-off of RPT-2, the report charts; nothing committed yet)
+**Overall:** MVP steps 1 to 4 are complete apart from the car photo and attachments (both blocked on R2). Step 5: checklists are done apart from photos on runs (R2); tires are done; the cost reports and their charts (RPT-1 and RPT-2, spec 8 bullets 1 to 3) are done. Next is RPT-3 (export to CSV and PDF). Notifications are not started. No deployment tickets until the owner asks.
 
 | Status | Count |
 |---|---|
-| Done | 37 |
+| Done | 38 |
 | API only | 0 |
 | Partial | 6 |
-| Missing | 8 |
+| Missing | 7 |
 | Deferred | 6 |
 | **Total** | **57** |
 
-How this was checked (twenty-third audit, short sign-off of RPT-1 per decisions.md "Faster pipeline (owner)"; I re-ran no test suites and no browser scripts):
-- Reported by other agents, not re-run by me: a plain `dotnet test` 517 of 517 (the engineer's and the reviewer's runs); client build clean; lint 0 warnings; smoke with `SMOKE_ALL=1` 103 steps per setup, all pass after the fix round. Code review: no High; M1, M2 and three Lows fixed. The Hebrew reviewer changed nothing.
-- **No browser QA.** The ui-tester is still stopped by the owner (decisions.md, "No ui-tester jobs (owner)"). RPT-1 is the sixth ticket shipped without a QA pass.
-- I checked in code (uncommitted): `ReportService.CostsAsync` (`src/OnlyCars.Application/Reports/ReportService.cs:16-75`): the caller's cars only, 404 for a car that isn't theirs (`:26-31`), non-voided records with `TotalCost ?? 0` and a priced flag (`:35-38`), the first reading by date then save time (`:40-43`), 12 months (`:49-53`), the equal category split with the remainder on the first by name, so the parts sum to the cost (`Split`, `:81-87`), `kmDriven` clamped at 0, `costPerKm` null at 0 km, TCO null without a purchase price (`:62-70`); `GET /api/reports/costs` (`src/OnlyCars.Api/Controllers/ReportsController.cs:16`); tests in `tests/OnlyCars.Tests/CostReportTests.cs` (10 tests: split, voided, unpriced, archived, 12 zero months, km driven and TCO, one car, another user's car and records, the year bounds, no cars). UI `client/src/pages/ReportsPage.tsx`: header link and route (`client/src/App.tsx:43,60`); Year and Car in the URL (`:57-61`); the summary, By month, By category, By car and All time sections as label and amount rows (`:78-139`); cost per mile = cost per km x 1.609344 with up to 4 decimals (`:127-129`); the empty state only without a car chosen (`:80-85`); `vehicle.notFound` or a non-guid id offers All cars, `report.invalidYear` offers this year, else Retry (`:161-168`); en and he strings (`client/src/i18n.ts:167-182,689-704`).
-- Seen in code, accepted: a record whose tasks were all deleted counts as "No task" (deleting a task removes its join rows, `src/OnlyCars.Application/Maintenance/MaintenanceTaskService.cs`, `DeleteAsync`), so its cost leaves its old category.
+How this was checked (twenty-fourth audit, short sign-off of RPT-2 per decisions.md "Faster pipeline (owner)"; I re-ran no test suites and no browser scripts):
+- Reported by other agents, not re-run by me: client build clean; lint 0 warnings; smoke with `SMOKE_ALL=1` 104 steps per setup, all pass after the fix round (new step `reports-charts`). Code review: no High; one Medium (month labels at 390px had 0.67px to spare) and one Low (no test of the 2px minimum bar) fixed. Frontend only: no API change, no new dependency, no new strings, so no Hebrew review.
+- **No browser QA.** The ui-tester is still stopped by the owner (decisions.md, "No ui-tester jobs (owner)"). RPT-2 is the seventh ticket shipped without a QA pass.
+- I checked in code (uncommitted diff): `client/src/pages/ReportsPage.tsx:88-123`: short month names from `Intl` (`toLocaleDateString` with `month: 'short'`) in the UI language; bars scaled to the highest month and the highest category, a non-zero value at least 2px, 0 at 0 (`:91-93`); the month chart only when some month is above 0; always 12 slots (one per `byMonth` row); category bars in the API's order with "No task" for `null`; both charts `aria-hidden="true"` above the unchanged `dl.figures` rows and their `/history` links. `client/src/index.css:333-346`: a 12-column grid and `inline-size` bars, so both follow the page direction in Hebrew; a fixed 8rem chart height; bars in `--muted` (about 6.0:1 light and 6.3:1 dark against the card, computed by hand by the engineer, not by a tool); below 40em every other month label is hidden. `client/package.json` unchanged.
 - The notes from earlier audits are in git history.
 
 ## 1. Vehicles
@@ -93,7 +92,7 @@ How this was checked (twenty-third audit, short sign-off of RPT-1 per decisions.
 |---|---|---|---|
 | Cost per car, per category, per month and per year | **Done** (no browser QA) | RPT-1 (not committed; contract `docs/contracts/RPT-1.md`): `GET /api/reports/costs?year=&vehicleId=` (`ReportsController.cs:16`, `ReportService.cs:16-75`), no migration; `CostReportTests.cs`. UI: `/reports` from the header (`App.tsx:43,60`) with Year and Car in the URL, the year summary with the unpriced count, By month (12 rows), By category (equal split, "No task"), By car, each total with records linking to `/history` (`ReportsPage.tsx:78-118`). Smoke `SMOKE_ALL=1` 103 per setup (reported). | Not checked in a browser (ui-tester stopped). Lows L92 to L98. |
 | Cost per km and total cost of ownership | **Done** (no browser QA) | RPT-1: per car, all time: service total, km driven (from the first reading, clamped at 0), cost per km (4 decimals, null at 0 km) and TCO = purchase price + service total (null without a price) (`ReportService.cs:62-70`, tested). UI: the All time section with cost per km or per mile in the user's unit, "Not enough odometer readings", and "Add a purchase price" linking to the car's edit page (`ReportsPage.tsx:119-137`). | Fuel and tire purchases are not included (decided). The Hebrew term for TCO is open for the owner. Not checked in a browser. |
-| Charts: spending over time, cost by category | **Missing** | none | Everything |
+| Charts: spending over time, cost by category | **Done** (no browser QA) | RPT-2 (not committed; frontend only): on `/reports`, 12 vertical month bars over the By month rows and a horizontal bar per category over the By category rows, scaled to the highest value, `aria-hidden` over the unchanged rows, following the page direction in Hebrew (`ReportsPage.tsx:88-123`, `index.css:333-346`); no chart library. Smoke `reports-charts` (bar heights and lengths, RTL, the 2px minimum, label overlap and edges at 390px including a 20px root font), `SMOKE_ALL=1` 104 per setup (reported). | Not checked in a browser (ui-tester stopped). Lows L99 to L102. |
 | Export to CSV and PDF | **Missing** | none | Everything |
 
 ## 9. Reminders and Notifications
@@ -165,16 +164,15 @@ How this was checked (twenty-third audit, short sign-off of RPT-1 per decisions.
 | Deploy gate | **SEC-1 signed off.** Nothing else blocks a first deploy except the owner's Azure account. The owner said not to deploy yet (decisions.md, 2026-10-15, "When to deploy"), so no deployment tickets are queued. |
 | 3. Service history with costs | **Complete apart from attachments (blocked on R2). MVP3-A, MVP3-B, MVP3-C and MVP3-D are signed off.** Working end to end in EN and HE: the service history on `/cars/:id`, recording a past service (date, odometer, shop or DIY, cost, notes, several tasks, parts and labour) with the date-order rules, editing everything on a record (shop, cost, notes, items, date, odometer and tasks, with the car's odometer and the tasks' last done following), deleting any record, and a `/history` page that filters and searches all cars. LOW-1 (the first Low batch) is signed off too. |
 | 4. Dashboard with due/overdue status | **Complete. MVP4-A and LOW-2 are signed off; "Start a checklist" came with MVP5-B.** The dashboard on `/`: overdue and due-soon counts, this month's spend linking to `/history`, and per-car cards with the next 3 tasks, one-tap Mark done with Undo, quick odometer entry and Start a checklist, in EN and HE. |
-| 5. Checklists, tires, reports, notifications | **Started. Checklists are done apart from photos on runs (R2): MVP5-A, MVP5-B and MVP5-C are signed off. Tires are done: MVP5-D (sets, mounts, swap, km per set, storage notes) and MVP5-E (pressure, tread depth, rotations) are signed off. LOW-3 and LOW-4 are signed off. Reports: RPT-1 (cost per car, category, month and year, cost per km, TCO) is signed off. MVP5-C, LOW-3, MVP5-D, MVP5-E, LOW-4 and RPT-1 shipped without browser QA.** Next: RPT-2 (charts), RPT-3 (export), LOW-5, then notifications. |
+| 5. Checklists, tires, reports, notifications | **Started. Checklists are done apart from photos on runs (R2): MVP5-A, MVP5-B and MVP5-C are signed off. Tires are done: MVP5-D (sets, mounts, swap, km per set, storage notes) and MVP5-E (pressure, tread depth, rotations) are signed off. LOW-3 and LOW-4 are signed off. Reports: RPT-1 (cost per car, category, month and year, cost per km, TCO) and RPT-2 (charts) are signed off. MVP5-C, LOW-3, MVP5-D, MVP5-E, LOW-4, RPT-1 and RPT-2 shipped without browser QA.** Next: RPT-3 (export to CSV and PDF), LOW-5, then notifications. |
 
 ## Ticket queue
 
 | Order | Ticket | Who | State |
 |---|---|---|---|
-| 1 | RPT-2: charts, spending over time and cost by category (spec 8 bullet 3) | FE only (RPT-1's response has the data) | **Next** (written below) |
-| 2 | RPT-3: export to CSV and PDF (spec 8 bullet 4) | BE, then FE | After RPT-2 |
-| 3 | LOW-5: the Lows from L87 on | BE, then FE | After RPT-3 (three tickets after LOW-4) |
-| 4 | Notifications (spec 9) | BE, then FE | After LOW-5 |
+| 1 | RPT-3: export to CSV and PDF (spec 8 bullet 4) | FE only (existing APIs; a print stylesheet for PDF) | **Next** (written below) |
+| 2 | LOW-5: the Lows from L87 on | BE, then FE | After RPT-3 (three tickets after LOW-4) |
+| 3 | Notifications (spec 9) | BE, then FE | After LOW-5 |
 
 ## Signed-off tickets
 
@@ -292,9 +290,15 @@ How this was checked (twenty-third audit, short sign-off of RPT-1 per decisions.
   - AC1 to AC3 [BE] signed off from tests and the code checks above; AC4 [BE+FE] from the split test and the code; AC5 to AC9 [FE] from code, review and smoke; AC10 from the reported runs. AC7 is met as amended in the fix round: the "no service costs yet" state shows only for All cars. **Not verified in a browser:** the layout at 390px, 44px targets, focus and the RTL reading order of amounts and month names.
   - Accepted (decisions.md, "RPT-1 sign-off"): the year allows the current UTC year plus a day of slack; a car whose records that year are all unpriced is left out of By car; `kmDriven` is clamped at 0; `costPerKm` is rounded to 4 decimals; the All time cars are ordered active first, then by nickname; a record whose tasks were deleted counts as "No task". The new Lows are L92 to L98.
 
+- **RPT-2 (not committed yet): signed off 2026-10-17, without browser QA.** Short sign-off under "Faster pipeline (owner)"; I re-ran no suites. Frontend only: no contract, no migration, no new dependency, no new strings.
+  - Reported evidence: build clean; lint 0 warnings; smoke `SMOKE_ALL=1` 104 steps per setup, all pass after the fix round; code review with no High.
+  - Fix round: M (month labels at 390px had 0.67px to spare) fixed: below 40em every other month label is hidden, and smoke checks label overlap and the chart edges at 390px, including a 20px root font. L (no test of the 2px minimum bar) fixed in smoke.
+  - AC1 and AC2 (bar heights and lengths) signed off from code (`ReportsPage.tsx:91-93`) and the reported smoke step; AC3 from code (both charts are drawn from the shown report; the month chart hides when every month is 0; the category section stays hidden with no categories); AC4 (RTL) from the CSS (grid columns and `inline-size` follow `dir`) and smoke; AC5 from the engineer's hand-computed contrast of `--muted` (about 6.0:1 light, 6.3:1 dark), not tool-checked; AC6 from the fix and smoke (the charts hold nothing focusable); AC7 from code; AC8 from the reported runs and the unchanged `package.json`. **Not verified in a browser:** how the bars look in both themes, the 390px layout in he and en, and that the RTL order reads right.
+  - Accepted (decisions.md, "RPT-2 sign-off"): below 40em only every other month name shows under the bars. The new Lows are L99 to L102.
+
 ## Low issues backlog
 
-Every Low finding from QA and review lands here (decisions.md, "Faster pipeline (owner)"). They are fixed together in a batch ticket LOW-n about every 3 tickets. LOW-1 closed L1 to L12, LOW-2 closed L13 to L26, LOW-3 closed L27 to L65, LOW-4 closed L66 to L86 (L86 accepted; L72, the dev DB cleanup, waits on the owner); those rows are in git history. Open (for LOW-5):
+Every Low finding from QA and review lands here (decisions.md, "Faster pipeline (owner)"). They are fixed together in a batch ticket LOW-n about every 3 tickets. LOW-1 closed L1 to L12, LOW-2 closed L13 to L26, LOW-3 closed L27 to L65, LOW-4 closed L66 to L86 (L86 accepted; L72, the dev DB cleanup, waits on the owner); those rows are in git history. Open (for LOW-5: L87 to L102, and L72 with the owner):
 
 | # | From | Issue | Area |
 |---|---|---|---|
@@ -310,55 +314,58 @@ Every Low finding from QA and review lands here (decisions.md, "Faster pipeline 
 | L96 | RPT-1 review | The M2 fix (old figures keep their own `vehicleId` while a new filter loads) has no smoke step. | Smoke |
 | L97 | RPT-1 housekeeping | More test users in the dev DB: `rpt1-a-*` and `rpt1-b-*@example.com`, `ui-rpt-*`, `probe-rpt-*`, `ui-rptdbg-*`. Check that `scripts/cleanup-test-users.sql` matches them (add tight prefixes if not); running it stays with the owner (L72). | Scripts |
 | L98 | RPT-1 smoke run | One flaky desktop-light-en failure of `dashboard-mark-done` and `dashboard-quick-odometer` in one run, not reproduced. Watch for it; investigate if it recurs. | Smoke |
+| L99 | RPT-2 review | Dead guards in `ReportsPage.tsx`: `topCategory > 0` (`:117`) and the `Math.max(0, …)` seed (`:92`); the backend never sends a zero category, and the section already hides when there are none. Remove them. | FE, reports |
+| L100 | RPT-2 review | The comment at `ReportsPage.tsx:103` is broader than what it covers. Make it say what is decorative and why. | FE, reports |
+| L101 | RPT-2 review | Only a 20px root font was tested at 390px; a blocked web font (a wider fallback font) was reasoned about, not tested. Add a smoke variant, or accept it in writing. | Smoke |
+| L102 | RPT-2 review | No automated contrast check: the 6.0:1 and 6.3:1 for `--muted` on the card were computed by hand. Add a small contrast assertion from the computed colours to `reports-charts`. | Smoke |
 | L72 | LOW-3 housekeeping | The local dev DB has leftover test users. `scripts/cleanup-test-users.sql` was written in LOW-4 but never run; the owner decides (CHECKLIST.md, "Waiting on the owner"). | Dev DB (owner) |
 
 ## Next ticket
 
-### RPT-2: Charts, spending over time and cost by category (spec 8 bullet 3)
+### RPT-3: Export reports to CSV and PDF (spec 8 bullet 4)
 
-**Goal:** As a user, I open Reports and see at a glance when my money went (a bar per month of the chosen year) and on what (a bar per category), without reading the rows of numbers.
+**Goal:** As a user, on Reports I can download the service records behind the figures I'm looking at as a CSV file for a spreadsheet, and save or print the report itself as a PDF, in Hebrew or English.
 
-**Spec:** section 8 bullet 3. Export (bullet 4) is RPT-3 (decisions.md, "Reports scope and split").
+**Spec:** section 8 bullet 4. This is the report export only. The account data export of spec 12 ("data export and delete-account") and spec 11 ("Full data import/export", optional) are separate tickets.
 
-**Binding decisions:** decisions.md "Charts, RPT-2" (no chart library, simple bars drawn with HTML/CSS or inline SVG; the number rows stay as the text alternative; bars follow the page direction), "Cost reports, RPT-1" and "RPT-1 sign-off" (what the numbers mean), the settings rules (one currency, km or miles), "Hebrew form of address", "Faster pipeline (owner)", "No ui-tester jobs (owner)".
+**Binding decisions:** decisions.md "Report export, RPT-3" (the CSV is built in the browser from the existing `/api/service-records`; the PDF comes from the browser's print dialog with a print stylesheet, with no PDF library and no server PDF; what the CSV holds), "Cost reports, RPT-1" and "RPT-1 sign-off" (what counts), "Charts, RPT-2", the settings rules (one currency, km or miles), "Hebrew form of address", "Faster pipeline (owner)", "No ui-tester jobs (owner)".
 
 **Scope**
 
-*Backend:* none. RPT-1's `GET /api/reports/costs` already returns `byMonth` (12 rows, `{ month, total, recordCount }`) and `byCategory` (`{ category, total }`, highest first) for the chosen year and car (`docs/contracts/RPT-1.md`). If the frontend engineer finds something missing, stop and report it rather than changing the API.
+*Backend:* none. The CSV uses `GET /api/service-records?from=&to=&vehicleId=&skip=&take=` (contract `docs/contracts/MVP3-C.md`: `items` of `ServiceRecordDto` with `vehicleId`, `date`, `odometerKm`, `shopName`, `totalCost`, `notes`, `tasks`, plus `totalCount`; `take` is at most 100; voided records are not returned, as in the report) and the car list the page already loads (`/vehicles?includeArchived=true`, for `Nickname`). If the CSV needs something `ServiceRecordDto` doesn't have, stop and report it rather than changing the API; the column can be dropped.
 
-*Frontend (frontend-engineer, `client/src/pages/ReportsPage.tsx` and `client/src/index.css`):*
-- **Spending over time:** in the By month section, above its rows, 12 vertical bars for January to December of the chosen year, each bar's height proportional to `byMonth[i].total` against the year's highest month; short month names from `Intl` in the UI language under the bars. A month at 0 shows an empty slot (a baseline only), not a missing column. When every month is 0, no chart (the rows already say 0).
-- **Cost by category:** in the By category section, above its rows, one horizontal bar per `byCategory` row in the API's order, the bar's length proportional to the highest category, labelled with the category name ("No task" for `null`) and its amount.
-- No new dependency. Bars use theme tokens (a new `--chart-bar` for light and dark if none fits) with at least 3:1 contrast against the card in both themes.
-- The bars are decorative over the data: the chart is `aria-hidden="true"` and the existing label and amount rows stay as they are, so screen readers and the links to `/history` are unchanged.
-- While a new filter loads, the charts show the last report (with the rest of the page, `aria-busy`), and update with it; no layout jump between loads (fixed chart height).
-- en and he strings only if a visible label is needed (Hebrew reviewer approves).
+*Frontend (frontend-engineer, `client/src/pages/ReportsPage.tsx`, `client/src/index.css`, `client/src/i18n.ts`):*
+- **Export CSV** button on `/reports`, in or under the filters card. It fetches every record of the chosen year (`from={year}-01-01`, `to={year}-12-31`) and car (or all cars), page by page with `take=100` until `totalCount` is reached, and downloads `onlycars-{year}.csv` (`onlycars-{year}-{nickname}.csv` with a car chosen; the nickname made filename-safe).
+- **CSV content:** one row per service record, oldest first, with a header row in the UI language: Date (`yyyy-MM-dd`), Car (`Nickname`), Odometer (in the user's unit, whole numbers, the unit in the header, for example "Odometer (mi)"), Shop (`ShopName`, or the DIY label when empty, as the history page shows it), Tasks (task names joined with "; "), Total cost (a plain number with a dot and 2 decimals; empty when `TotalCost` is null), Currency (the user's currency code), Notes. RFC 4180 quoting (a field with a comma, quote, CR or LF goes in double quotes, with quotes doubled), CRLF line ends, and a UTF-8 BOM so Excel opens Hebrew correctly. A text field that starts with `=`, `+`, `-`, `@`, tab or CR gets a leading `'` (spreadsheet formula injection). The CSV builder is a small pure function with a self-check (smoke step or assert).
+- **Export PDF** (label like "Print or save as PDF") calls `window.print()`. A `@media print` stylesheet: no header navigation, filters or buttons; cards without shadows or backgrounds, black text on white in either theme; a print-only line under the title with the chosen year, the car (or "All cars") and the date printed; the charts print (bars keep a solid fill, `print-color-adjust: exact`); cards avoid breaking across pages where possible; the `/history` links print as plain text. Hebrew prints right to left.
+- Both buttons are disabled while the report loads or after it failed, and hidden in the empty state (no service costs yet). While the CSV is being built the button shows a busy label and is disabled; a failed fetch shows an error next to it with Retry and downloads nothing.
+- New en and he strings for the two buttons, the busy label, the error, the CSV headers and the print line (the Hebrew reviewer approves; impersonal form of address).
 
 **Acceptance criteria**
-1. [FE] With records of 100 in March and 300 in July of the chosen year, the month chart shows 12 slots, July's bar full height, March's a third of it, the other 10 empty; the rows below still show every month's amount.
-2. [FE] With one record of 300 on Oil and Brakes and one of 100 with no task, the category chart shows Oil 150 and Brakes 150 at full length and "No task" 100 at two thirds, in the API's order.
-3. [FE] Changing Year or Car redraws both charts for the new figures; a year with no costs shows no month chart and no category section, as now.
-4. [FE] Hebrew/RTL: the month chart runs right to left (January at the right), the category bars grow from the right, and amounts and names read in the right order; in English January is at the left and bars grow from the left.
-5. [FE] Light and dark themes: bars are visible with at least 3:1 contrast against the card; nothing relies on colour alone (the rows carry the numbers).
-6. [FE] At 390px, in he and en, both charts fit the card with no sideways scroll; month labels don't overlap (shorter names or every other label if needed); the chart takes no focus and the page's tab order is unchanged.
-7. [FE] Accessibility: both charts are `aria-hidden`; the label and amount rows and their `/history` links are unchanged.
-8. [FE] No regressions: build clean, lint 0 warnings, no new dependency in `client/package.json`, smoke `SMOKE_ALL=1` passes in all 4 setups with new steps: the month bar heights for a known data set, the category bar lengths, the RTL direction in he, and a 390px screenshot in he and en (the engineer reads them and says so).
+1. [FE] With 3 records in the chosen year on two cars (one with a comma and a quote in its notes, one with no cost, one with notes starting with `=`), Export CSV downloads `onlycars-{year}.csv` that starts with a UTF-8 BOM and has the header row and 3 data rows oldest first, quoted and doubled correctly, the cost empty for the unpriced record, and `'` before the `=` notes.
+2. [FE] With a car chosen, the file has only that car's records and the car's name in the file name; with more than 100 records in the year, every record is in the file (paging works).
+3. [FE] A miles user gets the odometer in miles with "(mi)" in the header; costs are never converted and carry the user's currency code.
+4. [FE] In Hebrew the header row is in Hebrew and Hebrew text survives (read as UTF-8; the BOM is there).
+5. [FE] Export PDF opens the print dialog. In print media (Playwright `page.emulateMedia({ media: 'print' })` and `page.pdf()`) the header, filters and buttons are hidden, the print line shows year, car and date, the charts and all sections show black on white in both themes, and the Hebrew page prints right to left.
+6. [FE] States: both buttons disabled while loading and after a report error; hidden in the empty state; the CSV button busy while building; a failed records fetch shows an error with Retry and no download.
+7. [FE] At 390px in he and en the buttons fit with no sideways scroll and are at least 44px tall; they are real `button`s, in tab order after the filters, with visible focus.
+8. [FE] No regressions: build clean, lint 0 warnings, no new dependency in `client/package.json`, smoke `SMOKE_ALL=1` passes in all 4 setups with new steps for the CSV content (AC1 to AC3), a Hebrew CSV header, print-media screenshots in he and en (the engineer reads them and says so), and a `page.pdf()` that completes without error.
 
-**Out of scope:** a multi-year chart (the Year filter covers other years); pie or donut charts; tooltips, hover or click on bars; cost per km over time; charts on the dashboard; export (RPT-3); any backend change.
+**Out of scope:** a server-side PDF or any PDF library; a CSV of the report's summary tables (the PDF carries them); an Excel (.xlsx) file; exporting checklists, odometer readings, tires or to-dos; the account data export (spec 12) and import (spec 11); emailing a report; any backend change.
 
-**Open questions:** none blocking. The owner may revisit "Charts, RPT-2" (bars only, no chart library, right to left in Hebrew).
+**Open questions:** none blocking. The owner may revisit "Report export, RPT-3" (a records CSV rather than the summary tables; the PDF through the browser's print dialog).
 
 ---
 
 ### Later
-- **Reports (spec 8):** RPT-3 (CSV and PDF export) after RPT-2, then LOW-5, then notifications (spec 9).
+- **After RPT-3:** LOW-5 (L87 to L102), then notifications (spec 9).
 - **Car photo upload, attachments and run photos:** blocked until the owner creates the Cloudflare R2 credentials.
 - **Predicted due date** from `AvgKmPerDay` (spec 2.3, optional).
 - **Data export and delete-account** (spec 12): must include checklists, runs, to-dos and tires.
 
 ## Changed since last audit
-- **Signed off:** RPT-1 (not committed yet), **without browser QA** (the ui-tester is still stopped by the owner).
-- **Status changes:** spec 8 "Cost per car, per category, per month and per year" and "Cost per km and total cost of ownership" go from Missing to Done (no browser QA). Counts: Done 37 (was 35), Partial 6, Missing 8 (was 10), Deferred 6.
-- **Backlog:** L92 to L98 added (RPT-1 review, housekeeping and one smoke flake); L87 to L91 and L72 stay open.
-- **New decisions** (`docs/decisions.md`, 2026-10-17): "RPT-1 sign-off", "Charts, RPT-2".
-- **Next ticket:** RPT-2 (charts, spec 8 bullet 3), frontend only, written in full. The RPT-1 ticket text is in git history once this sign-off is committed.
+- **Signed off:** RPT-2 (not committed yet), **without browser QA** (the ui-tester is still stopped by the owner).
+- **Status changes:** spec 8 "Charts: spending over time, cost by category" goes from Missing to Done (no browser QA). Counts: Done 38 (was 37), Partial 6, Missing 7 (was 8), Deferred 6.
+- **Backlog:** L99 to L102 added (RPT-2 review); L87 to L98 and L72 stay open.
+- **New decisions** (`docs/decisions.md`, 2026-10-17): "RPT-2 sign-off", "Report export, RPT-3".
+- **Next ticket:** RPT-3 (CSV and PDF export, spec 8 bullet 4), frontend only, written in full. The RPT-2 ticket text is in git history once this sign-off is committed.

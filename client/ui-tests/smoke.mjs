@@ -3909,6 +3909,82 @@ for (const s of setups) {
     // Criterion 9: 390px, no sideways scroll, 44px targets.
     await at390('the reports page', 'reports-390')
   })
+  // RPT-2: the charts. Bar sizes as a share of their slot, rounded to 2 decimals; x is each month's left edge.
+  const rpCharts = () => page.evaluate(() => {
+    const r2 = (v) => Math.round(v * 100) / 100
+    const mc = document.querySelector('main .month-chart'), cc = document.querySelector('main .category-chart')
+    return {
+      busy: document.querySelector('main .report')?.getAttribute('aria-busy'),
+      hidden: [mc, cc].filter(Boolean).every((c) => c.getAttribute('aria-hidden') === 'true') && !document.querySelector('main .month-chart [tabindex], main .category-chart a'),
+      months: mc && [...mc.children].map((c) => ({ h: r2(c.querySelector('span').offsetHeight / c.firstElementChild.clientHeight), px: c.querySelector('span').offsetHeight, x: c.getBoundingClientRect().left })),
+      // The shown month labels, in screen order: none may overlap the next one or leave the chart.
+      labels: mc && (() => {
+        const box = mc.getBoundingClientRect()
+        const ls = [...mc.querySelectorAll(':scope > div > span')].filter((l) => getComputedStyle(l).visibility === 'visible').map((l) => l.getBoundingClientRect()).sort((p, q) => p.left - q.left)
+        return { shown: ls.length, edge: ls.some((l) => l.left < box.left - 0.5 || l.right > box.right + 0.5), overlap: ls.some((l, i) => ls[i + 1] && l.right > ls[i + 1].left) }
+      })(),
+      categories: cc && [...cc.children].map((c) => {
+        const row = c.getBoundingClientRect(), bar = c.querySelector('span').getBoundingClientRect()
+        return { text: c.textContent, w: r2(bar.width / row.width), px: c.querySelector('span').offsetWidth, fromStart: document.dir === 'rtl' ? Math.abs(bar.right - row.right) < 1 : Math.abs(bar.left - row.left) < 1 }
+      }),
+      rows: [...document.querySelectorAll('main .categories dt')].map((d) => d.textContent),
+      hasCategories: !!document.querySelector('main .categories'),
+    }
+  })
+  const chartsAre = async (want, when) => {
+    // Polls, since a filter change renders the new figures a moment after the URL changes.
+    for (let i = 0; ; i++) {
+      const got = await rpCharts()
+      const months = got.months?.map((m) => m.h).join() ?? null
+      const cats = got.categories?.map((c) => `${plain(c.text)}=${c.w}`).join() ?? null // name and amount are separate grid items, so no space
+      if (got.busy === 'false' && months === want.months && cats === want.categories && got.hidden) return got
+      if (i === 50) throw new Error(`${when}: months ${months}, categories ${cats}, hidden ${got.hidden}, busy ${got.busy}`)
+      await page.waitForTimeout(100)
+    }
+  }
+  await step('reports-charts', async () => {
+    // Criteria 1 and 2: last-but-one year, 100 in March with no task and 300 in July on Oil and Brakes.
+    const py = ly - 1
+    const rpC = (await apiCall('POST', '/vehicles', { nickname: 'Report Chart', initialOdometerKm: 1000, readingDate: `${py}-01-01` })).id
+    const task = async (name) => (await apiCall('POST', `/vehicles/${rpC}/tasks`, { name, category: name, intervalKm: 10000, intervalDays: null, dueSoonPercent: 10, lastDoneOdometerKm: 1000, lastDoneDate: `${py}-01-01` })).id
+    await apiCall('POST', `/vehicles/${rpC}/service-records`, { date: `${py}-03-10`, odometerKm: 2000, totalCost: 100 })
+    await apiCall('POST', `/vehicles/${rpC}/service-records`, { date: `${py}-07-10`, odometerKm: 3000, totalCost: 300, taskIds: [await task('Oil'), await task('Brakes')] })
+    await page.goto(`${BASE}/reports?year=${py}`)
+    await page.locator('main .month-chart').waitFor()
+    const m = (marchJuly) => Array.from({ length: 12 }, (_, i) => marchJuly[i] ?? 0).join()
+    const [first, second] = (await rpCharts()).rows // the API's order for the 150 tie
+    const got = await chartsAre({ months: m({ 2: 0.33, 6: 1 }), categories: `${first}${await rpMoney(150)}=1,${second}${await rpMoney(150)}=1,${RP.noTask}${await rpMoney(100)}=0.67` }, `${py}, all cars`)
+    if (![first, second].includes(RP.oil) || ![first, second].includes(RP.brakes)) throw new Error(`category rows ${got.rows}`)
+    if ((await page.locator('main .months > div').count()) !== 12) throw new Error('month rows changed')
+    // Criterion 4: January at the right in Hebrew, at the left in English; category bars grow from the inline start.
+    if ((got.months[0].x > got.months[11].x) !== he) throw new Error(`January at x ${got.months[0].x}, December at ${got.months[11].x}`)
+    if (!got.categories.every((c) => c.fromStart)) throw new Error('a category bar does not start at the inline start')
+    // Criterion 6: month labels don't overlap; at 390px every other one shows, also with 20px text, and nothing scrolls sideways.
+    if (got.labels.overlap || got.labels.edge || got.labels.shown !== (s.viewport.width > 640 ? 12 : 6)) throw new Error(`labels ${JSON.stringify(got.labels)}`)
+    await at390('the reports charts', 'reports-charts-390')
+    await page.setViewportSize({ width: 390, height: 844 })
+    await page.evaluate(() => { document.documentElement.style.fontSize = '20px' })
+    const narrow = await rpCharts()
+    await noOverflow('the reports charts with 20px text')
+    await page.evaluate(() => { document.documentElement.style.fontSize = '' })
+    await page.setViewportSize(s.viewport)
+    if (narrow.labels.overlap || narrow.labels.edge || narrow.labels.shown !== 6) throw new Error(`labels at 390px with 20px text ${JSON.stringify(narrow.labels)}`)
+    // Criterion 3: the Car filter redraws: the Corolla has nothing that year, so no month chart and no category section.
+    await page.selectOption(rpCarSel, rpA)
+    const none = await chartsAre({ months: null, categories: null }, `${py}, Corolla`)
+    if (none.hasCategories) throw new Error('category section for a year with no costs')
+    // And the Year filter: the Corolla's 300 in March on Oil and Brakes.
+    await page.selectOption(yearSel, String(ly))
+    await page.locator('main .category-chart').waitFor()
+    const [a, b] = (await rpCharts()).rows
+    await chartsAre({ months: m({ 2: 1 }), categories: `${a}${await rpMoney(150)}=1,${b}${await rpMoney(150)}=1` }, `${ly}, Corolla`)
+    // A tiny amount keeps a 2px bar, so it doesn't look like 0: 0.5 in May with no task, against 300.
+    await apiCall('POST', `/vehicles/${rpA}/service-records`, { date: `${ly}-05-10`, odometerKm: 50000, totalCost: 0.5 })
+    await page.reload()
+    await page.waitForFunction(() => document.querySelectorAll('main .category-chart > div').length === 3, null, { timeout: 5000 })
+    const tiny = await chartsAre({ months: m({ 2: 1, 4: 0.02 }), categories: `${a}${await rpMoney(150)}=1,${b}${await rpMoney(150)}=1,${RP.noTask}${await rpMoney(0.5)}=${(await rpCharts()).categories?.[2]?.w}` }, `${ly}, Corolla, tiny`)
+    if (tiny.months[4].px !== 2 || tiny.categories[2].px !== 2) throw new Error(`tiny bars ${tiny.months[4].px}px and ${tiny.categories[2].px}px`)
+  })
   await step('switch-language', async () => {
     const before = await page.getAttribute('html', 'dir')
     await page.click('header nav button.link >> nth=0')

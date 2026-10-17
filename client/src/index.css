@@ -329,4 +329,18 @@ details > summary { padding-block: 0.625rem; cursor: pointer; }
 .figures > div { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 0 0.75rem; min-block-size: 2.75rem; border-block-end: 1px solid var(--line); }
 .figures > div:last-child { border-block-end: none; }
 .figures dd { margin: 0; font-weight: 600; font-variant-numeric: tabular-nums; }
-.figures bdi { direction: ltr; }
+.figures bdi, .category-chart bdi { direction: ltr; }
+/* RPT-2 charts: aria-hidden bars over the rows; the grid and inline-size follow the page direction. --muted is 6:1 on --surface in both themes. */
+.month-chart { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 0.125rem; margin-block-end: 0.75rem; font-size: 0.75rem; white-space: nowrap; color: var(--muted); }
+.month-chart > div { display: flex; flex-direction: column; align-items: center; } /* a label wider than its column spills evenly into both neighbours */
+.month-chart > div > div { align-self: stretch; block-size: 8rem; display: flex; align-items: flex-end; border-block-end: 1px solid var(--line); } /* fixed, so a new filter doesn't move the page */
+.month-chart > div > div > span { inline-size: 100%; background: var(--muted); border-start-start-radius: 3px; border-start-end-radius: 3px; }
+/* 12 short names don't fit a narrow card in every font and text size, so every other one goes; em follows the browser's text size */
+@media (max-width: 40em) {
+  .month-chart > div:nth-child(even) > span { visibility: hidden; }
+  .month-chart > div:first-child > span { align-self: flex-start; } /* January spills into February's free space, not past the chart */
+}
+.category-chart { display: grid; gap: 0.5rem; margin-block-end: 0.75rem; font-size: 0.9rem; }
+.category-chart > div { display: grid; grid-template-columns: 1fr auto; gap: 0.125rem 0.75rem; }
+.category-chart bdi { font-variant-numeric: tabular-nums; }
+.category-chart span { grid-column: 1 / -1; block-size: 0.75rem; background: var(--muted); border-radius: 3px; }

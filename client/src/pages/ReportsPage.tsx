@@ -85,7 +85,12 @@ export default function ReportsPage() {
     )
     const y = r.year
     const summary = t('historySummary', { count: r.recordCount, total: money(r.total, lng, user?.currency) })
-    const month = (m: number) => new Date(y, m - 1, 1).toLocaleDateString(lng, { month: 'long' })
+    const month = (m: number, style: 'long' | 'short' = 'long') => new Date(y, m - 1, 1).toLocaleDateString(lng, { month: style })
+    const category = (c: string | null) => c ? t(`categories.${c}`) : t('noTask')
+    // Bars scale to the highest value; a non-zero value keeps a sliver so it never looks like 0.
+    const topMonth = Math.max(...r.byMonth.map((m) => m.total))
+    const topCategory = Math.max(0, ...r.byCategory.map((c) => c.total))
+    const scale = (v: number, top: number) => v > 0 ? `max(2px, ${(v / top) * 100}%)` : '0'
     return (
       <>
         <section className="card" aria-labelledby={`${id}year`}>
@@ -95,6 +100,12 @@ export default function ReportsPage() {
         </section>
         <section className="card" aria-labelledby={`${id}months`}>
           <h2 id={`${id}months`}>{t('byMonth')}</h2>
+          {/* Decoration over the rows below, which are the text version. */}
+          {topMonth > 0 && (
+            <div className="month-chart" aria-hidden="true">
+              {r.byMonth.map((m) => <div key={m.month}><div><span style={{ blockSize: scale(m.total, topMonth) }} /></div><span>{month(m.month, 'short')}</span></div>)}
+            </div>
+          )}
           <dl className="figures months">
             {r.byMonth.map((m) => row(`m${m.month}`, month(m.month), amount(m.total),
               m.recordCount ? historyLink(`${y}-${pad(m.month)}-01`, `${y}-${pad(m.month)}-${pad(new Date(y, m.month, 0).getDate())}`, vehicleId) : undefined))}
@@ -103,8 +114,13 @@ export default function ReportsPage() {
         {r.byCategory.length > 0 && (
           <section className="card" aria-labelledby={`${id}categories`}>
             <h2 id={`${id}categories`}>{t('byCategory')}</h2>
+            {topCategory > 0 && (
+              <div className="category-chart" aria-hidden="true">
+                {r.byCategory.map((c) => <div key={`c${c.category}`}>{category(c.category)}{amount(c.total)}<span style={{ inlineSize: scale(c.total, topCategory) }} /></div>)}
+              </div>
+            )}
             <dl className="figures categories">
-              {r.byCategory.map((c) => row(`c${c.category}`, c.category ? t(`categories.${c.category}`) : t('noTask'), amount(c.total)))}
+              {r.byCategory.map((c) => row(`c${c.category}`, category(c.category), amount(c.total)))}
             </dl>
           </section>
         )}
