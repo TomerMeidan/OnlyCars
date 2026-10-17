@@ -1,10 +1,19 @@
+using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Options;
+using OnlyCars.Application.Auth;
+using OnlyCars.Application.Auth.Dtos;
 using OnlyCars.Application.Checklists;
 using OnlyCars.Application.Checklists.Dtos;
+using OnlyCars.Application.Common.Exceptions;
 using OnlyCars.Application.Maintenance;
+using OnlyCars.Application.Maintenance.Dtos;
 using OnlyCars.Application.Tires;
 using OnlyCars.Application.Tires.Dtos;
 using OnlyCars.Application.Vehicles;
+using OnlyCars.Application.Vehicles.Dtos;
 using OnlyCars.Domain;
 using OnlyCars.Domain.Entities;
 using OnlyCars.Infrastructure.Persistence;
@@ -185,9 +194,9 @@ public class MaintenanceSchemaTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task TireChecks_OnSqlServer_DuplicateIs409_ValuesChecked_AndSetDeleteCascades()
+    public async Task TireChecks_OnSqlServer_DuplicateDateRefusedByTheIndex_ValuesChecked_AndSetDeleteCascades()
     {
-        // MVP5-E: the unique (mount, date) check index turns a simultaneous duplicate into a 409; deletes cascade in the database.
+        // MVP5-E: the unique (mount, date) check index refuses a second check on the same date; deletes cascade in the database.
         var tires = new TireService(db, new VehicleService(db));
         var car = await AddCarAsync();
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
@@ -198,7 +207,8 @@ public class MaintenanceSchemaTests : IAsyncLifetime
         Assert.Equal(new TireCheckItemDto(TirePosition.FL, 2.25m, 6.5m), Assert.Single(check.Items));
         db.ChangeTracker.Clear();
 
-        // A simultaneous request that passed the "already a check" query fails on the index even with other wheels (the service maps it to 409).
+        // A simultaneous request that passed the "already a check" query fails on the index even with other wheels.
+        // (Turning that failure into a 409 is covered on InMemory in TireTests, not here.)
         db.TireChecks.Add(new TireCheck { TireMountId = mount, MeasuredAt = today, Measurements = [new() { Position = TirePosition.RR, PressureBar = 2 }] });
         await Assert.ThrowsAsync<DbUpdateException>(() => db.SaveChangesAsync());
         db.ChangeTracker.Clear();
@@ -215,5 +225,109 @@ public class MaintenanceSchemaTests : IAsyncLifetime
         await tires.DeleteAsync(car.UserId, set.Id);
         Assert.Equal((0, 0, 0, 0), (await db.TireMounts.CountAsync(), await db.TireChecks.CountAsync(), await db.TireMeasurements.CountAsync(),
             await db.TireRotations.CountAsync()));
+    }
+
+    // --- LOW-4: races on the real database. Each "other request" runs on its own context just before this request's save. ---
+
+    private AppDbContext Context(BeforeSave? race = null) => new(new DbContextOptionsBuilder<AppDbContext>()
+        .UseSqlServer(db.Database.GetConnectionString()).AddInterceptors(race is null ? [] : [race]).Options);
+
+    private static async Task<string> CodeAsync(Func<Task> act) => (await Assert.ThrowsAnyAsync<AppException>(act)).Code;
+
+    [Fact]
+    public async Task ServiceRecord_OnSqlServer_VoidRacingAnEdit_IsAConcurrencyException_ANoOpEditIsNot()
+    {
+        // L69: the UpdatedAt token on SQL Server; the handler maps the exception to 409 concurrency.conflict (GlobalExceptionHandlerTests).
+        var car = await AddCarAsync();
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var record = (await new MaintenanceTaskService(db, new VehicleService(db)).CreateRecordAsync(car.UserId, car.Id,
+            new CreateServiceRecordRequest(today, 1_000, "Shop", null, null, []))).Record;
+        var race = new BeforeSave();
+        await using var voider = Context(race);
+        var voids = new MaintenanceTaskService(voider, new VehicleService(voider));
+
+        // L70: an edit that changes nothing doesn't move UpdatedAt, so the void still succeeds.
+        race.Next = async () =>
+        {
+            await using var other = Context();
+            await new MaintenanceTaskService(other, new VehicleService(other)).UpdateRecordAsync(car.UserId, car.Id, record.Id,
+                new UpdateServiceRecordRequest("Shop", null, null, null));
+        };
+        await voids.VoidAsync(car.UserId, car.Id, record.Id);
+
+        var second = (await new MaintenanceTaskService(db, new VehicleService(db)).CreateRecordAsync(car.UserId, car.Id,
+            new CreateServiceRecordRequest(today, 1_000, "Shop", null, null, [], ConfirmCorrection: true))).Record;
+        race.Next = async () =>
+        {
+            await using var other = Context();
+            await new MaintenanceTaskService(other, new VehicleService(other)).UpdateRecordAsync(car.UserId, car.Id, second.Id,
+                new UpdateServiceRecordRequest("Other shop", null, null, null));
+        };
+        await Assert.ThrowsAsync<DbUpdateConcurrencyException>(() => voids.VoidAsync(car.UserId, car.Id, second.Id));
+
+        await using var check = Context();
+        var kept = await check.ServiceRecords.SingleAsync(r => r.Id == second.Id);
+        Assert.Equal((false, "Other shop"), (kept.IsVoided, kept.ShopName));
+    }
+
+    [Fact]
+    public async Task Vin_And_Email_OnSqlServer_SimultaneousDuplicate_IsTheNormalConflictCode()
+    {
+        // L66: the second insert fails on the real unique index and gets the same code as a non-simultaneous duplicate.
+        var car = await AddCarAsync();
+        var race = new BeforeSave();
+        await using var context = Context(race);
+        var vehicles = new VehicleService(context);
+        CreateVehicleRequest Car(string name) => new(name, null, null, null, "VIN1", null, null, null, null, null, null);
+
+        race.Next = async () =>
+        {
+            await using var other = Context();
+            await new VehicleService(other).CreateAsync(car.UserId, Car("First"));
+        };
+        Assert.Equal("vehicle.vinTaken", await CodeAsync(() => vehicles.CreateAsync(car.UserId, Car("Second"))));
+        context.ChangeTracker.Clear(); // a failed request's context is dropped
+
+        // An edit to the VIN racing a create of it, too.
+        race.Next = async () =>
+        {
+            await using var other = Context();
+            await new VehicleService(other).CreateAsync(car.UserId, Car("Third") with { Vin = "VIN2" });
+        };
+        Assert.Equal("vehicle.vinTaken", await CodeAsync(() =>
+            vehicles.UpdateAsync(car.UserId, car.Id, new UpdateVehicleRequest("Car", null, null, null, "VIN2", null, null, null, null, null))));
+        context.ChangeTracker.Clear();
+
+        var auth = new AuthService(context, new PasswordHasher<User>(), new FakeJwtTokenService(), new MemoryCache(new MemoryCacheOptions()),
+            Options.Create(new RateLimitOptions()));
+        race.Next = async () =>
+        {
+            await using var other = Context();
+            other.Users.Add(new User { Email = "same@x.test", PasswordHash = "x" });
+            await other.SaveChangesAsync();
+        };
+        Assert.Equal("auth.emailTaken", await CodeAsync(() => auth.RegisterAsync(new RegisterRequest("same@x.test", "Passw0rd!"))));
+
+        await using var check = Context();
+        Assert.Equal((1, 1, 1), (await check.Vehicles.CountAsync(v => v.Vin == "VIN1"), await check.Vehicles.CountAsync(v => v.Vin == "VIN2"),
+            await check.Users.CountAsync(u => u.Email == "same@x.test")));
+    }
+
+    /// <summary>Simulates another request saving first: runs <see cref="Next"/> once, at the start of the next save.</summary>
+    private sealed class BeforeSave : SaveChangesInterceptor
+    {
+        public Func<Task>? Next { get; set; }
+
+        public override async ValueTask<InterceptionResult<int>> SavingChangesAsync(DbContextEventData eventData, InterceptionResult<int> result,
+            CancellationToken cancellationToken = default)
+        {
+            if (Next is { } next)
+            {
+                Next = null;
+                await next();
+            }
+
+            return result;
+        }
     }
 }

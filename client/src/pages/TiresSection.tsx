@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom'
 import { api, ApiError, limit, localToday, tireName, tirePositions, type TireCheck, type TireMount, type TirePosition, type TireRotation, type TireSet, type Vehicle, type VehicleTires } from '../api'
 import { useDistance } from '../auth'
 import { errorMessage, fmtDate } from '../i18n'
-import { useItemErrors } from '../useItemErrors'
+import { noItems, useItemErrors } from '../useItemErrors'
 import { useRow } from '../useRow'
 
 // The field each tire error is about (decisions.md, MVP5-D and MVP5-E); 'row' is a whole wheel of a check; anything else shows under the form.
@@ -27,7 +27,6 @@ const fieldOf: Record<string, string> = {
 }
 // Taken, gone or off the car meanwhile: the section reloads.
 const staleCodes = ['tireMount.setMounted', 'tireSet.notFound', 'tireMount.notFound', 'tireMount.notOpen', 'concurrency.conflict']
-const noItems: never[] = []
 type Mode = 'mount' | 'unmount' | 'check' | 'rotation'
 // The checks and rotations of the set on the car, newest first.
 type Log = [TireCheck[], TireRotation[]]
@@ -63,7 +62,7 @@ function CheckItems({ c }: { c: TireCheck }) {
   const { t, i18n } = useTranslation()
   const num = (v: number) => ({ value: v.toLocaleString(i18n.resolvedLanguage) })
   return (
-    <ul className="service-items">
+    <ul className="check-items">
       {c.items.map((x) => (
         <li key={x.position}>
           {t(`positions.${x.position}`)}:{' '}
@@ -135,8 +134,8 @@ export function TiresSection({ car }: { car: Vehicle }) {
   const free = sets?.filter((s) => !s.openMount) ?? []
   const check = cur?.lastCheck
   const rot = cur?.lastRotation
-  // The row that takes a deleted one's place, then the first, then Log a check (decisions.md, MVP1-C).
-  const afterDelete = (list: string, i: number) => [`.${list} > li:nth-child(${i + 1}) button.link`, `.${list} > li button.link`, 'button.log-check']
+  // The row that takes a deleted one's place, then the first, then `rest` (decisions.md, MVP1-C).
+  const afterDelete = (list: string, i: number, ...rest: string[]) => [`.${list} > li:nth-child(${i + 1}) button.link`, `.${list} > li button.link`, ...rest]
 
   return (
     <section className="card" aria-labelledby="tires" ref={sectionRef}>
@@ -189,6 +188,8 @@ export function TiresSection({ car }: { car: Vehicle }) {
           )}
           {form.mode === 'mount' && free.length === 0 && (
             <div className="inline-form" onKeyDown={(e) => e.key === 'Escape' && form.open('view')}>
+              {/* A Mount whose set was taken meanwhile keeps its message once no set is left to pick (L73). */}
+              {form.error != null && <p className="error" role="alert">{errorMessage(form.error)}</p>}
               <p><Trans i18nKey={sets?.length ? 'allSetsMounted' : 'noTireSetsToMount'} components={{ a: <Link to="/tires" /> }} /></p>
               <div className="actions">
                 <button type="button" className="link" onClick={() => form.open('view')} autoFocus>{t('cancel')}</button>
@@ -209,7 +210,7 @@ export function TiresSection({ car }: { car: Vehicle }) {
               <ul className="tasks checks">
                 {log[0].map((c, i) => (
                   <DeleteRow key={c.measuredAt} readOnly={readOnly} label={t('deleteCheckOf', { date: date(c.measuredAt) })} confirm={t('confirmDeleteCheck')}
-                    url={`/tire-mounts/${encodeURIComponent(cur.id)}/checks/${c.measuredAt}`} gone="tireMeasurement.notFound" onDeleted={() => reload(afterDelete('checks', i))}>
+                    url={`/tire-mounts/${encodeURIComponent(cur.id)}/checks/${c.measuredAt}`} gone="tireMeasurement.notFound" onDeleted={() => reload(afterDelete('checks', i, 'button.log-check'))}>
                     <p><time dateTime={c.measuredAt}>{date(c.measuredAt)}</time></p>
                     <CheckItems c={c} />
                   </DeleteRow>
@@ -223,7 +224,7 @@ export function TiresSection({ car }: { car: Vehicle }) {
               <ul className="tasks rotations">
                 {log[1].map((r, i) => (
                   <DeleteRow key={r.id} readOnly={readOnly} label={t('deleteRotationOf', { date: date(r.date) })} confirm={t('confirmDeleteRotation')}
-                    url={`/tire-rotations/${encodeURIComponent(r.id)}`} gone="tireRotation.notFound" onDeleted={() => reload(afterDelete('rotations', i))}>
+                    url={`/tire-rotations/${encodeURIComponent(r.id)}`} gone="tireRotation.notFound" onDeleted={() => reload(afterDelete('rotations', i, 'button.log-rotation'))}>
                     <p><time dateTime={r.date}>{date(r.date)}</time></p>
                     <p><Trans i18nKey="rotationAt" values={{ value: d.fmt(r.odometerKm), ...d.vars }} components={{ n: <bdi /> }} /></p>
                     {r.notes && <p className="notes" dir="auto">{r.notes}</p>}
@@ -238,9 +239,7 @@ export function TiresSection({ car }: { car: Vehicle }) {
               <ul className="tasks mounts">
                 {tires.past.map((m, i) => (
                   <DeleteRow key={m.id} readOnly={readOnly} label={t('deleteMountOf', { name: tireName(m), date: date(m.mountedAt) })} confirm={t('confirmDeleteMount')}
-                    url={`/tire-mounts/${encodeURIComponent(m.id)}`} gone="tireMount.notFound"
-                    // The row that takes this one's place, then the first, then Mount or Swap (decisions.md, MVP1-C).
-                    onDeleted={() => reload([`.mounts > li:nth-child(${i + 1}) button.link`, '.mounts > li button.link', 'button.mount', 'button.unmount'])}>
+                    url={`/tire-mounts/${encodeURIComponent(m.id)}`} gone="tireMount.notFound" onDeleted={() => reload(afterDelete('mounts', i, 'button.mount', 'button.unmount'))}>
                     <MountInfo m={m} title={tireName(m)} />
                   </DeleteRow>
                 ))}

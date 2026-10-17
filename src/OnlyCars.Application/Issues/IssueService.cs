@@ -85,6 +85,11 @@ public class IssueService(IAppDbContext db, VehicleService vehicleService)
         DateOnly? resolvedAt = null;
         if (status == IssueStatus.Done)
         {
+            if (request.ResolvedAt is { } early)
+            {
+                DateRules.RejectTooEarly(early); // before 1900 is the app-wide date.tooEarly; 1900 to 1999 stays issue.invalidDate
+            }
+
             if (request.ResolvedAt is not { } date || date < MinDate)
             {
                 throw new ValidationFailedException("issue.invalidDate", "A done to-do needs a date from 2000-01-01.");

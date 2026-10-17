@@ -312,5 +312,9 @@ details > summary { padding-block: 0.625rem; cursor: pointer; }
 .current-tires { display: grid; gap: 0.25rem; }
 .current-tires + .actions { flex-wrap: wrap; } /* Swap, Unmount and the two Log buttons */
 .tire-check .item > label { flex-basis: 6rem; } /* MVP5-E: both inputs of a wheel side by side at 390px */
-/* MVP5-D criterion 10: the tire forms are one column on a phone */
-@media (max-width: 30rem) { .inline-form.tire-form > label { flex-basis: 100%; } }
+/* MVP5-D criterion 10: the tire forms are one column on a phone, fields side by side above 30rem (480px) */
+.inline-form.tire-form > label { flex-basis: 100%; }
+@media (min-width: 30.0625rem) { .inline-form.tire-form > label:not(.wide) { flex-basis: 9rem; } }
+/* MVP5-E (L85): a check's wheels, each reading label then value with a normal space */
+.check-items { list-style: none; padding: 0; margin: 0; display: grid; gap: 0.125rem; }
+.check-items bdi { font-variant-numeric: tabular-nums; }

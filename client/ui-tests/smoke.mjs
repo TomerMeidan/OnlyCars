@@ -127,9 +127,9 @@ for (const s of setups) {
   })
   // MVP3-C: /history, every car's services. Before any car exists, it shows the empty state.
   const HS = he
-    ? { title: 'היסטוריית טיפולים', empty: 'עדיין לא נרשמו טיפולים.', noMatches: 'אין טיפולים שתואמים לסינון.', clear: 'ניקוי הסינון', showMore: 'הצגת עוד', retry: 'נסו שוב',
+    ? { title: 'היסטוריית טיפולים', empty: 'עדיין לא נרשמו טיפולים.', noMatches: 'אין טיפולים שתואמים לסינון.', clear: 'ניקוי הסינון', showMore: 'הצגת עוד', retry: 'ניסיון חוזר',
         archived: 'בארכיון', searchAll: 'חיפוש בכל ההיסטוריה', labels: ['רכב', 'משימה', 'מתאריך', 'עד תאריך', 'חיפוש'],
-        dates: 'תאריך ההתחלה לא יכול להיות אחרי תאריך הסיום.', tooLong: 'הזינו חיפוש של עד 100 תווים.', generic: 'משהו השתבש. נסו שוב.',
+        dates: 'תאריך ההתחלה לא יכול להיות אחרי תאריך הסיום.', tooLong: 'יש להזין חיפוש של עד 100 תווים.', generic: 'משהו השתבש. אפשר לנסות שוב.',
         summary: (n, total) => `${n === 1 ? 'טיפול אחד' : `${n.toLocaleString('he')} טיפולים`}, סה״כ ${total}` }
     : { title: 'Service history', empty: 'No services recorded yet.', noMatches: 'No services match these filters.', clear: 'Clear filters', showMore: 'Show more', retry: 'Retry',
         archived: 'Archived', searchAll: 'Search all history', labels: ['Car', 'Task', 'From date', 'To date', 'Search'],
@@ -325,7 +325,7 @@ for (const s of setups) {
 
   // MVP3-A: service history.
   const SV = he
-    ? { items: 'חלקים ועבודה', empty: 'עדיין לא נרשמו טיפולים.', record: 'רישום טיפול', diy: 'טיפול עצמי', editOf: 'עריכת הטיפול מ־', deleteOf: 'מחיקת הטיפול מ־', gone: 'הטיפול הזה כבר נמחק.', editHint: 'כדי לשנות את התאריך, הקילומטראז׳ או המשימות, מחקו את הטיפול ורשמו אותו מחדש.', labour: 'עבודה', item2Qty: 'פריט 2: הזינו כמות בין 0.01 ל־10,000, עם עד 2 ספרות אחרי הנקודה.', taskGone: 'אחת המשימות שסימנתם נמחקה, ורשימת המשימות עודכנה. בדקו את הבחירה ושמרו שוב.', item2Hours: 'פריט 2, שעות', item1Part: 'פריט 1, מק״ט', legend: 'משימות שבוצעו', hint: 'השאירו ריק לטיפול עצמי.', future: 'תאריך הטיפול לא יכול להיות בעתיד.', km: 'ק״מ', generic: 'משהו השתבש. נסו שוב.', odoLabel: 'קילומטראז׳ במיילים', at59500: 'ב־59,500 ק״מ', at59000: 'ב־59,000 ק״מ' }
+    ? { items: 'חלקים ועבודה', empty: 'עדיין לא נרשמו טיפולים.', record: 'רישום טיפול', diy: 'טיפול עצמי', editOf: 'עריכת הטיפול מ־', deleteOf: 'מחיקת הטיפול מ־', gone: 'הטיפול הזה כבר נמחק.', editHint: 'כדי לשנות את התאריך, הקילומטראז׳ או המשימות, מחקו את הטיפול ורשמו אותו מחדש.', labour: 'עבודה', item2Qty: 'פריט 2: יש להזין כמות בין 0.01 ל־10,000, עם עד 2 ספרות אחרי הנקודה.', taskGone: 'אחת המשימות שסומנו נמחקה, ורשימת המשימות עודכנה. יש לבדוק את הבחירה ולשמור שוב.', item2Hours: 'פריט 2, שעות', item1Part: 'פריט 1, מק״ט', legend: 'משימות שבוצעו', hint: 'בטיפול עצמי יש להשאיר ריק.', future: 'תאריך הטיפול לא יכול להיות בעתיד.', km: 'ק״מ', generic: 'משהו השתבש. אפשר לנסות שוב.', odoLabel: 'קילומטראז׳ במיילים', at59500: 'ב־59,500 ק״מ', at59000: 'ב־59,000 ק״מ' }
     : { items: 'Parts and labour', empty: 'No services recorded yet.', record: 'Record a service', diy: 'DIY', editOf: 'Edit the service from ', deleteOf: 'Delete the service from ', gone: 'This service was already deleted.', editHint: 'To change the date, odometer or tasks, delete this service and record it again.', labour: 'Labour', item2Qty: 'Item 2: Enter a quantity above 0 and up to 10,000 with up to 2 decimals.', taskGone: 'A task you ticked was deleted, and the task list has been updated. Check your selection and save again.', item2Hours: 'Item 2, Hours', item1Part: 'Item 1, Part number', legend: 'Tasks done', hint: 'Leave empty for DIY.', future: "The service date can't be in the future.", km: 'km', generic: 'Something went wrong. Please try again.', odoLabel: 'Odometer in miles', at59500: 'at 59,500 km', at59000: 'at 59,000 km' }
   const services = page.locator('section[aria-labelledby=service-history]')
   const serviceItems = () => services.locator('.services > li')
@@ -409,7 +409,7 @@ for (const s of setups) {
     await page.waitForTimeout(300)
     page.off('request', countPost)
     const required = await form.locator('[role=alert]').textContent()
-    if (posted || required !== (he ? 'הזינו מרווח בק״מ, מרווח זמן או את שניהם.' : 'Enter an interval in km, a time interval, or both.')) throw new Error(`${posted} POST, "${required}"`)
+    if (posted || required !== (he ? 'יש להזין מרווח בק״מ, מרווח זמן או את שניהם.' : 'Enter an interval in km, a time interval, or both.')) throw new Error(`${posted} POST, "${required}"`)
     // A last-done km above the odometer: the server's error names the current km, and the input is kept.
     await form.locator('input[name=intervalTime]').fill('6')
     await form.locator('select[name=intervalUnit]').selectOption('months')
@@ -462,6 +462,26 @@ for (const s of setups) {
     const text = plain(await taskRow(TK.wash2).textContent())
     if (!text.includes(TK.year)) throw new Error(`row "${text}"`)
   })
+  await step('task-date-too-early', async () => {
+    // LOW-4 L67, L68: a last done date before 1900 is the server's date.tooEarly, on the date field.
+    await taskBtn(TK.edit, TK.wash2).click()
+    const form = taskRow(TK.wash2).locator('form')
+    const date = form.locator('input[name=lastDoneDate]')
+    await date.fill('1899-12-31')
+    const res = page.waitForResponse((r) => r.request().method() === 'PUT')
+    await form.locator('button:not(.link)').click()
+    if ((await res).status() !== 400) throw new Error('not a 400')
+    const alert = form.locator('[role=alert]')
+    await alert.waitFor()
+    const min = await page.evaluate((l) => new Date('1900-01-01').toLocaleDateString(l, { dateStyle: 'medium', timeZone: 'UTC' }), s.lng)
+    const want = he ? `התאריך לא יכול להיות לפני ${min}.` : `The date can't be before ${min}.`
+    if (plain(await alert.textContent()) !== want) throw new Error(`tooEarly "${await alert.textContent()}"`)
+    if ((await date.getAttribute('aria-invalid')) !== 'true' || (await date.getAttribute('aria-describedby')) !== (await alert.getAttribute('id'))) throw new Error('tooEarly not on the date')
+    run.badResponses = run.badResponses.filter((r) => !(r.startsWith('400 ') && r.includes('/tasks/')))
+    run.consoleErrors = run.consoleErrors.filter((e) => !e.includes('status of 400'))
+    await form.locator('button.link').click()
+    await form.waitFor({ state: 'detached' })
+  })
   await step('disable-task', async () => {
     const toggle = tasks.getByRole('checkbox', { name: TK.on + TK.belt })
     await tall(taskRow(TK.belt).locator('label.inline'), 'Enabled toggle')
@@ -485,7 +505,7 @@ for (const s of setups) {
     await page.route('**/api/vehicles/*/tasks/*', (r) => r.fulfill({ status: 500, contentType: 'application/json', body: '{}' }), { times: 1 })
     await toggle.click()
     const alert = await taskRow(TK.belt).locator('[role=alert]').textContent()
-    if (alert !== (he ? 'משהו השתבש. נסו שוב.' : 'Something went wrong. Please try again.')) throw new Error(`alert "${alert}"`)
+    if (alert !== (he ? 'משהו השתבש. אפשר לנסות שוב.' : 'Something went wrong. Please try again.')) throw new Error(`alert "${alert}"`)
     if (await toggle.isChecked()) throw new Error('checkbox not put back')
     await taskRow(TK.belt).locator('.badge', { hasText: TK.off }).waitFor()
     await focusIs(`li[data-id] input[aria-label="${TK.on}${TK.belt}"]`, 'after a failed toggle')
@@ -520,7 +540,7 @@ for (const s of setups) {
     await page.reload()
     const alert = await tasks.locator('[role=alert]').textContent()
     await page.unroute('**/api/vehicles/*/tasks')
-    if (alert !== (he ? 'משהו השתבש. נסו שוב.' : 'Something went wrong. Please try again.')) throw new Error(`alert "${alert}"`)
+    if (alert !== (he ? 'משהו השתבש. אפשר לנסות שוב.' : 'Something went wrong. Please try again.')) throw new Error(`alert "${alert}"`)
     await page.locator('.quick input[type=number]').waitFor()
     await page.locator('.history li').first().waitFor()
     run.badResponses = run.badResponses.filter((r) => !r.startsWith('500 GET')) // the forced failure
@@ -537,7 +557,7 @@ for (const s of setups) {
     await tasks.getByRole('button', { name: TK.add }).click()
     const alert = await tasks.locator('.picker [role=alert]').textContent()
     await page.unroute('**/api/task-templates')
-    if (alert !== (he ? 'משהו השתבש. נסו שוב.' : 'Something went wrong. Please try again.')) throw new Error(`picker alert "${alert}"`)
+    if (alert !== (he ? 'משהו השתבש. אפשר לנסות שוב.' : 'Something went wrong. Please try again.')) throw new Error(`picker alert "${alert}"`)
     if (plain((await tasks.locator('.picker li button').allTextContents()).join()) !== TK.custom) throw new Error('picker options with no templates')
     await tasks.screenshot({ path: `${OUT}/${s.name}-templates-error.png` })
     await tasks.locator('.picker button.link').click()
@@ -643,7 +663,7 @@ for (const s of setups) {
   })
   await step('task-due-soon-percent', async () => {
     const msg = he
-      ? { pct: 'הזינו מספר שלם בין 1 ל־50.', km: 'הזינו מרווח של 1 עד 1,000,000 ק״מ.', time: 'הזינו מרווח זמן של עד 20 שנה (243 חודשים או 7,300 ימים).' }
+      ? { pct: 'יש להזין מספר שלם בין 1 ל־50.', km: 'יש להזין מרווח של 1 עד 1,000,000 ק״מ.', time: 'יש להזין מרווח זמן של עד 20 שנה (243 חודשים או 7,300 ימים).' }
       : { pct: 'Enter a whole number from 1 to 50.', km: 'Enter an interval from 1 to 1,000,000 km.', time: 'Enter a time interval of up to 20 years (243 months or 7,300 days).' }
     // The add form starts at 10.
     await tasks.getByRole('button', { name: TK.add }).click()
@@ -684,7 +704,7 @@ for (const s of setups) {
   })
   // MVP2-C: Mark done and Undo, at 390px wide in both setups. The odometer is at 59,000.
   const RS = he
-    ? { done: 'סימון כבוצע: ', cost: 'הוספת עלות או הערות: ', marked: 'סומן כבוצע.', service: 'טיפול', generic: 'משהו השתבש. נסו שוב.', costMsg: 'הזינו עלות בין 0 ל־1,000,000, עם עד 2 ספרות אחרי הנקודה.', oilLeft: 'עוד 10,000 ק״מ', oilLate: 'באיחור של 1,000 ק״מ', oilAt: 'ב־48,000 ק״מ' }
+    ? { done: 'סימון כבוצע: ', cost: 'הוספת עלות או הערות: ', marked: 'סומן כבוצע.', service: 'טיפול', generic: 'משהו השתבש. אפשר לנסות שוב.', costMsg: 'יש להזין עלות בין 0 ל־1,000,000, עם עד 2 ספרות אחרי הנקודה.', oilLeft: 'עוד 10,000 ק״מ', oilLate: 'באיחור של 1,000 ק״מ', oilAt: 'ב־48,000 ק״מ' }
     : { done: 'Mark done: ', cost: 'Add cost or notes: ', marked: 'Marked as done.', service: 'Service', generic: 'Something went wrong. Please try again.', costMsg: 'Enter a cost from 0 to 1,000,000 with up to 2 decimals.', oilLeft: '10,000 km left', oilLate: 'Overdue by 1,000 km', oilAt: 'at 48,000 km' }
   const localDate = () => page.evaluate(() => new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10))
   const histDay = (offset) => page.evaluate((o) => new Date(Date.now() + o * 86_400_000 - new Date().getTimezoneOffset() * 60_000).toISOString().slice(0, 10), offset)
@@ -1615,7 +1635,7 @@ for (const s of setups) {
   const UM = he
     ? { mi: 'מייל', km: 'ק״מ', newReading: 'קריאה חדשה במיילים', perDay: '31.1 מייל ליום', perDayKm: '66.1 ק״מ ליום', edit: 'עריכה של הקריאה ', readingLabel: 'קריאה במיילים',
         every6214: 'כל 6,214 מייל', left853: 'עוד 853 מייל', left5000: 'עוד 5,000 מייל', at44739: 'ב־44,739 מייל', every5000: 'כל 5,000 מייל', every8047: 'כל 8,047 ק״מ', beltMi: 'כל 62,137 מייל או 5 שנים',
-        intervalLabel: 'מרווח במיילים', initialLabel: 'קילומטראז׳ נוכחי (מייל)', maxReading: 'הזינו קריאה בין 0 ל־6,213,711 מייל.', maxInterval: 'הזינו מרווח של 1 עד 621,371 מייל.',
+        intervalLabel: 'מרווח במיילים', initialLabel: 'קילומטראז׳ נוכחי (מייל)', maxReading: 'יש להזין קריאה בין 0 ל־6,213,711 מייל.', maxInterval: 'יש להזין מרווח של 1 עד 621,371 מייל.',
         previous: '(50,100 מייל)', current: '(50,100 מייל)' }
     : { mi: 'mi', km: 'km', newReading: 'New reading in miles', perDay: '31.1 mi/day', perDayKm: '66.1 km/day', edit: 'Edit reading ', readingLabel: 'Reading in miles',
         every6214: 'Every 6,214 mi', left853: '853 mi left', left5000: '5,000 mi left', at44739: 'at 44,739 mi', every5000: 'Every 5,000 mi', every8047: 'Every 8,047 km', beltMi: 'Every 62,137 mi or 5 years',
@@ -2426,11 +2446,11 @@ for (const s of setups) {
   })
   // MVP5-A: checklist templates on /checklists.
   const CL = he
-    ? { title: 'רשימות בדיקה', add: 'רשימת בדיקה חדשה', empty: 'עדיין אין רשימות בדיקה. צרו רשימה כדי להשתמש בה ברכבים שלכם.', addItem: 'הוספת פריט',
-        three: '3 פריטים', edit: 'עריכה של ', del: 'מחיקה של ', confirm: 'למחוק את רשימת הבדיקה הזו?', name: 'הזינו שם של עד 100 תווים.', remove2: 'הסרת פריט ⁦2⁩',
-        range: 'פריט 2: הזינו מינימום ומקסימום בין -1,000,000 ל־1,000,000, עם עד 2 ספרות אחרי הנקודה. המינימום לא יכול להיות גבוה מהמקסימום.',
-        up: (n) => `הזזת פריט ⁦${n}⁩ למעלה`, unit: (n) => `פריט ${n}, יחידה`, label1: 'פריט 1: הזינו שם של עד 100 תווים.',
-        range1: 'פריט 1: הזינו מינימום ומקסימום בין -1,000,000 ל־1,000,000, עם עד 2 ספרות אחרי הנקודה. המינימום לא יכול להיות גבוה מהמקסימום.' }
+    ? { title: 'רשימות בדיקה', add: 'רשימת בדיקה חדשה', empty: 'עדיין אין רשימות בדיקה. אפשר ליצור רשימה ולהשתמש בה ברכבים שלך.', addItem: 'הוספת פריט',
+        three: '3 פריטים', edit: 'עריכה של ', del: 'מחיקה של ', confirm: 'למחוק את רשימת הבדיקה הזו?', name: 'יש להזין שם של עד 100 תווים.', remove2: 'הסרת פריט ⁦2⁩',
+        range: 'פריט 2: יש להזין מינימום ומקסימום בין -1,000,000 ל־1,000,000, עם עד 2 ספרות אחרי הנקודה. המינימום לא יכול להיות גבוה מהמקסימום.',
+        up: (n) => `הזזת פריט ⁦${n}⁩ למעלה`, unit: (n) => `פריט ${n}, יחידה`, label1: 'פריט 1: יש להזין שם של עד 100 תווים.',
+        range1: 'פריט 1: יש להזין מינימום ומקסימום בין -1,000,000 ל־1,000,000, עם עד 2 ספרות אחרי הנקודה. המינימום לא יכול להיות גבוה מהמקסימום.' }
     : { title: 'Checklists', add: 'New checklist', empty: 'No checklists yet. Create one to use on your cars.', addItem: 'Add item',
         three: '3 items', edit: 'Edit ', del: 'Delete ', confirm: 'Delete this checklist?', name: 'Enter a name of up to 100 characters.', remove2: 'Remove item 2',
         range: 'Item 2: Enter a min and max from -1,000,000 to 1,000,000 with up to 2 decimals, and a min not above the max.',
@@ -2713,8 +2733,8 @@ for (const s of setups) {
         field: (l, f) => `${l}: ${f}`, flag: 'סימון כבעיה', value: 'ערך', saved3: 'הבדיקה נשמרה. סומנו 3 בעיות.', history: (n) => `היסטוריה (${n})`, flagged3: '3 בעיות',
         hasRuns: 'כבר בוצעו בדיקות לפי הרשימה הזו, ולכן אי אפשר להסיר אותה. במקום זה אפשר להשבית אותה.', confirmRun: 'למחוק את הבדיקה הזו? גם קריאת הקילומטראז׳ שלה תימחק.',
         lower: 'הקריאה נמוכה מהקריאה שלפניה', start: 'ביצוע רשימת בדיקה', startOf: (n) => `ביצוע רשימת בדיקה: ${n}`,
-        inUse: 'רשימת הבדיקה משויכת לרכב, ולכן אי אפשר למחוק אותה. קודם הסירו אותה מהרכב.',
-        item2: 'פריט 2: הערך לא מתאים לפריט.', changed: 'רשימת הבדיקה השתנתה מאז שפתחתם אותה.', future: 'התאריך לא יכול להיות בעתיד.' }
+        inUse: 'רשימת הבדיקה משויכת לרכב, ולכן אי אפשר למחוק אותה. יש להסיר אותה מהרכב קודם.',
+        item2: 'פריט 2: הערך לא מתאים לפריט.', changed: 'רשימת הבדיקה השתנתה מאז שנפתחה.', future: 'התאריך לא יכול להיות בעתיד.' }
     : { add: 'Add a checklist', none: 'No checklists on this car yet.', noTemplates: 'You have no checklists yet. Create one on the Checklists page.',
         allAttached: 'All your checklists are already on this car. Create another one.', manual: 'Manual only', ok: 'OK', off: 'Disabled',
         left: '5,000 km or 30 days left', notRun: 'Not run yet', runOf: (n) => `Run ${n}`, editOf: (n) => `Edit ${n}`, removeOf: (n) => `Remove ${n} from this car`,
@@ -3189,6 +3209,24 @@ for (const s of setups) {
     await page.goBack()
     await page.waitForURL((u) => u.pathname === '/')
   })
+  await step('checklist-hebrew-unit', async () => {
+    // LOW-4 L68: a Hebrew unit follows its number in the reading direction too (left of it in Hebrew, right of it in English).
+    const tpl = await apiCall('POST', '/checklist-templates', { name: 'Hebrew unit', items: [{ label: 'Pressure', type: 'Number', unit: 'בר' }] })
+    const vc = await apiCall('POST', `/vehicles/${dashCarId}/checklists`, { templateId: tpl.id, intervalKm: null, intervalDays: null, date: await localDate() })
+    const r = await apiCall('POST', `/vehicle-checklists/${vc.id}/runs`, { runAt: await localDate(), items: [{ templateItemId: tpl.items[0].id, numberValue: 2.2, isFlagged: false }] })
+    await page.goto(`${BASE}${ckCarPath()}`)
+    const row = ckRow('Hebrew unit')
+    await row.locator('details.run-history > summary').click()
+    const runRow = row.locator('.run-list > li')
+    await runRow.locator('summary').click()
+    const [num, unit] = await Promise.all([/^2\.2$/, /^בר$/].map((v) => runRow.locator('.run-items > li bdi', { hasText: v }).boundingBox()))
+    if ((unit.x < num.x) !== he) throw new Error(`unit "בר" at x ${unit.x}, number at x ${num.x}`)
+    await page.screenshot({ path: `${OUT}/${s.name}-checklist-hebrew-unit.png`, fullPage: true })
+    await apiCall('DELETE', `/checklist-runs/${r.run.id}`)
+    await apiCall('DELETE', `/vehicle-checklists/${vc.id}`)
+    await apiCall('DELETE', `/checklist-templates/${tpl.id}`)
+    await page.goto(`${BASE}/`) // dashboard-open-issues starts on the dashboard
+  })
   await step('dashboard-open-issues', async () => {
     // Criterion 7: Dash car's 2 open to-dos link to its page; after one is marked done it shows 1; other cars show nothing.
     // Already on the dashboard after dashboard-start-checklist.
@@ -3225,11 +3263,11 @@ for (const s of setups) {
   const n0 = (x) => x.toLocaleString('en')
   const TI = he
     ? { title: 'צמיגים', newSet: 'סט חדש', empty: 'עדיין אין סטים של צמיגים.', noneOnCar: 'אין סט צמיגים מותקן ברכב הזה.', mount: 'התקנת סט', swap: 'החלפת סט',
-        unmount: 'הסרת הסט', storage: 'באחסון', km: (n, u = 'ק״מ') => `נסע ${n0(n)} ${u}`, on: (c, d) => `מותקן ברכב ${c} מאז ${d}`, brand: 'הזינו יצרן של עד 50 תווים.',
+        unmount: 'הסרת הסט', storage: 'באחסון', km: (n, u = 'ק״מ') => `נסע ${n0(n)} ${u}`, on: (c, d) => `מותקן ברכב ${c} מאז ${d}`, brand: 'יש להזין יצרן של עד 50 תווים.',
         noSets: 'עדיין אין לך סטים של צמיגים. אפשר להוסיף סט בדף הצמיגים.', edit: (x) => `עריכה של ${x}`, del: (x) => `מחיקה של ${x}`,
         delMount: (x, d) => `מחיקת ההתקנה של ${x} מ־${d}`, confirmSet: 'למחוק את סט הצמיגים הזה? גם היסטוריית ההתקנות, הבדיקות והרוטציות שלו יימחקו.', summer: 'קיץ',
-        before: (n, u = 'ק״מ') => `הזינו קילומטראז׳ של ${n0(n)} ${u} לפחות (הקילומטראז׳ בהתקנת הסט).`,
-        overlap: 'התאריך לא יכול להיות לפני ההתקנה או ההסרה האחרונה של הסט או של הרכב. בחרו תאריך מאוחר יותר.' }
+        before: (n, u = 'ק״מ') => `יש להזין קילומטראז׳ של ${n0(n)} ${u} לפחות (הקילומטראז׳ בהתקנת הסט).`,
+        overlap: 'התאריך לא יכול להיות לפני ההתקנה או ההסרה האחרונה של הסט או של הרכב. יש לבחור תאריך מאוחר יותר.' }
     : { title: 'Tires', newSet: 'New set', empty: 'No tire sets yet.', noneOnCar: 'No tire set on this car.', mount: 'Mount a set', swap: 'Swap set',
         unmount: 'Unmount', storage: 'In storage', km: (n, u = 'km') => `${n0(n)} ${u} driven`, on: (c, d) => `On ${c} since ${d}`, brand: 'Enter a brand of up to 50 characters.',
         noSets: 'You have no tire sets yet. Add one on the Tires page.', edit: (x) => `Edit ${x}`, del: (x) => `Delete ${x}`,
@@ -3317,10 +3355,18 @@ for (const s of setups) {
     await row.locator('button.edit').click()
     if ((await setForm.locator('select[name=season]').inputValue()) !== 'Winter') throw new Error('season not prefilled')
     await setForm.locator('input[name=size]').fill('195/65 R15')
+    // LOW-4 L74: the row shows the PUT response while the list reload after it is still held.
+    let release
+    const held = new Promise((r) => { release = r })
+    await page.route('**/api/tire-sets', async (r) => { await held; await r.continue() }, { times: 1 })
     const res = page.waitForResponse((r) => r.url().includes('/api/tire-sets/') && r.request().method() === 'PUT')
     await setSave.click()
     if ((await res).status() !== 200) throw new Error('PUT failed')
     await focusIs('.tire-sets button.edit', 'Edit after Save')
+    const early = await setText('Nokian Hakka R5')
+    release()
+    if (!early.includes('195/65 R15')) throw new Error(`row before the reload "${early}"`)
+    await page.waitForLoadState('networkidle')
     if (!(await setText('Nokian Hakka R5')).includes('195/65 R15')) throw new Error('size not saved')
   })
   await step('tires-mount', async () => {
@@ -3343,6 +3389,58 @@ for (const s of setups) {
     const cur = plain(await tiSec.locator('.current-tires').textContent())
     if (!cur.includes('Michelin Pilot Sport 4') || !cur.includes(TI.km(2000))) throw new Error(`current "${cur}"`)
     await tiSec.getByRole('button', { name: TI.swap, exact: true }).waitFor()
+  })
+  const mocked = (status, code) => (r) => r.fulfill({ status, contentType: 'application/json', body: JSON.stringify({ code }) })
+  const TE = he
+    ? { taken: 'הסט הזה מותקן ברכב. יש להסיר אותו משם קודם.', setLimit: 'אפשר לשמור עד 50 סטים של צמיגים.', mountLimit: 'אפשר לשמור עד 500 רשומות התקנה לסט.',
+        conflict: 'הנתונים שונו במקביל במקום אחר. יש לרענן את הדף ולנסות שוב.' }
+    : { taken: 'This set is on a car. Unmount it there first.', setLimit: 'You can have up to 50 tire sets.', mountLimit: 'A tire set can have up to 500 mount records.',
+        conflict: 'This was changed at the same time somewhere else. Reload and try again.' }
+  await step('tires-set-taken', async () => {
+    // LOW-4 L73: Nokian, the last free set, is taken meanwhile: after the reload no set is left to pick, and the 409 still shows above that box.
+    await tiSec.getByRole('button', { name: TI.swap, exact: true }).click()
+    await page.route('**/tires/mount', mocked(409, 'tireMount.setMounted'), { times: 1 })
+    const elsewhere = { id: crypto.randomUUID(), vehicleId: crypto.randomUUID(), vehicleNickname: 'Other car', mountedAt: await localDate() }
+    await page.route('**/api/tire-sets', async (r) => { const res = await r.fetch(); await r.fulfill({ response: res, json: (await res.json()).map((x) => ({ ...x, openMount: x.openMount ?? elsewhere })) }) }, { times: 1 })
+    await tiSave.click()
+    const alert = tiSec.locator('div.inline-form [role=alert]')
+    await alert.waitFor()
+    if (plain(await alert.textContent()) !== TE.taken) throw new Error(`taken "${await alert.textContent()}"`)
+    await focusIs('section[aria-labelledby=tires] div.inline-form button.link', 'Cancel in the no-free-set box')
+    await at390('the set taken error', 'tires-set-taken')
+    await tiSec.locator('div.inline-form button.link').focus()
+    await page.keyboard.press('Escape')
+    await focusIs('section[aria-labelledby=tires] button.mount', 'Swap after Escape')
+    forgetCk(409, '/tires/mount')
+  })
+  await step('tires-errors', async () => {
+    // LOW-4 L75: mocked limit and conflict errors show their text; the conflict reloads the section and keeps the form and its error.
+    await page.goto(`${BASE}${ckCarPath()}`)
+    await tiSec.getByRole('button', { name: TI.swap, exact: true }).click()
+    const alert = tiForm.locator('[role=alert]')
+    for (const [code, want] of [['tireMount.limitReached', TE.mountLimit], ['concurrency.conflict', TE.conflict]]) {
+      await page.route('**/tires/mount', mocked(409, code), { times: 1 })
+      await tiSave.click()
+      await alert.filter({ hasText: want.slice(0, 10) }).waitFor() // before the Hebrew number's isolate marks
+      if (plain(await alert.textContent()) !== want) throw new Error(`${code} "${await alert.textContent()}"`)
+    }
+    await page.waitForLoadState('networkidle')
+    if (!(await alert.count())) throw new Error('the conflict error went with the reload')
+    await page.keyboard.press('Escape')
+    await goTires()
+    await page.getByRole('button', { name: TI.newSet, exact: true }).click()
+    await setForm.locator('input[name=brand]').fill('Capped')
+    const post = (r) => (r.request().method() === 'POST' ? mocked(409, 'tireSet.limitReached')(r) : r.fallback())
+    await page.route('**/api/tire-sets', post)
+    await setSave.click()
+    const setAlert = setForm.locator('[role=alert]')
+    await setAlert.waitFor()
+    await page.unroute('**/api/tire-sets', post)
+    if (plain(await setAlert.textContent()) !== TE.setLimit) throw new Error(`set limit "${await setAlert.textContent()}"`)
+    await page.keyboard.press('Escape')
+    forgetCk(409, '/tires/mount')
+    forgetCk(409, '/tire-sets')
+    await page.goto(`${BASE}${ckCarPath()}`)
   })
   await step('tires-swap', async () => {
     // Errors on their fields: an odometer below the mount's start, then a date before it; then the swap 5 days ago at 501 below the car's odometer.
@@ -3581,8 +3679,18 @@ for (const s of setups) {
     await rotRows.first().locator('button.link').click()
     await rotRows.first().locator('button.danger').click()
     await tiSec.getByText(TC.notRotated, { exact: true }).waitFor()
-    await focusIs('section[aria-labelledby=tires] button.log-check', 'Log a check after the last Delete')
+    await focusIs('section[aria-labelledby=tires] button.log-rotation', 'Log a rotation after the last Delete')
     await unitIs('Km')
+  })
+  await step('tires-unmount-stale', async () => {
+    // LOW-4 L78: the set was unmounted meanwhile: the 404 closes the form and focus goes to Mount (Swap here: the reload still finds it on).
+    await page.goto(`${BASE}${ckCarPath()}`)
+    await tiSec.getByRole('button', { name: TI.unmount, exact: true }).click()
+    await page.route('**/tires/unmount', mocked(404, 'tireMount.notFound'), { times: 1 })
+    await tiSave.click()
+    await tiForm.waitFor({ state: 'detached' })
+    await focusIs('section[aria-labelledby=tires] button.mount', 'Mount after the stale Unmount')
+    forgetCk(404, '/tires/unmount')
   })
   await step('tires-unmount', async () => {
     await page.goto(`${BASE}${ckCarPath()}`)

@@ -46,7 +46,7 @@ public class VehicleService(IAppDbContext db)
             var vinTaken = await db.Vehicles.AnyAsync(v => v.UserId == userId && v.Vin == request.Vin, ct);
             if (vinTaken)
             {
-                throw new ConflictException("vehicle.vinTaken", "A vehicle with this VIN already exists on your account.");
+                throw VinTaken();
             }
         }
 
@@ -80,7 +80,7 @@ public class VehicleService(IAppDbContext db)
             });
         }
 
-        await db.SaveChangesAsync(ct);
+        await SaveVinAsync(vehicle, ct);
         return ToDto(vehicle);
     }
 
@@ -93,7 +93,7 @@ public class VehicleService(IAppDbContext db)
             var vinTaken = await db.Vehicles.AnyAsync(v => v.UserId == userId && v.Vin == request.Vin && v.Id != vehicleId, ct);
             if (vinTaken)
             {
-                throw new ConflictException("vehicle.vinTaken", "A vehicle with this VIN already exists on your account.");
+                throw VinTaken();
             }
         }
 
@@ -109,8 +109,28 @@ public class VehicleService(IAppDbContext db)
         vehicle.PhotoUrl = request.PhotoUrl;
         vehicle.UpdatedAt = DateTimeOffset.UtcNow;
 
-        await db.SaveChangesAsync(ct);
+        await SaveVinAsync(vehicle, ct);
         return ToDto(vehicle);
+    }
+
+    private static ConflictException VinTaken() => new("vehicle.vinTaken", "A vehicle with this VIN already exists on your account.");
+
+    private async Task SaveVinAsync(Vehicle vehicle, CancellationToken ct)
+    {
+        try
+        {
+            await db.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateException) when (vehicle.Vin is not null)
+        {
+            // A simultaneous save of the same VIN won the unique Vehicle(UserId, Vin) index (L66).
+            if (await db.Vehicles.AnyAsync(v => v.UserId == vehicle.UserId && v.Vin == vehicle.Vin && v.Id != vehicle.Id, ct))
+            {
+                throw VinTaken();
+            }
+
+            throw;
+        }
     }
 
     public async Task ArchiveAsync(Guid userId, Guid vehicleId, bool archived, CancellationToken ct = default)

@@ -566,6 +566,37 @@ public class TireTests
     }
 
     [Fact]
+    public async Task ListChecksAndRotations_OnArchivedCarAndClosedMount_ListNormally_WithoutLoadingTheCar()
+    {
+        // LOW-4 L82 and L81.
+        var (car, _, mount) = await MountedAsync();
+        await CheckAsync(mount, Today, Wheel(TirePosition.FL, 2));
+        var rotation = await RotateAsync(mount, Today, 50_000);
+
+        async Task AssertListsAsync()
+        {
+            db.ChangeTracker.Clear();
+            Assert.Equal(Today, Assert.Single(await tires.ListChecksAsync(userId, mount)).MeasuredAt);
+            Assert.Equal(rotation.Id, Assert.Single(await tires.ListRotationsAsync(userId, mount)).Id);
+            Assert.Empty(db.ChangeTracker.Entries<Vehicle>()); // L81: list paths don't join the car
+        }
+
+        await vehicles.ArchiveAsync(userId, car, true);
+        await AssertListsAsync();
+
+        await vehicles.ArchiveAsync(userId, car, false);
+        await UnmountAsync(car, Today, 50_000);
+        await AssertListsAsync();
+
+        // The delete path doesn't join it either; the create path does, for the archived rule.
+        await tires.DeleteRotationAsync(userId, rotation.Id);
+        await tires.DeleteCheckAsync(userId, mount, Today);
+        Assert.Empty(db.ChangeTracker.Entries<Vehicle>());
+        await CodeAsync(() => RotateAsync(mount, Today, 50_000));
+        Assert.Single(db.ChangeTracker.Entries<Vehicle>());
+    }
+
+    [Fact]
     public async Task DeleteCheck_RemovesEveryWheelOfThatDateOnly()
     {
         var (_, _, mount) = await MountedAsync();

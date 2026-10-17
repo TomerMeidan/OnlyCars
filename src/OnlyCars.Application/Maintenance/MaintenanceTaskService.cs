@@ -384,6 +384,16 @@ public class MaintenanceTaskService(IAppDbContext db, VehicleService vehicleServ
 
         var carTasks = await db.MaintenanceTasks.Where(t => t.VehicleId == vehicle.Id).ToListAsync(ct);
         var wanted = request.TaskIds is null ? null : Resolve(carTasks, request.TaskIds);
+        var response = () => new CreateServiceRecordResponse(ToDto(record),
+            carTasks.OrderByDescending(t => t.IsEnabled).ThenBy(t => t.Name).Select(t => ToDto(t, vehicle, today)).ToList());
+
+        // A no-op edit doesn't save, so UpdatedAt (the concurrency token) doesn't move and a void right after still succeeds (L70).
+        if (!moved && (shop, totalCost, notes) == (record.ShopName, record.TotalCost, record.Notes)
+            && (wanted is null || wanted.Select(t => t.Id).Order().SequenceEqual(record.Tasks.Select(j => j.MaintenanceTaskId).Order()))
+            && items.Select(ItemKey).SequenceEqual(record.Items.OrderBy(i => i.SortOrder).Select(ItemKey)))
+        {
+            return response();
+        }
 
         var readings = await db.OdometerReadings.Where(r => r.VehicleId == vehicle.Id).ToListAsync(ct);
         var reading = readings.FirstOrDefault(r => r.ServiceRecordId == record.Id);
@@ -484,8 +494,11 @@ public class MaintenanceTaskService(IAppDbContext db, VehicleService vehicleServ
         record.UpdatedAt = now;
 
         await db.SaveChangesAsync(ct);
-        return new(ToDto(record), carTasks.OrderByDescending(t => t.IsEnabled).ThenBy(t => t.Name).Select(t => ToDto(t, vehicle, today)).ToList());
+        return response();
     }
+
+    private static (string, string?, string?, decimal, decimal, bool) ItemKey(ServiceItem i) =>
+        (i.Description, i.Brand, i.PartNumber, i.Quantity, i.UnitCost, i.IsLabor);
 
     /// <summary>
     /// Undo, in any order: voids the record, and each linked task whose LastDone* still equals this record's date and odometer
@@ -759,6 +772,11 @@ public class MaintenanceTaskService(IAppDbContext db, VehicleService vehicleServ
             {
                 Extensions = { ["currentKm"] = vehicle.CurrentOdometerKm }
             };
+        }
+
+        if (lastDoneDate != stored?.LastDoneDate)
+        {
+            DateRules.RejectTooEarly(lastDoneDate.Value);
         }
 
         // Same one day of slack as odometer readings (Israel is ahead of UTC).

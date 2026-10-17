@@ -133,7 +133,7 @@ public class TireService(IAppDbContext db, VehicleService vehicleService)
     /// <summary>Deletes one mount record to fix a mistake; deleting the open one leaves the car with no set.</summary>
     public async Task DeleteMountAsync(Guid userId, Guid id, CancellationToken ct = default)
     {
-        db.TireMounts.Remove(await FindMountAsync(userId, id, ct));
+        db.TireMounts.Remove(await FindMountAsync(userId, id, withVehicle: false, ct));
         await db.SaveChangesAsync(ct);
     }
 
@@ -143,7 +143,7 @@ public class TireService(IAppDbContext db, VehicleService vehicleService)
     public const int MaxCheckDatesListed = 50;
 
     public async Task<List<TireCheckDto>> ListChecksAsync(Guid userId, Guid mountId, CancellationToken ct = default) =>
-        await ChecksAsync((await FindMountAsync(userId, mountId, ct)).Id, MaxCheckDatesListed, ct);
+        await ChecksAsync((await FindMountAsync(userId, mountId, withVehicle: false, ct)).Id, MaxCheckDatesListed, ct);
 
     public async Task<TireCheckDto> AddCheckAsync(Guid userId, Guid mountId, TireCheckRequest request, CancellationToken ct = default)
     {
@@ -226,7 +226,7 @@ public class TireService(IAppDbContext db, VehicleService vehicleService)
     /// <summary>Deletes the whole check of that date. Allowed on a closed mount and an archived car.</summary>
     public async Task DeleteCheckAsync(Guid userId, Guid mountId, DateOnly measuredAt, CancellationToken ct = default)
     {
-        var mount = await FindMountAsync(userId, mountId, ct);
+        var mount = await FindMountAsync(userId, mountId, withVehicle: false, ct);
         // Measurements are loaded so the delete also cascades on providers without database cascades (tests).
         db.TireChecks.Remove(await db.TireChecks.Include(c => c.Measurements)
                 .FirstOrDefaultAsync(c => c.TireMountId == mount.Id && c.MeasuredAt == measuredAt, ct)
@@ -236,7 +236,7 @@ public class TireService(IAppDbContext db, VehicleService vehicleService)
 
     public async Task<List<TireRotationDto>> ListRotationsAsync(Guid userId, Guid mountId, CancellationToken ct = default)
     {
-        var mount = await FindMountAsync(userId, mountId, ct);
+        var mount = await FindMountAsync(userId, mountId, withVehicle: false, ct);
         return await Newest(db.TireRotations.Where(r => r.TireMountId == mount.Id))
             .Select(r => new TireRotationDto(r.Id, r.Date, r.OdometerKm, r.Notes)).ToListAsync(ct);
     }
@@ -274,15 +274,16 @@ public class TireService(IAppDbContext db, VehicleService vehicleService)
         await db.SaveChangesAsync(ct);
     }
 
-    // Scoped to the owner through the set, so another user's mount is simply not found.
-    private async Task<TireMount> FindMountAsync(Guid userId, Guid id, CancellationToken ct) =>
-        await db.TireMounts.Include(m => m.Vehicle).FirstOrDefaultAsync(m => m.Id == id && m.TireSet!.UserId == userId, ct)
+    // Scoped to the owner through the set, so another user's mount is simply not found. The car is joined only for the archived rule (L81).
+    private async Task<TireMount> FindMountAsync(Guid userId, Guid id, bool withVehicle, CancellationToken ct) =>
+        await (withVehicle ? db.TireMounts.Include(m => m.Vehicle) : db.TireMounts.AsQueryable())
+            .FirstOrDefaultAsync(m => m.Id == id && m.TireSet!.UserId == userId, ct)
         ?? throw new NotFoundException(nameof(TireMount), id);
 
     // Checks and rotations are logged only for the set on an active car.
     private async Task<TireMount> FindOpenMountAsync(Guid userId, Guid id, CancellationToken ct)
     {
-        var mount = await FindMountAsync(userId, id, ct);
+        var mount = await FindMountAsync(userId, id, withVehicle: true, ct);
         if (mount.Vehicle!.IsArchived)
         {
             throw new ValidationFailedException("tireMount.vehicleArchived", "This car is archived.");

@@ -360,8 +360,7 @@ export const carNotFound = () => new ApiError(404, { code: 'vehicle.notFound' },
 
 // Where the run page sends the user back to: the checklist whose Run button gets focus, and the flagged count after a Save.
 export type RunReturn = { ran: string; flagged?: number }
-// A Save that goes back in history can't carry state, so it leaves its RunReturn here for the car page.
-// shortcut: if the car page fails to load, it stays until the next car page shows (then a stale "Saved" line); clear it by time if that is reported.
+// A Save that goes back in history can't carry state, so it leaves its RunReturn here for the car page (which clears it, also when it fails to load).
 export const runReturn: { current: RunReturn | null } = { current: null }
 export const runPath = (carId: string, checklistId: string) => `/cars/${encodeURIComponent(carId)}/checklists/${encodeURIComponent(checklistId)}/run`
 

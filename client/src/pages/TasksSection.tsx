@@ -4,7 +4,11 @@ import { useAuth, useDistance } from '../auth'
 import { api, ApiError, byUrgency, localToday, taskCategories, type MaintenanceTask, type TaskCategory, type TaskStatus, type TaskTemplate, type Vehicle } from '../api'
 import { errorMessage } from '../i18n'
 import { splitDays, unitDays, type Unit } from '../units'
+import { noItems, useItemErrors } from '../useItemErrors'
 import { useRow } from '../useRow'
+
+// The task form's date errors are about Last done date (the error shows right under it); others are about the whole form.
+const fieldOf: Record<string, string> = { 'date.tooEarly': 'lastDoneDate', 'task.futureDate': 'lastDoneDate' }
 
 type TaskBody = Pick<MaintenanceTask, 'name' | 'category' | 'intervalKm' | 'intervalDays' | 'dueSoonPercent' | 'lastDoneOdometerKm' | 'lastDoneDate'>
 // PUT is a full replace, so every save sends all of these.
@@ -259,6 +263,7 @@ function TaskForm({ initial, currentKm, onSubmit, onCancel }: {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<unknown>(null)
   const [count, unit] = initial.intervalDays == null ? [null, 'months' as Unit] : splitDays(initial.intervalDays)
+  const { errorId, tie } = useItemErrors(noItems, error, fieldOf)
 
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault()
@@ -337,9 +342,9 @@ function TaskForm({ initial, currentKm, onSubmit, onCancel }: {
       </label>
       <label>
         {t('lastDoneDate')}
-        <input name="lastDoneDate" type="date" required max={localToday()} defaultValue={initial.lastDoneDate} />
+        <input name="lastDoneDate" type="date" required max={localToday()} defaultValue={initial.lastDoneDate} {...tie('lastDoneDate')} />
       </label>
-      {error != null && <p className="error" role="alert">{errorMessage(error)}</p>}
+      {error != null && <p className="error" role="alert" id={errorId}>{errorMessage(error)}</p>}
       <div className="actions">
         <button disabled={busy}>{t('save')}</button>
         <button type="button" className="link" disabled={busy} onClick={onCancel}>{t('cancel')}</button>

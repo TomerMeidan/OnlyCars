@@ -1,7 +1,7 @@
 # OnlyCars: Requirements Status
 
-**Audit date:** 2026-10-17 (twenty-first audit, short sign-off of MVP5-E, tire pressure and tread checks and rotations; nothing committed yet)
-**Overall:** MVP steps 1 to 4 are complete apart from the car photo and attachments (both blocked on R2). Step 5: checklists are done apart from photos on runs (R2); tires are done (MVP5-D and MVP5-E). Next is LOW-4 (the Low backlog, L66 to L86). Reports and notifications are not started. No deployment tickets until the owner asks.
+**Audit date:** 2026-10-17 (twenty-second audit, short sign-off of LOW-4, the Low backlog L66 to L86; nothing committed yet)
+**Overall:** MVP steps 1 to 4 are complete apart from the car photo and attachments (both blocked on R2). Step 5: checklists are done apart from photos on runs (R2); tires are done; LOW-4 closed the Low backlog (L66 to L86). Next is RPT-1, the first reports ticket (spec 8). Notifications are not started. No deployment tickets until the owner asks.
 
 | Status | Count |
 |---|---|
@@ -12,11 +12,11 @@
 | Deferred | 6 |
 | **Total** | **57** |
 
-How this was checked (twenty-first audit, short sign-off of MVP5-E per decisions.md "Faster pipeline (owner)"; I re-ran no test suites and no browser scripts):
-- Reported by other agents, not re-run by me: a plain `dotnet test` (not `--no-build`) 493 of 493, run by the orchestrator; client build clean; lint 0 warnings; smoke with `SMOKE_ALL=1` 368 of 368 (92 steps in each of the 4 setups), 0 console errors; the engineer read the 390px screenshots in he and en (RTL correct, no overflow). Review fix round: M1 and L1 fixed, plus a smoke `at390` fix (blur before resize).
-- The migration `AddTireMeasurements` was created and applied by the orchestrator (the owner's own attempt failed because `!` runs the command in bash).
-- **No browser QA.** The ui-tester is still stopped by the owner (decisions.md, "No ui-tester jobs (owner)"). MVP5-E is the fourth ticket shipped without a QA pass.
-- I checked in code: `TireCheck` with a unique `(TireMountId, MeasuredAt)` owning `TireMeasurement` rows with a unique `(TireCheckId, Position)` and a value check constraint, cascades mount to check to measurement and mount to rotation (`src/OnlyCars.Infrastructure/Persistence/Configurations/TireConfiguration.cs:52-96`); the open-mount, archived and date-before-mount rules (`src/OnlyCars.Application/Tires/TireService.cs:288-298`); the validation codes (`TireService.cs:155-203`); the 409 on a simultaneous duplicate date (`TireService.cs:212`, test `AddCheck_SimultaneousCheckOfOtherWheelsOnTheSameDate_Is409NotA500`); `kmSince` as `max(0, ...)` (`src/OnlyCars.Application/Tires/Dtos/TireDtos.cs:45`); no odometer reading from a rotation (`tests/OnlyCars.Tests/TireTests.cs:605-615`); the 6 endpoints (`src/OnlyCars.Api/Controllers/TiresController.cs:56-79`); on the car page "No checks yet", "Not rotated yet", Retry, `bdi` on values, `inputMode="decimal"` inputs and Escape on every form (`client/src/pages/TiresSection.tsx:53-185,294,366-385`); the smoke steps `tires-check`, `tires-check-duplicate`, `tires-check-delete`, `tires-rotation` with 390px shots (`client/ui-tests/smoke.mjs:3433-3547`).
+How this was checked (twenty-second audit, short sign-off of LOW-4 per decisions.md "Faster pipeline (owner)"; I re-ran no test suites and no browser scripts):
+- Reported by other agents, not re-run by me: a plain `dotnet test` 500 of 500 (orchestrator, after the fix round); client build clean; lint 0 warnings; smoke with `SMOKE_ALL=1` 97 steps per setup, all pass (the frontend engineer's run), and 97 of 97 in 2 setups re-run by the Hebrew reviewer after the Hebrew pass. Code review: no High; the Medium (the cleanup script's patterns) and two Lows fixed.
+- **No browser QA.** The ui-tester is still stopped by the owner (decisions.md, "No ui-tester jobs (owner)"). LOW-4 is the fifth ticket shipped without a QA pass.
+- I checked in code (`git diff`, uncommitted): L66 catches the unique-key `DbUpdateException` and returns the normal duplicate code only when a competing row exists, else rethrows (`src/OnlyCars.Application/Vehicles/VehicleService.cs:116-135`, `src/OnlyCars.Application/Auth/AuthService.cs:62-80`); L67 `DateRules.RejectTooEarly` on the to-do `ResolvedAt` (`src/OnlyCars.Application/Issues/IssueService.cs:88-91`) and on a changed `lastDoneDate` (`src/OnlyCars.Application/Maintenance/MaintenanceTaskService.cs:777-780`), mapped to the Last done date field (`client/src/pages/TasksSection.tsx`, `fieldOf`); L70 the no-op edit returns before saving (`MaintenanceTaskService.cs`, "A no-op edit doesn't save"); L81 `FindMountAsync(..., withVehicle, ...)` (`src/OnlyCars.Application/Tires/TireService.cs`); L71 `runReturn.current = null` when the car page fails (`client/src/pages/CarPage.tsx`); L73 the Mount error shown with no free set, L80 `afterDelete(..., 'button.log-rotation')`, L83 one `afterDelete` for checks, rotations and mounts, L85 `.check-items` (`client/src/pages/TiresSection.tsx`); L74 the row replaced from the PUT response (`client/src/pages/TiresPage.tsx`); L76 one `noItems` (`client/src/useItemErrors.ts`); L77 mobile-first `min-width: 30.0625rem` (`client/src/index.css:316-317`; the tire forms have no `label.inline`, so the higher specificity changes nothing); L84 `errors.tireMount.vehicleArchived` in en and he (`client/src/i18n.ts:474,967`); no plural address (the לכם, שלכם, אתכם forms) left in `client/src/i18n.ts`; the tests in `tests/OnlyCars.Tests/LowFourTests.cs`, `MaintenanceSchemaTests.cs` (LocalDB races) and `TireTests.cs` (L82).
+- L72: `scripts/cleanup-test-users.sql` (one tight LIKE per generated prefix, self-checks that THROW if an owner account or a near miss would match, a LocalDB-only guard on `SERVERPROPERTY('InstanceName')`) was **never run**, not even the dry run: the permission check blocked it. The owner decides.
 - The notes from earlier audits are in git history.
 
 ## 1. Vehicles
@@ -165,15 +165,17 @@ How this was checked (twenty-first audit, short sign-off of MVP5-E per decisions
 | Deploy gate | **SEC-1 signed off.** Nothing else blocks a first deploy except the owner's Azure account. The owner said not to deploy yet (decisions.md, 2026-10-15, "When to deploy"), so no deployment tickets are queued. |
 | 3. Service history with costs | **Complete apart from attachments (blocked on R2). MVP3-A, MVP3-B, MVP3-C and MVP3-D are signed off.** Working end to end in EN and HE: the service history on `/cars/:id`, recording a past service (date, odometer, shop or DIY, cost, notes, several tasks, parts and labour) with the date-order rules, editing everything on a record (shop, cost, notes, items, date, odometer and tasks, with the car's odometer and the tasks' last done following), deleting any record, and a `/history` page that filters and searches all cars. LOW-1 (the first Low batch) is signed off too. |
 | 4. Dashboard with due/overdue status | **Complete. MVP4-A and LOW-2 are signed off; "Start a checklist" came with MVP5-B.** The dashboard on `/`: overdue and due-soon counts, this month's spend linking to `/history`, and per-car cards with the next 3 tasks, one-tap Mark done with Undo, quick odometer entry and Start a checklist, in EN and HE. |
-| 5. Checklists, tires, reports, notifications | **Started. Checklists are done apart from photos on runs (R2): MVP5-A, MVP5-B and MVP5-C are signed off. Tires are done: MVP5-D (sets, mounts, swap, km per set, storage notes) and MVP5-E (pressure, tread depth, rotations) are signed off. LOW-3 is signed off. MVP5-C, LOW-3, MVP5-D and MVP5-E shipped without browser QA.** Next: LOW-4, then reports and notifications. |
+| 5. Checklists, tires, reports, notifications | **Started. Checklists are done apart from photos on runs (R2): MVP5-A, MVP5-B and MVP5-C are signed off. Tires are done: MVP5-D (sets, mounts, swap, km per set, storage notes) and MVP5-E (pressure, tread depth, rotations) are signed off. LOW-3 and LOW-4 are signed off. MVP5-C, LOW-3, MVP5-D, MVP5-E and LOW-4 shipped without browser QA.** Next: reports (RPT-1, then charts and export), then notifications. |
 
 ## Ticket queue
 
 | Order | Ticket | Who | State |
 |---|---|---|---|
-| 1 | LOW-4: the Low backlog (L66 to L86) | BE, then FE | **Next** (written below) |
-| 2 | Reports (spec 8) | BE, then FE | After LOW-4 |
-| 3 | Notifications (spec 9) | BE, then FE | After reports |
+| 1 | RPT-1: cost reports per car, category, month and year, cost per km and total cost of ownership (spec 8 bullets 1 and 2) | BE, then FE | **Next** (written below) |
+| 2 | RPT-2: charts, spending over time and cost by category (spec 8 bullet 3) | FE (BE only if RPT-1's response lacks something) | After RPT-1 |
+| 3 | RPT-3: export to CSV and PDF (spec 8 bullet 4) | BE, then FE | After RPT-2 |
+| 4 | LOW-5: the Lows from L87 on | BE, then FE | About three tickets after LOW-4 |
+| 5 | Notifications (spec 9) | BE, then FE | After reports |
 
 ## Signed-off tickets
 
@@ -277,95 +279,84 @@ How this was checked (twenty-first audit, short sign-off of MVP5-E per decisions
   - AC1 to AC4 [BE] are signed off from tests and the code checks above; AC5 to AC10 [FE] from code, review and smoke. **Not verified in a browser:** the layout at 390px (screenshots read by the engineer only), 44px targets, focus and the Hebrew/RTL reading order.
   - Accepted (decisions.md, "MVP5-E sign-off"): the `TireCheck` header (a Part 2 deviation); the new codes `tireMeasurement.invalidPosition` and `tireRotation.invalidNotes`; extra decimals rejected, not rounded; `lastCheck` and `lastRotation` on every `TireMountDto`, filled only on the current mount. The new Lows are L80 to L86.
 
+- **LOW-4 (not committed yet): signed off 2026-10-17, without browser QA.** Short sign-off under "Faster pipeline (owner)"; I re-ran no suites. Closes L66 to L86. Contract `docs/contracts/LOW-4.md`.
+  - Reported evidence: a plain `dotnet test` 500 of 500 (orchestrator, after the fix round); build clean; lint 0 warnings; smoke `SMOKE_ALL=1` 97 steps per setup, all pass (frontend engineer), and 97 of 97 in 2 setups after the Hebrew pass (Hebrew reviewer); code review with no High.
+  - Fix round: the Medium (the cleanup script) fixed: one tight LIKE per generated prefix, self-checks that THROW on the owner's accounts and near misses, the LocalDB guard on `SERVERPROPERTY('InstanceName')`. Lows fixed: the `FindMountAsync` parameter order, sorted usings.
+  - AC1, AC3, AC4 [BE] signed off from tests and the code checks above. AC2 [BE+FE] signed off for the task last-done date; for the to-do Done date the backend rejects it but the UI can't send it (there is no Done date field; Done always sends today), accepted (decisions.md, "LOW-4 sign-off"). AC5 to AC8 [FE] from code, review and smoke. AC7: the Hebrew reviewer reports no plural form of address left in `he` (impersonal יש ל… or אפשר ל… where possible, otherwise the singular), and L84 is done in en and he. AC9 from the reported runs.
+  - **Not verified in a browser:** the layout at 390px (including the long new Hebrew strings, L90), 44px targets, focus and the RTL reading order.
+  - **L72 not done:** the script exists but was never run (the permission check blocked even the dry run); it stays with the owner (CHECKLIST.md, "Waiting on the owner").
+  - Accepted (decisions.md, "LOW-4 sign-off"): L86 (the caps can be passed by one under a race); the to-do's own 2000-01-01 minimum stays. The new Lows are L87 to L91.
+
 ## Low issues backlog
 
-Every Low finding from QA and review lands here (decisions.md, "Faster pipeline (owner)"). They are fixed together in a batch ticket LOW-n about every 3 tickets. LOW-1 closed L1 to L12, LOW-2 closed L13 to L26, LOW-3 closed L27 to L65 (those rows are in git history). Open (LOW-4 takes them all, L66 to L86):
+Every Low finding from QA and review lands here (decisions.md, "Faster pipeline (owner)"). They are fixed together in a batch ticket LOW-n about every 3 tickets. LOW-1 closed L1 to L12, LOW-2 closed L13 to L26, LOW-3 closed L27 to L65, LOW-4 closed L66 to L86 (L86 accepted; L72, the dev DB cleanup, waits on the owner); those rows are in git history. Open (for LOW-5):
 
 | # | From | Issue | Area |
 |---|---|---|---|
-| L66 | LOW-3 review | Two simultaneous requests that hit a unique key still give a 500 instead of a 409: the same VIN on two cars (`Vehicle(UserId, Vin)`), and two registrations with the same email. Map them in the same place as L51. | BE |
-| L67 | LOW-3 review | `date.tooEarly` (before 1900-01-01) is not applied to a to-do's done date (`ResolvedAt`) or a task's last done date. Apply it there too. | BE (+ FE field mapping) |
-| L68 | LOW-3 review | Smoke has no step that triggers `date.tooEarly` or `concurrency.conflict`, and no step renders a Hebrew unit on a run value. (The new car form needs no `date.tooEarly` mapping: it always sends today's local date.) | Smoke |
-| L69 | LOW-3 review | Concurrency is tested only on the EF InMemory provider, not on real SQL Server. Add one SQL Server test, or accept. | Tests |
-| L70 | LOW-3 review | A service record edit that changes nothing still bumps `UpdatedAt`, so a void at the same moment gets a 409 (the user retries). Skip the save when nothing changed, or accept. | BE |
-| L71 | LOW-3 review | The L59 shortcut: after Save on the run page returns with `navigate(-1)`, if the car page then fails to load, the "Run saved" note may be stale. | FE, run page |
-| L73 | MVP5-D review | A 409 `tireMount.setMounted` when the user picked the last free set hides the error text behind the "all your sets are on cars" box (`client/src/pages/TiresSection.tsx` ~115-127). Show the error even when no set is left to pick. | FE, car page |
-| L74 | MVP5-D review | After Edit Save on `/tires` the row shows the old values until the list reloads (`client/src/pages/TiresPage.tsx:50,113`). Replace the row in place from the PUT response. | FE, /tires |
-| L75 | MVP5-D review | `concurrency.conflict`, `tireSet.limitReached` and `tireMount.limitReached` are never driven in the browser. Add mocked smoke steps. | Smoke |
-| L76 | MVP5-D review | `const noItems: never[] = []` is duplicated in `TiresPage.tsx:22` and `TiresSection.tsx:20`. Share one. | FE |
-| L77 | MVP5-D review | `client/src/index.css:314` `@media (max-width: 30rem)` is desktop-first, unlike the mobile-first rules near it. Rewrite it as `min-width`. | FE, CSS |
-| L78 | MVP5-D review | The stale-Unmount close path (`tireMount.notFound` closes the form and focuses Mount) has no smoke step. | Smoke |
-| L79 | MVP5-D Hebrew review | The Hebrew strings mix singular (לך, שלך) and plural (לכם, שלכם) forms of address. Use the singular everywhere, or an impersonal form (decisions.md, "Hebrew form of address"); the Hebrew reviewer does the pass. | FE, he strings |
-| L80 | MVP5-E review | After deleting the last rotation, focus goes to Log a check, not Log a rotation (`client/src/pages/TiresSection.tsx:139`); the smoke assertion expects `log-check` and must change with it. | FE, car page + smoke |
-| L81 | MVP5-E review | `FindMountAsync` always includes `Vehicle`, a needless join on the list and delete paths (`src/OnlyCars.Application/Tires/TireService.cs` ~276). Include it only where the archived check needs it. | BE |
-| L82 | MVP5-E review | No tests for ListChecks and ListRotations on a closed mount or an archived car; a LocalDB test comment overclaims the 409 mapping. Add the tests and fix the comment. | Tests |
-| L83 | MVP5-E review | The past-mounts delete has a duplicated next-row focus selector (`TiresSection.tsx:243`). Share one. | FE |
-| L84 | MVP5-E review | English `errors.tireMount.vehicleArchived` says "its tires can't be changed", but Unmount is still allowed. Reword (en and he) to say a set can't be mounted or checked. | FE, en+he strings |
-| L85 | MVP5-E review | Check rows reuse `.service-items`, which leaves a wide gap between label and value. Give them their own tight layout. | FE, CSS |
-| L86 | MVP5-E review | The 200-check and 100-rotation caps can be passed by one under a race (documented `shortcut:`). Accept, like the other caps. | BE (accept) |
-| L72 | LOW-3 housekeeping | The local dev DB has leftover test users (`low3-*`, `lowcheck-*`, `ui-*`, and `sec-*` from SEC-1). Housekeeping only; clear them once delete-account exists, or with a one-off script. | Dev DB |
+| L87 | LOW-4 review | After a failed task save, focus drops to `body`, so Escape no longer closes the form (existing behaviour). Keep focus in the form (on the field the error is tied to, or the first field). | FE, car page tasks |
+| L88 | LOW-4 review | L71 (the "Run saved" note cleared when the car page fails to load after a run Save) has no smoke step. | Smoke |
+| L89 | LOW-4 review | The LocalDB L69 test asserts `DbUpdateConcurrencyException`, not the 409 `concurrency.conflict` (the mapping is tested elsewhere, on InMemory). Assert the code, or say so in the test name. | Tests |
+| L90 | LOW-4 review | Nobody has checked the long new Hebrew strings (L79, L84) for wrapping at 390px. Read the 390px screenshots, or leave it to browser QA when the owner restarts it. | FE, he strings |
+| L91 | LOW-4 review | `client/ui-tests/smoke.mjs` `SV.editHint` still holds an old plural Hebrew string. It is only used in a "not shown" assertion, so that assertion always passes. Update it to the current string. | Smoke |
+| L72 | LOW-3 housekeeping | The local dev DB has leftover test users. `scripts/cleanup-test-users.sql` was written in LOW-4 but never run; the owner decides (CHECKLIST.md, "Waiting on the owner"). | Dev DB (owner) |
 
 ## Next ticket
 
-### LOW-4: The Low backlog (L66 to L86)
+### RPT-1: Cost reports (spec 8 bullets 1 and 2)
 
-**Goal:** As a user, the small rough edges from LOW-3, MVP5-D and MVP5-E are gone: simultaneous saves never show a server error, archived-car and tire messages say the right thing, the Hebrew addresses me one way, and the tire screens keep my place and look tidy.
+**Goal:** As a user, I open Reports and see what my cars cost me: per car, per category, per month and per year, plus each car's cost per km (or mile) and its total cost of ownership.
 
-**Spec:** no new requirement; fixes on spec 1, 2, 5, 6, 7, 11 (to-dos) and 12 (non-functional). Every item is a row in the Low issues backlog above.
+**Spec:** section 8 bullets 1 and 2. Charts (bullet 3) are RPT-2 and export to CSV and PDF (bullet 4) is RPT-3 (decisions.md, "Reports scope and split").
 
-**Binding decisions:** decisions.md "Faster pipeline (owner)", "No ui-tester jobs (owner)", "LOW-3 choices" and "LOW-3 sign-off" (`date.tooEarly`, `concurrency.conflict`, the shortcut rule), "Hebrew form of address", "MVP5-D sign-off", "MVP5-E sign-off", the MVP1-C focus and Escape rules.
+**Binding decisions:** decisions.md "Cost reports, RPT-1" (what counts, the category split, km driven, TCO), "Reports scope and split", "Dashboard, MVP4-A" (the month spend: non-voided `TotalCost`, archived cars included), the settings rules (one currency per user, old amounts not converted; km or miles, every distance converted), "Hebrew form of address", the MVP1-C focus and Escape rules, "Faster pipeline (owner)", "No ui-tester jobs (owner)".
 
 **Scope**
 
-*Backend (backend-engineer, runs first; publishes `docs/contracts/LOW-4.md`, short: only codes and behaviour that change):*
-- **L66:** a simultaneous duplicate VIN (`Vehicle(UserId, Vin)`) and a simultaneous duplicate registration email return 409 with the existing duplicate codes (the ones a non-simultaneous duplicate returns), not 500; map them where L51 maps unique-key violations.
-- **L67:** `date.tooEarly` (before 1900-01-01) on a to-do's `ResolvedAt` and on a task's last done date (create and edit).
-- **L69:** one concurrency test on real SQL Server (LocalDB, as the tire swap test does), for `concurrency.conflict` on a service record edit racing a void.
-- **L70:** a service record PUT that changes nothing does not save (so `UpdatedAt` does not move) and returns the record as is.
-- **L81:** `FindMountAsync` includes `Vehicle` only on the paths that check the archived rule.
-- **L82:** tests for ListChecks and ListRotations on a closed mount and on an archived car (both list normally); correct the LocalDB test comment so it claims only what the test asserts.
-- **L86:** accepted as is (the documented `shortcut:` stays); no code.
+*Backend (backend-engineer, runs first; publishes `docs/contracts/RPT-1.md` with the response shape and codes):*
+- No new entity and no migration. Reads `ServiceRecord` (`VehicleId`, `Date`, `TotalCost`, `IsVoided`), `ServiceRecordTask` with `MaintenanceTask.Category`, `Vehicle` (`Nickname`, `PurchasePrice`, `CurrentOdometerKm`, `IsArchived`) and `OdometerReading` (the car's first reading).
+- `GET /api/reports/costs?year=YYYY&vehicleId=<optional>`, scoped to the caller. Response:
+  - `years`: every year that has a non-voided record (for the filter), each `{ year, total, recordCount }`, newest first.
+  - for the chosen `year`: `total`, `recordCount`, `unpricedCount` (records with no `TotalCost`), `byMonth` (always 12 rows, `{ month, total, recordCount }`, zeros included), `byCategory` (`{ category, total }`, `category` one of the `TaskCategory` names or `null` for records with no tasks; highest total first; categories with 0 left out), `byVehicle` (`{ vehicleId, nickname, isArchived, total, recordCount }`, highest total first; cars with 0 left out).
+  - `cars`, all time (not limited by `year`): per car `{ vehicleId, nickname, isArchived, serviceTotal, kmDriven, costPerKm, purchasePrice, totalCostOfOwnership }`.
+  - With `vehicleId`, every block holds that car only.
+- Rules (from the decision): non-voided records only; a record without `TotalCost` counts as 0 and is counted in `unpricedCount`; archived cars are included; month and year by the record's `Date`. A record's cost is split equally over the distinct categories of its tasks (2-decimal rounding, the remainder cents on the first category by name), so `byCategory` sums to `total`; a record without tasks goes to `category: null`. `kmDriven` = `CurrentOdometerKm` minus the car's first odometer reading by date (then save time); `costPerKm` = `serviceTotal / kmDriven`, `null` when `kmDriven` is 0. `totalCostOfOwnership` = `purchasePrice + serviceTotal`, `null` when `PurchasePrice` is not set.
+- Codes: 400 `report.invalidYear` for a missing or non-numeric year, or a year before 1900 or after the server's current year; 404 `vehicle.notFound` for a car that is not the caller's or does not exist (the existing code).
+- Tests: the category split (one category, two, none; the rounding remainder), voided and unpriced records, archived cars, the 12 months with zeros, `kmDriven` 0 gives `costPerKm` null, no purchase price gives TCO null, another user's car is 404 and another user's records never count, the year validation.
 
-*Frontend (frontend-engineer, builds against `docs/contracts/LOW-4.md`):*
-- **L67:** map `date.tooEarly` on the to-do Done date and the task last-done date fields.
-- **L71:** after a run Save that goes back with `navigate(-1)`, the "Run saved" note is cleared if the car page then fails to load.
-- **L73:** a 409 `tireMount.setMounted` shows its error text even when no free set is left to pick.
-- **L74:** after Edit Save on `/tires`, the row shows the PUT response at once.
-- **L76, L83:** one shared `noItems`; one shared next-row focus helper for the past-mounts delete.
-- **L77:** `client/src/index.css` ~314 rewritten mobile-first (`min-width`), same look at 390px and desktop.
-- **L80:** after deleting the last rotation focus goes to Log a rotation (update the smoke assertion).
-- **L84:** `errors.tireMount.vehicleArchived` in en and he says the car is archived so a set can't be mounted on it and checks and rotations can't be logged (Unmount still works); the Hebrew reviewer approves.
-- **L85:** check rows get their own compact label and value layout, not `.service-items`; RTL order unchanged.
-- **L79:** the Hebrew reviewer changes every plural form of address (לכם, שלכם, and plural verbs) to the singular or an impersonal form; list the changed keys.
-- **Smoke (L68, L75, L78):** new steps for `date.tooEarly` on a field, `concurrency.conflict` (mocked 409), `tireSet.limitReached` and `tireMount.limitReached` (mocked), a Hebrew unit on a run value, and the stale-Unmount close (`tireMount.notFound` closes the form and focuses Mount).
-- **L72:** a one-off script or SQL, run by hand on the local dev DB only, that deletes the test users `low3-*`, `lowcheck-*`, `ui-*`, `sec-*` and their data; not in the app, not committed as a migration. Skip if delete-account lands first.
+*Frontend (frontend-engineer, builds against `docs/contracts/RPT-1.md`):*
+- A new page `/reports`, linked from the header after Service history (signed-in users only), with a page title and focus on the heading as on the other routes.
+- Filters: Year (from `years`, the current local year by default and when `years` is empty) and Car (All cars, then active cars, then archived ones marked as archived); both kept in the URL (`?year=&vehicleId=`), like `/history`.
+- Sections for the chosen year: a summary (total, record count, and "N records have no cost" when `unpricedCount` > 0); By month (12 rows, month names from `Intl` in the UI language); By category (the existing category labels, "No task" for `null`); By car (hidden when one car is chosen). Each total that has records links to `/history` filtered to that month, or to that car and year.
+- An "All time" section per car: service total, km driven and cost per km in the user's unit (cost per mile = cost per km x 1.609344; km driven converted), purchase price, and total cost of ownership; "Add a purchase price" links to the car's edit page when it is missing; "Not enough odometer readings" when `costPerKm` is null.
+- Amounts with the user's currency formatter, numbers in `bdi`, en and he strings for everything new (Hebrew reviewer approves).
 
 **Acceptance criteria**
-1. [BE] Two simultaneous creates with the same VIN, and two simultaneous registrations with the same email, each give one success and one 409 with the normal duplicate code; no 500 (tests).
-2. [BE+FE] A to-do Done date or a task last-done date before 1900 is 400 `date.tooEarly`, shown on that date field in en and he.
-3. [BE] A SQL Server (LocalDB) test drives `concurrency.conflict`; a no-op service record PUT leaves `UpdatedAt` unchanged and a void right after it succeeds (tests).
-4. [BE] ListChecks and ListRotations work on a closed mount and an archived car (tests); `FindMountAsync` no longer joins `Vehicle` on list and delete.
-5. [FE] On the car page: the `tireMount.setMounted` error is visible with no free set; deleting the last rotation focuses Log a rotation; the stale Unmount closes the form and focuses Mount; check rows read label then value with a normal gap, in en and he.
-6. [FE] On `/tires`: after Edit Save the row shows the new values without a reload.
-7. [FE] Hebrew: no plural form of address remains in `he` (the reviewer lists the changed keys); `vehicleArchived` for tires no longer says the tires can't be changed, in both languages.
-8. [FE] At 390px nothing changes visually from the CSS rewrite (L77) and nothing scrolls sideways; touch targets stay at least 44 by 44px.
-9. [BE+FE] No regressions: build clean, lint 0 errors and 0 warnings, a plain `dotnet test` (not `--no-build`) passes with the count reported, smoke passes in all 4 setups including the new steps from L68, L75 and L78.
+1. [BE] The endpoint returns the blocks above with the decided rules; `byCategory` and `byMonth` each sum to `total` for the year (tests).
+2. [BE] Voided records never count; unpriced records count as 0 and in `unpricedCount`; archived cars count (tests).
+3. [BE] Another user's car is 404 `vehicle.notFound` and another user's records never appear in any block; a bad year is 400 `report.invalidYear` (tests).
+4. [BE+FE] With one record of 300 on two tasks in Oil and Brakes, By category shows 150 for each, in en and he.
+5. [FE] Changing Year or Car updates the URL, and reloading the page keeps the filters; a link from a month total opens `/history` with the same total.
+6. [FE] A miles user sees km driven and cost per mile converted; a km user sees km and cost per km.
+7. [FE] Empty: with no priced records the page says there are no service costs yet and links to the cars; a chosen year with no records shows 0 for each month, not an error. Loading: a loading line, no layout jump. Error: a message with Retry; a stale `vehicleId` in the URL shows the `vehicle.notFound` message and a way back to All cars.
+8. [FE] Hebrew/RTL: labels, month names and amounts read right to left with numbers and currency in the right order; no plural form of address.
+9. [FE] At 390px nothing scrolls sideways (no wide tables: label and amount rows), touch targets are at least 44 by 44px, and focus is visible.
+10. [BE+FE] No regressions: build clean, lint 0 warnings, a plain `dotnet test` passes with the count reported, smoke passes in all 4 setups with new steps for the reports page (filters in the URL, the category split, a miles user, the empty state, a 390px shot in he and en).
 
-**Out of scope:** new features; reports and notifications; a lock for the per-mount or per-user caps (L86 accepted); delete-account (L72 uses a one-off script).
+**Out of scope:** charts (RPT-2); CSV and PDF export (RPT-3); fuel costs (the fuel log is optional and not built); tire set purchase prices (not stored); currency conversion; reports on the dashboard beyond the existing month spend.
 
-**Open questions:** none; every item has a decided fix or is accepted.
+**Open questions:** none blocking; the rules are delegated decisions (decisions.md, "Cost reports, RPT-1") the owner may revisit: the equal split of a record over its task categories, km driven from the first reading, and TCO as purchase price plus service costs only.
 
 ---
 
 ### Later
-- **Reports (spec 8)** after LOW-4, then notifications (spec 9).
+- **Reports (spec 8):** RPT-2 (charts) and RPT-3 (CSV and PDF export) after RPT-1, then notifications (spec 9).
 - **Car photo upload, attachments and run photos:** blocked until the owner creates the Cloudflare R2 credentials.
 - **Predicted due date** from `AvgKmPerDay` (spec 2.3, optional).
 - **Data export and delete-account** (spec 12): must include checklists, runs, to-dos and tires.
 
 ## Changed since last audit
-- **Signed off:** MVP5-E (not committed yet), **without browser QA** (the ui-tester is still stopped by the owner).
-- **Status changes:** spec 6 bullet 4 (pressure, tread depth, rotations) Missing to Done; spec 6 is complete. Counts: Done 35 (+1), Partial 6, Missing 10 (-1), Deferred 6.
-- **Backlog:** L80 to L86 added.
-- **New decision** (`docs/decisions.md`, 2026-10-17): "MVP5-E sign-off" (the `TireCheck` header deviation and the accepted engineer choices).
-- **Next ticket:** LOW-4 (L66 to L86), written in full. The MVP5-E ticket text is in git history once this sign-off is committed.
+- **Signed off:** LOW-4 (not committed yet), **without browser QA** (the ui-tester is still stopped by the owner). L66 to L86 closed; L72's script is written but not run (owner).
+- **Status changes:** none (LOW-4 fixed rough edges inside items already Done). Counts unchanged: Done 35, Partial 6, Missing 10, Deferred 6.
+- **Backlog:** L66 to L86 closed; L87 to L91 added; L72 stays open with the owner.
+- **New decisions** (`docs/decisions.md`, 2026-10-17): "LOW-4 sign-off", "Reports scope and split", "Cost reports, RPT-1".
+- **Next ticket:** RPT-1 (cost reports, spec 8 bullets 1 and 2), written in full. The LOW-4 ticket text is in git history once this sign-off is committed.

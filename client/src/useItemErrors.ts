@@ -1,6 +1,9 @@
 import { useEffect, useId, useRef, useState, type Key } from 'react'
 import { ApiError } from './api'
 
+// The items of a form without item rows: one stable empty array, so the focus effect doesn't rerun on each render.
+export const noItems: never[] = []
+
 // Forms with item rows (service items, checklist items, run items), L43: which field and row an API error is about, and focus after rows change.
 // `fieldOf` maps an error code to the field it is about; item errors also carry the row's index in the request.
 // The error stays on its row by key while other rows move or go, and names the row by where it is now (`n`).

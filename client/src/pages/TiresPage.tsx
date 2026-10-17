@@ -3,7 +3,7 @@ import { Trans, useTranslation } from 'react-i18next'
 import { api, ApiError, localToday, seasons, tireName, type TireMount, type TireSet } from '../api'
 import { useDistance } from '../auth'
 import { errorMessage, fmtDate } from '../i18n'
-import { useItemErrors } from '../useItemErrors'
+import { noItems, useItemErrors } from '../useItemErrors'
 import { usePage } from '../usePage'
 import { useRow } from '../useRow'
 import { MountInfo } from './TiresSection'
@@ -19,7 +19,6 @@ const fieldOf: Record<string, string> = {
   'tireSet.invalidDotCode': 'dotCode',
   'tireSet.invalidNotes': 'notes',
 }
-const noItems: never[] = []
 
 // /tires: the user's tire sets, where each one is and its km, with an inline form to add one and one per row to edit it.
 export default function TiresPage() {
@@ -81,7 +80,8 @@ export default function TiresPage() {
       ) : (
         <ul className="card tasks tire-sets">
           {sets.map((x, i) => (
-            <TireSetRow key={x.id} set={x} onSaved={saved} onDeleted={() => {
+            // An edited row shows the PUT response at once (L74), and Edit gets focus; the reload then brings the server's order.
+            <TireSetRow key={x.id} set={x} onSaved={(s) => { setSets((xs) => xs && xs.map((y) => (y.id === s.id ? s : y))); saved(s) }} onDeleted={() => {
               // The row that takes this one's place, then the first row, then New set, then the h1 (the New form open).
               focusNext.current = [`.tire-sets > li:nth-child(${i + 1}) button.edit`, '.tire-sets > li button.edit', 'main button.add', 'main h1']
               setSets((xs) => xs && xs.filter((y) => y.id !== x.id))

@@ -47,7 +47,7 @@ public class AuthService(
 
         if (await db.Users.AnyAsync(u => u.Email == email, ct))
         {
-            throw new ConflictException("auth.emailTaken", "An account with this email already exists.");
+            throw EmailTaken();
         }
 
         var user = new User { Email = email, PasswordHash = string.Empty };
@@ -59,10 +59,25 @@ public class AuthService(
         user.PasswordHash = passwordHasher.HashPassword(user, request.Password);
 
         db.Users.Add(user);
-        await db.SaveChangesAsync(ct);
+        try
+        {
+            await db.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateException)
+        {
+            // A simultaneous registration of the same email won the unique index (L66).
+            if (await db.Users.AnyAsync(u => u.Email == email && u.Id != user.Id, ct))
+            {
+                throw EmailTaken();
+            }
+
+            throw;
+        }
 
         return BuildResponse(user);
     }
+
+    private static ConflictException EmailTaken() => new("auth.emailTaken", "An account with this email already exists.");
 
     public async Task<AuthResponse> LoginAsync(LoginRequest request, CancellationToken ct = default)
     {

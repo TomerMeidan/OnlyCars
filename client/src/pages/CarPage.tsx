@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link, useParams } from 'react-router-dom'
-import { api, carNotFound, isGuid, isOrderError, localToday, type OdometerReading, type Vehicle } from '../api'
+import { api, carNotFound, isGuid, isOrderError, localToday, runReturn, type OdometerReading, type Vehicle } from '../api'
 import { errorMessage } from '../i18n'
 import { useDistance } from '../auth'
 import { usePage } from '../usePage'
@@ -41,6 +41,8 @@ export default function CarPage() {
       },
       (err) => {
         focusAfterLoad.current = null
+        // A run Save that went back here leaves its note for the checklists, which won't show now: drop it so a later car page doesn't (L71).
+        runReturn.current = null
         setError(err)
       },
     )
