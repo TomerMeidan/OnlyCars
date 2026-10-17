@@ -41,6 +41,8 @@ public class GlobalExceptionHandlerTests
     [Theory]
     [InlineData(typeof(UnauthorizedException), 401, "auth.invalidCredentials")]
     [InlineData(typeof(ConflictException), 409, "vehicle.vinTaken")]
+    [InlineData(typeof(PayloadTooLargeException), 413, "file.tooLarge")]
+    [InlineData(typeof(ServiceUnavailableException), 503, "file.storageUnavailable")]
     public async Task CodedExceptions_MapToStatusAndCode(Type type, int expectedStatus, string code)
     {
         var (status, body) = await HandleAsync((Exception)Activator.CreateInstance(type, code, "msg")!);

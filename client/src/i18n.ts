@@ -15,6 +15,12 @@ const en = {
   haveAccount: 'Already have an account?',
   addCar: 'Add car',
   editCar: 'Edit car',
+  photo: 'Photo',
+  addPhoto: 'Add photo',
+  changePhoto: 'Change photo',
+  removePhoto: 'Remove photo',
+  uploadingPhoto: 'Uploading…',
+  confirmRemovePhoto: 'Remove this photo?',
   noCars: 'No cars yet. Add your first one.',
   showArchived: 'Show archived',
   archived: 'Archived',
@@ -383,6 +389,15 @@ const en = {
       vinTaken: 'Another car on your account already has this VIN.',
       notFound: 'This car was not found.',
     },
+    vehiclePhoto: {
+      vehicleArchived: "This car is archived, so a photo can't be added or changed. It can still be removed.",
+    },
+    file: {
+      required: 'Choose a photo to upload.',
+      tooLarge: 'The photo is too large. It must be 10 MB or smaller.',
+      unsupportedType: 'Choose a JPEG, PNG or WebP image.',
+      storageUnavailable: "Photos can't be saved right now. Try again later.",
+    },
     odometer: {
       lowerThanPrevious:
         'This reading is lower than the reading before it ({{previous, number}} {{distUnit}}). If it is a correction, tick the box and save again.',
@@ -547,6 +562,12 @@ const he: typeof en = {
   haveAccount: 'כבר יש לך חשבון?',
   addCar: 'הוספת רכב',
   editCar: 'עריכת רכב',
+  photo: 'תמונה',
+  addPhoto: 'הוספת תמונה',
+  changePhoto: 'החלפת התמונה',
+  removePhoto: 'הסרת התמונה',
+  uploadingPhoto: 'מעלה את התמונה…',
+  confirmRemovePhoto: 'להסיר את התמונה?',
   noCars: 'עדיין אין רכבים. אפשר להוסיף את הרכב הראשון.',
   showArchived: 'הצגת רכבים בארכיון',
   archived: 'בארכיון',
@@ -907,6 +928,15 @@ const he: typeof en = {
     vehicle: {
       vinTaken: 'בחשבון שלך כבר יש רכב עם מספר השלדה הזה.',
       notFound: 'הרכב לא נמצא.',
+    },
+    vehiclePhoto: {
+      vehicleArchived: 'הרכב בארכיון, ולכן אי אפשר להוסיף או להחליף את התמונה שלו. עדיין אפשר להסיר אותה.',
+    },
+    file: {
+      required: 'יש לבחור תמונה להעלאה.',
+      tooLarge: 'התמונה גדולה מדי. הגודל המרבי הוא ⁦10⁩ מ״ב.',
+      unsupportedType: 'יש לבחור תמונה מסוג JPEG‏, PNG‏ או WebP.',
+      storageUnavailable: 'אי אפשר לשמור תמונות כרגע. אפשר לנסות שוב מאוחר יותר.',
     },
     odometer: {
       lowerThanPrevious:

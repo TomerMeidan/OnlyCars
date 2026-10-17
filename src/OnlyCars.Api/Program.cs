@@ -66,7 +66,7 @@ var app = builder.Build();
 
 app.UseExceptionHandler(_ => { });
 
-// Forwarded headers, CORS and the rate limiter, in the order they must run. Before HTTPS redirection, which needs X-Forwarded-Proto.
+// Forwarded headers, CORS, authentication and the rate limiter, in the order they must run. Before HTTPS redirection, which needs X-Forwarded-Proto.
 app.UseRequestLimits(ClientCorsPolicy);
 
 if (app.Environment.IsDevelopment())
@@ -78,8 +78,7 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 
-app.UseAuthentication();
-app.UseAuthorization();
+app.UseAuthorization(); // authentication runs inside UseRequestLimits, before the limiter
 
 app.MapControllers();
 

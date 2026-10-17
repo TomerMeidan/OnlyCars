@@ -13,7 +13,7 @@ public record VehicleDto(
     FuelType? FuelType,
     DateOnly? PurchaseDate,
     decimal? PurchasePrice,
-    string? PhotoUrl,
+    string? PhotoUrl, // a signed GET URL or null; the key isn't a field of its own, but the URL's path contains it, and a leaked URL works for up to 1 hour
     decimal CurrentOdometerKm,
     decimal? AvgKmPerDay,
     bool IsArchived);
@@ -28,7 +28,7 @@ public record CreateVehicleRequest(
     FuelType? FuelType,
     DateOnly? PurchaseDate,
     decimal? PurchasePrice,
-    string? PhotoUrl,
+    string? PhotoUrl, // ignored: the photo is set only through PUT /api/vehicles/{id}/photo (FILE-1)
     decimal? InitialOdometerKm,
     DateOnly? ReadingDate = null); // the first reading's date: the client's local today, like quick-add
 
@@ -42,4 +42,4 @@ public record UpdateVehicleRequest(
     FuelType? FuelType,
     DateOnly? PurchaseDate,
     decimal? PurchasePrice,
-    string? PhotoUrl);
+    string? PhotoUrl); // ignored: the photo is set only through PUT /api/vehicles/{id}/photo (FILE-1)

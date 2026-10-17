@@ -37,7 +37,8 @@ export interface Vehicle {
   isArchived: boolean
 }
 
-export type VehicleInput = Omit<Vehicle, 'id' | 'currentOdometerKm' | 'avgKmPerDay' | 'isArchived'> & {
+// The photo has its own endpoints; the API ignores photoUrl here.
+export type VehicleInput = Omit<Vehicle, 'id' | 'photoUrl' | 'currentOdometerKm' | 'avgKmPerDay' | 'isArchived'> & {
   initialOdometerKm?: number | null
   readingDate?: string // the first reading's date, the client's local today (as quick-add)
 }
@@ -338,15 +339,17 @@ export function applyTheme(theme: User['theme'] | undefined) {
   else delete document.documentElement.dataset.theme
 }
 
+// A FormData body goes as multipart: the browser sets its Content-Type with the boundary.
 export async function api<T>(path: string, method = 'GET', body?: unknown): Promise<T> {
   const token = getToken()
+  const form = body instanceof FormData
   const res = await fetch(`/api${path}`, {
     method,
     headers: {
-      ...(body !== undefined && { 'Content-Type': 'application/json' }),
+      ...(body !== undefined && !form && { 'Content-Type': 'application/json' }),
       ...(token && { Authorization: `Bearer ${token}` }),
     },
-    body: body === undefined ? undefined : JSON.stringify(body),
+    body: body === undefined ? undefined : form ? body : JSON.stringify(body),
   })
   if (res.status === 401 && token) {
     setToken(null)
@@ -371,6 +374,17 @@ export const isGuid = (s: string | undefined) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a
 
 // The API's answer for a car that doesn't exist, used without a request when the route id can't be one.
 export const carNotFound = () => new ApiError(404, { code: 'vehicle.notFound' }, 'Not Found')
+
+// The car photo's limits, as the API's (docs/contracts/FILE-1.md), checked before sending: over about 10 MB the server drops the connection.
+export const photoTypes = 'image/jpeg,image/png,image/webp'
+export const maxPhotoBytes = 10_485_760
+// The API's error for this file, or null. The type is the browser's guess from the name, empty when it has no known
+// extension (a phone's "IMG_0001"): that one goes to the API, which decides by the content.
+export const photoError = (file: File) =>
+  file.size === 0 ? new ApiError(400, { code: 'file.required' }, 'Bad Request')
+  : file.size > maxPhotoBytes ? new ApiError(413, { code: 'file.tooLarge' }, 'Payload Too Large')
+  : file.type && !photoTypes.split(',').includes(file.type) ? new ApiError(400, { code: 'file.unsupportedType' }, 'Bad Request')
+  : null
 
 // Where the run page sends the user back to: the checklist whose Run button gets focus, and the flagged count after a Save.
 export type RunReturn = { ran: string; flagged?: number }

@@ -89,6 +89,11 @@ main {
   color: var(--muted);
 }
 .error { color: var(--fault); }
+/* The car photo: a fixed box, so any photo shape fits and the page doesn't jump while it loads */
+.car-photo { display: block; inline-size: 100%; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 8px; background: var(--line); }
+.photo-field { display: grid; gap: 0.5rem; }
+.photo-field > span { font-size: 0.95rem; color: var(--muted); } /* as a field label */
+.photo-field .actions { flex-wrap: wrap; }
 
 /* Odometer drum: the one loud element */
 .reading { display: flex; align-items: flex-end; gap: 0.75rem; flex-wrap: wrap; }

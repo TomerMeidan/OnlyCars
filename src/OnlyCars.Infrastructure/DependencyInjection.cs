@@ -5,6 +5,7 @@ using OnlyCars.Application.Auth;
 using OnlyCars.Application.Common;
 using OnlyCars.Infrastructure.Auth;
 using OnlyCars.Infrastructure.Persistence;
+using OnlyCars.Infrastructure.Storage;
 
 namespace OnlyCars.Infrastructure;
 
@@ -18,6 +19,12 @@ public static class DependencyInjection
 
         services.Configure<JwtOptions>(configuration.GetSection(JwtOptions.SectionName));
         services.AddScoped<IJwtTokenService, JwtTokenService>();
+
+        // Not registered without the R2 settings, so a fresh clone still starts (VehicleService then gets null).
+        if (R2FileStorage.FromConfiguration(configuration) is { } storage)
+        {
+            services.AddSingleton<IFileStorage>(storage);
+        }
 
         return services;
     }

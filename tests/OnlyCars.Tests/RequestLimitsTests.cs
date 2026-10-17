@@ -42,6 +42,7 @@ public class RequestLimitsTests
         builder.Services.AddProblemDetails(o => o.CustomizeProblemDetails = c =>
             c.ProblemDetails.Extensions.TryAdd("code", GlobalExceptionHandler.FallbackCode(c.ProblemDetails.Status)));
         builder.Services.AddRequestLimits(builder.Configuration);
+        builder.Services.AddAuthentication(); // UseRequestLimits runs authentication; no scheme here, so nobody signs in
         builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
         builder.Services.AddCors(o => o.AddPolicy("test", p => p.WithOrigins("http://client.test")));
 

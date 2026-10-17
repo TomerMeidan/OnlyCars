@@ -1,4 +1,6 @@
+using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using OnlyCars.Application.Common;
 using OnlyCars.Application.Common.Exceptions;
 using OnlyCars.Application.Odometer;
@@ -8,7 +10,8 @@ using OnlyCars.Domain.Entities;
 
 namespace OnlyCars.Application.Vehicles;
 
-public class VehicleService(IAppDbContext db)
+// storage is null when the R2 settings are missing (a fresh clone): photo endpoints answer 503 and photoUrl is null.
+public class VehicleService(IAppDbContext db, IFileStorage? storage = null, ILogger<VehicleService>? logger = null)
 {
     public async Task<List<VehicleDto>> ListAsync(Guid userId, bool includeArchived, CancellationToken ct = default)
     {
@@ -62,7 +65,6 @@ public class VehicleService(IAppDbContext db)
             FuelType = request.FuelType,
             PurchaseDate = request.PurchaseDate,
             PurchasePrice = request.PurchasePrice,
-            PhotoUrl = request.PhotoUrl,
             CurrentOdometerKm = request.InitialOdometerKm ?? 0
         };
 
@@ -106,7 +108,6 @@ public class VehicleService(IAppDbContext db)
         vehicle.FuelType = request.FuelType;
         vehicle.PurchaseDate = request.PurchaseDate;
         vehicle.PurchasePrice = request.PurchasePrice;
-        vehicle.PhotoUrl = request.PhotoUrl;
         vehicle.UpdatedAt = DateTimeOffset.UtcNow;
 
         await SaveVinAsync(vehicle, ct);
@@ -142,6 +143,103 @@ public class VehicleService(IAppDbContext db)
         await db.SaveChangesAsync(ct);
     }
 
+    public const int MaxPhotoBytes = 10 * 1024 * 1024;
+
+    public static PayloadTooLargeException PhotoTooLarge() =>
+        new("file.tooLarge", "The photo must be 10 MB or smaller.") { Extensions = { ["maxBytes"] = MaxPhotoBytes } };
+
+    /// <summary>Uploads a cleaned copy of the image, then points the car at it and deletes the previous photo.</summary>
+    public async Task<VehicleDto> SetPhotoAsync(Guid userId, Guid vehicleId, byte[]? content, CancellationToken ct = default)
+    {
+        var files = Storage();
+        var vehicle = await FindOwnedAsync(userId, vehicleId, ct);
+        if (vehicle.IsArchived)
+        {
+            throw new ValidationFailedException("vehiclePhoto.vehicleArchived", "This car is archived.");
+        }
+
+        if (content is not { Length: > 0 })
+        {
+            throw new ValidationFailedException("file.required", "Choose a photo to upload.");
+        }
+
+        if (content.Length > MaxPhotoBytes)
+        {
+            throw PhotoTooLarge();
+        }
+
+        var image = ImageFiles.Clean(content);
+        var key = $"users/{userId}/vehicles/{vehicleId}/photo/{Guid.NewGuid():N}.{image.Extension}";
+        await files.PutAsync(key, image.Content, image.ContentType, ct);
+
+        var previous = PhotoKey(vehicle);
+        vehicle.PhotoUrl = key;
+        vehicle.UpdatedAt = DateTimeOffset.UtcNow;
+        try
+        {
+            await db.SaveChangesAsync(ct);
+        }
+        catch
+        {
+            await DeleteQuietlyAsync(key);
+            throw;
+        }
+
+        await DeleteQuietlyAsync(previous);
+        return ToDto(vehicle);
+    }
+
+    /// <summary>Allowed on an archived car. No photo is a no-op.</summary>
+    public async Task DeletePhotoAsync(Guid userId, Guid vehicleId, CancellationToken ct = default)
+    {
+        Storage();
+        var vehicle = await FindOwnedAsync(userId, vehicleId, ct);
+        if (PhotoKey(vehicle) is not { } key)
+        {
+            return;
+        }
+
+        vehicle.PhotoUrl = null;
+        vehicle.UpdatedAt = DateTimeOffset.UtcNow;
+        await db.SaveChangesAsync(ct);
+        await DeleteQuietlyAsync(key);
+    }
+
+    private IFileStorage Storage() =>
+        storage ?? throw new ServiceUnavailableException("file.storageUnavailable", "File storage is not configured.");
+
+    // shortcut: a failed delete leaves an orphaned object (logged); add the orphan sweep (decisions.md "not now") if they pile up.
+    private async Task DeleteQuietlyAsync(string? key)
+    {
+        if (key is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await Storage().DeleteAsync(key, CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            logger?.LogWarning(ex, "Could not delete stored file {Key}", key);
+        }
+    }
+
+    // PhotoUrl holds the storage key (decisions.md "Car photo, FILE-1"); clients only ever get a signed URL.
+    private string? SignedPhotoUrl(Vehicle v) =>
+        PhotoKey(v) is { } key && storage is not null ? storage.GetSignedUrl(key, TimeSpan.FromHours(1)) : null;
+
+    /// <summary>The stored key, or null unless it is a key SetPhotoAsync writes for this car, so a bad row never signs or deletes another object.</summary>
+    private static string? PhotoKey(Vehicle v)
+    {
+        var prefix = $"users/{v.UserId}/vehicles/{v.Id}/photo/";
+        return v.PhotoUrl is { } key && key.StartsWith(prefix, StringComparison.Ordinal)
+                                     && Regex.IsMatch(key.AsSpan(prefix.Length), @"^[0-9a-f]{32}\.(jpg|png|webp)$")
+            ? key
+            : null;
+    }
+
     internal async Task<Vehicle> FindOwnedAsync(Guid userId, Guid vehicleId, CancellationToken ct = default)
     {
         var vehicle = await db.Vehicles.FirstOrDefaultAsync(v => v.Id == vehicleId, ct);
@@ -159,7 +257,7 @@ public class VehicleService(IAppDbContext db)
         return vehicle;
     }
 
-    private static VehicleDto ToDto(Vehicle v) => new(
+    private VehicleDto ToDto(Vehicle v) => new(
         v.Id, v.Nickname, v.Make, v.Model, v.Year, v.Vin, v.Plate, v.FuelType,
-        v.PurchaseDate, v.PurchasePrice, v.PhotoUrl, v.CurrentOdometerKm, v.AvgKmPerDay, v.IsArchived);
+        v.PurchaseDate, v.PurchasePrice, SignedPhotoUrl(v), v.CurrentOdometerKm, v.AvgKmPerDay, v.IsArchived);
 }

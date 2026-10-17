@@ -1,7 +1,7 @@
 // UI smoke run: walks the main flows in two setups and prints a JSON report.
 // Usage (API + Vite must be running): node ui-tests/smoke.mjs
 import { chromium } from 'playwright'
-import { mkdirSync, readFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import assert from 'node:assert/strict'
 import { toCsv } from '../src/csv.ts'
 
@@ -37,7 +37,8 @@ for (const s of setups) {
   const run = { setup: s.name, steps: [], consoleErrors: [], badResponses: [] }
   page.on('console', (m) => m.type() === 'error' && run.consoleErrors.push(m.text()))
   page.on('pageerror', (e) => run.consoleErrors.push(String(e)))
-  page.on('response', (r) => r.status() >= 400 && run.badResponses.push(`${r.status()} ${r.request().method()} ${r.url()}`))
+  // A signed photo URL's query is a credential: never printed.
+  page.on('response', (r) => r.status() >= 400 && run.badResponses.push(`${r.status()} ${r.request().method()} ${r.url().replace(/\?.*X-Amz-.*/s, '?<signed>')}`))
 
   // Against the set viewport width: with isMobile, innerWidth grows to fit a too-wide page and hides the overflow.
   const overflowPx = () => page.evaluate((w) => document.documentElement.scrollWidth - w, page.viewportSize().width)
@@ -1480,9 +1481,209 @@ for (const s of setups) {
     await page.locator('input[name=nickname]').waitFor()
     await arrivedAt(T.editCar)
     await page.fill('input[name=nickname]', 'Renamed Corolla')
-    await page.click('form button:not(.link)')
+    await page.click('form > .actions > button:not(.link)') // Save, not the photo button
     await page.getByRole('heading', { name: 'Renamed Corolla' }).waitFor()
     await arrivedAt(T.dashboard)
+  })
+  // FILE-1: the car photo. Upload, change and remove go to the real API and R2 (the photo is removed at the end, and again in a finally);
+  // the server errors, the archived car and the expired signed URL are mocked.
+  const i18nSrc = readFileSync(new URL('../src/i18n.ts', import.meta.url), 'utf8')
+  const copy = (re) => plain([...i18nSrc.matchAll(re)][he ? 1 : 0][2])
+  const key = (k) => copy(new RegExp(`^ +${k}: (['"])(.*)\\1,$`, 'gm'))
+  const PH = {
+    add: key('addPhoto'), change: key('changePhoto'), uploading: key('uploadingPhoto'), confirm: key('confirmRemovePhoto'),
+    tooLarge: key('tooLarge'), unsupported: key('unsupportedType'), required: key('required'), unavailable: key('storageUnavailable'),
+    archived: copy(/vehiclePhoto: \{\s*vehicleArchived: (['"])(.*)\1,/g),
+    tooMany: copy(/http: \{ 413: '[^']*', 429: (['"])(.*)\1 \}/g),
+  }
+  let photoCarId, photoAuth
+  const photoRequests = []
+  page.on('request', (r) => r.url().endsWith('/photo') && photoRequests.push(r.method()))
+  // A 64x48 image drawn by the browser, so the API gets a real PNG or JPEG.
+  const image = async (type) => Buffer.from((await page.evaluate((type) => {
+    const c = Object.assign(document.createElement('canvas'), { width: 64, height: 48 })
+    const x = c.getContext('2d')
+    x.fillStyle = type === 'image/png' ? '#c33' : '#36c'
+    x.fillRect(0, 0, 64, 48)
+    return c.toDataURL(type)
+  }, type)).split(',')[1], 'base64')
+  const PICK = '.photo-field .actions button:not(.link)'
+  const pickText = async () => plain(await page.locator(PICK).textContent())
+  // As a user does it: the button opens the file chooser.
+  async function choose(file) {
+    const [chooser] = await Promise.all([page.waitForEvent('filechooser'), page.click(PICK)])
+    await chooser.setFiles(file)
+  }
+  async function photoAlertIs(want, what) {
+    let got
+    for (const end = Date.now() + 5000; Date.now() < end; await page.waitForTimeout(100)) {
+      got = plain((await page.locator('.photo-field p.error[role=alert]').textContent({ timeout: 5000 }).catch(() => '')) ?? '')
+      if (got === want) return
+    }
+    throw new Error(`${what}: "${got}"`)
+  }
+  const photoLoaded = (sel, end = '') => page.waitForFunction(([sel, end]) => {
+    const img = document.querySelector(sel)
+    return img?.complete && img.naturalWidth === 64 && new URL(img.src).pathname.endsWith(end)
+  }, [sel, end], { timeout: 10000 })
+  async function ratioIs16by9(what) {
+    const box = await page.locator('main img.car-photo').boundingBox()
+    if (Math.abs(box.width / box.height - 16 / 9) > 0.02) throw new Error(`${what}: photo box ${box.width}x${box.height}`)
+  }
+  await step('photo-client-checks', async () => {
+    await page.setViewportSize({ width: 390, height: 844 })
+    const li = page.locator('.cars > li', { hasText: 'Renamed Corolla' })
+    photoCarId = await li.getAttribute('data-id')
+    photoAuth = { Authorization: `Bearer ${await page.evaluate(() => localStorage.getItem('token'))}` }
+    await li.locator('a[href$="/edit"]').click()
+    await arrivedAt(T.editCar)
+    if ((await pickText()) !== PH.add) throw new Error(`button "${await pickText()}"`)
+    if (await page.locator('.photo-field img').count()) throw new Error('a photo shows before any upload')
+    const accept = await page.getAttribute('.photo-field input[type=file]', 'accept')
+    if (accept !== 'image/jpeg,image/png,image/webp') throw new Error(`accept "${accept}"`)
+    // Too large, empty and a GIF are caught before sending.
+    photoRequests.length = 0
+    await choose({ name: 'big.jpg', mimeType: 'image/jpeg', buffer: Buffer.alloc(12_000_000) })
+    await photoAlertIs(PH.tooLarge, '12 MB file')
+    await focusIs(PICK, 'the photo button after the size error')
+    await choose({ name: 'empty.png', mimeType: 'image/png', buffer: Buffer.alloc(0) })
+    await photoAlertIs(PH.required, 'empty file')
+    await choose({ name: 'car.gif', mimeType: 'image/gif', buffer: Buffer.from('GIF89a') })
+    await photoAlertIs(PH.unsupported, 'GIF')
+    if (photoRequests.length) throw new Error(`requests sent: ${photoRequests}`)
+    // A text file named .jpg passes the browser's type; the API rejects it by its content.
+    const put = page.waitForResponse((r) => r.url().endsWith('/photo'))
+    await choose({ name: 'notes.jpg', mimeType: 'image/jpeg', buffer: Buffer.from('hello, this is not a photo') })
+    if ((await put).status() !== 400) throw new Error(`text .jpg: ${(await put).status()}`)
+    await photoAlertIs(PH.unsupported, 'text file named .jpg')
+    await focusIs(PICK, 'the photo button after the type error')
+    await sweep('the edit form at 390px')
+    await noOverflow('the photo errors')
+  })
+  await step('photo-upload-change', async () => {
+    await page.setViewportSize(s.viewport)
+    const put = () => page.waitForResponse((r) => r.url().endsWith('/photo') && r.request().method() === 'PUT')
+    let res = put()
+    await choose({ name: 'car.png', mimeType: 'image/png', buffer: await image('image/png') })
+    if ((await res).status() !== 200) throw new Error(`upload ${(await res).status()}`)
+    await photoLoaded('.photo-field img', '.png')
+    await focusIs(PICK, 'the photo button after upload')
+    if ((await pickText()) !== PH.change) throw new Error(`button "${await pickText()}"`)
+    if (await page.locator('.photo-field p.error').count()) throw new Error('the error stayed after the upload')
+    // Change: a JPEG replaces the PNG, and the PNG is gone from storage.
+    const old = await page.getAttribute('.photo-field img', 'src')
+    res = put()
+    await choose({ name: 'car.jpg', mimeType: 'image/jpeg', buffer: await image('image/jpeg') })
+    if ((await res).status() !== 200) throw new Error(`change ${(await res).status()}`)
+    await photoLoaded('.photo-field img', '.jpg')
+    await focusIs(PICK, 'the photo button after change')
+    await page.screenshot({ path: `${OUT}/${s.name}-photo-edit-form.png` })
+    if ((await page.request.get(old)).status() !== 404) throw new Error('the replaced photo is still stored')
+    // After a reload the car page shows it at the top, named by the car, in a 16:9 box, also at 390px.
+    await page.goto(`${BASE}/cars/${photoCarId}`)
+    await photoLoaded('main .card:first-of-type img.car-photo', '.jpg')
+    if ((await page.getAttribute('main img.car-photo', 'alt')) !== 'Renamed Corolla') throw new Error('alt is not the nickname')
+    await ratioIs16by9(s.name)
+    await page.setViewportSize({ width: 390, height: 844 })
+    await ratioIs16by9('390px')
+    await noOverflow('the photo at 390px')
+    await page.setViewportSize(s.viewport)
+  })
+  await step('photo-remove', async () => {
+    try {
+      await page.setViewportSize({ width: 390, height: 844 })
+      await page.goto(`${BASE}/cars/${photoCarId}/edit`)
+      await photoLoaded('.photo-field img')
+      const removeLink = page.locator('.photo-field .actions button.link')
+      await removeLink.click()
+      const confirm = plain(await page.locator('.photo-field .inline-form p').textContent())
+      if (confirm !== PH.confirm) throw new Error(`confirm "${confirm}"`)
+      await focusIs('.photo-field .inline-form button.link', 'Cancel on the confirm')
+      await page.keyboard.press('Escape')
+      await focusIs('.photo-field .actions button.link', 'Remove photo after Escape')
+      await removeLink.click()
+      await sweep('the remove confirm at 390px')
+      await page.screenshot({ path: `${OUT}/${s.name}-photo-remove-confirm.png` })
+      const del = page.waitForResponse((r) => r.url().endsWith('/photo') && r.request().method() === 'DELETE')
+      await page.click('.photo-field button.danger')
+      if ((await del).status() !== 204) throw new Error(`remove ${(await del).status()}`)
+      await page.locator('.photo-field img').waitFor({ state: 'detached' })
+      await focusIs(PICK, 'Add photo after remove')
+      if ((await pickText()) !== PH.add) throw new Error(`button "${await pickText()}"`)
+      await page.goto(`${BASE}/cars/${photoCarId}`)
+      await page.getByRole('heading', { name: 'Renamed Corolla' }).waitFor()
+      if (await page.locator('main img').count()) throw new Error('the car page still shows a photo')
+    } finally {
+      // Never leave a test photo in the bucket.
+      if (photoCarId) await page.request.delete(`${BASE}/api/vehicles/${photoCarId}/photo`, { headers: photoAuth })
+      await page.setViewportSize(s.viewport)
+    }
+  })
+  await step('photo-states', async () => {
+    const carUrl = `**/api/vehicles/${photoCarId}`
+    const real = await (await page.request.get(`${BASE}/api/vehicles/${photoCarId}`, { headers: photoAuth })).json()
+    const png = await image('image/png')
+    const problem = (status, code) => ({ status, contentType: 'application/problem+json', body: JSON.stringify({ status, code }) })
+    const carWith = (photoUrl, more = {}) => ({ contentType: 'application/json', body: JSON.stringify({ ...real, photoUrl, ...more }) })
+    try {
+      // Busy while uploading, then the server's errors, translated (mocked).
+      await page.goto(`${BASE}/cars/${photoCarId}/edit`)
+      await page.locator(PICK).waitFor() // a full load keeps the browser's focus
+      await page.route('**/photo', async (r) => { await page.waitForTimeout(600); await r.fulfill(problem(503, 'file.storageUnavailable')) }, { times: 1 })
+      await choose({ name: 'car.png', mimeType: 'image/png', buffer: png })
+      await page.waitForFunction((sel) => document.querySelector(sel)?.getAttribute('aria-busy') === 'true', PICK, { timeout: 3000 })
+      if ((await pickText()) !== PH.uploading) throw new Error(`busy button "${await pickText()}"`)
+      await photoAlertIs(PH.unavailable, '503')
+      if ((await page.getAttribute(PICK, 'aria-busy')) !== 'false') throw new Error('still busy after the error')
+      await focusIs(PICK, 'the photo button after the 503')
+      await page.route('**/photo', (r) => r.fulfill(problem(400, 'vehiclePhoto.vehicleArchived')), { times: 1 })
+      await choose({ name: 'car.png', mimeType: 'image/png', buffer: png })
+      await photoAlertIs(PH.archived, '400 archived')
+      // A file with no extension (a phone's "IMG_0001") has no browser type: it is sent, and the API decides (mocked: the photo rate limit).
+      let sent = null
+      await page.route('**/photo', (r) => { sent = r.request().method(); return r.fulfill(problem(429, 'http.429')) }, { times: 1 })
+      // From disk, as Playwright gives an in-memory file application/octet-stream instead of the browser's empty type.
+      writeFileSync(`${OUT}/IMG_0001`, png)
+      await choose(`${OUT}/IMG_0001`)
+      await photoAlertIs(PH.tooMany, '429 for the extensionless file')
+      if (sent !== 'PUT') throw new Error(`the extensionless file was not sent: ${sent}`)
+      await focusIs(PICK, 'the photo button after the 429')
+      // An archived car: no Add or Change, but its photo can be removed.
+      await page.route('**/__photo/*', (r) => r.request().url().endsWith('/ok.png') ? r.fulfill({ contentType: 'image/png', body: png }) : r.fulfill({ status: 403 }))
+      await page.route(carUrl, (r) => r.fulfill(carWith(`${BASE}/__photo/ok.png`, { isArchived: true })))
+      await page.reload()
+      await photoLoaded('.photo-field img')
+      if (await page.locator(PICK).count()) throw new Error('Add or Change shows on an archived car')
+      await page.locator('.photo-field .actions button.link').waitFor()
+      await page.unroute(carUrl)
+      // An expired signed URL: after the image fails, the car is fetched once more for a fresh one (mocked).
+      // Car requests are counted from the first failed image on, as the dev build (StrictMode) loads the page twice.
+      let gets = 0, getsAtFail = null
+      await page.unroute('**/__photo/*')
+      await page.route('**/__photo/*', (r) => {
+        if (r.request().url().endsWith('/ok.png')) return r.fulfill({ contentType: 'image/png', body: png })
+        getsAtFail ??= gets
+        return r.fulfill({ status: 403 })
+      })
+      await page.route(carUrl, (r) => { gets++; return r.fulfill(carWith(`${BASE}/__photo/${getsAtFail == null ? 'expired' : 'ok'}.png`)) })
+      await page.goto(`${BASE}/cars/${photoCarId}`)
+      await photoLoaded('main img.car-photo', '/ok.png')
+      if (gets - getsAtFail !== 1) throw new Error(`${gets - getsAtFail} car requests after the failed image, want 1`)
+      // Still failing after that one reload: no photo, and no more requests.
+      await page.unroute(carUrl)
+      gets = 0
+      getsAtFail = null
+      await page.route(carUrl, (r) => r.fulfill(carWith(`${BASE}/__photo/expired-${++gets}.png`)))
+      await page.goto(`${BASE}/cars/${photoCarId}`)
+      await page.getByRole('heading', { name: 'Renamed Corolla' }).waitFor()
+      await page.waitForFunction(() => !document.querySelector('main img'), null, { timeout: 5000 })
+      await page.waitForTimeout(500)
+      if (gets - getsAtFail !== 1) throw new Error(`${gets - getsAtFail} car requests after the failed image, want 1`)
+    } finally {
+      await page.unroute(carUrl)
+      await page.unroute('**/__photo/*')
+      await page.unroute('**/photo')
+    }
   })
   // SET-1: settings. Each setup forces the theme opposite to its OS one, at 390px wide.
   // The hint comes from i18n.ts (en first, then he), so copy edits don't break the step.

@@ -1,5 +1,7 @@
 using System.Net;
+using System.IdentityModel.Tokens.Jwt;
 using System.Net.Sockets;
+using System.Security.Claims;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.HttpOverrides;
@@ -16,6 +18,9 @@ public static class RequestLimits
     /// <summary>Applied to login and register, which share one bucket per IP.</summary>
     public const string AuthPolicy = "auth";
 
+    /// <summary>Applied to the car photo upload: per signed-in user, 2 at once and <c>PhotoUploadPermitLimit</c> per window.</summary>
+    public const string PhotoUploadPolicy = "photoUpload";
+
     /// <summary>App-wide request body limit (L37): a larger body is a 413 <c>http.413</c>. Auth keeps its smaller attribute.</summary>
     public const long MaxBodyBytes = 65_536;
 
@@ -28,7 +33,7 @@ public static class RequestLimits
             .Validate(o => new[]
                 {
                     o.AuthPermitLimit, o.AuthWindowSeconds, o.GlobalPermitLimit, o.GlobalWindowSeconds,
-                    o.FailedLoginLimit, o.FailedLoginWindowSeconds
+                    o.FailedLoginLimit, o.FailedLoginWindowSeconds, o.PhotoUploadPermitLimit, o.PhotoUploadWindowSeconds
                 }.All(v => v > 0), "Every RateLimiting value must be positive.")
             .ValidateOnStart();
         var limits = section.Get<RateLimitOptions>() ?? new RateLimitOptions();
@@ -53,6 +58,15 @@ public static class RequestLimits
             // The middleware calls a policy's own OnRejected only when that policy rejected, so a global-limit
             // rejection on an auth endpoint still gets http.429.
             o.AddPolicy(AuthPolicy, new AuthLimitPolicy(limits));
+            // Concurrency first, so a request it turns away doesn't use up the window. Rejections get http.429 (OnRejected below).
+            o.AddPolicy(PhotoUploadPolicy, ctx => RateLimitPartition.Get(UserKey(ctx), _ => RateLimiter.CreateChained(
+                new ConcurrencyLimiter(new ConcurrencyLimiterOptions { PermitLimit = 2, QueueLimit = 0 }),
+                new FixedWindowRateLimiter(new FixedWindowRateLimiterOptions
+                {
+                    PermitLimit = limits.PhotoUploadPermitLimit,
+                    Window = TimeSpan.FromSeconds(limits.PhotoUploadWindowSeconds),
+                    QueueLimit = 0
+                }))));
             o.OnRejected = (context, ct) => RejectAsync(context, "http.429", ct);
         });
 
@@ -62,10 +76,16 @@ public static class RequestLimits
     /// <summary>
     /// The middleware that must run in this order, shared by Program.cs and the tests.
     /// Forwarded headers first, so the limiter sees the real client IP; CORS before the limiter, so a 429 carries
-    /// the CORS headers the browser needs to read it.
+    /// the CORS headers the browser needs to read it; authentication before the limiter, so per-user policies see the user.
     /// </summary>
     public static IApplicationBuilder UseRequestLimits(this IApplicationBuilder app, string corsPolicy) =>
-        app.UseForwardedHeaders().UseCors(corsPolicy).UseRateLimiter();
+        app.UseForwardedHeaders().UseCors(corsPolicy).UseAuthentication().UseRateLimiter();
+
+    /// <summary>The signed-in user's id, or the client IP for a request without a valid token (it gets a 401 after the limiter).</summary>
+    private static string UserKey(HttpContext ctx) =>
+        (ctx.User.FindFirstValue(JwtRegisteredClaimNames.Sub) ?? ctx.User.FindFirstValue(ClaimTypes.NameIdentifier)) is { } id
+            ? "user:" + id
+            : "ip:" + ClientKey(ctx.Connection.RemoteIpAddress);
 
     private sealed class AuthLimitPolicy(RateLimitOptions limits) : IRateLimiterPolicy<string>
     {

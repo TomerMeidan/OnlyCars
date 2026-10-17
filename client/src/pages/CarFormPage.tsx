@@ -1,11 +1,12 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { errorMessage } from '../i18n'
 import { useNavigate, useParams } from 'react-router-dom'
-import { api, carNotFound, fuelTypes, isGuid, localToday, type FuelType, type Vehicle, type VehicleInput } from '../api'
+import { api, carNotFound, fuelTypes, isGuid, localToday, photoError, photoTypes, type FuelType, type Vehicle, type VehicleInput } from '../api'
 import { useDistance } from '../auth'
 import { usePage } from '../usePage'
-import { CarError } from './CarPage'
+import { CarError, CarPhoto } from './CarPage'
+import { useRow } from '../useRow'
 
 const maxYear = new Date().getFullYear() + 1
 
@@ -41,7 +42,6 @@ export default function CarFormPage() {
       fuelType: str('fuelType') as FuelType | null,
       purchaseDate: str('purchaseDate'),
       purchasePrice: num('purchasePrice'),
-      photoUrl: car?.photoUrl ?? null,
       ...(!id && { initialOdometerKm: initialOdometer == null ? null : d.toKm(initialOdometer), readingDate: localToday() }),
     }
     try {
@@ -64,6 +64,7 @@ export default function CarFormPage() {
   return (
     <form className="card narrow" onSubmit={submit}>
       <h1 tabIndex={-1}>{t(id ? 'editCar' : 'addCar')}</h1>
+      {car && <PhotoField car={car} setCar={setCar} />}
       {field('nickname', 'text', { required: true, maxLength: 100 })}
       {field('make', 'text', { maxLength: 100 })}
       {field('model', 'text', { maxLength: 100 })}
@@ -86,5 +87,75 @@ export default function CarFormPage() {
         <button type="button" className="link" onClick={() => navigate('/')}>{t('cancel')}</button>
       </div>
     </form>
+  )
+}
+
+// The car photo on the Edit form: each change saves at once, not with the form's Save. Focus comes back to the photo control after each.
+function PhotoField({ car, setCar }: { car: Vehicle; setCar: (car: Vehicle) => void }) {
+  const { t } = useTranslation()
+  const row = useRow<'remove'>()
+  const { mode, busy, error, opener } = row
+  const input = useRef<HTMLInputElement>(null)
+  const pick = useRef<HTMLButtonElement>(null)
+  const group = useRef<HTMLDivElement>(null)
+  const refocus = useRef(false)
+  const path = `/vehicles/${encodeURIComponent(car.id)}/photo`
+
+  useEffect(() => {
+    if (busy || mode !== 'view' || !refocus.current) return
+    refocus.current = false
+    // An archived car has no Add button: the group takes focus.
+    ;(pick.current ?? group.current)?.focus()
+  }, [busy, mode, error])
+
+  async function upload(file: File | undefined) {
+    if (input.current) input.current.value = '' // so the same file can be chosen again
+    if (!file) return
+    refocus.current = true
+    await row.run(async () => {
+      const invalid = photoError(file)
+      if (invalid) throw invalid
+      const body = new FormData()
+      body.append('file', file)
+      setCar(await api<Vehicle>(path, 'PUT', body))
+    })
+  }
+
+  function remove(retryFrom: HTMLElement) {
+    row.run(async () => {
+      await api(path, 'DELETE')
+      setCar({ ...car, photoUrl: null })
+      refocus.current = true
+      row.close()
+    }, retryFrom)
+  }
+
+  return (
+    <div className="photo-field" role="group" aria-labelledby="photo-label" tabIndex={-1} ref={group}>
+      <span id="photo-label">{t('photo')}</span>
+      <CarPhoto car={car} setCar={setCar} />
+      {mode === 'view' ? (
+        <div className="actions">
+          {!car.isArchived && (
+            <button type="button" ref={pick} aria-busy={busy} aria-disabled={busy} onClick={() => !busy && input.current?.click()}>
+              {t(busy ? 'uploadingPhoto' : car.photoUrl ? 'changePhoto' : 'addPhoto')}
+            </button>
+          )}
+          {car.photoUrl && (
+            <button type="button" className="link" disabled={busy} ref={opener('remove')} onClick={() => row.open('remove')}>{t('removePhoto')}</button>
+          )}
+        </div>
+      ) : (
+        <div className="inline-form" onKeyDown={(e) => !busy && e.key === 'Escape' && row.open('view')}>
+          <p>{t('confirmRemovePhoto')}</p>
+          <div className="actions">
+            <button type="button" className="danger" aria-busy={busy} disabled={busy} onClick={(e) => remove(e.currentTarget)}>{t('remove')}</button>
+            <button type="button" className="link" disabled={busy} onClick={() => row.open('view')} autoFocus>{t('cancel')}</button>
+          </div>
+        </div>
+      )}
+      <input ref={input} type="file" accept={photoTypes} hidden onChange={(e) => upload(e.target.files?.[0])} />
+      {error != null && <p className="error" role="alert">{errorMessage(error)}</p>}
+    </div>
   )
 }
