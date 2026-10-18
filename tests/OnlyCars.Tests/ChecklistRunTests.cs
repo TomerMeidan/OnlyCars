@@ -468,6 +468,28 @@ public class ChecklistRunTests
     }
 
     [Fact]
+    public async Task LatestRunDate_IsTheLatestRun_ApartFromTheCountdownStart_AndNullWithoutRuns()
+    {
+        var car = await CarAsync();
+        var t = await TemplateAsync();
+        var c = await AttachAsync(car, t.Id);
+        Assert.Null(c.LatestRunDate);
+
+        // Attached today, the only run dated last month: the countdown keeps the attach date (L110).
+        var older = await RunAsync(c.Id, t, runAt: Today.AddDays(-30));
+        Assert.Equal((Today.AddDays(-30), Today), (older.Checklist.LatestRunDate, older.Checklist.LastRunDate));
+        Assert.Equal(Today.AddDays(-30), Assert.Single(await checklists.ListAsync(userId, car)).LatestRunDate);
+
+        var newer = await RunAsync(c.Id, t, runAt: Today.AddDays(-1));
+        Assert.Equal((Today.AddDays(-1), Today), (newer.Checklist.LatestRunDate, newer.Checklist.LastRunDate));
+
+        await checklists.DeleteRunAsync(userId, newer.Run.Id);
+        Assert.Equal(Today.AddDays(-30), Assert.Single(await checklists.ListAsync(userId, car)).LatestRunDate);
+        await checklists.DeleteRunAsync(userId, older.Run.Id);
+        Assert.Null(Assert.Single(await checklists.ListAsync(userId, car)).LatestRunDate);
+    }
+
+    [Fact]
     public async Task DeleteRun_RecomputesFromTheRemainingRuns_ThenTheStartValues_AndRemovesItsReading()
     {
         var car = await CarAsync();

@@ -299,12 +299,13 @@ public class VehicleChecklistService(IAppDbContext db, VehicleService vehicleSer
                 c.Template!.Name,
                 ItemCount = c.Template.Items.Count,
                 RunCount = c.Runs.Count,
+                LatestRunDate = c.Runs.Max(r => (DateOnly?)r.RunAt),
                 c.Vehicle!.CurrentOdometerKm
             })
             .ToListAsync(ct);
 
         var today = TodayUtc();
-        return rows.Select(r => ToDto(r.Checklist, r.Name, r.ItemCount, r.RunCount, r.CurrentOdometerKm, today))
+        return rows.Select(r => ToDto(r.Checklist, r.Name, r.ItemCount, r.RunCount, r.LatestRunDate, r.CurrentOdometerKm, today))
             .OrderBy(c => c.Status is null)
             .ThenByDescending(c => c.Status)
             .ThenByDescending(c => c.IsEnabled)
@@ -395,12 +396,13 @@ public class VehicleChecklistService(IAppDbContext db, VehicleService vehicleSer
 
     private static DateOnly TodayUtc() => DateOnly.FromDateTime(DateTime.UtcNow);
 
-    private static VehicleChecklistDto ToDto(VehicleChecklist c, string name, int itemCount, int runCount, decimal currentKm, DateOnly today)
+    private static VehicleChecklistDto ToDto(VehicleChecklist c, string name, int itemCount, int runCount, DateOnly? latestRunDate,
+        decimal currentKm, DateOnly today)
     {
         var s = TaskStatusCalculator.Compute(c.IsEnabled, c.IntervalKm, c.IntervalDays, VehicleChecklist.DueSoonPercent,
             c.LastRunOdometerKm, c.LastRunDate, currentKm, today);
         return new(c.Id, c.VehicleId, c.TemplateId, name, itemCount, c.IntervalKm, c.IntervalDays, c.IsEnabled, c.LastRunDate,
-            c.LastRunOdometerKm, runCount, s.Status, s.RemainingKm, s.RemainingDays, s.Progress);
+            c.LastRunOdometerKm, runCount, s.Status, s.RemainingKm, s.RemainingDays, s.Progress, latestRunDate);
     }
 
     // userId and vehicleId are the caller's, already checked to own the run; they only build the photo key check.

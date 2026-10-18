@@ -170,7 +170,7 @@ export interface ChecklistTemplate {
 }
 
 // A template on a car (MVP5-B). Both intervals null is manual only; status and the remaining values are null when manual only or off.
-// lastRun* are the attach values until a run is saved. The server lists them most urgent first.
+// lastRun* are the countdown start: the attach values until a later run; latestRunDate is the latest run's date, null without runs. The server lists them most urgent first.
 export interface VehicleChecklist {
   id: string
   vehicleId: string
@@ -183,6 +183,7 @@ export interface VehicleChecklist {
   lastRunDate: string
   lastRunOdometerKm: number
   runCount: number
+  latestRunDate: string | null
   status: TaskStatus | null
   remainingKm: number | null
   remainingDays: number | null

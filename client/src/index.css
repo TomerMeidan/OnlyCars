@@ -198,6 +198,7 @@ button.danger { background: var(--danger); border-color: var(--danger); color: #
 .tasks, .services, .picker ul { list-style: none; padding: 0; margin: 0; }
 .tasks > li, .services > li { display: grid; gap: 0.25rem; padding-block: 0.75rem; border-block-end: 1px solid var(--line); }
 .tasks > li:last-child, .services > li:last-child { border-block-end: none; }
+.card.checklists { padding-inline: 1.25rem; } /* .tasks drops the card padding; the /checklists rows keep it */
 .task-head { display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem 0.5rem; }
 .task-head .name { font-weight: 600; }
 /* The space goes on what follows the name: a name's own dir="auto" would put its end margin on the wrong side in Hebrew (L46). */
@@ -230,6 +231,7 @@ button.danger { background: var(--danger); border-color: var(--danger); color: #
 /* Text links: a 44px tap target (link-style buttons get theirs from the button rule); the car name keeps its line height */
 .brand, nav a, h2 a, .actions a, .switch a, .services a.car, .report a { display: inline-flex; align-items: center; min-height: 2.75rem; }
 h2 a { margin-block: -0.5625rem; }
+.actions a { min-inline-size: 2.75rem; justify-content: start; } /* a short "Edit" is 44px wide too, its text in line with the other links */
 
 /* "All cars": a 44px tap target from padding, with the focus ring on the text only */
 .back { justify-self: start; padding-block: 0.625rem; }
@@ -350,6 +352,10 @@ details > summary { padding-block: 0.625rem; cursor: pointer; }
 .category-chart span { grid-column: 1 / -1; block-size: 0.75rem; background: var(--muted); border-radius: 3px; }
 /* RPT-3 export: the two buttons wrap under the filters at 390px; the CSV error sits next to its Retry */
 .filters > .export { flex-basis: 100%; flex-wrap: wrap; gap: 0.5rem 0.75rem; }
+/* The CSV button is as wide as its longer label, busy or not, so neither button moves (L111) */
+.stack { display: inline-grid; place-items: center; }
+.stack > span, .stack::after { grid-area: 1 / 1; }
+.stack::after { content: attr(data-alt); visibility: hidden; }
 .print-only { display: none; }
 /* Print (Save as PDF): black on white in either theme, no navigation, filters or buttons; links print as text */
 @media print {

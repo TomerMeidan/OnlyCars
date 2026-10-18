@@ -1,7 +1,7 @@
 # OnlyCars: Requirements Status
 
-**Audit date:** 2026-10-18 (thirtieth audit, short sign-off of LOW-6; FILE-1, FILE-2, FILE-3 and LOW-6 are all uncommitted in the working tree)
-**Overall:** MVP steps 1 to 4 are complete. Step 5: checklists (with run photos), tires and reports are done; notifications are not started. LOW-6 (files and photos Lows L114 to L140) is signed off. Next: LOW-7 (reports, dashboard and checklists Lows), then NOT-1. No deployment tickets until the owner asks.
+**Audit date:** 2026-10-18 (thirty-first audit, short sign-off of LOW-7; LOW-7 is uncommitted in the working tree, FILE-1 to LOW-6 are committed)
+**Overall:** MVP steps 1 to 4 are complete. Step 5: checklists (with run photos), tires and reports are done; notifications are not started. LOW-7 (reports, dashboard and checklists Lows L107 to L113) is signed off. Next: NOT-1 (in-app reminders: car documents, lead time, snooze), then NOT-2 (email, needs the owner's provider). No deployment tickets until the owner asks.
 
 | Status | Count |
 |---|---|
@@ -12,10 +12,10 @@
 | Deferred | 6 |
 | **Total** | **57** |
 
-How this was checked (thirtieth audit, short sign-off of LOW-6 per decisions.md "Faster pipeline (owner)"; I re-ran no test suites and no browser scripts; no status changes, so the counts are unchanged):
-- Reported by other agents, not re-run by me: `dotnet test` 618 of 618 (LocalDB tests for the L116 photo race); build clean, lint 0; bundle 514 kB (limit 600); smoke `SMOKE_ALL=1` 123 of 123 in all 4 setups, each run alone. Code review: no High; its findings fixed. Hebrew review: all new strings approved unchanged. Browser QA (ui-tester) in 4 setups: one Medium (a car photo 409 did not reload the car), fixed; everything else passed live, including a real 409 from the API (live check 5 x 200 / 5 x 409 on concurrent photo PUT/DELETE).
-- I checked in code: `VehicleService.cs:178,201,210` (`SwapPhotoKeyAsync`, the conditional key swap used by photo PUT and DELETE), `docs/contracts/LOW-6.md` and the updated `docs/contracts/FILE-1.md`.
-- The cleanup script (L139) was run in dry-run mode only: 1,713 of 1,718 accounts matched; the 5 left are 3 gmail accounts and `demo+…`/`ui+…` at `onlycars.test` (deliberately excluded). A new domain allow-list guard (THROW 50003) stops the script if any target is outside the test domains, so a gmail account can never be targeted. Never run with `DryRun=0` (L72 is the owner's).
+How this was checked (thirty-first audit, short sign-off of LOW-7 per decisions.md "Faster pipeline (owner)"; I re-ran no test suites and no browser scripts; no status changes, so the counts are unchanged):
+- Reported by other agents, not re-run by me: `dotnet test` 619 of 619; build clean, lint 0; bundle 518 kB (limit 600); smoke `SMOKE_ALL=1` 126 of 126 in all 4 setups, run alone on the final code. Code review: approve, no High or Medium. Hebrew review: `countingFrom` changed to the past tense ("הספירה התחילה ב־…"), smoke updated. Browser QA (ui-tester) in 4 setups: pass, no High or Medium; QA also found that `/checklists` template rows had no inline padding (pre-existing), fixed with `.card.checklists` padding.
+- I checked in code: `docs/contracts/LOW-7.md` (`latestRunDate` on `VehicleChecklistDto`, the latest run's date computed on read, no migration; status maths unchanged).
+- Not tested by anyone in a browser: the "Last run on" date after deleting a run (unit-tested only), and where focus lands after a failed export.
 - The notes from earlier audits are in git history.
 
 ## 1. Vehicles
@@ -90,10 +90,10 @@ How this was checked (thirtieth audit, short sign-off of LOW-6 per decisions.md 
 
 | Requirement | Status | Evidence | What's missing |
 |---|---|---|---|
-| Cost per car, per category, per month and per year | **Done** | RPT-1 (not committed; contract `docs/contracts/RPT-1.md`): `GET /api/reports/costs?year=&vehicleId=` (`ReportsController.cs:16`, `ReportService.cs:16-75`), no migration; `CostReportTests.cs`. UI: `/reports` from the header (`App.tsx:43,60`) with Year and Car in the URL, the year summary with the unpriced count, By month (12 rows), By category (equal split, "No task"), By car, each total with records linking to `/history` (`ReportsPage.tsx:78-118`). Smoke `SMOKE_ALL=1` 103 per setup (reported). | Browser QA catch-up passed (2026-10-17, 4 setups, no High or Medium, 0px overflow). Lows L95 to L97 closed in LOW-5; `/reports?year=2025abc` shows the error but the Year box shows the current year (L112). |
+| Cost per car, per category, per month and per year | **Done** | RPT-1 (not committed; contract `docs/contracts/RPT-1.md`): `GET /api/reports/costs?year=&vehicleId=` (`ReportsController.cs:16`, `ReportService.cs:16-75`), no migration; `CostReportTests.cs`. UI: `/reports` from the header (`App.tsx:43,60`) with Year and Car in the URL, the year summary with the unpriced count, By month (12 rows), By category (equal split, "No task"), By car, each total with records linking to `/history` (`ReportsPage.tsx:78-118`). Smoke `SMOKE_ALL=1` 103 per setup (reported). | Browser QA catch-up passed (2026-10-17, 4 setups, no High or Medium, 0px overflow). Lows L95 to L97 closed in LOW-5; L112 closed in LOW-7 (an invalid year in the address, such as `2025abc` or `1800`, leaves the Year box empty). |
 | Cost per km and total cost of ownership | **Done** | RPT-1: per car, all time: service total, km driven (from the first reading, clamped at 0), cost per km (4 decimals, null at 0 km) and TCO = purchase price + service total (null without a price) (`ReportService.cs:62-70`, tested). UI: the All time section with cost per km or per mile in the user's unit, "Not enough odometer readings", and "Add a purchase price" linking to the car's edit page (`ReportsPage.tsx:119-137`). | Fuel and tire purchases are not included (decided). The Hebrew term for TCO is open for the owner. Browser QA catch-up passed (2026-10-17, 4 setups, no High or Medium, 0px overflow). |
 | Charts: spending over time, cost by category | **Done** | RPT-2 (not committed; frontend only): on `/reports`, 12 vertical month bars over the By month rows and a horizontal bar per category over the By category rows, scaled to the highest value, `aria-hidden` over the unchanged rows, following the page direction in Hebrew (`ReportsPage.tsx:88-123`, `index.css:333-346`); no chart library. Smoke `reports-charts` (bar heights and lengths, RTL, the 2px minimum, label overlap and edges at 390px including a 20px root font), `SMOKE_ALL=1` 104 per setup (reported). | Browser QA catch-up passed (2026-10-17, 4 setups, no High or Medium, 0px overflow). |
-| Export to CSV and PDF | **Done** | RPT-3 (not committed; frontend only): Export CSV on `/reports` downloads `onlycars-{year}[-{car}].csv`, one row per service record of the chosen year and car, built in the browser from the paged `/api/service-records` (`ReportsPage.tsx:78-109`, `client/src/csv.ts`); "Print or save as PDF" calls `window.print()` with a `@media print` stylesheet and a print-only line with year, car and date (`index.css:347-359`). Smoke `SMOKE_ALL=1` 108 per setup with CSV content, Hebrew header, print-media screenshots and `page.pdf()` steps (reported). | Browser QA catch-up passed (2026-10-17, 4 setups, no High or Medium, 0px overflow). The CSV not opened in real Excel and the real print dialog not used (L105, owner). Lows: a failed export after a filter change is silent (L107); the buttons reflow at 390px Hebrew while busy (L111). |
+| Export to CSV and PDF | **Done** | RPT-3 (not committed; frontend only): Export CSV on `/reports` downloads `onlycars-{year}[-{car}].csv`, one row per service record of the chosen year and car, built in the browser from the paged `/api/service-records` (`ReportsPage.tsx:78-109`, `client/src/csv.ts`); "Print or save as PDF" calls `window.print()` with a `@media print` stylesheet and a print-only line with year, car and date (`index.css:347-359`). Smoke `SMOKE_ALL=1` 108 per setup with CSV content, Hebrew header, print-media screenshots and `page.pdf()` steps (reported). | Browser QA catch-up passed (2026-10-17, 4 setups, no High or Medium, 0px overflow). The CSV not opened in real Excel and the real print dialog not used (L105, owner). LOW-7 closed L107 (a failed export always shows its error, also after a filter change) and L111 (the buttons keep their width while busy). Accepted: Retry after a mid-export filter change exports the new filters, and the error doesn't name the year (decisions.md, "LOW-7 sign-off"). |
 
 ## 9. Reminders and Notifications
 
@@ -166,7 +166,7 @@ How this was checked (thirtieth audit, short sign-off of LOW-6 per decisions.md 
 | Deploy gate | **SEC-1 signed off.** Nothing else blocks a first deploy except the owner's Azure account. The owner said not to deploy yet (decisions.md, 2026-10-15, "When to deploy"), so no deployment tickets are queued. |
 | 3. Service history with costs | **Complete. MVP3-A, MVP3-B, MVP3-C, MVP3-D and FILE-2 (attachments) are signed off.** Files: receipt photos and PDFs added to a saved service, opened and deleted from its row, opened from `/history`. Working end to end in EN and HE: the service history on `/cars/:id`, recording a past service (date, odometer, shop or DIY, cost, notes, several tasks, parts and labour) with the date-order rules, editing everything on a record (shop, cost, notes, items, date, odometer and tasks, with the car's odometer and the tasks' last done following), deleting any record, and a `/history` page that filters and searches all cars. LOW-1 (the first Low batch) is signed off too. |
 | 4. Dashboard with due/overdue status | **Complete. MVP4-A and LOW-2 are signed off; "Start a checklist" came with MVP5-B.** The dashboard on `/`: overdue and due-soon counts, this month's spend linking to `/history`, and per-car cards with the next 3 tasks, one-tap Mark done with Undo, quick odometer entry and Start a checklist, in EN and HE. |
-| 5. Checklists, tires, reports, notifications | **Started. Checklists are complete: MVP5-A, MVP5-B, MVP5-C and FILE-3 (photos on runs) are signed off. Tires are done: MVP5-D (sets, mounts, swap, km per set, storage notes) and MVP5-E (pressure, tread depth, rotations) are signed off. LOW-3, LOW-4 and LOW-5 are signed off. Reports are done: RPT-1 (cost per car, category, month and year, cost per km, TCO), RPT-2 (charts) and RPT-3 (CSV and PDF export) are signed off. The browser QA catch-up over MVP5-C to RPT-3 passed.** LOW-6 (files and photos Lows) is signed off. Remaining: notifications (spec 9). Order (decisions.md, "Order after FILE-3"): LOW-7 (reports, dashboard and checklists Lows) next, then NOT-1, then NOT-2. |
+| 5. Checklists, tires, reports, notifications | **Started. Checklists are complete: MVP5-A, MVP5-B, MVP5-C and FILE-3 (photos on runs) are signed off. Tires are done: MVP5-D (sets, mounts, swap, km per set, storage notes) and MVP5-E (pressure, tread depth, rotations) are signed off. LOW-3, LOW-4 and LOW-5 are signed off. Reports are done: RPT-1 (cost per car, category, month and year, cost per km, TCO), RPT-2 (charts) and RPT-3 (CSV and PDF export) are signed off. The browser QA catch-up over MVP5-C to RPT-3 passed.** LOW-6 (files and photos Lows) and LOW-7 (reports, dashboard and checklists Lows) are signed off. Remaining: notifications (spec 9). Next: NOT-1 (in-app reminders, written below), then NOT-2 (email, needs the owner's provider). |
 
 ## Ticket queue
 
@@ -176,11 +176,16 @@ How this was checked (thirtieth audit, short sign-off of LOW-6 per decisions.md 
 | 2 | FILE-2: attachments on service records (spec 5, 12) | BE, then FE | **Signed off** 2026-10-18 |
 | 3 | FILE-3: photos on checklist runs (spec 7, 12) | BE, then FE | **Signed off** 2026-10-18 |
 | 4 | LOW-6: files and photos Lows (L114 to L140) | BE, then FE | **Signed off** 2026-10-18 |
-| 5 | LOW-7: reports, dashboard and checklists Lows (L107 to L113) | BE, then FE | **Next** (written below) |
-| 6 | NOT-1: in-app reminders (documents, lead time, snooze) | BE, then FE | After LOW-7; no owner input needed |
+| 5 | LOW-7: reports, dashboard and checklists Lows (L107 to L113) | BE, then FE | **Signed off** 2026-10-18 |
+| 6 | NOT-1: in-app reminders (documents, lead time, snooze) | BE, then FE | **Next** (written below); no owner input needed |
 | 7 | NOT-2: email when due | BE | Needs the owner's email provider and credentials (open question) |
 
 ## Signed-off tickets
+- **LOW-7 (uncommitted in the working tree): signed off 2026-10-18.** Short sign-off under "Faster pipeline (owner)"; I re-ran no suites. Closes L107 to L113. No requirement status changes.
+  - Reported evidence: `dotnet test` 619 of 619; build clean, lint 0; bundle 518 kB; smoke `SMOKE_ALL=1` 126 of 126 in all 4 setups, run alone on the final code; code review approve (no High or Medium); Hebrew review (`countingFrom` in the past tense); browser QA pass in 4 setups (no High or Medium).
+  - AC1 [BE] from the reported test and `docs/contracts/LOW-7.md` (`latestRunDate`, max over runs, computed on read, no migration). AC2 to AC7 [FE] from smoke and browser QA: "Last run on" from `latestRunDate`, plus "Counting from <attach date>" only when there is a countdown and `lastRunDate > latestRunDate` (hidden for manual-only and turned-off checklists; code review ruled this correct, as there is no countdown to explain); a failed export shows its error also after a filter change (L107); the export buttons keep their width (`.stack`, read once by screen readers, checked in Chrome; L111); an invalid year (not a number, or the API's `report.invalidYear`, such as 1800) leaves the Year box empty (L112); `.actions a` is at least 44px wide with text aligned to the start, a global rule where only the dashboard's Edit link changes (L113); the stale comment (L109); smoke asserts the `/history` links exist (L108). AC8 from the reported runs. No new dependency.
+  - Beyond the ticket: `/checklists` template rows got inline padding (`.card.checklists`, pre-existing, found by QA).
+  - Accepted (decisions.md, "LOW-7 sign-off"): Retry after a mid-export filter change exports the current filters, and the error doesn't name the year it failed for (owner may override). The new Lows are L145 to L148.
 - **LOW-6 (uncommitted in the working tree): signed off 2026-10-18.** Short sign-off under "Faster pipeline (owner)"; I re-ran no suites. Closes L114 to L133 and L136 to L140 (L124 was already closed; L134 stays the owner's; L135 belongs to the spec 12 ticket). No requirement status changes.
   - Reported evidence: `dotnet test` 618 of 618; build clean, lint 0; bundle 514 kB; smoke `SMOKE_ALL=1` 123 of 123 in all 4 setups, each run alone; code review no High; Hebrew review approved; browser QA in 4 setups with one Medium fixed.
   - AC1 to AC6 [BE]: L116 conditional photo-key swap (`ExecuteUpdate ... WHERE PhotoUrl = <key read>`, `VehicleService.cs:210`): the loser of concurrent photo PUT/DELETE gets 409 `concurrency.conflict` and its object is deleted (LocalDB tests; live 5 x 200 / 5 x 409); L118 DELETE clears an invalid stored key; L117 `ANMF` frames keep only `ALPH`/`VP8 `/`VP8L`; L119 upload limit 10,000 in Development only (closes L120); L125 VIN-on-edit test; L138 comments; L128 closed as accepted; L139 cleanup script with tight rules, a domain allow-list guard, dry run only. Contract `docs/contracts/LOW-6.md`.
@@ -336,74 +341,89 @@ How this was checked (thirtieth audit, short sign-off of LOW-6 per decisions.md 
 
 ## Low issues backlog
 
-Every Low finding from QA and review lands here (decisions.md, "Faster pipeline (owner)"). They are fixed together in a batch ticket LOW-n about every 3 tickets. LOW-1 closed L1 to L12, LOW-2 L13 to L26, LOW-3 L27 to L65, LOW-4 L66 to L86, LOW-5 L87 to L106 (L98 closed as not reproduced), LOW-6 L114 to L140 (L120 closed by L119, L128 closed as accepted; L124 was closed by FILE-2's cleanup script); those rows are in git history. Open (LOW-7 takes L107 to L113; L141 to L144 wait for the next batch; L72, L105 and L134 are the owner's; L135 belongs to the spec 12 ticket):
+Every Low finding from QA and review lands here (decisions.md, "Faster pipeline (owner)"). They are fixed together in a batch ticket LOW-n about every 3 tickets. LOW-1 closed L1 to L12, LOW-2 L13 to L26, LOW-3 L27 to L65, LOW-4 L66 to L86, LOW-5 L87 to L106 (L98 closed as not reproduced), LOW-6 L114 to L140 (L120 closed by L119, L128 closed as accepted; L124 was closed by FILE-2's cleanup script), LOW-7 L107 to L113; those rows are in git history. Open (L141 to L148 wait for the next batch; L72, L105 and L134 are the owner's; L135 belongs to the spec 12 ticket):
 
 | # | From | Issue | Area |
 |---|---|---|---|
-| L107 | LOW-5 review | `ReportsPage.tsx:114,234-243`: a CSV export that fails after a filter change shows no error and downloads nothing. Show the export error (for the filters it ran with, or the current ones), never fail silently. | FE, reports |
-| L108 | LOW-5 review | `smoke.mjs:4806`: the L96 check passes vacuously when the report has no `/history` links. Assert at least one link first. | Smoke |
-| L109 | LOW-5 review | `TasksSection.tsx:10`: a stale comment about `fieldOf` and `task.invalidLastDone`. Fix or remove it. | FE, comment |
-| L110 | Catch-up QA | "Last run on" shows the attach date, not the actual run, when the only runs are dated before the day the checklist was attached (`VehicleChecklistService.cs:187-189,235-244` keep the attach values; `ChecklistsSection.tsx:260` labels them "Last run" whenever `runCount > 0`). Label it from the latest run, or say "Counting from <date>" when the attach date wins. | BE+FE, checklists |
-| L111 | Catch-up QA | At 390px in Hebrew the two export buttons reflow while the CSV is busy (the busy label is longer). Keep the layout stable. | FE, reports |
-| L112 | Catch-up QA | `/reports?year=2025abc` shows the invalid-year error, but the Year box shows the current year. Show no year selected while the URL year is invalid. | FE, reports |
-| L113 | Catch-up QA | The dashboard car card's Edit link is 28px wide (en) and 40px (he) at mobile width, under 44px (existing since MVP4-A). | FE, dashboard |
 | L134 | FILE-2 QA | Not tried on a real iPhone (camera photo converted to JPEG on upload, HEIC refused, the inline PDF view; since FILE-3 also a camera photo on a run). Needs a real device. | Owner or a device |
 | L135 | FILE-3 review | A future car delete or delete-account must delete run-photo rows first (`Attachment.ChecklistRunId` is `NoAction`) and remove every R2 object under `users/{id}/`. Belongs to the spec 12 ticket (see "Later"), not a LOW batch. | BE, spec 12 |
 | L141 | LOW-6 QA | The car photo race (two tabs changing the photo at once) is only mocked in smoke; QA saw a live 409, but no smoke step drives a real race. | Smoke |
 | L142 | LOW-6 review | Remove photo that gets a 409 while the photo still exists keeps the confirm open; only the no-photo case is smoke-tested. Add a mocked smoke step for it. | Smoke, car form |
 | L143 | LOW-6 review | Some `%` rules in `scripts/cleanup-test-users.sql` on reserved domains (`example.com` and the like) are still loose; the new domain guard keeps them safe. Tighten them when the script is next touched. | Script |
 | L144 | LOW-6 QA | The dev DB has new test users `qa-low6-…`; the cleanup script's rules cover them (joins L72, the owner's run). | Dev DB (owner) |
+| L145 | LOW-7 review | The empty Year option on `/reports` (shown for an invalid URL year) has no text, so a screen reader announces a blank choice. Give it an accessible label such as "No year" (en, he). | FE, reports, a11y |
+| L146 | LOW-7 QA | On `/checklists` the row Edit and Delete buttons sit about 8px in from the template name (button centering; pre-existing). Align them with the row edge. | FE, checklists |
+| L147 | LOW-7 QA | Not checked in a browser: "Last run on" after deleting the latest run (unit-tested only), and where focus lands after a failed CSV export. Add smoke steps when the area is next touched. | Smoke |
+| L148 | LOW-7 QA | The dev DB has new test users `qa-low7-…` and `qa+low7-…`; the cleanup script's rules cover them (joins L72, the owner's run). | Dev DB (owner) |
 | L105 | RPT-3 | Nobody has opened the exported CSV in real Excel (Hebrew, the BOM, `;` locales) or used the real print dialog and "Save as PDF". No agent can; the owner checks once (CHECKLIST.md, "Waiting on the owner"). | Owner |
 | L72 | LOW-3 housekeeping | The local dev DB has leftover test users. `scripts/cleanup-test-users.sql` covers them (RPT prefixes added in LOW-5) but was never run; the owner decides (CHECKLIST.md, "Waiting on the owner"). | Dev DB (owner) |
 
 ## Next ticket
 
-### LOW-7: Reports, dashboard and checklists Lows (L107 to L113)
+### NOT-1: In-app reminders (car documents, lead time, snooze)
 
-**Goal:** As a user, the Reports page never fails silently or shows a year it isn't using, the dashboard's Edit link is easy to tap, and a checklist's "Last run" is true.
+**Goal:** As a user, I record when my car's insurance, inspection, registration and licence expire, and the dashboard reminds me in time about those and about due tasks and checklists, with a lead time I choose and a snooze for reminders I can't act on yet.
 
-**Spec:** polish of spec 7 (run schedule), spec 8 (reports and export) and spec 10 (dashboard). Part 2 `VehicleChecklist` (as built: `LastRunDate`, `LastRunOdometerKm` hold the countdown start; `StartDate`, `StartOdometerKm` the attach values) and `ChecklistRun.RunAt`.
+**Spec:** section 9, bullets 2 (non-mileage reminders) and 3 (snooze and lead time). Bullet 1 (email or push) is NOT-2. Part 2: `VehicleDocument` (VehicleId, Type, ExpiryDate, Cost, Notes), `NotificationRule` (UserId, Channel, LeadDays, LeadKm), `Notification` (UserId, VehicleId, Kind task/document/checklist, RefId, SentAt, SnoozedUntil); Vehicle 1-N VehicleDocument.
 
-**Binding decisions:** "Cost reports, RPT-1", "Report export, RPT-3", "FILE-3 sign-off" (smoke process rule: never two smoke runs at once, never edit `client/src` during a browser run), "Checklist run rules, MVP5-B" and "MVP5-B sign-off: engineers' choices" (the countdown start), "Faster pipeline (owner)", "Hebrew form of address".
+**Binding decisions:** "Reminders, NOT-1" (new, all the rules below), "Task status rules" (Due soon and Overdue for tasks), "Checklist run rules, MVP5-B" (checklist due soon at 10%), the dashboard rules (MVP4-A: home page `/`, the `today` parameter), "Faster pipeline (owner)", "Hebrew form of address", and the smoke process rule in "FILE-3 sign-off" (never two smoke runs at once).
+
+**Rules (decisions.md, "Reminders, NOT-1")**
+- Document types: `Insurance`, `Inspection`, `Registration`, `Licence`. Several documents of one type on a car are allowed (for example compulsory and comprehensive insurance with different dates; Notes tells them apart). Renewing = editing `ExpiryDate`; old expiry dates are not kept. `Licence` (the driving licence) sits on a car like the others, because Part 2 has no per-user document.
+- Document status, from the client's `today` and the user's lead days: `Expired` when `ExpiryDate < today`; `Expiring` when `ExpiryDate <= today + LeadDays` (expiring today counts); otherwise `Ok`.
+- Lead time: one value per user, `LeadDays`, default 30, 1 to 365, set on `/settings`. It applies to documents. Tasks and checklists keep their own Due soon rules (a task's `DueSoonPercent`, 1 to 50, already configurable per task; checklists at 10%), so the dashboard counts and the reminders agree. `LeadKm` is not built (open question 3).
+- `NotificationRule`: one row per user with `Channel = InApp` (a new enum value next to `Email` and `Push`; NOT-2 adds email). No row means 30 days.
+- Reminders are computed on read, never stored: enabled tasks that are Due soon or Overdue, enabled checklists with a schedule that are Due soon or Overdue, and documents that are Expiring or Expired, on cars that are not archived.
+- Snooze: a `Notification` row per (UserId, Kind, RefId), unique, holding `SnoozedUntil` (a date; `SentAt` stays null until NOT-2). Snooze for 1, 7 or 30 days from the client's `today`; the reminder is hidden while `SnoozedUntil > today` and comes back on that date. Snoozing again moves the date. A snooze ends only at its date, not when the task is done or the document renewed (shortcut: at most 30 days, so a stale snooze can hide a new due date for at most that long). Undo right after snoozing removes it; there is no list of snoozed reminders, only their count. Snoozing hides the reminder only: the car card, its task status and the Overdue and Due soon counts don't change.
 
 **Scope**
 
-*Backend (backend-engineer, runs first; contract note in `docs/contracts/LOW-7.md`):*
-- **L110** The vehicle checklist DTO says where its countdown starts: add the latest run's date (`latestRunDate`, null without runs) next to the countdown start the status already uses (`lastRunDate`; set at `VehicleChecklistService.cs:187-189` and recomputed on run delete at `:235-244`), so the client can tell "last run" from "counting from the attach date". Status maths unchanged. Test: a checklist attached today with one run dated last month returns that run's date as `latestRunDate` and the attach date as `lastRunDate`.
+*Backend (backend-engineer, runs first; contract in `docs/contracts/NOT-1.md`):*
+- Entities and one migration `AddReminders`: `VehicleDocument` (`VehicleId`, `Type`, `ExpiryDate` date, `Cost` decimal(12,2) nullable, `Notes` up to 1,000; cascade from `Vehicle`; index `(VehicleId, ExpiryDate)`; at most 50 per car), `NotificationRule` (`UserId`, `Channel`, `LeadDays`; unique `(UserId, Channel)`; cascade from `User`), `Notification` (`UserId`, `VehicleId`, `Kind`, `RefId`, `SentAt` nullable, `SnoozedUntil` date nullable; unique `(UserId, Kind, RefId)`; cascade from `User`). Enums stored the way the existing ones are.
+- Documents: `GET /api/vehicles/{vehicleId}/documents?today=` (sorted by `expiryDate`, each with `status` and `daysLeft`, negative when expired), `POST /api/vehicles/{vehicleId}/documents`, `PUT /api/vehicles/{vehicleId}/documents/{id}`, `DELETE /api/vehicles/{vehicleId}/documents/{id}` (also deletes its `Notification` row). Body: `type`, `expiryDate`, `cost`, `notes`. Errors: 400 `vehicleDocument.invalidType`, `date.tooEarly` (before 1900) and a date after 2100 rejected, cost 0 to `ServiceRecord.MaxCost`, notes too long, 400 `vehicleDocument.tooMany` (51st), 400 `vehicleDocument.vehicleArchived` on POST, PUT and DELETE for an archived car (GET still works), 404 `vehicle.notFound` / `vehicleDocument.notFound` for another user's car or document. `today` follows the dashboard: optional, at most one day from the server's UTC date, else 400 `vehicleDocument.invalidDate`.
+- Reminders: `GET /api/reminders?today=` returns `{ leadDays, snoozedCount, items: [{ kind: "Task" | "Checklist" | "Document", refId, vehicleId, vehicleNickname, name (task or checklist name; null for a document), documentType (null unless a document), status: "Overdue" | "DueSoon" | "Expired" | "Expiring", dueDate (document expiry; null for tasks and checklists), remainingKm, remainingDays }] }`, sorted Overdue and Expired first, then by `remainingDays` (documents by `daysLeft`), ties by car nickname then name. Task and checklist status come from the existing shared status code, not a copy. Invalid `today`: 400 `reminder.invalidDate`.
+- Snooze: `POST /api/reminders/snooze` `{ kind, refId, days, today }` with `days` 1, 7 or 30 (else 400 `reminder.invalidSnooze`), upserting the row with `SnoozedUntil = today + days`; the item must be the user's and on an active car (else 404 `reminder.notFound`). `DELETE /api/reminders/snooze?kind=&refId=` removes it (204, also when there is none).
+- Lead time: `GET /api/me` returns `reminderLeadDays`; `PUT /api/me/settings` accepts `reminderLeadDays` (1 to 365, else 400 `settings.invalidLeadDays`), creating or updating the `InApp` rule.
+- Tests: document CRUD, validation and privacy (another user's car and document are 404); document status at the lead-day boundaries (expires today, today + LeadDays, today + LeadDays + 1, yesterday); reminders include due tasks, due checklists and expiring documents and exclude disabled tasks, manual-only and turned-off checklists, Ok items and archived cars; the sort order; snooze hides an item until `SnoozedUntil`, a second snooze moves the date, Undo restores it, `snoozedCount` counts only active snoozes; snoozing another user's item is 404; lead days default 30, saved, and out of range rejected; deleting a document deletes its snooze row.
 
-*Frontend (frontend-engineer):*
-- **L110** `ChecklistsSection.tsx:260`: "Last run on <date>" from `latestRunDate`; when the countdown starts from the attach date and it is later than the latest run, add "Counting from <attach date>" (en, he).
-- **L107** `ReportsPage.tsx:87-114,234-243` (`exportCsv` and its error): a CSV export that fails (also after a filter change while it ran) shows the export error next to the buttons; never silent.
-- **L111** At 390px in Hebrew the two export buttons keep their size and position while CSV is busy (fixed min-width or a busy indicator that doesn't change the label width).
-- **L112** `/reports?year=2025abc`: the invalid-year error shows and the Year box shows no year selected (not the current year).
-- **L113** The dashboard car card's Edit link is at least 44 by 44 px in en and he at mobile width.
-- **L109** Remove or correct the stale comment at `TasksSection.tsx:10`.
-- **L108** Smoke: the L96 check (`smoke.mjs:4806`) asserts at least one `/history` link before checking them.
+*Frontend (frontend-engineer, builds against the contract):*
+- **Car page `/cars/:id`: a Documents section** (after To-dos): each document shows its type, expiry date, a status badge ("Expired N days ago", "Expires today", "Expires in N days", or the plain date when Ok), cost in the user's currency when set, and notes. Add (type select, expiry date required, cost, notes), Edit in place, Delete with a confirm. Archived car: read-only with the same note the other sections use. Empty: one line inviting the user to add insurance, inspection, registration or licence to get a reminder.
+- **Dashboard `/`: a Reminders card** above the car cards, one row per item: the car's nickname, the task, checklist or document type, the status in words (tasks and checklists as on the car cards; documents as above), and a link to the car page. Each row has Snooze with three choices (1 day, 1 week, 1 month); after snoozing, the row goes and an `aria-live` message says "Snoozed until <date>" with Undo. Empty: "Nothing needs your attention", plus "N snoozed" when `snoozedCount > 0`. Loading and error states with Retry like the rest of the dashboard. Hidden when the user has no cars (the dashboard's own empty state shows).
+- **Settings `/settings`:** "Remind me before a document expires" with a number of days (1 to 365), saved like the other settings.
+- All new strings in `en` and `he` (`i18n.ts`); every new API error code translated.
+- Smoke steps: add, edit and delete a document; an expiring document and an overdue task show in Reminders; snooze and Undo; lead days change moves a document in or out of Reminders; the empty state; Hebrew at 390px.
 
 **Acceptance criteria**
-1. [BE] `latestRunDate` is in the vehicle checklist DTO, null without runs, and the test above passes; status unchanged for existing tests.
-2. [FE] A checklist attached today with only an older run shows "Last run on <run date>" and "Counting from <today>"; with a newer run, only "Last run on" (smoke, en and he).
-3. [FE] A mocked failing CSV export shows the translated error, including when the filter changed mid-export (smoke).
-4. [FE] At 390px Hebrew the export buttons don't move while busy (smoke compares bounding boxes before and during the busy state).
-5. [FE] `/reports?year=2025abc` shows the error and an empty Year selection (smoke).
-6. [FE] The dashboard Edit link measures at least 44x44 px at 390px in en and he (smoke).
-7. [FE] The L96 check fails if there are no `/history` links (smoke asserts a count above 0); the stale comment is gone.
-8. [BE+FE] No regressions: `dotnet test`, build, lint 0, smoke `SMOKE_ALL=1` in all 4 setups run alone; browser QA in 4 setups. No new dependency.
+1. [BE] The migration adds the three tables with the indexes and constraints above; `dotnet test` passes including the new tests listed.
+2. [BE] Document endpoints validate as listed, return `status` and `daysLeft`, refuse changes on an archived car, and return 404 for another user's car or document.
+3. [BE] `GET /api/reminders` returns exactly the due tasks, due checklists and expiring or expired documents of active cars, in the stated order, with task and checklist status equal to what the car page shows.
+4. [BE] Snooze hides an item until `SnoozedUntil`, accepts only 1, 7 or 30 days, Undo restores it, and `snoozedCount` is right; another user's item is 404.
+5. [BE] `reminderLeadDays` defaults to 30, saves through settings, rejects 0 and 366, and changes which documents are Expiring.
+6. [FE] On the car page a user adds, edits and deletes a document in English and Hebrew, sees the right badge for expired, today, within the lead time and later, and an archived car's documents are read-only (smoke).
+7. [FE] The dashboard's Reminders card lists an expiring document, an overdue task and a due checklist with their car and a working link; Snooze removes the row with "Snoozed until" and Undo brings it back; the empty state and the snoozed count show (smoke).
+8. [FE] Changing the lead days on `/settings` adds or removes a document from Reminders without a reload of the browser (smoke).
+9. [FE] Loading, error with Retry, and every new API error code show translated messages; Hebrew is right to left with dates and numbers in the right order (`<bdi>` where mixed).
+10. [FE] At 390px wide in both languages: no sideways scrolling, Snooze and its choices and all new buttons at least 44 by 44 px, the snooze choices usable by keyboard and screen reader.
+11. [BE+FE] No regressions: `dotnet test`, build, lint 0, bundle under 600 kB, smoke `SMOKE_ALL=1` in all 4 setups run alone; code review, Hebrew review and browser QA in 4 setups. No new dependency.
 
-**Out of scope:** new report types; notifications; any files work (L141 to L144 wait for the next batch).
+**Out of scope:** email and push (NOT-2); `LeadKm`; a separate Reminders page or a header badge; a list of snoozed reminders; ending a snooze when the item is done; files on documents (a photo of the policy); document costs in Reports or TCO; expiry history and automatic renewal; reminders for archived cars or to-dos; predicted due dates from average km per day.
 
-**Open questions:** none.
+**Open questions** (none block the ticket; the defaults in "Reminders, NOT-1" apply until the owner says otherwise):
+1. Should the driving licence live on a car (as built here, since Part 2 has only `VehicleDocument`), or on your account?
+2. Should document costs (insurance, licence fees) count in Reports and the total cost of ownership? Default: no, shown on the document only.
+3. Do you want a lead distance too (remind N km before a task is due, Part 2 `LeadKm`), on top of each task's Due soon percent? Default: no.
+4. (For NOT-2, still open) Which email service and sender address for reminder emails.
 
 ---
 
 ### Later
-- **NOT-1, then NOT-2:** notifications (spec 9). NOT-1 is in-app: `VehicleDocument` (insurance, inspection, registration, licence, with an expiry date), `NotificationRule` lead days and lead km, `Notification` with snooze, shown on the dashboard. NOT-2 sends the email and needs the owner's provider and credentials.
+- **NOT-2:** email when a task, checklist or document is due (spec 9 bullet 1), using NOT-1's reminders, `Notification.SentAt` to avoid duplicate sends and an `Email` `NotificationRule`. Needs the owner's email provider, sender address and credentials (user-secrets).
 - **Predicted due date** from `AvgKmPerDay` (spec 2.3, optional).
 - **Data export and delete-account** (spec 12): must include checklists, runs, to-dos, tires and stored files; the export strips the direction marks from to-do descriptions (decisions.md, "Direction marks in the to-do prefill"). Deleting a car or the account must first delete the run-photo `Attachment` rows (`ChecklistRunId` is `NoAction`, L135), then every R2 object under `users/{userId}/`: the car photo, receipts and run photos. An orphan sweep would also clear the objects of test users already deleted by `scripts/cleanup-test-users.sql` (the `file1-…`, `file2-…` and `file3-…` users).
 
 ## Changed since last audit
-- **Signed off:** LOW-6 (files and photos Lows; uncommitted in the working tree, as are FILE-1 to FILE-3), with browser QA in 4 setups.
-- **Status changes:** none. Counts unchanged: Done 42, Partial 5, Missing 4, Deferred 6. Spec 1 photo row: the L125 note removed (VIN on edit is now tested).
-- **Backlog:** L114 to L133 and L136 to L140 closed (L120 by L119, L128 as accepted); L134 (owner) and L135 (spec 12) stay open; new Lows L141 to L144.
-- **New decision** (`docs/decisions.md`, 2026-10-18): "LOW-6 sign-off".
-- **Next ticket:** LOW-7 (L107 to L113), checked against the current code: line references refreshed and the new DTO field named `latestRunDate` to match the built `lastRunDate`/`startDate` names. The LOW-6 ticket text is in git history once committed, and in `docs/contracts/LOW-6.md`.
+- **Signed off:** LOW-7 (reports, dashboard and checklists Lows L107 to L113; uncommitted in the working tree), with browser QA in 4 setups.
+- **Status changes:** none. Counts unchanged: Done 42, Partial 5, Missing 4, Deferred 6. Spec 8 rows: the L107, L111 and L112 notes replaced by their fixes.
+- **Backlog:** L107 to L113 closed; new Lows L145 to L148 (empty Year option has no screen reader text; `/checklists` row buttons 8px in; two browser checks not done; new test users).
+- **New decisions** (`docs/decisions.md`, 2026-10-18): "LOW-7 sign-off" (Retry after a mid-export filter change exports the current filters; owner may override) and "Reminders, NOT-1" (document types, lead days for documents only, snooze rules).
+- **Next ticket:** NOT-1 (in-app reminders: car documents, lead time, snooze), written in full above. The LOW-7 ticket text is in git history once committed, and the API part in `docs/contracts/LOW-7.md`.

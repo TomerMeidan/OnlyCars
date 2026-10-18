@@ -3009,6 +3009,14 @@ for (const s of setups) {
     await page.reload()
     await dashCar().waitFor()
   })
+  await step('dashboard-edit-link-size', async () => {
+    // LOW-7 L113: the car card's Edit link is at least 44 by 44px at 390px.
+    await page.setViewportSize({ width: 390, height: 844 })
+    const box = await dashCar().locator('.actions a[href$="/edit"]').boundingBox()
+    if (!box || box.width < 44 || box.height < 44) throw new Error(`Edit link ${box?.width}x${box?.height}px`)
+    await page.screenshot({ path: `${OUT}/${s.name}-dashboard-edit-390.png` })
+    await page.setViewportSize(s.viewport)
+  })
   await step('dashboard-archive-fails', async () => {
     // LOW-2 L23: a failed archive shows a translated error on that card, which stays as it was, with focus back on Archive.
     const bike = page.locator('.cars > li').filter({ has: page.getByRole('link', { name: 'Dash bike', exact: true }) })
@@ -4106,6 +4114,32 @@ for (const s of setups) {
     await apiCall('DELETE', `/checklist-templates/${tpl.id}`)
     await page.goto(`${BASE}/`) // dashboard-open-issues starts on the dashboard
   })
+  await step('checklist-last-run-before-attach', async () => {
+    // LOW-7 L110: attached today with only an older run: "Last run on" that run's date and "Counting from" today; a run today leaves only "Last run on".
+    const tpl = await apiCall('POST', '/checklist-templates', { name: 'Attached late', items: [{ label: 'Lights', type: 'Check' }] })
+    const [today, old] = [await localDate(), await histDay(-30)]
+    const vc = await apiCall('POST', `/vehicles/${dashCarId}/checklists`, { templateId: tpl.id, intervalKm: null, intervalDays: 60, date: today })
+    const runOn = (runAt) => apiCall('POST', `/vehicle-checklists/${vc.id}/runs`, { runAt, items: [{ templateItemId: tpl.items[0].id, boolValue: true, isFlagged: false }] })
+    const r1 = await runOn(old)
+    if (r1.checklist.latestRunDate !== old || r1.checklist.lastRunDate !== today) throw new Error(`API latestRunDate ${r1.checklist.latestRunDate}, lastRunDate ${r1.checklist.lastRunDate}`)
+    const row = ckRow('Attached late')
+    const linesAre = async (want, what) => {
+      await row.waitFor()
+      const got = (await row.locator(':scope > p.muted').allTextContents()).slice(1).map(plain) // after the interval line
+      if (got.join('|') !== want.join('|')) throw new Error(`${what}: "${got.join('|')}", want "${want.join('|')}"`)
+    }
+    const lastOn = async (d) => `${he ? 'בוצעה לאחרונה ב־' : 'Last run on '}${await fmtDay(d)}`
+    await page.goto(`${BASE}${ckCarPath()}`)
+    await linesAre([await lastOn(old), `${he ? 'הספירה התחילה ב־' : 'Counting from '}${await fmtDay(today)}`], 'only an older run')
+    await page.screenshot({ path: `${OUT}/${s.name}-checklist-counting-from.png`, fullPage: true })
+    const r2 = await runOn(today)
+    await page.reload()
+    await linesAre([await lastOn(today)], 'with a run today')
+    for (const r of [r2, r1]) await apiCall('DELETE', `/checklist-runs/${r.run.id}`)
+    await apiCall('DELETE', `/vehicle-checklists/${vc.id}`)
+    await apiCall('DELETE', `/checklist-templates/${tpl.id}`)
+    await page.goto(`${BASE}/`) // dashboard-open-issues starts on the dashboard
+  })
   await step('dashboard-open-issues', async () => {
     // Criterion 7: Dash car's 2 open to-dos link to its page; after one is marked done it shows 1; other cars show nothing.
     // Already on the dashboard after dashboard-start-checklist.
@@ -4736,8 +4770,13 @@ for (const s of setups) {
     await page.locator('main .by-car').waitFor()
     forgetCk(400, '/reports/costs')
     // A bad year in the URL: its message and a way to this year.
-    await page.goto(`${BASE}/reports?year=abc`)
-    if (plain(await alert.textContent()) !== RP.badYear) throw new Error(`bad year "${await alert.textContent()}"`)
+    // LOW-7 L112: and the Year box shows no year, not the current one: not a number, or a number the API refuses.
+    for (const bad of ['1800', '2025abc']) {
+      await page.goto(`${BASE}/reports?year=${bad}`)
+      if (plain(await alert.textContent()) !== RP.badYear) throw new Error(`bad year ${bad}: "${await alert.textContent()}"`)
+      const shownYear = await page.locator(yearSel).evaluate((el) => el.selectedOptions[0]?.textContent ?? '')
+      if ((await page.inputValue(yearSel)) !== '' || shownYear !== '') throw new Error(`Year box "${shownYear}" for the year ${bad}`)
+    }
     await page.getByRole('button', { name: RP.thisYear, exact: true }).click()
     await page.locator('main .months').waitFor()
     if ((await page.inputValue(yearSel)) !== String(ly + 1)) throw new Error('not this year')
@@ -4814,8 +4853,9 @@ for (const s of setups) {
     if (!old.length || old.some((h) => h.includes('vehicleId=')) || !(await page.locator('main .by-car').count())) throw new Error(`links while loading ${old}`)
     await page.unroute(costs, slow)
     await page.locator('main .report[aria-busy=false]').waitFor()
-    const now = (await hrefs()).filter((h) => !h.includes(`vehicleId=${rpA}`))
-    if (now.length) throw new Error(`links without the car ${now}`)
+    const fresh = await hrefs()
+    const now = fresh.filter((h) => !h.includes(`vehicleId=${rpA}`))
+    if (!fresh.length || now.length) throw new Error(`${fresh.length} links after loading, without the car ${now}`) // LOW-7 L108: no links is a failure too
   })
   // RPT-2: the charts. Bar sizes as a share of their slot, rounded to 2 decimals; x is each month's left edge.
   const rpCharts = () => page.evaluate(() => {
@@ -5069,6 +5109,31 @@ for (const s of setups) {
     await page.waitForTimeout(2500) // a second export would need two slow pages
     await page.unroute(recs, slow)
     if (downloads !== before + 1) throw new Error(`${downloads - before} downloads`)
+  })
+  await step('reports-export-busy-fails-after-filter', async () => {
+    // LOW-7 L111: at 390px both export buttons keep their boxes while the CSV is busy. L107: an export that fails after a filter change shows its error.
+    const recs = '**/api/service-records?**'
+    await page.setViewportSize({ width: 390, height: 844 })
+    await page.goto(`${BASE}/reports?year=${ey}&vehicleId=${xM}`)
+    await xReady()
+    const boxes = () => xBtns.evaluateAll((bs) => bs.slice(0, 2).map((b) => { const r = b.getBoundingClientRect(); return [r.x, r.y, r.width, r.height].map(Math.round).join() }).join('|'))
+    const ready = await boxes()
+    await page.route(recs, async (r) => { await page.waitForTimeout(1000); await r.fulfill({ status: 500, contentType: 'application/json', body: '{}' }).catch(() => {}) })
+    const before = downloads
+    await xBtns.first().click()
+    await xStateIs(`${XP.busy}:true|${XP.pdf}:false`, 'building the CSV')
+    const busy = await boxes()
+    await page.screenshot({ path: `${OUT}/${s.name}-reports-export-busy-390.png`, fullPage: true })
+    if (busy !== ready) throw new Error(`buttons moved while busy: ${ready} to ${busy}`)
+    await page.selectOption(rpCarSel, '')
+    await page.locator('main .by-car').waitFor()
+    const alert = page.locator('main .filters .export [role=alert]')
+    await alert.waitFor({ timeout: 5000 }).catch(() => { throw new Error('no CSV error after a filter change mid-export') })
+    if (plain(await alert.textContent()) !== `${XP.failed} ${HS.generic}`) throw new Error(`CSV error "${await alert.textContent()}"`)
+    if (downloads !== before) throw new Error('a failed export downloaded a file')
+    await page.unroute(recs)
+    forget500()
+    await page.setViewportSize(s.viewport)
   })
   await step('reports-export-leave', async () => {
     // LOW-5 L106: leaving /reports mid-export downloads nothing.

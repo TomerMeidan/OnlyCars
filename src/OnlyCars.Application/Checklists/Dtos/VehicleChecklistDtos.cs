@@ -3,6 +3,7 @@ using OnlyCars.Domain;
 
 namespace OnlyCars.Application.Checklists.Dtos;
 
+// LastRunDate/LastRunOdometerKm are the countdown start (attach values or a later run); LatestRunDate is the latest run's RunAt, null without runs (L110).
 // Status, Remaining* and Progress follow the task rules with a 10% due-soon threshold; all null when off or manual only (no intervals).
 public record VehicleChecklistDto(
     Guid Id,
@@ -19,7 +20,8 @@ public record VehicleChecklistDto(
     DueStatus? Status,
     decimal? RemainingKm,
     int? RemainingDays,
-    double? Progress);
+    double? Progress,
+    DateOnly? LatestRunDate);
 
 // TemplateId is nullable only so a missing value gets a coded error; Date is the client's local date (null is UTC today).
 public record AttachChecklistRequest(Guid? TemplateId, int? IntervalKm, int? IntervalDays, DateOnly? Date);

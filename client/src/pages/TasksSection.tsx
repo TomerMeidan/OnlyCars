@@ -7,7 +7,7 @@ import { splitDays, unitDays, type Unit } from '../units'
 import { noItems, useItemErrors } from '../useItemErrors'
 import { useRow } from '../useRow'
 
-// The task form's date errors are about Last done date (the error shows right under it); others are about the whole form.
+// The field a task error is about (aria-invalid, and focus after a failed Save): the date errors Last done date, task.invalidLastDone the Last done reading; any other code focuses Name.
 const fieldOf: Record<string, string> = { 'date.tooEarly': 'lastDoneDate', 'task.futureDate': 'lastDoneDate', 'task.invalidLastDone': 'lastDoneOdometerKm' }
 
 type TaskBody = Pick<MaintenanceTask, 'name' | 'category' | 'intervalKm' | 'intervalDays' | 'dueSoonPercent' | 'lastDoneOdometerKm' | 'lastDoneDate'>

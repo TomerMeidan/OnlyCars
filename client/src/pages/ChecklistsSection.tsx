@@ -256,10 +256,14 @@ function ChecklistRow({ car, checklist: c, readOnly, describedBy, addPhotos, onE
       {c.status && <Due name={name} progress={c.progress!} km={c.remainingKm} days={c.remainingDays} />}
       <p className="muted">{c.intervalKm == null && c.intervalDays == null ? t('manualOnly') : <Interval km={c.intervalKm} days={c.intervalDays} />}</p>
       <p className="muted">
-        {c.runCount ? (
-          <Trans i18nKey="lastRun" values={{ date: fmtDate(c.lastRunDate, i18n.resolvedLanguage) }} components={{ d: <time dateTime={c.lastRunDate} /> }} />
+        {c.latestRunDate ? (
+          <Trans i18nKey="lastRun" values={{ date: fmtDate(c.latestRunDate, i18n.resolvedLanguage) }} components={{ d: <time dateTime={c.latestRunDate} /> }} />
         ) : t('notRunYet')}
       </p>
+      {/* Runs exist but all predate the attach date, so the countdown starts from the attach date (L110). */}
+      {c.status && c.latestRunDate && c.lastRunDate > c.latestRunDate && (
+        <p className="muted"><Trans i18nKey="countingFrom" values={{ date: fmtDate(c.lastRunDate, i18n.resolvedLanguage) }} components={{ d: <time dateTime={c.lastRunDate} /> }} /></p>
+      )}
 
       {!readOnly && mode === 'view' && (
         <div className="actions">

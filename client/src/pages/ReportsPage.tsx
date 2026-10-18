@@ -40,8 +40,10 @@ export default function ReportsPage() {
   const [shown, setShown] = useState<{ key: string; vehicleId: string; report?: CostReport; error?: unknown } | null>(null)
   // After Retry or an error's way out the button is gone, so focus goes to the h1.
   const refocus = useRef(false)
-  // The CSV export for the filters it ran with (`at`), so a filter change drops a stale error.
-  const [csv, setCsv] = useState<{ at: string; busy?: boolean; error?: unknown } | null>(null)
+  // The CSV export; its error is for the filters current when it failed (`at`, L107: also after a change mid-export), so a later change drops it.
+  const [csv, setCsv] = useState<{ at?: string; busy?: boolean; error?: unknown } | null>(null)
+  const keyNow = useRef(key)
+  useEffect(() => { keyNow.current = key }, [key])
   const csvButton = useRef<HTMLButtonElement>(null)
   usePage(t('reports'))
 
@@ -64,6 +66,8 @@ export default function ReportsPage() {
   const busy = shown?.key !== key
   const report = shown?.report
   const problem = shown?.error instanceof ApiError ? shown.error.problem : undefined
+  // Not a number, or a number the API refused for these filters (1800): the Year box shows no year (L112).
+  const yearOk = /^\d+$/.test(year) && !(!busy && problem?.code === 'report.invalidYear')
   // Not the caller's car, or not a car id at all (model binding's 400): either way, back to All cars.
   const badCar = problem?.code === 'vehicle.notFound' || !!problem?.errors?.vehicleId
 
@@ -86,7 +90,7 @@ export default function ReportsPage() {
   // Every record of the report's year and car, page by page, oldest first, as a downloaded CSV; nothing downloads if a page fails.
   async function exportCsv(r: CostReport, vehicleId: string) {
     if (csvBusy) return // aria-disabled rather than disabled, so the button keeps focus
-    setCsv({ at: key, busy: true })
+    setCsv({ busy: true })
     try {
       const q = { from: `${r.year}-01-01`, to: `${r.year}-12-31`, ...(vehicleId && { vehicleId }), take: '100' }
       const records: ServiceRecord[] = []
@@ -112,11 +116,11 @@ export default function ReportsPage() {
       setTimeout(() => URL.revokeObjectURL(a.href))
       setCsv(null)
     } catch (error) {
-      setCsv({ at: key, error })
+      setCsv({ at: keyNow.current, error })
     }
   }
 
-  const years = [...new Set([...(report?.years.map((y) => String(y.year)) ?? []), thisYear, ...(/^\d+$/.test(year) ? [year] : [])])].sort().reverse()
+  const years = [...new Set([...(report?.years.map((y) => String(y.year)) ?? []), thisYear, ...(yearOk ? [year] : [])])].sort().reverse()
   const carOptions = cars && [...cars].sort((a, b) => Number(a.isArchived) - Number(b.isArchived))
 
   const amount = (v: number, maxDigits?: number) => <bdi>{money(v, lng, user?.currency, maxDigits)}</bdi>
@@ -217,7 +221,8 @@ export default function ReportsPage() {
       <div className="card inline-form filters" role="search">
         <label>
           {t('reportYear')}
-          <select value={year} onChange={(e) => update('year', e.target.value)}>
+          <select value={yearOk ? year : ''} onChange={(e) => update('year', e.target.value)}>
+            {!yearOk && <option value="" disabled />}
             {years.map((y) => <option key={y} value={y}>{y}</option>)}
           </select>
         </label>
@@ -231,8 +236,9 @@ export default function ReportsPage() {
         <p className="muted" role="status">{busy && t('loading')}</p>
         {!(report && isEmpty(report, shown.vehicleId)) && (
           <div className="actions export">
-            <button type="button" ref={csvButton} aria-disabled={!canExport || csvBusy} onClick={() => canExport && exportCsv(report, shown.vehicleId)}>
-              {csvBusy ? t('exportCsvBusy') : t('exportCsv')}
+            <button type="button" className="stack" ref={csvButton} data-alt={t(csvBusy ? 'exportCsv' : 'exportCsvBusy')}
+              aria-disabled={!canExport || csvBusy} onClick={() => canExport && exportCsv(report, shown.vehicleId)}>
+              <span>{csvBusy ? t('exportCsvBusy') : t('exportCsv')}</span>
             </button>
             <button type="button" aria-disabled={!canExport} onClick={() => canExport && window.print()}>{t('exportPdf')}</button>
           </div>
