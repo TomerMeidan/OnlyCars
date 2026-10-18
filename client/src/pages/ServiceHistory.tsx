@@ -466,10 +466,10 @@ const isHttps = (u: string) => { try { return new URL(u).protocol === 'https:' }
 // What differs between a service's files (FILE-2) and a run's photos (FILE-3): the types, the words, and the error texts that
 // replace errorMessage()'s (file.* name the car photo; attachment.tooMany is one code for both parents).
 const kinds = {
-  file: { types: attachmentTypes, list: 'attachments', add: 'addFile', busy: 'uploadingFile', confirm: 'confirmDeleteFile',
+  file: { types: attachmentTypes, list: 'attachments', add: 'addFile', busy: 'uploadingFile', confirm: 'confirmDeleteFile', max: 'filesMax',
     errors: (c: string) => c.startsWith('file.') && `attachmentFile.${c.slice(5)}` },
-  photo: { types: photoTypes, list: 'photos', add: 'addPhoto', busy: 'uploadingPhoto', confirm: 'confirmDeletePhoto',
-    errors: (c: string) => (c.startsWith('attachment.') ? `runPhoto.${c.slice(11)}` : c === 'file.quotaExceeded' && 'attachmentFile.quotaExceeded') },
+  photo: { types: photoTypes, list: 'photos', add: 'addPhoto', busy: 'uploadingPhoto', confirm: 'confirmDeletePhoto', max: 'photosMax',
+    errors: (c: string) => (c.startsWith('attachment.') || c === 'file.unsupportedType' ? `runPhoto.${c.slice(c.indexOf('.') + 1)}` : c === 'file.quotaExceeded' && 'attachmentFile.quotaExceeded') },
 }
 
 // A parent's files under its row: a service's files (FILE-2) or a run's photos (FILE-3). Open everywhere; Delete where canDelete;
@@ -494,6 +494,10 @@ export function Attachments<T extends { attachments: Attachment[] }>({ kind, par
   const row = useRow<string>()
   const { mode, busy, error, opener } = row
   const [uploading, setUploading] = useState(false)
+  // A failed reload after an upload's 409: shown after the conflict message, not instead of it.
+  const [reloadError, setReloadError] = useState<unknown>(null)
+  // The last file was deleted where none can be added: the group stays (empty) this once, to hold focus.
+  const [emptied, setEmptied] = useState(false)
   const input = useRef<HTMLInputElement>(null)
   const pick = useRef<HTMLButtonElement>(null)
   const group = useRef<HTMLDivElement>(null)
@@ -513,6 +517,7 @@ export function Attachments<T extends { attachments: Attachment[] }>({ kind, par
     if (input.current) input.current.value = '' // so the same file can be chosen again
     if (!file) return
     refocus.current = 'add'
+    setReloadError(null)
     setUploading(true)
     const err = await row.run(async () => {
       const invalid = fileError(file, k.types)
@@ -523,7 +528,9 @@ export function Attachments<T extends { attachments: Attachment[] }>({ kind, par
         onChange(await api<T>(`${url}/attachments`, 'POST', body))
       } catch (e) {
         // Raced a Delete or another upload: the message stays, over the files as they are now (or the parent is gone).
-        if (e instanceof ApiError && e.problem.code === 'concurrency.conflict') await reload()
+        if (e instanceof ApiError && e.problem.code === 'concurrency.conflict') {
+          await reload().catch((r) => { if (isGone(r)) throw r; setReloadError(r) })
+        }
         throw e
       }
     })
@@ -532,10 +539,12 @@ export function Attachments<T extends { attachments: Attachment[] }>({ kind, par
   }
 
   async function remove(a: Attachment, retryFrom: HTMLElement) {
+    setReloadError(null)
     const err = await row.run(() => api(`${url}/attachments/${encodeURIComponent(a.id)}`, 'DELETE'), retryFrom)
     // Already deleted (another tab): it goes from the list too, with the message.
     if (err && !(err instanceof ApiError && err.problem.code === 'attachment.notFound')) return
     refocus.current = 'list'
+    if (files.length === 1 && !canAdd) setEmptied(true)
     onChange({ ...parent, attachments: files.filter((x) => x.id !== a.id) })
     row.close()
   }
@@ -546,6 +555,7 @@ export function Attachments<T extends { attachments: Attachment[] }>({ kind, par
   async function open(e: MouseEvent<HTMLAnchorElement>, a: Attachment) {
     if (!isStale(a)) return
     e.preventDefault()
+    setReloadError(null)
     const w = window.open('', '_blank')
     if (w) w.opener = null // as rel="noopener"
     const err = await row.run(async () => {
@@ -565,13 +575,14 @@ export function Attachments<T extends { attachments: Attachment[] }>({ kind, par
   }
 
   const own = k.errors(error instanceof ApiError ? error.problem.code ?? '' : '')
-  const message = own ? t(`errors.${own}`, { defaultValue: errorMessage(error) }) : errorMessage(error)
+  const message = errorMessage(error, undefined, own && i18n.exists(`errors.${own}`) ? own : undefined)
   const size = (b: number) => {
     const [n, unit] = b < 1_048_576 ? [Math.max(b / 1024, 0.1), 'kb' as const] : [b / 1_048_576, 'mb' as const]
     return <><bdi>{n.toLocaleString(lng, { maximumFractionDigits: 1 })}</bdi> {t(unit)}</>
   }
 
-  if (!canDelete && files.length === 0) return null
+  // Nothing to show or add (an archived car's or /history's record without files): no empty group for screen readers.
+  if (!canAdd && files.length === 0 && !emptied) return null
   return (
     <div className="files" role="group" aria-label={t(k.list)} tabIndex={-1} ref={group}>
       {files.length > 0 && (
@@ -582,7 +593,9 @@ export function Attachments<T extends { attachments: Attachment[] }>({ kind, par
               <li key={a.id}>
                 {/* No URL without storage (or not https): the name only. */}
                 {a.url && isHttps(a.url) ? (
-                  <a href={a.url} target="_blank" rel="noopener noreferrer" onClick={(e) => open(e, a)}><bdi>{a.fileName}</bdi></a>
+                  <a href={a.url} target="_blank" rel="noopener noreferrer" onClick={(e) => open(e, a)}>
+                    <bdi>{a.fileName}</bdi><span className="visually-hidden">{` ${t('opensNewTab')}`}</span>
+                  </a>
                 ) : <bdi>{a.fileName}</bdi>}
                 <span className="muted">{size(a.sizeBytes)}</span>
                 {canDelete && mode !== a.id && (
@@ -603,6 +616,7 @@ export function Attachments<T extends { attachments: Attachment[] }>({ kind, par
           </ul>
         </>
       )}
+      {canAdd && files.length >= MAX_FILES && <p className="muted">{t(k.max)}</p>}
       {canAdd && files.length < MAX_FILES && (
         <>
           <button type="button" className="add-file" ref={pick} aria-label={uploading ? undefined : addLabel} aria-busy={uploading} aria-disabled={busy}
@@ -612,7 +626,7 @@ export function Attachments<T extends { attachments: Attachment[] }>({ kind, par
           <input ref={input} type="file" accept={k.types} hidden onChange={(e) => upload(e.target.files?.[0])} />
         </>
       )}
-      {error != null && !isGone(error) && <p className="error" role="alert">{message}</p>}
+      {error != null && !isGone(error) && <p className="error" role="alert">{message}{reloadError != null && ` ${errorMessage(reloadError)}`}</p>}
     </div>
   )
 }

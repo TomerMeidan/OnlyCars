@@ -19,7 +19,7 @@ What the server does: checks the type by content, removes all metadata by keepin
 
 ## New: `DELETE /api/vehicles/{id}/photo`
 
-No body. **204**. Clears the photo and deletes the stored file. Allowed on an archived car. A car without a photo also gives 204.
+No body. **204**. Clears the photo and deletes the stored file. Allowed on an archived car. A car without a photo also gives 204. A stored key that fails the key check is cleared too, but nothing is deleted from storage (LOW-6, L118).
 
 ## Changed: every vehicle DTO
 
@@ -40,19 +40,20 @@ Dashboard cards (`DashboardVehicleDto`) have no photo (out of scope).
 | `file.storageUnavailable` | 503 | none | Storage not configured (no R2 settings, e.g. a fresh clone). Checked first, on both endpoints. |
 | `vehicle.notFound` | 404 | none | Another user's car, or no such car (both endpoints). |
 | `vehiclePhoto.vehicleArchived` | 400 | none | `PUT` on an archived car, like `issue.vehicleArchived` and `tireMount.vehicleArchived`. (`DELETE` is allowed.) |
-| `http.429` | 429 | none; `Retry-After` header in seconds | `PUT` only, per signed-in user: a third upload while two are still running, or more than **10 uploads in 10 minutes** (fixed window). Checked before everything else, also before the body is read. Same shape as the app's other 429s. |
+| `concurrency.conflict` | 409 | none | Another photo change (`PUT` or `DELETE`) on the same car saved while this one ran (both endpoints; LOW-6, L116). The file just uploaded is deleted; the car keeps the other change. Reload the car. |
+| `http.429` | 429 | none; `Retry-After` header in seconds | `PUT` only, per signed-in user: a third upload while two are still running, or more than **10 uploads in 10 minutes** (fixed window; production value, `RateLimiting:UploadPermitLimit`; Development uses 10,000 since LOW-6). Checked before everything else, also before the body is read. Same shape as the app's other 429s. |
 | `file.required` | 400 | none | No `file` field, an empty file, a body that isn't multipart, or a malformed multipart body. |
 | `file.tooLarge` | 413 | `maxBytes`: 10485760 | The file is over 10 MB. Over about 10 MB + 64 KB the server stops reading the body; a browser may then see a dropped connection instead of the 413, so check the size before sending. |
 | `file.unsupportedType` | 400 | none | Not a well-formed JPEG, PNG or WebP by content (a text file named `.jpg`, a GIF, HEIC, a cut-off file). |
 | `http.500` | 500 | none | The upload to storage itself failed (R2 down or refused). The car is unchanged. |
 
-Order of checks on `PUT`: upload rate limit, storage, car ownership, archived, file present, size, type.
+Order of checks on `PUT`: upload rate limit, storage, car ownership, archived, file present, size, type; the 409 comes last, at the save.
 
 Other endpoints keep the 64 KB body limit (`http.413`).
 
 ## Examples (curl, live API and the real bucket)
 
-Account id, bucket, credential and signature redacted; the rest is as returned.
+Account id, bucket, credential and signature redacted; the rest is as returned. (The 409 and the ANMF strip were added in LOW-6; see `LOW-6.md`.)
 
 ```
 PUT /api/vehicles/bf52a4c4-a81c-4ddc-a537-312a69c83dac/photo   (-F "file=@gps.jpg;type=image/jpeg", a 788-byte JPEG with GPS EXIF and rotation 6)

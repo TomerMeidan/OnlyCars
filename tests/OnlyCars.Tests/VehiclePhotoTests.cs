@@ -57,7 +57,11 @@ public class FakeFileStorage : IFileStorage
             throw new IOException("storage down");
         }
 
-        Objects.Remove(key);
+        lock (Objects)
+        {
+            Objects.Remove(key);
+        }
+
         return Task.CompletedTask;
     }
 
@@ -324,6 +328,40 @@ public class VehiclePhotoTests : FileTestBase
     }
 
     [Fact]
+    public void AnimatedWebp_InsideAnAnmfFrame_KeepsOnlyAlphAndImageData_FixesFrameAndRiffSizes()
+    {
+        byte[] frameHeader = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]; // position, size, duration, flags
+        byte[] alph = WebpChunk("ALPH", [0, 1, 2]); // odd size, padded
+        byte[] vp8l = WebpChunk("VP8L", [0x2F, 0, 0, 0, 0]);
+        byte[] head = [.. WebpChunk("VP8X", [0x02, 0, 0, 0, 0, 0, 0, 0, 0, 0]), .. WebpChunk("ANIM", [0, 0, 0, 0, 0, 0])];
+        byte[] body =
+        [
+            .. "WEBP"u8, .. head,
+            .. WebpChunk("ANMF", [.. frameHeader, .. alph, .. WebpChunk("EXIF", [.. "GPS-SECRET"u8, 1]), .. vp8l, .. WebpChunk("UNKN", [.. "UNKNOWN-SECRET"u8])])
+        ];
+        byte[] webp = [.. "RIFF"u8, 0, 0, 0, 0, .. body];
+        BinaryPrimitives.WriteUInt32LittleEndian(webp.AsSpan(4), (uint)body.Length);
+
+        var image = ImageFiles.Clean(webp);
+
+        byte[] expected = [.. "RIFF"u8, 0, 0, 0, 0, .. "WEBP"u8, .. head, .. WebpChunk("ANMF", [.. frameHeader, .. alph, .. vp8l])];
+        BinaryPrimitives.WriteUInt32LittleEndian(expected.AsSpan(4), (uint)(expected.Length - 8));
+        Assert.Equal(expected, image.Content);
+        Assert.False(Contains(image.Content, "SECRET"));
+        Assert.Equal(image.Content, ImageFiles.Clean(image.Content).Content); // still a well-formed WebP
+    }
+
+    [Fact]
+    public void AnimatedWebp_WithAFrameShorterThanItsHeader_IsUnsupported()
+    {
+        byte[] body = [.. "WEBP"u8, .. WebpChunk("ANMF", new byte[10])];
+        byte[] webp = [.. "RIFF"u8, 0, 0, 0, 0, .. body];
+        BinaryPrimitives.WriteUInt32LittleEndian(webp.AsSpan(4), (uint)body.Length);
+
+        Assert.Equal("file.unsupportedType", Assert.Throws<ValidationFailedException>(() => ImageFiles.Clean(webp)).Code);
+    }
+
+    [Fact]
     public void Jpeg_KeepsApp0OnlyForJfif_App14OnlyForAdobe_AndDropsJpgnSegments()
     {
         byte[] jfif = Segment(0xE0, [.. "JFIF\0"u8, 1, 1, 0, 0, 1, 0, 1, 0, 0]);
@@ -369,7 +407,10 @@ public class VehiclePhotoTests : FileTestBase
             Assert.Null((await vehicles.GetAsync(userId, car.Id)).PhotoUrl);
             await vehicles.DeletePhotoAsync(userId, car.Id);
             Assert.True(storage.Objects.ContainsKey(key), key);
+            Assert.Null(db.Vehicles.Single(v => v.Id == car.Id).PhotoUrl); // L118: the bad key is cleared, its object left alone
 
+            row.PhotoUrl = key;
+            await db.SaveChangesAsync();
             await vehicles.SetPhotoAsync(userId, car.Id, Png1x1); // replaces it without deleting the foreign object
             Assert.True(storage.Objects.ContainsKey(key), key);
             Assert.StartsWith($"users/{userId}/vehicles/{car.Id}/photo/", db.Vehicles.Single(v => v.Id == car.Id).PhotoUrl);

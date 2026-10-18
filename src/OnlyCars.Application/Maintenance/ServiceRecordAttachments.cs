@@ -16,7 +16,7 @@ public partial class MaintenanceTaskService
     public async Task<ServiceRecordDto> AddAttachmentAsync(Guid userId, Guid vehicleId, Guid recordId, byte[]? content, string? fileName,
         CancellationToken ct = default)
     {
-        vehicleService.Storage();
+        vehicleService.Storage(); // keeps 503 file.storageUnavailable ahead of 404
         var vehicle = await vehicleService.FindOwnedAsync(userId, vehicleId, ct);
         var record = await db.ServiceRecords
             .Include(r => r.Tasks).ThenInclude(j => j.MaintenanceTask)
@@ -34,7 +34,7 @@ public partial class MaintenanceTaskService
     /// <summary>Deletes the row, then the object (a failed object delete is logged). Allowed on an archived car.</summary>
     public async Task DeleteAttachmentAsync(Guid userId, Guid vehicleId, Guid recordId, Guid attachmentId, CancellationToken ct = default)
     {
-        vehicleService.Storage();
+        vehicleService.Storage(); // keeps 503 file.storageUnavailable ahead of 404
         // One scoped lookup: another user's car or record, or a mismatched path, is the same 404.
         var attachment = await db.Attachments.FirstOrDefaultAsync(a => a.Id == attachmentId && a.ServiceRecordId == recordId
                              && a.ServiceRecord!.VehicleId == vehicleId && a.ServiceRecord.Vehicle!.UserId == userId, ct)

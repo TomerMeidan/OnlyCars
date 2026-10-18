@@ -210,8 +210,6 @@ public static class ImageFiles
         }
     }
 
-    // shortcut: chunks nested inside an ANMF frame are kept as they are (in practice only ALPH and image data);
-    // walk them too if animated WebPs with metadata inside frames show up.
     private static byte[] StripWebp(byte[] d)
     {
         var riffEnd = 8 + (long)BinaryPrimitives.ReadUInt32LittleEndian(d.AsSpan(4));
@@ -220,32 +218,10 @@ public static class ImageFiles
             throw new FormatException();
         }
 
-        var kept = new List<(int Start, int End)> { (0, 12) };
-        var i = 12;
-        while (i < riffEnd)
-        {
-            if (i + 8 > riffEnd)
-            {
-                throw new FormatException();
-            }
-
-            var size = BinaryPrimitives.ReadUInt32LittleEndian(d.AsSpan(i + 4));
-            var end = i + 8 + size + (size & 1); // chunks are padded to an even size
-            if (end > riffEnd)
-            {
-                throw new FormatException();
-            }
-
-            // Allow-list: image, alpha, animation and colour-profile chunks; EXIF, XMP and unknown chunks are dropped.
-            if (Encoding.ASCII.GetString(d, i, 4) is "VP8X" or "VP8 " or "VP8L" or "ALPH" or "ANIM" or "ANMF" or "ICCP")
-            {
-                kept.Add((i, (int)end));
-            }
-
-            i = (int)end;
-        }
-
-        var result = Join(d, [], kept);
+        var kept = new List<byte>(d.Length);
+        kept.AddRange(d.AsSpan(0, 12));
+        WebpChunks(d, 12, (int)riffEnd, inFrame: false, kept);
+        var result = kept.ToArray();
         BinaryPrimitives.WriteUInt32LittleEndian(result.AsSpan(4), (uint)(result.Length - 8));
         if (result.Length > 20 && result.AsSpan(12, 4).SequenceEqual("VP8X"u8) && BinaryPrimitives.ReadUInt32LittleEndian(result.AsSpan(16)) > 0)
         {
@@ -253,5 +229,51 @@ public static class ImageFiles
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// Appends the allow-listed chunks of d[i..end] to <paramref name="kept"/>. At the top level: image, alpha, animation and colour-profile
+    /// chunks (EXIF, XMP and unknown chunks are dropped). Inside an ANMF frame: its 16-byte header and only ALPH, VP8 and VP8L, with the frame size fixed.
+    /// </summary>
+    private static void WebpChunks(byte[] d, int i, int end, bool inFrame, List<byte> kept)
+    {
+        while (i < end)
+        {
+            if (i + 8 > end)
+            {
+                throw new FormatException();
+            }
+
+            var size = BinaryPrimitives.ReadUInt32LittleEndian(d.AsSpan(i + 4));
+            var next = i + 8 + size + (size & 1); // chunks are padded to an even size
+            if (next > end)
+            {
+                throw new FormatException();
+            }
+
+            var type = Encoding.ASCII.GetString(d, i, 4);
+            if (type == "ANMF" && !inFrame)
+            {
+                if (size < 16)
+                {
+                    throw new FormatException();
+                }
+
+                var frame = new List<byte>();
+                frame.AddRange(d.AsSpan(i + 8, 16));
+                WebpChunks(d, i + 24, i + 8 + (int)size, inFrame: true, frame); // kept sub-chunks are padded, so the frame size stays even
+                var header = new byte[8];
+                "ANMF"u8.CopyTo(header);
+                BinaryPrimitives.WriteUInt32LittleEndian(header.AsSpan(4), (uint)frame.Count);
+                kept.AddRange(header);
+                kept.AddRange(frame);
+            }
+            else if (inFrame ? type is "ALPH" or "VP8 " or "VP8L" : type is "VP8X" or "VP8 " or "VP8L" or "ALPH" or "ANIM" or "ICCP")
+            {
+                kept.AddRange(d.AsSpan(i, (int)(next - i)));
+            }
+
+            i = (int)next;
+        }
     }
 }

@@ -41,7 +41,9 @@ for (const s of setups) {
   page.on('response', (r) => r.status() >= 400 && run.badResponses.push(`${r.status()} ${r.request().method()} ${r.url().replace(/\?.*X-Amz-.*/s, '?<signed>')}`))
 
   // Against the set viewport width: with isMobile, innerWidth grows to fit a too-wide page and hides the overflow.
-  const overflowPx = () => page.evaluate((w) => document.documentElement.scrollWidth - w, page.viewportSize().width)
+  // A navigation during the measure destroys its context (L123): wait for the page to settle and measure once more, then fail for real.
+  const measure = () => page.evaluate((w) => document.documentElement.scrollWidth - w, page.viewportSize().width)
+  const overflowPx = () => measure().catch(async () => { await page.waitForLoadState('load').catch(() => {}); return measure() })
   let n = 0
   async function step(name, fn) {
     const shot = `${OUT}/${s.name}-${String(++n).padStart(2, '0')}-${name}.png`
@@ -54,7 +56,7 @@ for (const s of setups) {
     await page.waitForLoadState('networkidle').catch(() => {})
     await page.screenshot({ path: shot, fullPage: true })
     // Page wider than the viewport means horizontal scrolling, a layout bug.
-    const overflow = await overflowPx()
+    const overflow = await overflowPx().catch((e) => { Object.assign(run.steps.at(-1), { ok: false, error: `overflow check: ${e.message.split('\n')[0]}` }); return 0 })
     if (overflow > 0) run.steps.at(-1).horizontalOverflowPx = overflow
   }
 
@@ -1488,8 +1490,15 @@ for (const s of setups) {
   // FILE-1: the car photo. Upload, change and remove go to the real API and R2 (the photo is removed at the end, and again in a finally);
   // the server errors, the archived car and the expired signed URL are mocked.
   const i18nSrc = readFileSync(new URL('../src/i18n.ts', import.meta.url), 'utf8')
-  const copy = (re) => plain([...i18nSrc.matchAll(re)][he ? 1 : 0][2])
-  const key = (k) => copy(new RegExp(`^ +${k}: (['"])(.*)\\1,$`, 'gm'))
+  // Looked up in this setup's language block only, and a key() is top-level, so a lookup never depends on match order (L122).
+  const heAt = i18nSrc.indexOf('\nconst he')
+  const langSrc = he ? i18nSrc.slice(heAt) : i18nSrc.slice(0, heAt)
+  const copy = (re) => {
+    const m = [...langSrc.matchAll(re)][0]
+    if (!m) throw new Error(`no ${s.lng} text for ${re}`)
+    return plain(m[2])
+  }
+  const key = (k) => copy(new RegExp(`^ {2}${k}: (['"])(.*)\\1,$`, 'gm'))
   // A key inside one of `errors`' blocks (file and attachmentFile share key names).
   const inBlock = (block, k) => copy(new RegExp(`^ {4}${block}: \\{[^}]*?^ +${k}: (['"])([^\\n]*)\\1,$`, 'gms'))
   const PH = {
@@ -1497,6 +1506,7 @@ for (const s of setups) {
     tooLarge: inBlock('file', 'tooLarge'), unsupported: inBlock('file', 'unsupportedType'), required: inBlock('file', 'required'), unavailable: inBlock('file', 'storageUnavailable'),
     archived: copy(/vehiclePhoto: \{\s*vehicleArchived: (['"])(.*)\1,/g),
     tooMany: copy(/http: \{ 413: '[^']*', 429: (['"])(.*)\1 \}/g),
+    archivedHint: key('photoArchivedHint'), conflict: inBlock('concurrency', 'conflict'),
   }
   let photoCarId, photoAuth
   const photoRequests = []
@@ -1548,6 +1558,8 @@ for (const s of setups) {
     await choose({ name: 'big.jpg', mimeType: 'image/jpeg', buffer: Buffer.alloc(12_000_000) })
     await photoAlertIs(PH.tooLarge, '12 MB file')
     await focusIs(PICK, 'the photo button after the size error')
+    await choose({ name: 'notes.txt', mimeType: 'text/plain', buffer: Buffer.from('hello') })
+    await photoAlertIs(PH.unsupported, 'a .txt file')
     await choose({ name: 'empty.png', mimeType: 'image/png', buffer: Buffer.alloc(0) })
     await photoAlertIs(PH.required, 'empty file')
     await choose({ name: 'car.gif', mimeType: 'image/gif', buffer: Buffer.from('GIF89a') })
@@ -1625,7 +1637,7 @@ for (const s of setups) {
     const carUrl = `**/api/vehicles/${photoCarId}`
     const real = await (await page.request.get(`${BASE}/api/vehicles/${photoCarId}`, { headers: photoAuth })).json()
     const png = await image('image/png')
-    const problem = (status, code) => ({ status, contentType: 'application/problem+json', body: JSON.stringify({ status, code }) })
+    const problem = (status, code, more) => ({ status, contentType: 'application/problem+json', body: JSON.stringify({ status, code, ...more }) })
     const carWith = (photoUrl, more = {}) => ({ contentType: 'application/json', body: JSON.stringify({ ...real, photoUrl, ...more }) })
     try {
       // Busy while uploading, then the server's errors, translated (mocked).
@@ -1650,6 +1662,34 @@ for (const s of setups) {
       await photoAlertIs(PH.tooMany, '429 for the extensionless file')
       if (sent !== 'PUT') throw new Error(`the extensionless file was not sent: ${sent}`)
       await focusIs(PICK, 'the photo button after the 429')
+      // L121: application/octet-stream (some browsers' type for an unknown file) is sent too (mocked: a replacement race's 409).
+      sent = null
+      await page.route('**/photo', (r) => { sent = r.request().method(); return r.fulfill(problem(409, 'concurrency.conflict')) }, { times: 1 })
+      await choose({ name: 'photo.bin', mimeType: 'application/octet-stream', buffer: png })
+      await photoAlertIs(PH.conflict, '409 for the octet-stream file')
+      if (sent !== 'PUT') throw new Error(`the octet-stream file was not sent: ${sent}`)
+      // LOW-6 (L116): a 409 on Change or Remove reloads the car, so the other change shows under the message (mocked).
+      await page.route('**/__photo/*', (r) => r.request().url().endsWith('/ok.png') ? r.fulfill({ contentType: 'image/png', body: png }) : r.fulfill({ status: 403 }))
+      let reloads = 0
+      await page.route(carUrl, (r) => { reloads++; return r.fulfill(carWith(`${BASE}/__photo/ok.png`)) }, { times: 1 })
+      await page.route('**/photo', (r) => r.fulfill(problem(409, 'concurrency.conflict')), { times: 1 })
+      await choose({ name: 'car.png', mimeType: 'image/png', buffer: png })
+      await photoAlertIs(PH.conflict, '409 on upload')
+      await photoLoaded('.photo-field img', '/ok.png')
+      if (reloads !== 1) throw new Error(`${reloads} car requests after the upload 409, want 1`)
+      await page.screenshot({ path: `${OUT}/${s.name}-photo-conflict-upload.png` })
+      await page.route(carUrl, (r) => { reloads++; return r.fulfill(carWith(null)) }, { times: 1 })
+      await page.route('**/photo', (r) => r.fulfill(problem(409, 'concurrency.conflict')), { times: 1 })
+      await page.click('.photo-field .actions button.link')
+      await page.click('.photo-field button.danger')
+      await photoAlertIs(PH.conflict, '409 on remove')
+      await page.locator('.photo-field img').waitFor({ state: 'detached' })
+      if (reloads !== 2) throw new Error(`${reloads - 1} car requests after the remove 409, want 1`)
+      // The other change removed the photo: no confirm left, focus on Add photo.
+      if (await page.locator('.photo-field .inline-form').count()) throw new Error('the remove confirm stays with no photo')
+      await focusIs(PICK, 'Add photo after the remove 409')
+      await page.screenshot({ path: `${OUT}/${s.name}-photo-conflict-remove.png` })
+      await page.unroute('**/__photo/*')
       // An archived car: no Add or Change, but its photo can be removed.
       await page.route('**/__photo/*', (r) => r.request().url().endsWith('/ok.png') ? r.fulfill({ contentType: 'image/png', body: png }) : r.fulfill({ status: 403 }))
       await page.route(carUrl, (r) => r.fulfill(carWith(`${BASE}/__photo/ok.png`, { isArchived: true })))
@@ -1657,6 +1697,14 @@ for (const s of setups) {
       await photoLoaded('.photo-field img')
       if (await page.locator(PICK).count()) throw new Error('Add or Change shows on an archived car')
       await page.locator('.photo-field .actions button.link').waitFor()
+      // L114: the form says why.
+      const hint = plain(await page.locator('.photo-field > p.muted').textContent())
+      if (hint !== PH.archivedHint) throw new Error(`archived hint "${hint}"`)
+      await page.setViewportSize({ width: 390, height: 844 })
+      await noOverflow('the archived photo hint at 390px')
+      await sweep('the archived photo field at 390px')
+      await page.screenshot({ path: `${OUT}/${s.name}-photo-archived-hint.png` })
+      await page.setViewportSize(s.viewport)
       await page.unroute(carUrl)
       // An expired signed URL: after the image fails, the car is fetched once more for a fresh one (mocked).
       // Car requests are counted from the first failed image on, as the dev build (StrictMode) loads the page twice.
@@ -1675,12 +1723,32 @@ for (const s of setups) {
       await page.unroute(carUrl)
       gets = 0
       getsAtFail = null
-      await page.route(carUrl, (r) => r.fulfill(carWith(`${BASE}/__photo/expired-${++gets}.png`)))
+      // One URL until the first failure (the dev build loads the car twice), then a new one per request, as the server signs each.
+      await page.route(carUrl, (r) => { gets++; return r.fulfill(carWith(`${BASE}/__photo/expired-${getsAtFail == null ? 0 : gets}.png`)) })
       await page.goto(`${BASE}/cars/${photoCarId}`)
       await page.getByRole('heading', { name: 'Renamed Corolla' }).waitFor()
       await page.waitForFunction(() => !document.querySelector('main img'), null, { timeout: 5000 })
       await page.waitForTimeout(500)
       if (gets - getsAtFail !== 1) throw new Error(`${gets - getsAtFail} car requests after the failed image, want 1`)
+      // L115: two expired links in one visit (the second a new URL from an upload) each recover with one car request (mocked).
+      await page.unroute(carUrl)
+      await page.unroute('**/__photo/*')
+      let next = 'expired-1'
+      gets = 0
+      await page.route('**/__photo/*', (r) => {
+        const name = new URL(r.request().url()).pathname.split('/').pop().replace('.png', '')
+        if (name.startsWith('ok')) return r.fulfill({ contentType: 'image/png', body: png })
+        next = name.replace('expired', 'ok')
+        return r.fulfill({ status: 403 })
+      })
+      await page.route(carUrl, (r) => { gets++; return r.fulfill(carWith(`${BASE}/__photo/${next}.png`)) })
+      await page.goto(`${BASE}/cars/${photoCarId}/edit`)
+      await photoLoaded('.photo-field img', '/ok-1.png')
+      await page.route('**/photo', (r) => r.fulfill(carWith(`${BASE}/__photo/expired-2.png`)), { times: 1 })
+      const before = gets
+      await choose({ name: 'car.png', mimeType: 'image/png', buffer: png })
+      await photoLoaded('.photo-field img', '/ok-2.png')
+      if (gets - before !== 1) throw new Error(`${gets - before} car requests after the second expired link, want 1`)
     } finally {
       await page.unroute(carUrl)
       await page.unroute('**/__photo/*')
@@ -1690,10 +1758,15 @@ for (const s of setups) {
   // FILE-2: files on a service record, on the car's newest service. The client checks, a text .pdf, an image and a PDF go to the real
   // API and R2 (3 uploads, with FILE-1's 3 inside the per-user budget of 10); every file is deleted at the end, and again in a finally.
   // The server errors, 10 files, no storage, the archived car, /history and the expired link are mocked.
+  // The quota's 400 carries the limit (FILE-2 contract), 1 GiB.
+  const quotaBody = (code) => code === 'file.quotaExceeded' && { maxBytes: 1_073_741_824 }
   const AF = {
     add: key('addFile'), uploading: key('uploadingFile'), confirm: key('confirmDeleteFile'),
     tooLarge: inBlock('attachmentFile', 'tooLarge'), unsupported: inBlock('attachmentFile', 'unsupportedType'), unavailable: inBlock('attachmentFile', 'storageUnavailable'),
-    quota: inBlock('attachmentFile', 'quotaExceeded'), conflict: inBlock('concurrency', 'conflict'), gone: key('serviceGone'),
+    // L129: the limit from the mocked maxBytes (1 GiB), not written into the text.
+    quota: inBlock('attachmentFile', 'quotaExceeded').replace('{{amount}}', (1).toLocaleString(s.lng)).replace('{{unit}}', key('gb')),
+    conflict: inBlock('concurrency', 'conflict'), gone: key('serviceGone'), generic: copy(/^ {4}generic: (['"])(.*)\1,$/gm),
+    max: key('filesMax'), newTab: key('opensNewTab'),
     tooMany: inBlock('attachment', 'tooMany'), archived: inBlock('attachment', 'vehicleArchived'), notFound: inBlock('attachment', 'notFound'),
     rate: PH.tooMany,
   }
@@ -1737,6 +1810,8 @@ for (const s of setups) {
     const accept = await page.getAttribute(`${FILES()} input[type=file]`, 'accept')
     if (accept !== 'image/jpeg,image/png,image/webp,application/pdf') throw new Error(`accept "${accept}"`)
     fileRequests.length = 0
+    await chooseFile({ name: 'notes.txt', mimeType: 'text/plain', buffer: Buffer.from('hello') })
+    await fileAlertIs(AF.unsupported, 'a .txt file')
     await chooseFile({ name: 'big.pdf', mimeType: 'application/pdf', buffer: Buffer.alloc(12_000_000) })
     await fileAlertIs(AF.tooLarge, '12 MB file')
     await focusIs(ADD(), 'Add file after the size error')
@@ -1813,7 +1888,7 @@ for (const s of setups) {
   await step('files-states', async () => {
     const listUrl = `**/api${filesPath}`
     const historyGet = (u) => u.pathname === '/api/service-records'
-    const problem = (status, code) => ({ status, contentType: 'application/problem+json', body: JSON.stringify({ status, code }) })
+    const problem = (status, code, more) => ({ status, contentType: 'application/problem+json', body: JSON.stringify({ status, code, ...more }) })
     const realList = await (await page.request.get(`${BASE}/api${filesPath}`, { headers: photoAuth })).json()
     const file = (i, url = `https://files.test/__file/${i}.pdf`) => ({ id: `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`, fileName: `scan-${i}.pdf`, contentType: 'application/pdf', sizeBytes: 1_500_000 + i, url })
     const withFiles = (attachments) => ({ contentType: 'application/json', body: JSON.stringify(realList.map((r) => (r.id === fileRecord.id ? { ...r, attachments } : r))) })
@@ -1824,19 +1899,38 @@ for (const s of setups) {
       await page.locator(ADD()).waitFor()
       const png = await image('image/png')
       for (const [status, code, want] of [[503, 'file.storageUnavailable', AF.unavailable], [400, 'attachment.tooMany', AF.tooMany], [400, 'attachment.vehicleArchived', AF.archived], [429, 'http.429', AF.rate], [400, 'file.quotaExceeded', AF.quota], [409, 'concurrency.conflict', AF.conflict]]) {
-        await page.route('**/attachments', async (r) => { await page.waitForTimeout(600); await r.fulfill(problem(status, code)) }, { times: 1 })
-        await chooseFile({ name: 'r.png', mimeType: 'image/png', buffer: png })
+        await page.route('**/attachments', async (r) => { await page.waitForTimeout(600); await r.fulfill(problem(status, code, quotaBody(code))) }, { times: 1 })
+        // L121: the 429 one is an application/octet-stream file, sent as any other.
+        await chooseFile(code === 'http.429' ? { name: 'r.bin', mimeType: 'application/octet-stream', buffer: png } : { name: 'r.png', mimeType: 'image/png', buffer: png })
         await page.waitForFunction((sel) => document.querySelector(sel)?.getAttribute('aria-busy') === 'true', ADD(), { timeout: 3000 })
         if (plain(await page.locator(ADD()).textContent()) !== AF.uploading) throw new Error(`busy button "${await page.locator(ADD()).textContent()}"`)
         await fileAlertIs(want, code)
         if ((await page.getAttribute(ADD(), 'aria-busy')) !== 'false') throw new Error(`still busy after ${code}`)
         await focusIs(ADD(), `Add file after ${code}`)
       }
-      // 10 files, some without storage (no URL): no Add file, those names plain text.
+      // L131/L132: a 409 reloads the list (another upload's file shows); when that reload fails too, both messages show, the conflict first.
+      await page.route('**/attachments', (r) => r.fulfill(problem(409, 'concurrency.conflict')), { times: 1 })
+      await page.route(listUrl, (r) => r.fulfill(withFiles([file(7)])), { times: 1 })
+      await chooseFile({ name: 'r.png', mimeType: 'image/png', buffer: png })
+      await fileAlertIs(AF.conflict, '409 with a reload')
+      await page.locator(`${FILES()} li`).waitFor()
+      await page.route('**/attachments', (r) => r.fulfill(problem(409, 'concurrency.conflict')), { times: 1 })
+      await page.route(listUrl, (r) => r.fulfill(problem(500, 'http.500')), { times: 1 })
+      await chooseFile({ name: 'r.png', mimeType: 'image/png', buffer: png })
+      await fileAlertIs(`${AF.conflict} ${AF.generic}`, '409 and a failed reload')
+      await focusIs(ADD(), 'Add file after the 409 and a failed reload')
+      await page.setViewportSize({ width: 390, height: 844 })
+      await noOverflow('two messages at 390px')
+      await page.screenshot({ path: `${OUT}/${s.name}-files-conflict-reload-failed.png`, fullPage: true })
+      await page.setViewportSize(s.viewport)
+      // 10 files, some without storage (no URL): no Add file but the max sentence (L127), those names plain text.
       await page.route(listUrl, (r) => r.fulfill(withFiles([...Array(10)].map((_, i) => file(i, { 1: 'javascript:alert(1)', 3: `http://files.test/__file/${i}.pdf` }[i] ?? (i % 2 ? null : undefined))))))
       await page.reload()
       await page.locator(`${FILES()} li >> nth=9`).waitFor()
       if (await page.locator(ADD()).count()) throw new Error('Add file shows with 10 files')
+      if (plain(await page.locator(`${FILES()} > p.muted`).textContent()) !== AF.max) throw new Error('no max sentence at 10 files')
+      // L133: a file link's accessible name says it opens a new tab.
+      if ((await page.getByRole('link', { name: `scan-0.pdf ${AF.newTab}`, exact: true }).count()) !== 1) throw new Error('the file link does not announce the new tab')
       if ((await page.locator(`${FILES()} li a`).count()) !== 5) throw new Error('files without a URL are links')
       await sweep('10 files')
       await page.screenshot({ path: `${OUT}/${s.name}-files-ten.png`, fullPage: true })
@@ -1857,6 +1951,11 @@ for (const s of setups) {
       await page.click(`${FILES()} button.danger`)
       await page.locator(`${FILES()} ul`).waitFor({ state: 'detached' })
       await focusIs(FILES(), 'the files group after the last delete on an archived car')
+      // L126: after a reload, an archived car's service without files has no Files group.
+      await page.route(listUrl, (r) => r.fulfill(withFiles([])))
+      await page.reload()
+      await page.locator(`.services > li[data-id="${fileRecord.id}"]`).waitFor()
+      if (await page.locator(FILES()).count()) throw new Error('an empty Files group on an archived car')
       await page.unroute(`**/api/vehicles/${photoCarId}`)
       // /history: names and Open only.
       await page.route(historyGet, async (r) => {
@@ -1868,6 +1967,7 @@ for (const s of setups) {
       await page.locator(FILES()).waitFor()
       if (await page.locator(`${FILES()} button`).count()) throw new Error('/history has file buttons')
       if ((await page.locator(`${FILES()} li a`).count()) !== 1) throw new Error('/history: want one link')
+      if ((await page.getByRole('link', { name: `scan-1.pdf ${AF.newTab}`, exact: true }).count()) !== 1) throw new Error('/history: the link does not announce the new tab')
       await page.unroute(historyGet)
     } finally {
       await page.unroute(listUrl)
@@ -1912,7 +2012,7 @@ for (const s of setups) {
       gone = true
       await p.clock.fastForward('56:00')
       ;[tab] = await Promise.all([p.waitForEvent('popup'), link.click()])
-      await tab.waitForEvent('close', { timeout: 5000 })
+      if (!tab.isClosed()) await tab.waitForEvent('close', { timeout: 5000 }) // it may close before the listener is on
       await p.locator(`.services > li[data-id="${fileRecord.id}"]`).waitFor({ state: 'detached', timeout: 5000 })
       const note = plain(await p.locator('section[aria-labelledby=service-history] > p[role=status]').textContent())
       if (note !== AF.gone) throw new Error(`gone note "${note}"`)
@@ -1921,10 +2021,54 @@ for (const s of setups) {
       await ctx2.close()
     }
   })
+  await step('history-gone-reload', async () => {
+    // L130: /history with Show more used twice (150 of 160 rows, mocked), then a row's stale link finds its service gone: 150 rows
+    // come back without it, with the note, which has focus (fake clock, own context).
+    const ctx2 = await browser.newContext({ storageState: await ctx.storageState(), viewport: s.viewport, colorScheme: s.colorScheme, isMobile: s.isMobile, hasTouch: s.hasTouch })
+    try {
+      const p = await ctx2.newPage()
+      await p.clock.install()
+      const base = (await (await p.request.get(`${BASE}/api${filesPath}`, { headers: photoAuth })).json())[0]
+      const target = 120
+      let rows = [...Array(160)].map((_, i) => ({ ...base, id: `00000000-0000-4000-9000-${String(i).padStart(12, '0')}`,
+        attachments: i === target ? [{ id: '00000000-0000-4000-8000-000000000001', fileName: 'r.pdf', contentType: 'application/pdf', sizeBytes: 9, url: 'https://files.test/__file/r.pdf' }] : [] }))
+      const goneId = rows[target].id
+      await ctx2.route('**/__file/*', (r) => r.fulfill({ contentType: 'text/plain', body: 'ok' }))
+      await p.route((u) => u.pathname === '/api/service-records', (r) => {
+        const skip = Number(new URL(r.request().url()).searchParams.get('skip'))
+        return r.fulfill({ contentType: 'application/json', body: JSON.stringify({ items: rows.slice(skip, skip + 50), totalCount: rows.length, totalCost: 0 }) })
+      })
+      // The car's records, which the stale link reloads: the service is gone.
+      await p.route(`**/api${filesPath}`, (r) => r.fulfill({ contentType: 'application/json', body: '[]' }))
+      await p.goto(`${BASE}/history?vehicleId=${photoCarId}`)
+      const items = p.locator('.services > li')
+      await items.nth(49).waitFor()
+      for (const n of [100, 150]) {
+        await p.click('button.more')
+        await items.nth(n - 1).waitFor()
+      }
+      rows = rows.filter((r) => r.id !== goneId)
+      await p.clock.fastForward('56:00')
+      const [tab] = await Promise.all([p.waitForEvent('popup'), p.locator(`.services > li[data-id="${goneId}"] .files li a`).click()])
+      if (!tab.isClosed()) await tab.waitForEvent('close', { timeout: 5000 }) // it may close before the listener is on
+      await p.locator(`.services > li[data-id="${goneId}"]`).waitFor({ state: 'detached', timeout: 5000 })
+      if ((await items.count()) !== 150) throw new Error(`${await items.count()} rows after the reload, want 150`)
+      const NOTE = '.card > p[tabindex="-1"]'
+      const note = plain(await p.locator(NOTE).textContent())
+      if (note !== key('serviceGoneRefreshed')) throw new Error(`note "${note}"`)
+      await p.waitForFunction((sel) => document.activeElement?.matches(sel), NOTE, { timeout: 3000 })
+        .catch(async () => { throw new Error(`focus is on ${await p.evaluate(() => document.activeElement?.outerHTML.slice(0, 100))}`) })
+      await p.setViewportSize({ width: 390, height: 844 })
+      const px = await p.evaluate(() => document.documentElement.scrollWidth - 390)
+      if (px > 0) throw new Error(`${px}px horizontal overflow with the note`)
+      await p.screenshot({ path: `${OUT}/${s.name}-history-gone-note.png` })
+    } finally {
+      await ctx2.close()
+    }
+  })
   // SET-1: settings. Each setup forces the theme opposite to its OS one, at 390px wide.
-  // The hint comes from i18n.ts (en first, then he), so copy edits don't break the step.
-  const hints = [...readFileSync(new URL('../src/i18n.ts', import.meta.url), 'utf8').matchAll(/currencyHint: (['"])(.*)\1,/g)].map((m) => m[2])
-  const SE = he ? { settings: 'הגדרות', saved: 'נשמר', hint: hints[1] } : { settings: 'Settings', saved: 'Saved', hint: hints[0] }
+  // The hint comes from i18n.ts, so copy edits don't break the step.
+  const SE = he ? { settings: 'הגדרות', saved: 'נשמר', hint: key('currencyHint') } : { settings: 'Settings', saved: 'Saved', hint: key('currencyHint') }
   const osTheme = s.colorScheme === 'light' ? 'Light' : 'Dark'
   const forced = osTheme === 'Light' ? 'Dark' : 'Light'
   const BG = { Light: 'rgb(230, 233, 238)', Dark: 'rgb(17, 21, 28)' } // --bg
@@ -3643,11 +3787,12 @@ for (const s of setups) {
   const RF = {
     addPhotos: key('addPhotos'), add: key('addPhoto'), confirm: key('confirmDeletePhoto'), deletedToo: key('photosDeletedToo'), list: key('photos'),
     count: (n) => (n === 2 ? key('photoCount_two') : key('photoCount_other')).replace('{{count, number}}', n.toLocaleString(s.lng)),
-    tooLarge: inBlock('file', 'tooLarge'), unsupported: inBlock('file', 'unsupportedType'), unavailable: inBlock('file', 'storageUnavailable'),
-    tooMany: inBlock('runPhoto', 'tooMany'), quota: inBlock('attachmentFile', 'quotaExceeded'), conflict: inBlock('concurrency', 'conflict'), rate: PH.tooMany,
+    // L137: the type error on a run says photo.
+    tooLarge: inBlock('file', 'tooLarge'), unsupported: inBlock('runPhoto', 'unsupportedType'), unavailable: inBlock('file', 'storageUnavailable'),
+    tooMany: inBlock('runPhoto', 'tooMany'), quota: AF.quota, max: key('photosMax'), runConfirm: key('confirmDeleteRun'), readingToo: key('runReadingDeletedToo'), conflict: inBlock('concurrency', 'conflict'), rate: PH.tooMany,
     notFound: inBlock('runPhoto', 'notFound'), archived: inBlock('runPhoto', 'vehicleArchived'),
   }
-  let photoRunId
+  let photoRunId, photoReading
   const RUNROW = () => `.run-list > li[data-id="${photoRunId}"]`
   const PF = () => `${RUNROW()} .files`
   const PADD = () => `${PF()} button.add-file`
@@ -3677,7 +3822,7 @@ for (const s of setups) {
       await runItem(1).locator('input[type=number]').fill('2.2')
       const saved = page.waitForResponse((r) => r.url().endsWith('/runs') && r.request().method() === 'POST')
       await runForm.locator('> .actions > button:not(.link)').click()
-      photoRunId = (await (await saved).json()).run.id
+      ;({ id: photoRunId, odometerReadingId: photoReading } = (await (await saved).json()).run)
       await page.waitForURL((u) => u.pathname === ckCarPath())
       const addPhotos = ckSec.locator('button.add-photos')
       await addPhotos.waitFor()
@@ -3750,7 +3895,7 @@ for (const s of setups) {
       const left = await page.locator(`${PF()} li a`).getAttribute('href')
       await page.locator(`${RUNROW()} button.delete-run`).click()
       const confirm = page.locator(`${RUNROW()} > .inline-form p`)
-      if (plain(await confirm.textContent()) !== `${CK.confirmRun} ${RF.deletedToo}`) throw new Error(`run confirm "${await confirm.textContent()}"`)
+      if (plain(await confirm.textContent()) !== `${RF.runConfirm}${photoReading ? ` ${RF.readingToo}` : ''} ${RF.deletedToo}`) throw new Error(`run confirm "${await confirm.textContent()}"`)
       await page.screenshot({ path: `${OUT}/${s.name}-run-photos-delete-run.png`, fullPage: true })
       await page.click(`${RUNROW()} button.danger`)
       await page.locator(RUNROW()).waitFor({ state: 'detached' })
@@ -3764,7 +3909,7 @@ for (const s of setups) {
   })
   await step('run-photos-states', async () => {
     const runsUrl = `**/api/vehicle-checklists/${monthlyId}/runs`
-    const problem = (status, code) => ({ status, contentType: 'application/problem+json', body: JSON.stringify({ status, code }) })
+    const problem = (status, code, more) => ({ status, contentType: 'application/problem+json', body: JSON.stringify({ status, code, ...more }) })
     photoRunId = '00000000-0000-4000-8000-0000000000aa'
     const photo = (i, url = `https://files.test/__file/${i}.png`) => ({ id: `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`, fileName: `photo-${i}.png`, contentType: 'image/png', sizeBytes: 1_500_000 + i, url })
     const fakeRun = (attachments) => ({ id: photoRunId, vehicleChecklistId: monthlyId, runAt: '2026-01-10', odometerKm: 50000, odometerReadingId: null, notes: null, flaggedCount: 0, items: [], attachments })
@@ -3782,19 +3927,45 @@ for (const s of setups) {
       // Busy while uploading, then each server error with the run's wording.
       const png = await image('image/png')
       for (const [status, code, want] of [[503, 'file.storageUnavailable', RF.unavailable], [400, 'attachment.tooMany', RF.tooMany], [400, 'file.quotaExceeded', RF.quota], [400, 'attachment.vehicleArchived', RF.archived], [429, 'http.429', RF.rate], [409, 'concurrency.conflict', RF.conflict]]) {
-        await page.route('**/checklist-runs/*/attachments', async (r) => { await page.waitForTimeout(600); await r.fulfill(problem(status, code)) }, { times: 1 })
-        await choosePhoto({ name: 'r.png', mimeType: 'image/png', buffer: png })
+        await page.route('**/checklist-runs/*/attachments', async (r) => { await page.waitForTimeout(600); await r.fulfill(problem(status, code, quotaBody(code))) }, { times: 1 })
+        await choosePhoto(code === 'http.429' ? { name: 'r.bin', mimeType: 'application/octet-stream', buffer: png } : { name: 'r.png', mimeType: 'image/png', buffer: png })
         await page.waitForFunction((sel) => document.querySelector(sel)?.getAttribute('aria-busy') === 'true', PADD(), { timeout: 3000 })
         if (plain(await page.locator(PADD()).textContent()) !== PH.uploading) throw new Error(`busy button "${await page.locator(PADD()).textContent()}"`)
         await photoErrorIs(want, code)
         if ((await page.getAttribute(PADD(), 'aria-busy')) !== 'false') throw new Error(`still busy after ${code}`)
         await focusIs(PADD(), `Add photo after ${code}`)
       }
-      // 10 photos, some without storage or with a non-https URL: no Add photo, those names plain text; long names fit at 390px.
+      // L131/L140: a 409 reloads the runs (another upload's photo shows); when that reload fails too, both messages show, the conflict first.
+      await page.route('**/checklist-runs/*/attachments', (r) => r.fulfill(problem(409, 'concurrency.conflict')), { times: 1 })
+      await page.route(runsUrl, (r) => r.fulfill(withPhotos([photo(7)])), { times: 1 })
+      await choosePhoto({ name: 'r.png', mimeType: 'image/png', buffer: png })
+      await photoErrorIs(RF.conflict, '409 with a reload')
+      await page.locator(`${PF()} li`).waitFor()
+      await page.route('**/checklist-runs/*/attachments', (r) => r.fulfill(problem(409, 'concurrency.conflict')), { times: 1 })
+      await page.route(runsUrl, (r) => r.fulfill(problem(500, 'http.500')), { times: 1 })
+      await choosePhoto({ name: 'r.png', mimeType: 'image/png', buffer: png })
+      await photoErrorIs(`${RF.conflict} ${AF.generic}`, '409 and a failed reload')
+      await focusIs(PADD(), 'Add photo after the 409 and a failed reload')
+      // L136: the run Delete confirm names the reading and the photos only when the run has them.
+      for (const [more, want] of [
+        [{}, RF.runConfirm],
+        [{ odometerReadingId: '00000000-0000-4000-8000-0000000000bb' }, `${RF.runConfirm} ${RF.readingToo}`],
+        [{ attachments: [photo(1)] }, `${RF.runConfirm} ${RF.deletedToo}`],
+        [{ odometerReadingId: '00000000-0000-4000-8000-0000000000bb', attachments: [photo(1)] }, `${RF.runConfirm} ${RF.readingToo} ${RF.deletedToo}`],
+      ]) {
+        await page.route(runsUrl, (r) => r.fulfill({ contentType: 'application/json', body: JSON.stringify([{ ...fakeRun([]), ...more }]) }))
+        await openRun()
+        await page.locator(`${RUNROW()} button.delete-run`).click()
+        const got = plain(await page.locator(`${RUNROW()} > .inline-form p`).textContent())
+        if (got !== want) throw new Error(`run confirm "${got}", want "${want}"`)
+      }
+      // 10 photos, some without storage or with a non-https URL: no Add photo but the max sentence (L127), those names plain text; long names fit at 390px.
       await page.route(runsUrl, (r) => r.fulfill(withPhotos([...Array(10)].map((_, i) => ({ ...photo(i, { 1: null, 3: `http://files.test/__file/${i}.png` }[i]), ...(i === 4 && { fileName: runPhotoName }), ...(i === 5 && { fileName: runPhotoHe }) })))))
       await openRun()
       await page.locator(`${PF()} li >> nth=9`).waitFor()
       if (await page.locator(PADD()).count()) throw new Error('Add photo shows with 10 photos')
+      if (plain(await page.locator(`${PF()} > p.muted`).textContent()) !== RF.max) throw new Error('no max sentence at 10 photos')
+      if ((await page.getByRole('link', { name: `photo-0.png ${AF.newTab}`, exact: true }).count()) !== 1) throw new Error('the photo link does not announce the new tab')
       if ((await page.locator(`${PF()} li a`).count()) !== 8) throw new Error('photos without an https URL are links')
       if (plain(await page.locator(`${RUNROW()} summary .photo-count`).textContent()) !== RF.count(10)) throw new Error('count of 10')
       await page.setViewportSize({ width: 390, height: 844 })
@@ -3819,6 +3990,10 @@ for (const s of setups) {
       await page.click(`${PF()} button.danger`)
       await page.locator(`${PF()} ul`).waitFor({ state: 'detached' })
       await focusIs(PF(), 'the photos group after the last delete on an archived car')
+      // L126: after a reload, an archived car's run without photos has no Photos group.
+      await page.route(runsUrl, (r) => r.fulfill(withPhotos([])))
+      await openRun()
+      if (await page.locator(PF()).count()) throw new Error('an empty Photos group on an archived car')
       await page.unroute(`**/api/vehicles/${dashCarId}`)
     } finally {
       await page.unroute(runsUrl)

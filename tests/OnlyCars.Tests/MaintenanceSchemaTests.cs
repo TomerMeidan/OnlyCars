@@ -429,6 +429,46 @@ public class MaintenanceSchemaTests : IAsyncLifetime
         Assert.Equal(keys.Order(), storage.Objects.Keys.Order());
     }
 
+    // --- L116: car photo replacements racing on the real database (the conditional update needs a relational provider). ---
+
+    [Fact]
+    public async Task Photo_OnSqlServer_TwoSimultaneousReplacements_OneWins_TheOtherIsAConflict_ExactlyOneObjectRemains()
+    {
+        var car = await AddCarAsync();
+        await new VehicleService(Context(), storage).SetPhotoAsync(car.UserId, car.Id, Png);
+        storage.PutGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var first = Task.Run(() => new VehicleService(Context(), storage).SetPhotoAsync(car.UserId, car.Id, Png));
+        var second = Task.Run(() => new VehicleService(Context(), storage).SetPhotoAsync(car.UserId, car.Id, Png));
+        await WaitForPutsAsync(2);
+        storage.PutGate.SetResult();
+
+        var results = await Task.WhenAll(Settle(first), Settle(second));
+        Assert.Single(results, e => e is null);
+        Assert.Single(results, e => e is DbUpdateConcurrencyException); // 409 concurrency.conflict
+        await using var check = Context();
+        var key = (await check.Vehicles.SingleAsync(v => v.Id == car.Id)).PhotoUrl;
+        Assert.Equal([key], storage.Objects.Keys); // the first photo was replaced, the loser's object deleted
+    }
+
+    [Fact]
+    public async Task Photo_OnSqlServer_ARemoveThatSavesDuringAReplacement_Wins_TheReplacementIsAConflict_NoObjectRemains()
+    {
+        var car = await AddCarAsync();
+        await new VehicleService(Context(), storage).SetPhotoAsync(car.UserId, car.Id, Png);
+        storage.PutGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var replace = Task.Run(() => new VehicleService(Context(), storage).SetPhotoAsync(car.UserId, car.Id, Png));
+        await WaitForPutsAsync(1);
+        await new VehicleService(Context(), storage).DeletePhotoAsync(car.UserId, car.Id);
+        storage.PutGate.SetResult();
+
+        await Assert.ThrowsAsync<DbUpdateConcurrencyException>(() => replace);
+        await using var check = Context();
+        Assert.Null((await check.Vehicles.SingleAsync(v => v.Id == car.Id)).PhotoUrl);
+        Assert.Empty(storage.Objects);
+    }
+
     // --- FILE-3: run photos on the real database. ---
 
     private VehicleChecklistService RunRacer()

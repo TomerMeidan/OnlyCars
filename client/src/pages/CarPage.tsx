@@ -123,18 +123,23 @@ export default function CarPage() {
   )
 }
 
-// The car's photo, or nothing. Its signed URL lasts an hour: when it fails to load, the car is fetched again once for a fresh URL.
+// The car's photo, or nothing. Its signed URL lasts an hour: when a URL fails to load, the car is fetched again once for a fresh one,
+// so a page left open recovers each time. A fresh URL that fails before it ever loaded is not retried (no loop while storage is down).
 export function CarPhoto({ car, setCar }: { car: Vehicle; setCar: (car: Vehicle) => void }) {
-  const retried = useRef(false)
+  const fresh = useRef<string | null>(null)
   const [broken, setBroken] = useState<string | null>(null)
   const url = car.photoUrl
   if (!url || url === broken) return null
   const failed = () => {
-    if (retried.current) return setBroken(url)
-    retried.current = true
-    api<Vehicle>(`/vehicles/${encodeURIComponent(car.id)}`).then((v) => (v.photoUrl === url ? setBroken(url) : setCar(v)), () => setBroken(url))
+    if (url === fresh.current) return setBroken(url)
+    fresh.current = url
+    api<Vehicle>(`/vehicles/${encodeURIComponent(car.id)}`).then((v) => {
+      if (v.photoUrl === url) return setBroken(url)
+      fresh.current = v.photoUrl
+      setCar(v)
+    }, () => setBroken(url))
   }
-  return <img className="car-photo" src={url} alt={car.nickname} onError={failed} />
+  return <img className="car-photo" src={url} alt={car.nickname} onError={failed} onLoad={() => { fresh.current = null }} />
 }
 
 // Error state of a car route: the message is the h1 (titled without its full stop), under the back link.

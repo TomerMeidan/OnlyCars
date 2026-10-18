@@ -441,7 +441,7 @@ function RunRow({ run: r, carId, checklistName, readOnly, expand, onPhotos, relo
       )}
       {mode === 'delete' && (
         <div className="inline-form" onKeyDown={(e) => !busy && e.key === 'Escape' && open('view')}>
-          <p>{t('confirmDeleteRun')}{r.attachments.length > 0 && ` ${t('photosDeletedToo')}`}</p>
+          <p>{t('confirmDeleteRun')}{r.odometerReadingId != null && ` ${t('runReadingDeletedToo')}`}{r.attachments.length > 0 && ` ${t('photosDeletedToo')}`}</p>
           {error != null && <p className="error" role="alert">{errorMessage(error)}</p>}
           <div className="actions">
             <button className="danger" disabled={busy} onClick={(e) => run(async () => {

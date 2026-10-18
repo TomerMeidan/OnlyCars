@@ -173,11 +173,9 @@ public class VehicleService(IAppDbContext db, IFileStorage? storage = null, ILog
         await files.PutAsync(key, image.Content, image.ContentType, ct);
 
         var previous = PhotoKey(vehicle);
-        vehicle.PhotoUrl = key;
-        vehicle.UpdatedAt = DateTimeOffset.UtcNow;
         try
         {
-            await db.SaveChangesAsync(ct);
+            await SwapPhotoKeyAsync(vehicle, key, ct);
         }
         catch
         {
@@ -189,20 +187,48 @@ public class VehicleService(IAppDbContext db, IFileStorage? storage = null, ILog
         return ToDto(vehicle);
     }
 
-    /// <summary>Allowed on an archived car. No photo is a no-op.</summary>
+    /// <summary>Allowed on an archived car. No photo is a no-op. A stored key that fails the key check is cleared without deleting any object (L118).</summary>
     public async Task DeletePhotoAsync(Guid userId, Guid vehicleId, CancellationToken ct = default)
     {
         Storage();
         var vehicle = await FindOwnedAsync(userId, vehicleId, ct);
-        if (PhotoKey(vehicle) is not { } key)
+        if (vehicle.PhotoUrl is null)
         {
             return;
         }
 
-        vehicle.PhotoUrl = null;
-        vehicle.UpdatedAt = DateTimeOffset.UtcNow;
-        await db.SaveChangesAsync(ct);
+        var key = PhotoKey(vehicle);
+        await SwapPhotoKeyAsync(vehicle, null, ct);
         await DeleteQuietlyAsync(key);
+    }
+
+    /// <summary>
+    /// Points the car at <paramref name="newKey"/> only while the row still holds the key this request read, so two photo changes at once
+    /// can't both win and orphan an object (L116); the loser gets DbUpdateConcurrencyException (409 concurrency.conflict).
+    /// Only PhotoUrl and UpdatedAt are written, so car edits and odometer recomputes never conflict with it.
+    /// </summary>
+    private async Task SwapPhotoKeyAsync(Vehicle vehicle, string? newKey, CancellationToken ct)
+    {
+        var read = vehicle.PhotoUrl;
+        var now = DateTimeOffset.UtcNow;
+        if (db is DbContext { Database: var database } && database.IsRelational())
+        {
+            var changed = await db.Vehicles.Where(v => v.Id == vehicle.Id && v.PhotoUrl == read)
+                .ExecuteUpdateAsync(s => s.SetProperty(v => v.PhotoUrl, newKey).SetProperty(v => v.UpdatedAt, now), ct);
+            if (changed == 0)
+            {
+                throw new DbUpdateConcurrencyException("The car's photo was changed at the same time.");
+            }
+
+            vehicle.PhotoUrl = newKey; // the tracked copy, for the response; nothing saves it again
+            vehicle.UpdatedAt = now;
+            return;
+        }
+
+        // The InMemory provider (tests only) has no ExecuteUpdate: a plain tracked save. The race itself is tested on LocalDB.
+        vehicle.PhotoUrl = newKey;
+        vehicle.UpdatedAt = now;
+        await db.SaveChangesAsync(ct);
     }
 
     // Shared with the service record attachments (FILE-2): one storage, one 503, one logged delete.

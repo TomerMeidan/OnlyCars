@@ -253,7 +253,7 @@ public class VehicleChecklistService(IAppDbContext db, VehicleService vehicleSer
     /// </summary>
     public async Task<ChecklistRunDto> AddRunAttachmentAsync(Guid userId, Guid runId, byte[]? content, string? fileName, CancellationToken ct = default)
     {
-        vehicleService.Storage();
+        vehicleService.Storage(); // keeps 503 file.storageUnavailable ahead of 404
         var run = await db.ChecklistRuns
             .Include(r => r.Items)
             .Include(r => r.Attachments)
@@ -272,7 +272,7 @@ public class VehicleChecklistService(IAppDbContext db, VehicleService vehicleSer
     /// <summary>Deletes the row, then the object (a failed object delete is logged). Allowed on an archived car.</summary>
     public async Task DeleteRunAttachmentAsync(Guid userId, Guid runId, Guid attachmentId, CancellationToken ct = default)
     {
-        vehicleService.Storage();
+        vehicleService.Storage(); // keeps 503 file.storageUnavailable ahead of 404
         // One scoped lookup: another user's run or photo, or a mismatched path, is the same 404.
         var found = await db.Attachments
             .Where(a => a.Id == attachmentId && a.ChecklistRunId == runId && a.ChecklistRun!.VehicleChecklist!.Vehicle!.UserId == userId)

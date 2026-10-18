@@ -210,6 +210,7 @@ export interface ChecklistRun {
   vehicleChecklistId: string
   runAt: string
   odometerKm: number
+  odometerReadingId: string | null // the reading the run logged; null when none was entered
   notes: string | null
   flaggedCount: number
   items: ChecklistRunItem[]
@@ -323,6 +324,7 @@ export interface Problem {
   minDate?: string // the earliest accepted date of a date.tooEarly error
   mountOdometerKm?: number // tireMount.odometerBeforeMount: the odometer when the set went on
   mountedAt?: string // tireMount.dateBeforeMount: the date the set went on
+  maxBytes?: number // file.quotaExceeded: the user's storage limit
   errors?: Record<string, string[]> // model binding's 400 (http.400), by field
 }
 
@@ -391,11 +393,11 @@ export const photoTypes = 'image/jpeg,image/png,image/webp'
 export const attachmentTypes = `${photoTypes},application/pdf`
 export const maxFileBytes = 10_485_760
 // The API's error for this file, or null. The type is the browser's guess from the name, empty when it has no known
-// extension (a phone's "IMG_0001"): that one goes to the API, which decides by the content.
+// extension (a phone's "IMG_0001"), or application/octet-stream on some browsers: those go to the API, which decides by the content.
 export const fileError = (file: File, types = photoTypes) =>
   file.size === 0 ? new ApiError(400, { code: 'file.required' }, 'Bad Request')
   : file.size > maxFileBytes ? new ApiError(413, { code: 'file.tooLarge' }, 'Payload Too Large')
-  : file.type && !types.split(',').includes(file.type) ? new ApiError(400, { code: 'file.unsupportedType' }, 'Bad Request')
+  : file.type && file.type !== 'application/octet-stream' && !types.split(',').includes(file.type) ? new ApiError(400, { code: 'file.unsupportedType' }, 'Bad Request')
   : null
 
 // Where the run page sends the user back to: the checklist whose Run button gets focus, and after a Save the flagged count and the run (for Add photos).

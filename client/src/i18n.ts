@@ -21,6 +21,7 @@ const en = {
   removePhoto: 'Remove photo',
   uploadingPhoto: 'Uploading…',
   confirmRemovePhoto: 'Remove this photo?',
+  photoArchivedHint: 'This car is archived. Unarchive it to add or change the photo.',
   noCars: 'No cars yet. Add your first one.',
   showArchived: 'Show archived',
   archived: 'Archived',
@@ -135,6 +136,7 @@ const en = {
   deleteServiceOf: 'Delete the service from {{date}} at {{value}} {{distUnit}}, {{shop}}',
   confirmDeleteService: 'Delete this service? Its tasks and odometer reading go back to how they were before it.',
   serviceGone: 'This service was already deleted.',
+  serviceGoneRefreshed: 'This service was deleted, so the list was refreshed.',
   // FILE-2: files on a service record.
   attachments: 'Files',
   addFile: 'Add file',
@@ -145,6 +147,10 @@ const en = {
   filesDeletedToo: 'Its files are deleted too.',
   kb: 'KB',
   mb: 'MB',
+  gb: 'GB',
+  filesMax: 'This service has the maximum of 10 files.',
+  photosMax: 'This run has the maximum of 10 photos.',
+  opensNewTab: '(opens in a new tab)',
   taskGone: 'A task you ticked was deleted, and the task list has been updated. Check your selection and save again.',
   items: 'Parts and labour',
   addPart: 'Add part',
@@ -265,7 +271,8 @@ const en = {
   runSaved_two: 'Run saved. {{count, number}} items flagged.',
   runSaved_other: 'Run saved. {{count, number}} items flagged.',
   deleteRunOf: 'Delete the run from {{date}}',
-  confirmDeleteRun: 'Delete this run? Its odometer reading is deleted with it.',
+  confirmDeleteRun: 'Delete this run?',
+  runReadingDeletedToo: 'Its odometer reading is deleted with it.',
   photosDeletedToo: 'Its photos are deleted too.',
   // FILE-3: photos on a saved run; "Add photo" is the car photo's string.
   photos: 'Photos',
@@ -422,11 +429,12 @@ const en = {
       vehicleArchived: "This car is archived, so files can't be added. They can still be deleted.",
       notFound: 'This file was not found. It may have been deleted already.',
     },
-    // Not an API code: attachment.tooMany on a run's photos.
+    // Not an API code: attachment.* and file.unsupportedType on a run's photos.
     runPhoto: {
       tooMany: 'This run already has 10 photos. Delete one to add another.',
       vehicleArchived: "This car is archived, so photos can't be added. They can still be deleted.",
       notFound: 'This photo was not found. It may have been deleted already.',
+      unsupportedType: 'Choose a JPEG, PNG or WebP photo.',
     },
     // Not an API code: the file.* messages for a service's files instead of the car photo.
     attachmentFile: {
@@ -434,7 +442,7 @@ const en = {
       tooLarge: 'The file is too large. It must be 10 MB or smaller.',
       unsupportedType: 'Choose a JPEG, PNG or WebP image, or a PDF.',
       storageUnavailable: "Files can't be saved right now. Try again later.",
-      quotaExceeded: "You've reached the 1 GB storage limit for files. Delete some files to add more.",
+      quotaExceeded: "You've reached the {{amount}} {{unit}} storage limit for files. Delete some files to add more.",
     },
     odometer: {
       lowerThanPrevious:
@@ -606,6 +614,7 @@ const he: typeof en = {
   removePhoto: 'הסרת התמונה',
   uploadingPhoto: 'מעלה את התמונה…',
   confirmRemovePhoto: 'להסיר את התמונה?',
+  photoArchivedHint: 'הרכב בארכיון. כדי להוסיף או להחליף את התמונה, יש להחזיר אותו מהארכיון.',
   noCars: 'עדיין אין רכבים. אפשר להוסיף את הרכב הראשון.',
   showArchived: 'הצגת רכבים בארכיון',
   archived: 'בארכיון',
@@ -718,6 +727,7 @@ const he: typeof en = {
   deleteServiceOf: 'מחיקת הטיפול מ־{{date}} ב־{{value}} {{distUnit}}, {{shop}}',
   confirmDeleteService: 'למחוק את הטיפול הזה? המשימות והקילומטראז׳ יחזרו למצב שלפני הטיפול.',
   serviceGone: 'הטיפול הזה כבר נמחק.',
+  serviceGoneRefreshed: 'הטיפול הזה נמחק, ולכן הרשימה עודכנה.',
   attachments: 'קבצים',
   addFile: 'הוספת קובץ',
   addFileTo: 'הוספת קובץ לטיפול מ־{{date}} ב־{{value}} {{distUnit}}, {{shop}}',
@@ -727,6 +737,10 @@ const he: typeof en = {
   filesDeletedToo: 'גם הקבצים שלו יימחקו.',
   kb: 'ק״ב',
   mb: 'מ״ב',
+  gb: 'ג״ב',
+  filesMax: 'לטיפול הזה כבר יש ⁦10⁩ קבצים, וזה המספר המרבי.',
+  photosMax: 'לבדיקה הזו כבר יש ⁦10⁩ תמונות, וזה המספר המרבי.',
+  opensNewTab: '(פתיחה בכרטיסייה חדשה)',
   taskGone: 'אחת המשימות שסומנו נמחקה, ורשימת המשימות עודכנה. יש לבדוק את הבחירה ולשמור שוב.',
   items: 'חלקים ועבודה',
   addPart: 'הוספת חלק',
@@ -846,7 +860,8 @@ const he: typeof en = {
   runSaved_two: 'הבדיקה נשמרה. סומנו שתי בעיות.',
   runSaved_other: 'הבדיקה נשמרה. סומנו ⁦{{count, number}}⁩ בעיות.',
   deleteRunOf: 'מחיקת הבדיקה מ־{{date}}',
-  confirmDeleteRun: 'למחוק את הבדיקה הזו? גם קריאת הקילומטראז׳ שלה תימחק.',
+  confirmDeleteRun: 'למחוק את הבדיקה הזו?',
+  runReadingDeletedToo: 'גם קריאת הקילומטראז׳ שלה תימחק.',
   photosDeletedToo: 'גם התמונות שלה יימחקו.',
   photos: 'תמונות',
   addPhotos: 'הוספת תמונות',
@@ -1002,13 +1017,14 @@ const he: typeof en = {
       tooMany: 'לבדיקה הזו כבר יש ⁦10⁩ תמונות. כדי להוסיף תמונה, יש למחוק אחת מהן.',
       vehicleArchived: 'הרכב בארכיון, ולכן אי אפשר להוסיף תמונות. עדיין אפשר למחוק תמונות קיימות.',
       notFound: 'התמונה לא נמצאה. ייתכן שהיא כבר נמחקה.',
+      unsupportedType: 'יש לבחור תמונה מסוג JPEG‏, PNG‏ או WebP.',
     },
     attachmentFile: {
       required: 'יש לבחור קובץ להעלאה.',
       tooLarge: 'הקובץ גדול מדי. הגודל המרבי הוא ⁦10⁩ מ״ב.',
       unsupportedType: 'יש לבחור תמונה מסוג JPEG‏, PNG‏ או WebP‏, או קובץ PDF.',
       storageUnavailable: 'אי אפשר לשמור קבצים כרגע. אפשר לנסות שוב מאוחר יותר.',
-      quotaExceeded: 'נפח האחסון לקבצים (⁦1⁩ ג״ב) מלא. כדי להוסיף קבצים, יש למחוק חלק מהקבצים הקיימים.',
+      quotaExceeded: 'נפח האחסון לקבצים (⁦{{amount}}⁩ {{unit}}) מלא. כדי להוסיף קבצים, יש למחוק חלק מהקבצים הקיימים.',
     },
     odometer: {
       lowerThanPrevious:
@@ -1180,13 +1196,15 @@ applyDir(i18n.resolvedLanguage ?? 'en')
 i18n.on('languageChanged', applyDir)
 
 // Translated text for any thrown error: known API codes get their own message, everything else the generic one. `n` overrides the item number (its row now).
-export function errorMessage(err: unknown, n?: number) {
+// `code` replaces the problem's code as the text's key (a caller's own wording for it), keeping the problem's values.
+export function errorMessage(err: unknown, n?: number, code?: string) {
   const problem = err instanceof ApiError ? err.problem : {}
   // Distance errors show only where a car is, never on Settings mid-save, so the saved unit is the one on screen.
   // shortcut: reads the unit from localStorage, so a unit changed in another tab shows here before this tab re-renders; read it from the auth context if that matters.
   const d = distance(cachedUser()?.distanceUnit ?? 'Km', i18n.t, i18n.resolvedLanguage)
   const shown = (km: number | undefined) => (km == null ? undefined : d.value(km))
-  return i18n.t(`errors.${problem.code}`, {
+  const gb = (problem.maxBytes ?? 0) >= 2 ** 30
+  return i18n.t(`errors.${code ?? problem.code}`, {
     ...d.vars,
     previous: shown(problem.previousKm),
     next: shown(problem.nextKm),
@@ -1197,6 +1215,9 @@ export function errorMessage(err: unknown, n?: number) {
     maxInterval: d.maxInterval,
     minDate: problem.minDate && fmtDate(problem.minDate, i18n.resolvedLanguage),
     mountedAt: problem.mountedAt && fmtDate(problem.mountedAt, i18n.resolvedLanguage),
+    // file.quotaExceeded: the limit in whole GB, or MB under 1 GB.
+    amount: problem.maxBytes && Math.round(problem.maxBytes / (gb ? 2 ** 30 : 2 ** 20)).toLocaleString(i18n.resolvedLanguage),
+    unit: problem.maxBytes && i18n.t(gb ? 'gb' : 'mb'),
     defaultValue: i18n.t('errors.generic'),
   })
 }

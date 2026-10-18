@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { errorMessage } from '../i18n'
 import { useNavigate, useParams } from 'react-router-dom'
-import { api, carNotFound, fuelTypes, isGuid, localToday, fileError, photoTypes, type FuelType, type Vehicle, type VehicleInput } from '../api'
+import { api, ApiError, carNotFound, fuelTypes, isGuid, localToday, fileError, photoTypes, type FuelType, type Vehicle, type VehicleInput } from '../api'
 import { useDistance } from '../auth'
 import { usePage } from '../usePage'
 import { CarError, CarPhoto } from './CarPage'
@@ -101,6 +101,18 @@ function PhotoField({ car, setCar }: { car: Vehicle; setCar: (car: Vehicle) => v
   const refocus = useRef(false)
   const path = `/vehicles/${encodeURIComponent(car.id)}/photo`
 
+  // Raced another photo change: the message stays, over the car as it is now. A failed reload leaves the shown car.
+  async function reloadOnConflict(e: unknown): Promise<never> {
+    if (e instanceof ApiError && e.problem.code === 'concurrency.conflict') {
+      await api<Vehicle>(`/vehicles/${encodeURIComponent(car.id)}`).then((v) => {
+        setCar(v)
+        // Nothing left to remove: back to the buttons, focus on Add photo.
+        if (!v.photoUrl) { refocus.current = true; row.close() }
+      }, () => {})
+    }
+    throw e
+  }
+
   useEffect(() => {
     if (busy || mode !== 'view' || !refocus.current) return
     refocus.current = false
@@ -117,13 +129,13 @@ function PhotoField({ car, setCar }: { car: Vehicle; setCar: (car: Vehicle) => v
       if (invalid) throw invalid
       const body = new FormData()
       body.append('file', file)
-      setCar(await api<Vehicle>(path, 'PUT', body))
+      setCar(await api<Vehicle>(path, 'PUT', body).catch(reloadOnConflict))
     })
   }
 
   function remove(retryFrom: HTMLElement) {
     row.run(async () => {
-      await api(path, 'DELETE')
+      await api(path, 'DELETE').catch(reloadOnConflict)
       setCar({ ...car, photoUrl: null })
       refocus.current = true
       row.close()
@@ -135,16 +147,19 @@ function PhotoField({ car, setCar }: { car: Vehicle; setCar: (car: Vehicle) => v
       <span id="photo-label">{t('photo')}</span>
       <CarPhoto car={car} setCar={setCar} />
       {mode === 'view' ? (
-        <div className="actions">
-          {!car.isArchived && (
-            <button type="button" ref={pick} aria-busy={busy} aria-disabled={busy} onClick={() => !busy && input.current?.click()}>
-              {t(busy ? 'uploadingPhoto' : car.photoUrl ? 'changePhoto' : 'addPhoto')}
-            </button>
-          )}
-          {car.photoUrl && (
-            <button type="button" className="link" disabled={busy} ref={opener('remove')} onClick={() => row.open('remove')}>{t('removePhoto')}</button>
-          )}
-        </div>
+        <>
+          <div className="actions">
+            {!car.isArchived && (
+              <button type="button" ref={pick} aria-busy={busy} aria-disabled={busy} onClick={() => !busy && input.current?.click()}>
+                {t(busy ? 'uploadingPhoto' : car.photoUrl ? 'changePhoto' : 'addPhoto')}
+              </button>
+            )}
+            {car.photoUrl && (
+              <button type="button" className="link" disabled={busy} ref={opener('remove')} onClick={() => row.open('remove')}>{t('removePhoto')}</button>
+            )}
+          </div>
+          {car.isArchived && <p className="muted">{t('photoArchivedHint')}</p>}
+        </>
       ) : (
         <div className="inline-form" onKeyDown={(e) => !busy && e.key === 'Escape' && row.open('view')}>
           <p>{t('confirmRemovePhoto')}</p>

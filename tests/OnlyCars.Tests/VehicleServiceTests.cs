@@ -67,6 +67,23 @@ public class VehicleServiceTests
     }
 
     [Fact]
+    public async Task Update_ToAnotherOwnCarsVin_ThrowsVinTaken_KeepingItsOwnVinOrAnotherUsersVinIsFine()
+    {
+        var service = CreateService();
+        var userId = Guid.NewGuid();
+        UpdateVehicleRequest Edit(string nickname, string vin) => new(nickname, null, null, null, vin, null, null, null, null, null);
+        await service.CreateAsync(userId, new CreateVehicleRequest("Car 1", null, null, null, "VIN-A", null, null, null, null, null, null));
+        var car2 = await service.CreateAsync(userId, new CreateVehicleRequest("Car 2", null, null, null, "VIN-B", null, null, null, null, null, null));
+        await service.CreateAsync(Guid.NewGuid(), new CreateVehicleRequest("Theirs", null, null, null, "VIN-C", null, null, null, null, null, null));
+
+        var ex = await Assert.ThrowsAsync<ConflictException>(() => service.UpdateAsync(userId, car2.Id, Edit("Car 2", "VIN-A")));
+        Assert.Equal("vehicle.vinTaken", ex.Code);
+
+        Assert.Equal("VIN-B", (await service.UpdateAsync(userId, car2.Id, Edit("Renamed", "VIN-B"))).Vin);
+        Assert.Equal("VIN-C", (await service.UpdateAsync(userId, car2.Id, Edit("Renamed", "VIN-C"))).Vin);
+    }
+
+    [Fact]
     public async Task Create_DuplicateVinForDifferentUsers_Allowed()
     {
         var service = CreateService();

@@ -1,7 +1,7 @@
 # OnlyCars: Requirements Status
 
-**Audit date:** 2026-10-18 (twenty-ninth audit, short sign-off of FILE-3; FILE-1, FILE-2 and FILE-3 are all uncommitted in the working tree)
-**Overall:** MVP steps 1 to 4 are complete. Step 5: checklists are complete with photos on runs (FILE-3, signed off today); tires and reports are done; notifications are not started. Next: LOW-6 and LOW-7 (the Low backlog), then NOT-1. No deployment tickets until the owner asks.
+**Audit date:** 2026-10-18 (thirtieth audit, short sign-off of LOW-6; FILE-1, FILE-2, FILE-3 and LOW-6 are all uncommitted in the working tree)
+**Overall:** MVP steps 1 to 4 are complete. Step 5: checklists (with run photos), tires and reports are done; notifications are not started. LOW-6 (files and photos Lows L114 to L140) is signed off. Next: LOW-7 (reports, dashboard and checklists Lows), then NOT-1. No deployment tickets until the owner asks.
 
 | Status | Count |
 |---|---|
@@ -12,10 +12,10 @@
 | Deferred | 6 |
 | **Total** | **57** |
 
-How this was checked (twenty-ninth audit, short sign-off of FILE-3 per decisions.md "Faster pipeline (owner)"; I re-ran no test suites and no browser scripts):
-- Reported by other agents, not re-run by me: `dotnet test` 611 of 611; build clean, lint 0; bundle 512 kB (limit 600); smoke `SMOKE_ALL=1` 122 of 122 in all 4 setups, each run alone. One Hebrew-review smoke run had 7 desktop-light-en failures, diagnosed as two smoke runs overlapping on `ui-tests/out` plus a Vite full reload from an `i18n.ts` save mid-run; solo runs passed 3 times (process rule recorded in decisions.md, "FILE-3 sign-off"). Code review and security review: no High or Medium. Hebrew review: the photo count uses a no-break space; הסרה for the car photo and מחיקה for run photos ruled consistent. Fixed after review: invisible U+2028/U+2029 characters in `AttachmentFiles.cs:166` restored to escapes; a second "Add photos" tap reopens a collapsed run; run-specific `errors.runPhoto.vehicleArchived` and `notFound` in en and he.
-- Browser QA (ui-tester): pass in 4 setups, including an EXIF-rotated JPEG shown upright, another user gets 404, and FILE-2's files still work.
-- I checked in code: `VehicleChecklistsController.cs:51,61` (POST and DELETE `/api/checklist-runs/{runId}/attachments`), `VehicleChecklistService.cs:254-290` (upload and delete), `VehicleChecklistService.cs:104` and `ChecklistTemplateService.cs:105` (Remove and template Delete still refused while runs exist: the AC4/AC10 deviation), `AttachmentFiles.cs:34-110` (shared checks; the quota at `:67-69` sums both parents through `UsedBytesAsync` at `:110`), `ServiceRecordConfiguration.cs:92-98` (`ChecklistRunId` FK, index, `CK_Attachments_OneParent`), `ChecklistsSection.tsx:86` ("Add photos" in the run confirmation), `:421` (photo count on the collapsed run), `:433` (the shared `Attachments` component with `kind="photo"`), `i18n.ts:425-427` (run-specific `tooMany`), smoke steps `run-photos` and `run-photos-states` (`smoke.mjs:3670,3765`), and `docs/contracts/FILE-3.md`.
+How this was checked (thirtieth audit, short sign-off of LOW-6 per decisions.md "Faster pipeline (owner)"; I re-ran no test suites and no browser scripts; no status changes, so the counts are unchanged):
+- Reported by other agents, not re-run by me: `dotnet test` 618 of 618 (LocalDB tests for the L116 photo race); build clean, lint 0; bundle 514 kB (limit 600); smoke `SMOKE_ALL=1` 123 of 123 in all 4 setups, each run alone. Code review: no High; its findings fixed. Hebrew review: all new strings approved unchanged. Browser QA (ui-tester) in 4 setups: one Medium (a car photo 409 did not reload the car), fixed; everything else passed live, including a real 409 from the API (live check 5 x 200 / 5 x 409 on concurrent photo PUT/DELETE).
+- I checked in code: `VehicleService.cs:178,201,210` (`SwapPhotoKeyAsync`, the conditional key swap used by photo PUT and DELETE), `docs/contracts/LOW-6.md` and the updated `docs/contracts/FILE-1.md`.
+- The cleanup script (L139) was run in dry-run mode only: 1,713 of 1,718 accounts matched; the 5 left are 3 gmail accounts and `demo+…`/`ui+…` at `onlycars.test` (deliberately excluded). A new domain allow-list guard (THROW 50003) stops the script if any target is outside the test domains, so a gmail account can never be targeted. Never run with `DryRun=0` (L72 is the owner's).
 - The notes from earlier audits are in git history.
 
 ## 1. Vehicles
@@ -23,7 +23,7 @@ How this was checked (twenty-ninth audit, short sign-off of FILE-3 per decisions
 | Requirement | Status | Evidence | What's missing |
 |---|---|---|---|
 | Add, edit and archive cars (archive on sale, keeping history) | **Done** | API: `VehiclesController.cs:28-54`, `VehicleService.cs:30-111`. UI: `CarFormPage.tsx`, `CarsPage.tsx:19-22,55-60`. Tests: `VehicleServiceTests.cs:12,65,84`. Browser: smoke steps `add-car`, `edit-car` and `archive-car` pass in both setups (`out/mobile-dark-he-08-archive-car.png`). | Nothing for the MVP. Unarchive works too. |
-| Fields: nickname, make, model, year, VIN, plate, fuel type, purchase date, photo | **Done** | All fields are on the form (`CarFormPage.tsx:57-72`) and saved (`VehicleService.cs:41-55`); the form also has a purchase price field. Photo (FILE-1): add, change and remove on the car's Edit form, saved at once (`CarFormPage.tsx:93-145`), shown at the top of the car page (`CarPage.tsx:78,126-137`); `PUT`/`DELETE /api/vehicles/{id}/photo` (`VehiclesController.cs:44-79`) store it privately in R2 with metadata stripped and return a 1-hour signed URL (`VehicleService.cs:152,193`); tests `VehiclePhotoTests.cs`; smoke `photo-*` (`smoke.mjs:1533-1622`) and browser QA in 4 setups. | Nothing for the MVP. The photo is not on dashboard cards (decided). VIN uniqueness has no test for the edit path (L125). |
+| Fields: nickname, make, model, year, VIN, plate, fuel type, purchase date, photo | **Done** | All fields are on the form (`CarFormPage.tsx:57-72`) and saved (`VehicleService.cs:41-55`); the form also has a purchase price field. Photo (FILE-1): add, change and remove on the car's Edit form, saved at once (`CarFormPage.tsx:93-145`), shown at the top of the car page (`CarPage.tsx:78,126-137`); `PUT`/`DELETE /api/vehicles/{id}/photo` (`VehiclesController.cs:44-79`) store it privately in R2 with metadata stripped and return a 1-hour signed URL (`VehicleService.cs:152,193`); tests `VehiclePhotoTests.cs`; smoke `photo-*` (`smoke.mjs:1533-1622`) and browser QA in 4 setups. | Nothing for the MVP. The photo is not on dashboard cards (decided). |
 | Current odometer, with a history of readings | **Done** | The car name links to a car page (`CarsPage.tsx:41`, route in `App.tsx`). `/cars/:id` shows the drum counter and the history, newest first, with value, source and date (`CarPage.tsx:45-63`). It has loading, empty, error and not-found states. API: `OdometerController.cs:14-35` (GET, POST, PUT, DELETE), `OdometerService.cs:20-87` with one shared `Recompute` (`OdometerService.cs:167`). Manual readings can be edited and deleted inline (`CarPage.tsx:145-178`); non-GUID ids show "not found" without an API call (`CarPage.tsx:16`). Tests: `OdometerServiceTests.cs` (50 tests). Browser: smoke steps `odometer-history`, `edit-reading`, `delete-reading` in both setups; QA criteria 8, 9, 11, 17-20. | Nothing for the MVP. MVP1-C added focus handling after Save and Delete, and 44px buttons. |
 | Multiple cars per account | **Done** | The list endpoint and UI loop over all of the user's cars (`VehicleService.cs:12-22`, `CarsPage.tsx:45-62`). Tests: `VehicleServiceTests.cs:84`. | The browser tests add only one car per user, so a list of several cars has not been checked in a browser. |
 
@@ -61,7 +61,7 @@ How this was checked (twenty-ninth audit, short sign-off of FILE-3 per decisions
 |---|---|---|---|
 | Date, odometer, shop (or DIY), total cost, notes | **Done** | API (MVP3-A, contract `docs/contracts/MVP3-A.md`): `GET` and `POST /api/vehicles/{vehicleId}/service-records` (`MaintenanceTasksController.cs:43-49`, `MaintenanceTaskService.cs:148,167`): one record can cover several tasks; a task's last done moves only when the record is at least as recent; the date-order rules with `confirmCorrection`; `serviceRecord.futureDate`, `shopTooLong`, `invalidCost`, `notesTooLong`, `task.notFound`. Tests: `ServiceHistoryTests.cs` (221 of 221 pass, run by me). UI: a Service history section on `/cars/:id` (`CarPage.tsx:83`, `ServiceHistory.tsx`): rows with date, odometer in the user's unit, shop or DIY, cost in the user's currency, task names and wrapped notes (`:226-239`); a Record a service form (`:149-205`); read-only on archived cars. Strings in en and he. Browser: smoke `service-history-empty`, `record-service`, `record-service-backdated`, `undo-service-from-history`, 52 of 52 in both setups; `qa-mvp3a.mjs` in 4 setups; `qamvp3a-mobile-light-en-mi-10-order-error.png`. | Nothing for this bullet. Three QA Lows are fixed in MVP3-B (decisions.md, "MVP3-A QA Lows"). |
 | Line items: part name, brand, part number, quantity, unit cost, labor | **Done** | API (MVP3-B, contract `docs/contracts/MVP3-B.md`): `ServiceItem` entity (`src/OnlyCars.Domain/Entities/ServiceItem.cs:6`) and configuration (`ServiceRecordConfiguration.cs:50`); items on POST and the new PUT, validated by `ValidateItems` (`MaintenanceTaskService.cs:187,259,378`), the total computed as the item sum, `serviceItem.*` codes with the row `index`, `serviceRecord.tooManyItems` over 50. Tests: `ServiceItemTests.cs` (252 of 252 pass, run by me). UI: Add part and Add labour rows in the Record and Edit forms, labour rows labelled Hours and Rate per hour, a live read-only total (`ServiceHistory.tsx:234-239,278-325`); items on history rows with a Labour tag (`:413-425`). Strings in en and he. Browser: smoke `record-service-items`, 54 of 54 in both setups (run by me); `mobile-dark-he-38-record-service-items.png`; QA `qa-mvp3b.mjs` in 4 setups. | Nothing. The 50-item cap is covered by backend tests only, not in the UI. |
-| Attachments: receipt photos, PDFs, invoices | **Done** | FILE-2 (contract `docs/contracts/FILE-2.md`): `Attachment` entity (`src/OnlyCars.Domain/Entities/Attachment.cs`), migration `20261017210832_AddAttachments`, configuration `ServiceRecordConfiguration.cs:75-86`; `POST` and `DELETE /api/vehicles/{vehicleId}/service-records/{recordId}/attachments[/{id}]` (`MaintenanceTasksController.cs:70-84`, `ServiceRecordAttachments.cs:27,105`): JPEG, PNG, WebP (metadata stripped) and PDF by content, 10 MB each, 10 per record, 1 GiB per user, cleaned file names, signed 1-hour inline URLs; voiding a record deletes its files. Tests: `AttachmentTests.cs` (19), 592 of 592 reported. UI: a Files list on each service row on `/cars/:id` with Add file, open in a new tab (reloads a link older than 55 minutes first) and Delete with a confirm (`ServiceHistory.tsx:424,463-600`); open only on `/history` (`HistoryPage.tsx:207`); en and he. Browser: smoke `files-*` (`smoke.mjs:1726-1881`) 120 of 120 in 4 setups (reported); browser QA in 4 setups with real files. | Nothing for this bullet. Files can't be added on the Record a service form (decided: from the saved row). HEIC is not accepted; untested on a real iPhone (L134). Lows L126 to L134. |
+| Attachments: receipt photos, PDFs, invoices | **Done** | FILE-2 (contract `docs/contracts/FILE-2.md`): `Attachment` entity (`src/OnlyCars.Domain/Entities/Attachment.cs`), migration `20261017210832_AddAttachments`, configuration `ServiceRecordConfiguration.cs:75-86`; `POST` and `DELETE /api/vehicles/{vehicleId}/service-records/{recordId}/attachments[/{id}]` (`MaintenanceTasksController.cs:70-84`, `ServiceRecordAttachments.cs:27,105`): JPEG, PNG, WebP (metadata stripped) and PDF by content, 10 MB each, 10 per record, 1 GiB per user, cleaned file names, signed 1-hour inline URLs; voiding a record deletes its files. Tests: `AttachmentTests.cs` (19), 592 of 592 reported. UI: a Files list on each service row on `/cars/:id` with Add file, open in a new tab (reloads a link older than 55 minutes first) and Delete with a confirm (`ServiceHistory.tsx:424,463-600`); open only on `/history` (`HistoryPage.tsx:207`); en and he. Browser: smoke `files-*` (`smoke.mjs:1726-1881`) 120 of 120 in 4 setups (reported); browser QA in 4 setups with real files. | Nothing for this bullet. Files can't be added on the Record a service form (decided: from the saved row). HEIC is not accepted; untested on a real iPhone (L134). Lows L126 to L133 closed in LOW-6. |
 | Filter and search by car, task, date or shop | **Done** | MVP3-C: `GET /api/service-records` with `vehicleId`, `taskId`, `from`, `to`, `q`, `skip`, `take`, returning `items`, `totalCount`, `totalCost` (`MaintenanceTasksController.cs:47`, `MaintenanceTaskService.cs:176`; contract `docs/contracts/MVP3-C.md`). Tests: `ServiceRecordSearchTests.cs` (279 of 279, reported). UI: a `/history` page linked from the header (`App.tsx:38,51`, `HistoryPage.tsx`) with car, task, date range and search filters kept in the URL, a count and total summary, and Show more; a "Search all history" link on the car page (`ServiceHistory.tsx:93`). Strings in en and he. Browser: smoke `history-page`, `history-filter`, `history-empty` (57 of 57 in both setups, reported); QA `qa-mvp3c.mjs` and `qa-mvp3c-more500.mjs` in 4 setups. | Nothing for this bullet. Five Lows are in the backlog (L1 to L5). The search does not cover task names (the task select does). |
 | Edit and delete past records | **Done** | MVP3-D (`571f89d`, `74284b5`; contract `docs/contracts/MVP3-D.md`): the same PUT now also takes optional `date`, `odometerKm`, `taskIds` and `confirmCorrection`, moves the record's Service reading, recomputes the car's odometer and average and the tasks' last done, and returns `{record, tasks}` (302 of 302 tests, reported). UI: the Edit form's date, odometer and task checkboxes are editable with the Record form's validation (`ServiceHistory.tsx:256,260`); smoke 59 of 59 in both setups (reported) with `edit-service-date-odometer` and `edit-service-tasks`; QA in 4 setups. Earlier, MVP3-B: `PUT .../service-records/{recordId}` edits shop, total cost, notes and items without touching the date, odometer, readings or tasks (`MaintenanceTasksController.cs:51`, `MaintenanceTaskService.cs:250-273`; 409 on voided, 404 on another user's). UI: Edit opens the row inline with date, odometer and tasks read-only and the "delete and record again" hint; Delete (the void, `ServiceHistory.tsx:430-443`) replaces the history's Undo; a 409 or 404 reloads the list with a translated note (`mobile-dark-he-39-edit-service.png`). Smoke `edit-service` and `delete-service` pass in both setups. | Nothing for this bullet. Moving a record to another car is not allowed (decisions.md). Lows L7 to L12 are in the backlog. |
 
@@ -166,7 +166,7 @@ How this was checked (twenty-ninth audit, short sign-off of FILE-3 per decisions
 | Deploy gate | **SEC-1 signed off.** Nothing else blocks a first deploy except the owner's Azure account. The owner said not to deploy yet (decisions.md, 2026-10-15, "When to deploy"), so no deployment tickets are queued. |
 | 3. Service history with costs | **Complete. MVP3-A, MVP3-B, MVP3-C, MVP3-D and FILE-2 (attachments) are signed off.** Files: receipt photos and PDFs added to a saved service, opened and deleted from its row, opened from `/history`. Working end to end in EN and HE: the service history on `/cars/:id`, recording a past service (date, odometer, shop or DIY, cost, notes, several tasks, parts and labour) with the date-order rules, editing everything on a record (shop, cost, notes, items, date, odometer and tasks, with the car's odometer and the tasks' last done following), deleting any record, and a `/history` page that filters and searches all cars. LOW-1 (the first Low batch) is signed off too. |
 | 4. Dashboard with due/overdue status | **Complete. MVP4-A and LOW-2 are signed off; "Start a checklist" came with MVP5-B.** The dashboard on `/`: overdue and due-soon counts, this month's spend linking to `/history`, and per-car cards with the next 3 tasks, one-tap Mark done with Undo, quick odometer entry and Start a checklist, in EN and HE. |
-| 5. Checklists, tires, reports, notifications | **Started. Checklists are complete: MVP5-A, MVP5-B, MVP5-C and FILE-3 (photos on runs) are signed off. Tires are done: MVP5-D (sets, mounts, swap, km per set, storage notes) and MVP5-E (pressure, tread depth, rotations) are signed off. LOW-3, LOW-4 and LOW-5 are signed off. Reports are done: RPT-1 (cost per car, category, month and year, cost per km, TCO), RPT-2 (charts) and RPT-3 (CSV and PDF export) are signed off. The browser QA catch-up over MVP5-C to RPT-3 passed.** Remaining: notifications (spec 9). Order (decisions.md, "Order after FILE-3"): LOW-6 (files and photos Lows) next, then LOW-7 (reports, dashboard and checklists Lows), then NOT-1, then NOT-2. |
+| 5. Checklists, tires, reports, notifications | **Started. Checklists are complete: MVP5-A, MVP5-B, MVP5-C and FILE-3 (photos on runs) are signed off. Tires are done: MVP5-D (sets, mounts, swap, km per set, storage notes) and MVP5-E (pressure, tread depth, rotations) are signed off. LOW-3, LOW-4 and LOW-5 are signed off. Reports are done: RPT-1 (cost per car, category, month and year, cost per km, TCO), RPT-2 (charts) and RPT-3 (CSV and PDF export) are signed off. The browser QA catch-up over MVP5-C to RPT-3 passed.** LOW-6 (files and photos Lows) is signed off. Remaining: notifications (spec 9). Order (decisions.md, "Order after FILE-3"): LOW-7 (reports, dashboard and checklists Lows) next, then NOT-1, then NOT-2. |
 
 ## Ticket queue
 
@@ -175,12 +175,17 @@ How this was checked (twenty-ninth audit, short sign-off of FILE-3 per decisions
 | 1 | FILE-1: file storage and the car photo (spec 1, 12) | BE, then FE | **Signed off** 2026-10-18 |
 | 2 | FILE-2: attachments on service records (spec 5, 12) | BE, then FE | **Signed off** 2026-10-18 |
 | 3 | FILE-3: photos on checklist runs (spec 7, 12) | BE, then FE | **Signed off** 2026-10-18 |
-| 4 | LOW-6: files and photos Lows (L114 to L140) | BE, then FE | **Next** (written below) |
-| 5 | LOW-7: reports, dashboard and checklists Lows (L107 to L113) | BE, then FE | After LOW-6 (written below) |
+| 4 | LOW-6: files and photos Lows (L114 to L140) | BE, then FE | **Signed off** 2026-10-18 |
+| 5 | LOW-7: reports, dashboard and checklists Lows (L107 to L113) | BE, then FE | **Next** (written below) |
 | 6 | NOT-1: in-app reminders (documents, lead time, snooze) | BE, then FE | After LOW-7; no owner input needed |
 | 7 | NOT-2: email when due | BE | Needs the owner's email provider and credentials (open question) |
 
 ## Signed-off tickets
+- **LOW-6 (uncommitted in the working tree): signed off 2026-10-18.** Short sign-off under "Faster pipeline (owner)"; I re-ran no suites. Closes L114 to L133 and L136 to L140 (L124 was already closed; L134 stays the owner's; L135 belongs to the spec 12 ticket). No requirement status changes.
+  - Reported evidence: `dotnet test` 618 of 618; build clean, lint 0; bundle 514 kB; smoke `SMOKE_ALL=1` 123 of 123 in all 4 setups, each run alone; code review no High; Hebrew review approved; browser QA in 4 setups with one Medium fixed.
+  - AC1 to AC6 [BE]: L116 conditional photo-key swap (`ExecuteUpdate ... WHERE PhotoUrl = <key read>`, `VehicleService.cs:210`): the loser of concurrent photo PUT/DELETE gets 409 `concurrency.conflict` and its object is deleted (LocalDB tests; live 5 x 200 / 5 x 409); L118 DELETE clears an invalid stored key; L117 `ANMF` frames keep only `ALPH`/`VP8 `/`VP8L`; L119 upload limit 10,000 in Development only (closes L120); L125 VIN-on-edit test; L138 comments; L128 closed as accepted; L139 cleanup script with tight rules, a domain allow-list guard, dry run only. Contract `docs/contracts/LOW-6.md`.
+  - AC7 to AC14 [FE]: L114, L115, L121, L126, L127, L129, L130, L131, L133, L136, L137 and smoke L122, L123, L132, L140 as in the ticket (smoke 123 of 123 in 4 setups; browser QA in 4 setups). Fix round: a car photo 409 on PUT or DELETE reloads the car and shows the conflict message (when the photo is gone, the confirm closes and focus goes to Add photo); the `/history` gone note takes focus once; `take` sent explicitly on history page requests; the run Delete confirm smoke covers all 4 variants. AC15: no regressions reported; no new dependency.
+  - Accepted (decisions.md, "LOW-6 sign-off"): the `/history` gone reload fetches its pages in parallel (same duplicate/skip risk as Show more; the order is deterministic); the in-memory fallback in `SwapPhotoKeyAsync` exists only for the in-memory tests (the production path is covered on LocalDB). New Lows L141 to L144.
 
 - **MVP1-A (commit `994a0c1`): signed off 2026-10-14.** Server-side auth validation, translated API errors, odometer history page.
 - **MVP1-B (commit `c444fa6`): signed off 2026-10-14.** Edit and delete odometer readings with date-order rules and recompute; currency at sign-up. All 30 criteria met.
@@ -331,131 +336,52 @@ How this was checked (twenty-ninth audit, short sign-off of FILE-3 per decisions
 
 ## Low issues backlog
 
-Every Low finding from QA and review lands here (decisions.md, "Faster pipeline (owner)"). They are fixed together in a batch ticket LOW-n about every 3 tickets. LOW-1 closed L1 to L12, LOW-2 L13 to L26, LOW-3 L27 to L65, LOW-4 L66 to L86, LOW-5 L87 to L106 (L98 closed as not reproduced); those rows are in git history. Open (LOW-6 takes L114 to L140, LOW-7 takes L107 to L113; L124 was closed by FILE-2's cleanup script; L72, L105 and L134 are the owner's; L135 belongs to the spec 12 ticket):
+Every Low finding from QA and review lands here (decisions.md, "Faster pipeline (owner)"). They are fixed together in a batch ticket LOW-n about every 3 tickets. LOW-1 closed L1 to L12, LOW-2 L13 to L26, LOW-3 L27 to L65, LOW-4 L66 to L86, LOW-5 L87 to L106 (L98 closed as not reproduced), LOW-6 L114 to L140 (L120 closed by L119, L128 closed as accepted; L124 was closed by FILE-2's cleanup script); those rows are in git history. Open (LOW-7 takes L107 to L113; L141 to L144 wait for the next batch; L72, L105 and L134 are the owner's; L135 belongs to the spec 12 ticket):
 
 | # | From | Issue | Area |
 |---|---|---|---|
-| L107 | LOW-5 review | `ReportsPage.tsx:115,240`: a CSV export that fails after a filter change shows no error and downloads nothing. Show the export error (for the filters it ran with, or the current ones), never fail silently. | FE, reports |
-| L108 | LOW-5 review | `smoke.mjs:3990`: the L96 check passes vacuously when the report has no `/history` links. Assert at least one link first. | Smoke |
+| L107 | LOW-5 review | `ReportsPage.tsx:114,234-243`: a CSV export that fails after a filter change shows no error and downloads nothing. Show the export error (for the filters it ran with, or the current ones), never fail silently. | FE, reports |
+| L108 | LOW-5 review | `smoke.mjs:4806`: the L96 check passes vacuously when the report has no `/history` links. Assert at least one link first. | Smoke |
 | L109 | LOW-5 review | `TasksSection.tsx:10`: a stale comment about `fieldOf` and `task.invalidLastDone`. Fix or remove it. | FE, comment |
-| L110 | Catch-up QA | "Last run on" shows the attach date, not the actual run, when the only runs are dated before the day the checklist was attached (`VehicleChecklistService.cs:183` keeps the attach values; `ChecklistsSection.tsx:249` labels them "Last run" whenever `runCount > 0`). Label it from the latest run, or say "Counting from <date>" when the attach date wins. | BE+FE, checklists |
+| L110 | Catch-up QA | "Last run on" shows the attach date, not the actual run, when the only runs are dated before the day the checklist was attached (`VehicleChecklistService.cs:187-189,235-244` keep the attach values; `ChecklistsSection.tsx:260` labels them "Last run" whenever `runCount > 0`). Label it from the latest run, or say "Counting from <date>" when the attach date wins. | BE+FE, checklists |
 | L111 | Catch-up QA | At 390px in Hebrew the two export buttons reflow while the CSV is busy (the busy label is longer). Keep the layout stable. | FE, reports |
 | L112 | Catch-up QA | `/reports?year=2025abc` shows the invalid-year error, but the Year box shows the current year. Show no year selected while the URL year is invalid. | FE, reports |
 | L113 | Catch-up QA | The dashboard car card's Edit link is 28px wide (en) and 40px (he) at mobile width, under 44px (existing since MVP4-A). | FE, dashboard |
-| L114 | FILE-1 review | An archived car's Edit form shows only Remove photo, with no hint why Add or Change is missing. Say the car is archived. | FE, car form |
-| L115 | FILE-1 review | `CarPhoto` reloads the car once per mount when the signed URL fails, so a car page left open over 2 hours hides the photo. Retry once per URL, not per mount. | FE, car page |
-| L116 | FILE-1 review | Two replacements of the same car's photo at once orphan one object (`Vehicle` has no concurrency token). | BE, vehicles |
-| L117 | FILE-1 review | WebP: metadata inside nested `ANMF` chunks of animated WebP is kept (a `shortcut:`). | BE, files |
-| L118 | FILE-1 review | A stored key that fails the key check is never cleared by `DELETE .../photo` (it is ignored, so the row keeps it). Clear the column. | BE, vehicles |
-| L119 | FILE-1 review | The per-user upload limit (10 per 10 minutes) uses the production value in Development too, unlike the other limits (decisions.md, dev limits stay high). | BE, config |
-| L120 | FILE-1 review | The live rejection of a third concurrent upload is covered only by xUnit, not by a live check. | BE, tests |
-| L121 | FILE-1 review | Browsers that report `application/octet-stream` for an unknown file are still blocked client-side; let the server decide by content. | FE, files |
-| L122 | FILE-1 review | The smoke helper `key('required')` picks lines by position; fragile. | Smoke |
-| L123 | FILE-1 smoke | The smoke overflow check at `smoke.mjs:205` crashed once with "execution context destroyed" (passed on rerun). | Smoke, flaky |
-| L125 | Earlier audit | VIN uniqueness (`vehicle.vinTaken`, `VehicleService.cs:117`) has no test on the edit path (`VehicleServiceTests.cs:56-80` cover create only). | BE, tests |
-| L126 | FILE-2 QA | On an archived car, a record with no files still renders an empty "Files" group (`ServiceHistory.tsx:560`), which screen readers announce. Render nothing when there is nothing to show or add. | FE, service history |
-| L127 | FILE-2 review | Add file disappears at 10 files with no hint why. Say the record has the maximum of 10 files. | FE, service history |
-| L128 | FILE-2 security | The quota check can be overshot by up to 2 x 10 MB by uploads to different parents at once (records or runs since FILE-3; `AttachmentFiles.cs:67`, a `shortcut:`). Accepted as a cost guard (decisions.md, "Storage quota"); revisit if the quota becomes a paid limit. LOW-6 closes the row with no code change. | BE, files |
-| L129 | FILE-2 review | The client ignores the quota's `maxBytes` and has "1 GB" written into the text (`i18n.ts:422,983`). Format it from `maxBytes`. | FE, i18n |
-| L130 | FILE-2 review | On `/history`, the reload after a record is found gone (`HistoryPage.tsx:207`, `onGone` → `load(0)`) drops the Show more pages and gives no note and no focus move. | FE, history |
-| L131 | FILE-2 review | After a 409 on upload, a failed reload replaces the conflict message with the reload's error. Keep both, or the conflict first. | FE, service history |
-| L132 | FILE-2 QA | The quota message and a real 409 race were not seen live in a browser (backend tests only). Add a smoke step with a mocked response for each. | Smoke |
-| L133 | FILE-2 QA | Screen readers aren't told that a file link opens in a new tab. Add a visually hidden "(opens in a new tab)". | FE, a11y |
 | L134 | FILE-2 QA | Not tried on a real iPhone (camera photo converted to JPEG on upload, HEIC refused, the inline PDF view; since FILE-3 also a camera photo on a run). Needs a real device. | Owner or a device |
 | L135 | FILE-3 review | A future car delete or delete-account must delete run-photo rows first (`Attachment.ChecklistRunId` is `NoAction`) and remove every R2 object under `users/{id}/`. Belongs to the spec 12 ticket (see "Later"), not a LOW batch. | BE, spec 12 |
-| L136 | FILE-3 review | The run Delete confirm (`i18n.ts:268`, `confirmDeleteRun`) always says the run's odometer reading is deleted, even when the run logged none (pre-existing since MVP5-B). Say it only when the run has a reading. | BE+FE, checklists |
-| L137 | FILE-3 review | `file.unsupportedType` on a run says "Choose a JPEG, PNG or WebP image." (`i18n.ts:417`); the ticket asked for "photo" on runs. Use a run-specific text, as `tooMany` (`i18n.ts:425-427`). | FE, i18n |
-| L138 | FILE-3 review | The early `vehicleService.Storage()` calls (`VehicleChecklistService.cs:256,275`, `ServiceRecordAttachments.cs:19,37`) look unused; add a one-line comment that they keep 503 ahead of 404. | BE, comment |
-| L139 | FILE-3 QA | `scripts/cleanup-test-users.sql` doesn't match the browser-QA users `qa3-…@onlycars.test` (8 from FILE-3) or other ad-hoc QA prefixes (for example `sec-mvp5c-<ms>-<4>@test.local`, which today sits in the must-not-match list). | Script |
-| L140 | FILE-3 QA | Not seen live: 10 real photos uploaded in a row, a real 409, 429 or quota error on run photos, a screen reader on the photo list. The 409/429/quota part joins L132's mocked smoke steps; the real phone joins L134. | Smoke, a11y |
+| L141 | LOW-6 QA | The car photo race (two tabs changing the photo at once) is only mocked in smoke; QA saw a live 409, but no smoke step drives a real race. | Smoke |
+| L142 | LOW-6 review | Remove photo that gets a 409 while the photo still exists keeps the confirm open; only the no-photo case is smoke-tested. Add a mocked smoke step for it. | Smoke, car form |
+| L143 | LOW-6 review | Some `%` rules in `scripts/cleanup-test-users.sql` on reserved domains (`example.com` and the like) are still loose; the new domain guard keeps them safe. Tighten them when the script is next touched. | Script |
+| L144 | LOW-6 QA | The dev DB has new test users `qa-low6-…`; the cleanup script's rules cover them (joins L72, the owner's run). | Dev DB (owner) |
 | L105 | RPT-3 | Nobody has opened the exported CSV in real Excel (Hebrew, the BOM, `;` locales) or used the real print dialog and "Save as PDF". No agent can; the owner checks once (CHECKLIST.md, "Waiting on the owner"). | Owner |
 | L72 | LOW-3 housekeeping | The local dev DB has leftover test users. `scripts/cleanup-test-users.sql` covers them (RPT prefixes added in LOW-5) but was never run; the owner decides (CHECKLIST.md, "Waiting on the owner"). | Dev DB (owner) |
 
 ## Next ticket
 
-### LOW-6: Files and photos Lows (L114 to L140)
-
-**Goal:** As a user, adding, opening and deleting the car photo, service files and run photos always explains itself (why a button is missing, what went wrong, that a link opens a new tab), and the storage code has no known loose ends.
-
-**Spec:** no new requirement; polish of spec 1 (photo), spec 5 (attachments), spec 7 (run photos) and spec 12 (storage). Backlog rows L114 to L140 (L124 is closed; L134 stays the owner's; L135 goes to the spec 12 ticket). Part 2 fields unchanged: `Vehicle.PhotoUrl` (the storage key), `Attachment.ServiceRecordId`, `Attachment.ChecklistRunId`, `FileName`, `ContentType`, `SizeBytes`.
-
-**Binding decisions:** "File storage layout and rules (owner)", "Car photo, FILE-1", "FILE-1 sign-off", "Attachments, FILE-2", "FILE-2 sign-off", "Storage quota", "Run photos, FILE-3", "FILE-3 sign-off", "Faster pipeline (owner)" (including the rule from FILE-3: never two smoke runs at once, never edit `client/src` during a browser run), "Hebrew form of address", "SEC-1 429 in the browser" (dev limits stay high).
-
-**Scope**
-
-*Backend (backend-engineer, runs first; publishes `docs/contracts/LOW-6.md`, short: only what changed):*
-- **L116** Two photo replacements of the same car at once must not orphan an object. Save the new key with a conditional update on the old key (for example `ExecuteUpdate ... where PhotoUrl == oldKey`); when no row changes, delete the just-stored object and return 409 `concurrency.conflict`. Do **not** make the whole `Vehicle` row a concurrency token (car edits and odometer recomputes would start to conflict). Test: two overlapping PUTs leave exactly one object in the fake storage and the row points to it.
-- **L118** `DELETE /api/vehicles/{id}/photo` clears a stored key that fails the key check (sets the column to null without deleting any object outside the car's prefix); 204. Test.
-- **L117** WebP: inside an `ANMF` frame keep only `ALPH`, `VP8 ` and `VP8L` chunks; drop anything else and fix the frame and RIFF sizes. Remove the `shortcut:` comment at `ImageFiles.cs:213`. Test with an animated WebP whose frame holds an `EXIF`-like or unknown chunk: the output has none and still parses.
-- **L119** The `upload` rate limit gets a high value in `appsettings.Development.json`, as the other limits (`RateLimiting:UploadPermitLimit`); production defaults unchanged. **L120** is closed by this with no live check (the xUnit test of the third concurrent upload stays the evidence; a live check under high dev limits proves nothing).
-- **L125** A test for `vehicle.vinTaken` on the edit path (another car of the same user with that VIN; the same car keeping its own VIN is fine).
-- **L138** A one-line comment on each early `vehicleService.Storage()` call (`VehicleChecklistService.cs:256,275`, `ServiceRecordAttachments.cs:19,37`): it keeps 503 ahead of 404.
-- **L128** No code change; the row closes as accepted (decisions.md, "Storage quota"); the `shortcut:` comment at `AttachmentFiles.cs:67` stays.
-- **L139** `scripts/cleanup-test-users.sql`: list the dev DB's `Users.Email` values that match no rule and are not the owner's (read only, report the prefixes, no emails of real people in the report), then add a tight rule per machine-generated prefix found, at least `qa3-…@onlycars.test` and, if those users exist, `sec-mvp5c-<ms>-<4>@test.local` (move it out of the must-not-match list and add new near misses there). Run the self-check and the dry run only; never `DryRun=0` (L72 is the owner's).
-
-*Frontend (frontend-engineer, `client/src`, `client/ui-tests/smoke.mjs`):*
-- **L114** On an archived car's Edit form, next to Remove photo: "This car is archived. Unarchive it to add or change the photo." (en, he).
-- **L115** `CarPhoto` (`CarPage.tsx:127`): retry once per photo URL, not once per mount, so a page left open past the 1-hour link expiry recovers each time the URL changes.
-- **L121** All three upload controls (car photo, service files, run photos): a file whose browser type is empty or `application/octet-stream` is sent and the server decides; the client still blocks known wrong types and files over 10 MB.
-- **L126** On an archived car, a service record or run with no files renders no Files/Photos group at all (nothing for screen readers to announce).
-- **L127** At 10 files on a service, show "This service has the maximum of 10 files." in place of Add file; at 10 photos on a run, "This run has the maximum of 10 photos." (en, he).
-- **L129** The quota message formats the limit from the response's `maxBytes` (1,073,741,824 shows "1 GB"; use whole GB, or MB under 1 GB), in en and he; no number written into the strings.
-- **L130** On `/history`, when a record is found gone (`HistoryPage.tsx:207`, `onGone`), reload as many rows as were shown (not just the first page), show a short note ("This service was deleted, so the list was refreshed."), and move focus to the note.
-- **L131** After a 409 on upload whose reload then fails, show the conflict message and the reload error together (conflict first), on services and runs.
-- **L133** Every file and photo link has a visually hidden "(opens in a new tab)" (en, he), on the car page, `/history` and runs.
-- **L136** The run Delete confirm says the odometer reading is deleted only when the run has one (`ChecklistRunDto.odometerReadingId` not null); photos are mentioned only when it has some (as today). Four sentence variants, en and he.
-- **L137** A run-specific `file.unsupportedType` text: "Choose a JPEG, PNG or WebP photo." (as the run-specific `tooMany`, `i18n.ts:425-427`).
-- **L122** Smoke: the helper `key('required')` finds lines by their key or text, not by position.
-- **L123** Smoke: the shared overflow check (was `smoke.mjs:205` at FILE-1) survives a navigation ("execution context destroyed"): wait for the page to settle and measure again once, then fail for real.
-- **L132 + L140** Smoke: mocked steps (`page.route`) for `file.quotaExceeded` (with `maxBytes`), `concurrency.conflict` (409, the list reloads) and `http.429` on both service files and run photos, each showing its translated message next to the control, in en and he.
-
-**Acceptance criteria**
-1. [BE] Two overlapping photo replacements on one car: one wins, the other gets 409 `concurrency.conflict`, exactly one object remains and the row points to it (test with the storage fake).
-2. [BE] DELETE photo clears an invalid stored key and deletes nothing outside the car's prefix (test).
-3. [BE] An animated WebP with an unknown chunk inside an `ANMF` frame is stored without it and still decodes; the `shortcut:` comment is gone (test).
-4. [BE] In Development, more than 10 uploads in 10 minutes are accepted; Production config unchanged (config read in a test or the contract shows both values).
-5. [BE] `vehicle.vinTaken` is tested on edit; the early `Storage()` calls have their comment.
-6. [BE] The cleanup script's self-check passes, its dry run lists the `qa3-…` users (and any other new prefix) and none of the owner's accounts; the report names the prefixes added. Nothing deleted.
-7. [FE] An archived car's Edit form shows the archived hint next to Remove photo; on the car page, a record or run with no files on an archived car has no Files/Photos group (smoke, en and he).
-8. [FE] At 10 files and at 10 photos the max sentence replaces the add button (smoke, en and he).
-9. [FE] An `application/octet-stream` or empty-type file reaches the server and gets the server's answer; a 12 MB file and a `.txt` with a text type are still blocked without a request (smoke).
-10. [FE] Mocked quota, 409 and 429 on services and run photos each show the right translated message; the quota text shows "1 GB" from `maxBytes`; a 409 followed by a failed reload shows both messages, conflict first (smoke, en and he).
-11. [FE] `/history` with Show more used twice, then a record found gone: the same number of rows comes back, the note shows and has focus (smoke).
-12. [FE] File and photo links announce "(opens in a new tab)" (an accessible-name check in smoke); the run Delete confirm matches the run (reading or not, photos or not); a PDF chosen for a run says "photo" (smoke, en and he).
-13. [FE] The car photo recovers from an expired link twice in one page visit (smoke: two mocked failures with new URLs between them).
-14. [FE] Hebrew/RTL and 390px: the new sentences wrap without horizontal overflow; buttons stay 44px (smoke in 4 setups; browser QA in 4 setups).
-15. [BE+FE] No regressions: `dotnet test` all pass, build clean, lint 0, smoke `SMOKE_ALL=1` passes in all 4 setups, run alone; the `key()` and overflow helpers no longer flake (no crash in the 4 runs). No new dependency; bundle under 600 kB.
-
-**Out of scope:** L107 to L113 (LOW-7); L135 (delete-account, spec 12 ticket); L134 and L72 (the owner's); an orphan sweep; HEIC; thumbnails; making the quota exact (L128 accepted); photos during a run.
-
-**Open questions:** none for the owner. L116's conditional update and L120's closure are engineering choices recorded here; the backend states its L116 approach in the contract.
-
----
-
 ### LOW-7: Reports, dashboard and checklists Lows (L107 to L113)
 
 **Goal:** As a user, the Reports page never fails silently or shows a year it isn't using, the dashboard's Edit link is easy to tap, and a checklist's "Last run" is true.
 
-**Spec:** polish of spec 7 (run schedule), spec 8 (reports and export) and spec 10 (dashboard). Part 2 `VehicleChecklist` (`LastRunAt`, `LastRunOdometerKm` or the fields the service uses as the countdown start) and `ChecklistRun.RunAt`.
+**Spec:** polish of spec 7 (run schedule), spec 8 (reports and export) and spec 10 (dashboard). Part 2 `VehicleChecklist` (as built: `LastRunDate`, `LastRunOdometerKm` hold the countdown start; `StartDate`, `StartOdometerKm` the attach values) and `ChecklistRun.RunAt`.
 
-**Binding decisions:** "Cost reports, RPT-1", "Report export, RPT-3", "Checklist run rules, MVP5-B" and "MVP5-B sign-off: engineers' choices" (the countdown start), "Faster pipeline (owner)", "Hebrew form of address".
+**Binding decisions:** "Cost reports, RPT-1", "Report export, RPT-3", "FILE-3 sign-off" (smoke process rule: never two smoke runs at once, never edit `client/src` during a browser run), "Checklist run rules, MVP5-B" and "MVP5-B sign-off: engineers' choices" (the countdown start), "Faster pipeline (owner)", "Hebrew form of address".
 
 **Scope**
 
 *Backend (backend-engineer, runs first; contract note in `docs/contracts/LOW-7.md`):*
-- **L110** The vehicle checklist DTO says where its countdown starts: add the latest run's date (`latestRunAt`, null without runs) next to the countdown start the status already uses (`VehicleChecklistService.cs:183`), so the client can tell "last run" from "counting from the attach date". Status maths unchanged. Test: a checklist attached today with one run dated last month returns that run's date as `latestRunAt` and the attach date as the countdown start.
+- **L110** The vehicle checklist DTO says where its countdown starts: add the latest run's date (`latestRunDate`, null without runs) next to the countdown start the status already uses (`lastRunDate`; set at `VehicleChecklistService.cs:187-189` and recomputed on run delete at `:235-244`), so the client can tell "last run" from "counting from the attach date". Status maths unchanged. Test: a checklist attached today with one run dated last month returns that run's date as `latestRunDate` and the attach date as `lastRunDate`.
 
 *Frontend (frontend-engineer):*
-- **L110** `ChecklistsSection.tsx:249`: "Last run on <date>" from `latestRunAt`; when the countdown starts from the attach date and it is later than the latest run, add "Counting from <attach date>" (en, he).
-- **L107** `ReportsPage.tsx:115,240`: a CSV export that fails (also after a filter change while it ran) shows the export error next to the buttons; never silent.
+- **L110** `ChecklistsSection.tsx:260`: "Last run on <date>" from `latestRunDate`; when the countdown starts from the attach date and it is later than the latest run, add "Counting from <attach date>" (en, he).
+- **L107** `ReportsPage.tsx:87-114,234-243` (`exportCsv` and its error): a CSV export that fails (also after a filter change while it ran) shows the export error next to the buttons; never silent.
 - **L111** At 390px in Hebrew the two export buttons keep their size and position while CSV is busy (fixed min-width or a busy indicator that doesn't change the label width).
 - **L112** `/reports?year=2025abc`: the invalid-year error shows and the Year box shows no year selected (not the current year).
 - **L113** The dashboard car card's Edit link is at least 44 by 44 px in en and he at mobile width.
 - **L109** Remove or correct the stale comment at `TasksSection.tsx:10`.
-- **L108** Smoke: the L96 check (`smoke.mjs`, near the RPT steps) asserts at least one `/history` link before checking them.
+- **L108** Smoke: the L96 check (`smoke.mjs:4806`) asserts at least one `/history` link before checking them.
 
 **Acceptance criteria**
-1. [BE] `latestRunAt` is in the vehicle checklist DTO, null without runs, and the test above passes; status unchanged for existing tests.
+1. [BE] `latestRunDate` is in the vehicle checklist DTO, null without runs, and the test above passes; status unchanged for existing tests.
 2. [FE] A checklist attached today with only an older run shows "Last run on <run date>" and "Counting from <today>"; with a newer run, only "Last run on" (smoke, en and he).
 3. [FE] A mocked failing CSV export shows the translated error, including when the filter changed mid-export (smoke).
 4. [FE] At 390px Hebrew the export buttons don't move while busy (smoke compares bounding boxes before and during the busy state).
@@ -464,7 +390,7 @@ Every Low finding from QA and review lands here (decisions.md, "Faster pipeline 
 7. [FE] The L96 check fails if there are no `/history` links (smoke asserts a count above 0); the stale comment is gone.
 8. [BE+FE] No regressions: `dotnet test`, build, lint 0, smoke `SMOKE_ALL=1` in all 4 setups run alone; browser QA in 4 setups. No new dependency.
 
-**Out of scope:** new report types; notifications; any files work (LOW-6).
+**Out of scope:** new report types; notifications; any files work (L141 to L144 wait for the next batch).
 
 **Open questions:** none.
 
@@ -476,9 +402,8 @@ Every Low finding from QA and review lands here (decisions.md, "Faster pipeline 
 - **Data export and delete-account** (spec 12): must include checklists, runs, to-dos, tires and stored files; the export strips the direction marks from to-do descriptions (decisions.md, "Direction marks in the to-do prefill"). Deleting a car or the account must first delete the run-photo `Attachment` rows (`ChecklistRunId` is `NoAction`, L135), then every R2 object under `users/{userId}/`: the car photo, receipts and run photos. An orphan sweep would also clear the objects of test users already deleted by `scripts/cleanup-test-users.sql` (the `file1-…`, `file2-…` and `file3-…` users).
 
 ## Changed since last audit
-- **Signed off:** FILE-3 (photos on checklist runs; uncommitted in the working tree, as are FILE-1 and FILE-2), with browser QA in 4 setups. Spec 7 is complete.
-- **Status changes:** spec 7 "Run a checklist: ... photos ..." Partial to **Done**. Spec 12 "Receipt image storage" stays Partial (run photos now count in the quota; delete-account remains). Counts: Done 42, Partial 5, Missing 4, Deferred 6.
-- **Clarified:** FILE-3's AC4 and AC10 assumed that removing a checklist from a car and deleting a template cascade to runs; both are refused while runs exist, so only run Delete removes photos. Contract, decisions.md row "Run photos, FILE-3" and the ticket record corrected.
-- **Backlog:** L135 to L140 added (FILE-3 Lows; L135 belongs to the spec 12 ticket); L128 and L134 widened to cover run photos.
-- **New decisions** (`docs/decisions.md`, 2026-10-18): "FILE-3 sign-off" (including the smoke process rule), "Order after FILE-3".
-- **Next ticket:** LOW-6 (files and photos Lows, L114 to L140), then LOW-7 (L107 to L113), both written in full. The FILE-3 ticket text is in git history once committed, and in `docs/contracts/FILE-3.md`.
+- **Signed off:** LOW-6 (files and photos Lows; uncommitted in the working tree, as are FILE-1 to FILE-3), with browser QA in 4 setups.
+- **Status changes:** none. Counts unchanged: Done 42, Partial 5, Missing 4, Deferred 6. Spec 1 photo row: the L125 note removed (VIN on edit is now tested).
+- **Backlog:** L114 to L133 and L136 to L140 closed (L120 by L119, L128 as accepted); L134 (owner) and L135 (spec 12) stay open; new Lows L141 to L144.
+- **New decision** (`docs/decisions.md`, 2026-10-18): "LOW-6 sign-off".
+- **Next ticket:** LOW-7 (L107 to L113), checked against the current code: line references refreshed and the new DTO field named `latestRunDate` to match the built `lastRunDate`/`startDate` names. The LOW-6 ticket text is in git history once committed, and in `docs/contracts/LOW-6.md`.

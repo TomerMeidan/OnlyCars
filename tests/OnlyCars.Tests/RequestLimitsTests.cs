@@ -189,6 +189,18 @@ public class RequestLimitsTests
         Assert.Equal(HttpStatusCode.RequestEntityTooLarge, over.StatusCode);
         Assert.Equal("http.413", JsonDocument.Parse(await over.Content.ReadAsStringAsync()).RootElement.GetProperty("code").GetString());
     }
+
+    // L119: the API's own appsettings files, as the host layers them per environment.
+    [Theory]
+    [InlineData("Production", 10)]
+    [InlineData("Development", 10_000)]
+    public void UploadPermitLimit_IsHighInDevelopmentOnly(string environment, int expected)
+    {
+        var config = new ConfigurationBuilder().SetBasePath(AppContext.BaseDirectory)
+            .AddJsonFile("appsettings.json").AddJsonFile($"appsettings.{environment}.json", optional: true).Build();
+
+        Assert.Equal(expected, config.GetSection("RateLimiting").Get<OnlyCars.Application.Auth.RateLimitOptions>()!.UploadPermitLimit);
+    }
 }
 
 [ApiController]

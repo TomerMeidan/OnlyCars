@@ -10,6 +10,7 @@ import { ServiceRow } from './ServiceHistory'
 const FILTERS = ['vehicleId', 'taskId', 'from', 'to', 'q'] as const
 type Filter = (typeof FILTERS)[number]
 const MAX_SEARCH = 100
+const PAGE = 50 // sent as take, so the gone-reload's page math holds
 // The filter a 400 is about, so its message sits there.
 const fieldOf: Record<string, 'dates' | 'search'> = { 'serviceRecord.invalidDateRange': 'dates', 'serviceRecord.searchTooLong': 'search' }
 const none = () => {}
@@ -41,6 +42,10 @@ export default function HistoryPage() {
   const focusRow = useRef<number | null>(null)
   const carSelect = useRef<HTMLSelectElement>(null)
   const retryBtn = useRef<HTMLButtonElement>(null)
+  // A record was found gone and the rows reloaded: the note, which takes focus once.
+  const [goneNote, setGoneNote] = useState(false)
+  const noteRef = useRef<HTMLParagraphElement>(null)
+  const focusNote = useRef(false)
   usePage(t('serviceHistory'))
 
   // Blocked here as the server would, without a request.
@@ -52,17 +57,21 @@ export default function HistoryPage() {
   const busy = !blocked && (acting || doneQuery !== query)
   const { tasks, error: tasksError } = taskList?.vehicleId === vehicleId ? taskList : {}
 
-  function load(skip: number, focus = skip > 0) {
+  // With `rows` (a record was found gone): reloads that many rows from the start, page by page, instead of one page.
+  function load(skip: number, focus = skip > 0, rows = 0) {
     const n = ++request.current
     const latest = () => n === request.current
+    const get = (at: number) => api<ServiceRecordPage>(`/service-records?skip=${at}&take=${PAGE}&${query}`)
     return Promise.all([
       // Names and the archived flag aren't on the records. Kept even if the records fail, so the Task select still fills.
       cars ?? api<Vehicle[]>('/vehicles?includeArchived=true').then((cs) => { if (latest()) setCars(cs); return cs }),
-      api<ServiceRecordPage>(`/service-records?skip=${skip}&${query}`),
+      rows ? Promise.all(Array.from({ length: Math.ceil(rows / PAGE) }, (_, i) => get(i * PAGE))).then((ps) => ({ ...ps[0], items: ps.flatMap((p) => p.items) })) : get(skip),
     ]).then(
       ([, res]) => {
         if (!latest()) return
         setFailed(null)
+        setGoneNote(rows > 0)
+        focusNote.current = rows > 0
         focusRow.current = focus ? skip : null
         setPage((p) => (skip && p ? { ...res, items: [...p.items, ...res.items] } : res))
       },
@@ -104,7 +113,10 @@ export default function HistoryPage() {
   useEffect(() => {
     const i = focusRow.current
     focusRow.current = null
-    if (i != null) (document.querySelector<HTMLElement>(`.services > li:nth-child(${i + 1}) a.car`) ?? document.querySelector<HTMLElement>('main h1'))?.focus()
+    const note = focusNote.current
+    focusNote.current = false
+    if (note) noteRef.current?.focus()
+    else if (i != null) (document.querySelector<HTMLElement>(`.services > li:nth-child(${i + 1}) a.car`) ?? document.querySelector<HTMLElement>('main h1'))?.focus()
   }, [page])
 
   // A failed Show more swaps the button for Retry, so focus follows it there.
@@ -198,13 +210,14 @@ export default function HistoryPage() {
               ? t(query ? 'noMatches' : 'noServices')
               : t('historySummary', { count: page.totalCount, total: money(page.totalCost, lng, user?.currency) })}
         </p>
+        {goneNote && <p className="muted" role="status" tabIndex={-1} ref={noteRef}>{t('serviceGoneRefreshed')}</p>}
         {failed?.skip === 0 && retry}
         {page && page.items.length > 0 && (
           <ol className="services" aria-busy={busy}>
             {page.items.map((r) => {
               const car = cars?.find((c) => c.id === r.vehicleId)
               return (
-                <ServiceRow key={r.id} car={car!} record={r} url="" readOnly openOnly onEdited={none} onDeleted={none} onGone={() => load(0)}
+                <ServiceRow key={r.id} car={car!} record={r} url="" readOnly openOnly onEdited={none} onDeleted={none} onGone={() => load(0, false, page.items.length)}
                   onFiles={(record) => setPage((p) => p && { ...p, items: p.items.map((x) => (x.id === record.id ? record : x)) })}
                   head={(
                     <div className="row">
