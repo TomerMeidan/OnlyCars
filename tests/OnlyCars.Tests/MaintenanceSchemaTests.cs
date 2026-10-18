@@ -630,6 +630,46 @@ public class MaintenanceSchemaTests : IAsyncLifetime
         Assert.Equal(Theme.Dark, (await check.Users.SingleAsync(u => u.Id == car.UserId)).Theme);
     }
 
+    [Fact]
+    public async Task Export_OnSqlServer_SameNumberOfQueriesForOneCarAndThree_NoStorageKeyRead()
+    {
+        // ACC-1 criterion 3: one query per table, not one per car.
+        var car = await AddCarAsync();
+        car.PhotoUrl = "users/x/vehicles/key.jpg";
+        var record = new ServiceRecord { VehicleId = car.Id, Date = new DateOnly(2026, 1, 1) };
+        db.AddRange(record, new Attachment { ServiceRecord = record, FileUrl = "users/x/receipts/key.pdf", FileName = "r.pdf", ContentType = "application/pdf" });
+        await db.SaveChangesAsync();
+        var commands = new CommandCounter();
+        await using var context = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>()
+            .UseSqlServer(db.Database.GetConnectionString()).AddInterceptors(commands).Options);
+
+        var one = await new Application.Account.ExportService(context).ExportAsync(car.UserId);
+        var queriesForOne = commands.Texts.Count;
+        db.AddRange(new Vehicle { UserId = car.UserId, Nickname = "Two" }, new Vehicle { UserId = car.UserId, Nickname = "Three" });
+        await db.SaveChangesAsync();
+        commands.Texts.Clear();
+        var three = await new Application.Account.ExportService(context).ExportAsync(car.UserId);
+
+        Assert.Equal(3, three.Vehicles.Count);
+        Assert.Equal("r.pdf", Assert.Single(Assert.Single(one.Vehicles).ServiceRecords).Attachments.Single().FileName);
+        Assert.Equal(21, queriesForOne); // the user, lead days, then one per table
+        Assert.Equal(queriesForOne, commands.Texts.Count);
+        Assert.DoesNotContain(commands.Texts, t => t.Contains("[PasswordHash]") || t.Contains("[FileUrl]")
+            || System.Text.RegularExpressions.Regex.IsMatch(t, @"\[PhotoUrl\](?! IS NOT NULL)")); // only tested for null, never read
+    }
+
+    private sealed class CommandCounter : DbCommandInterceptor
+    {
+        public List<string> Texts { get; } = [];
+
+        public override ValueTask<InterceptionResult<System.Data.Common.DbDataReader>> ReaderExecutingAsync(System.Data.Common.DbCommand command,
+            CommandEventData eventData, InterceptionResult<System.Data.Common.DbDataReader> result, CancellationToken cancellationToken = default)
+        {
+            Texts.Add(command.CommandText);
+            return base.ReaderExecutingAsync(command, eventData, result, cancellationToken);
+        }
+    }
+
     /// <summary>Simulates another request saving first: runs <see cref="Next"/> once, at the start of the next save.</summary>
     private sealed class BeforeSave : SaveChangesInterceptor
     {

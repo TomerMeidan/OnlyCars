@@ -32,6 +32,7 @@ public class OdometerService(IAppDbContext db, VehicleService vehicleService)
     {
         var vehicle = await vehicleService.FindOwnedAsync(userId, vehicleId, ct);
         var readings = await LoadReadingsAsync(vehicle.Id, ct);
+        EnsureRoom(readings);
 
         var reading = new OdometerReading
         {
@@ -102,6 +103,19 @@ public class OdometerService(IAppDbContext db, VehicleService vehicleService)
         }
 
         return reading;
+    }
+
+    /// <summary>Called before any new reading (manual, service, checklist run) with the car's loaded readings.</summary>
+    // shortcut: two simultaneous adds at the cap can both pass; harmless, add a lock if the limit ever matters.
+    internal static void EnsureRoom(List<OdometerReading> readings)
+    {
+        if (readings.Count >= OdometerReading.MaxPerVehicle)
+        {
+            throw new ValidationFailedException("odometer.tooMany", $"A car can have up to {OdometerReading.MaxPerVehicle} odometer readings.")
+            {
+                Extensions = { ["max"] = OdometerReading.MaxPerVehicle }
+            };
+        }
     }
 
     /// <summary>

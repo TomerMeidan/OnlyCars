@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.DependencyInjection;
+using OnlyCars.Application.Account;
 using OnlyCars.Application.Auth;
 using OnlyCars.Application.Checklists;
 using OnlyCars.Application.Issues;
@@ -33,6 +34,7 @@ public static class DependencyInjection
         services.AddScoped<ReportService>();
         services.AddScoped<VehicleDocumentService>();
         services.AddScoped<ReminderService>();
+        services.AddScoped<ExportService>();
 
         return services;
     }

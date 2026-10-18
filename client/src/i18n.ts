@@ -209,6 +209,14 @@ const en = {
   exportCsvBusy: 'Preparing the CSV…',
   exportPdf: 'Print or save as PDF',
   csvFailed: 'The CSV was not exported.',
+  // ACC-1: Settings, Your data
+  yourData: 'Your data',
+  exportDataHint: "Everything you've saved, as a JSON file. Files and photos are listed by name, not included.",
+  exportData: 'Export my data',
+  exportDataBusy: 'Preparing…',
+  downloaded: 'Downloaded',
+  exportDataFailed: 'Your data was not exported.',
+  exportTooMany: 'Too many exports. Try again in a few minutes.',
   // CSV header row; the other columns reuse car, odometer, shop, currency and notes.
   csvDate: 'Date',
   csvTasks: 'Tasks',
@@ -447,6 +455,7 @@ const en = {
     },
     vehicle: {
       vinTaken: 'Another car on your account already has this VIN.',
+      tooMany: 'You can have up to {{max, number}} cars.',
       notFound: 'This car was not found.',
     },
     vehiclePhoto: {
@@ -487,6 +496,7 @@ const en = {
       invalidValue: 'Enter a reading between 0 and {{maxReading, number}} {{distUnit}}.',
       onlyReading: "This is the car's only reading, so it can't be deleted. Edit it instead.",
       notManual: "This reading comes from another record and can't be changed here.",
+      tooMany: 'A car can have up to {{max, number}} odometer readings.',
     },
     odometerReading: {
       notFound: 'This reading was not found.',
@@ -513,6 +523,7 @@ const en = {
       shopTooLong: 'Enter a shop name of up to 100 characters.',
       futureDate: "The service date can't be in the future.",
       tooManyItems: 'A service can have up to 50 items.',
+      tooMany: 'A car can have up to {{max, number}} service records.',
       invalidDateRange: 'The start date must not be after the end date.',
       searchTooLong: 'Enter a search of up to 100 characters.',
       invalidPaging: "This page of results couldn't be loaded. Try again.",
@@ -851,6 +862,13 @@ const he: typeof en = {
   exportCsvBusy: 'קובץ ה־CSV בהכנה…',
   exportPdf: 'הדפסה או שמירה כ־PDF',
   csvFailed: 'ייצוא ה־CSV נכשל.',
+  yourData: 'הנתונים שלך',
+  exportDataHint: 'כל מה ששמרת, בקובץ JSON. קבצים ותמונות מופיעים רק בשמם, בלי הקבצים עצמם.',
+  exportData: 'ייצוא הנתונים שלי',
+  exportDataBusy: 'הקובץ בהכנה…',
+  downloaded: 'הקובץ הורד',
+  exportDataFailed: 'ייצוא הנתונים נכשל.',
+  exportTooMany: 'יותר מדי בקשות ייצוא. אפשר לנסות שוב בעוד כמה דקות.',
   csvDate: 'תאריך',
   csvTasks: 'משימות',
   csvCost: 'עלות כוללת',
@@ -1081,6 +1099,7 @@ const he: typeof en = {
     },
     vehicle: {
       vinTaken: 'בחשבון שלך כבר יש רכב עם מספר השלדה הזה.',
+      tooMany: 'אפשר להוסיף עד ⁦{{max, number}}⁩ רכבים.',
       notFound: 'הרכב לא נמצא.',
     },
     vehiclePhoto: {
@@ -1119,6 +1138,7 @@ const he: typeof en = {
       invalidValue: 'יש להזין קריאה בין ⁦0⁩ ל־⁦{{maxReading, number}}⁩ {{distUnit}}.',
       onlyReading: 'זו הקריאה היחידה של הרכב, ולכן אי אפשר למחוק אותה. אפשר לערוך אותה.',
       notManual: 'הקריאה הזו מגיעה מרשומה אחרת, ואי אפשר לשנות אותה כאן.',
+      tooMany: 'אפשר להוסיף לרכב עד ⁦{{max, number}}⁩ קריאות קילומטראז׳.',
     },
     odometerReading: {
       notFound: 'הקריאה לא נמצאה.',
@@ -1145,6 +1165,7 @@ const he: typeof en = {
       shopTooLong: 'יש להזין שם מוסך של עד ⁦100⁩ תווים.',
       futureDate: 'תאריך הטיפול לא יכול להיות בעתיד.',
       tooManyItems: 'אפשר להוסיף לטיפול עד ⁦50⁩ פריטים.',
+      tooMany: 'אפשר לרשום לרכב עד ⁦{{max, number}}⁩ טיפולים.',
       invalidDateRange: 'תאריך ההתחלה לא יכול להיות אחרי תאריך הסיום.',
       searchTooLong: 'יש להזין חיפוש של עד ⁦100⁩ תווים.',
       invalidPaging: 'לא הצלחנו לטעון את עמוד התוצאות הזה. אפשר לנסות שוב.',

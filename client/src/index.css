@@ -350,8 +350,8 @@ details > summary { padding-block: 0.625rem; cursor: pointer; }
 .category-chart > div { display: grid; grid-template-columns: 1fr auto; gap: 0.125rem 0.75rem; }
 .category-chart bdi { font-variant-numeric: tabular-nums; }
 .category-chart span { grid-column: 1 / -1; block-size: 0.75rem; background: var(--muted); border-radius: 3px; }
-/* RPT-3 export: the two buttons wrap under the filters at 390px; the CSV error sits next to its Retry */
-.filters > .export { flex-basis: 100%; flex-wrap: wrap; gap: 0.5rem 0.75rem; }
+/* RPT-3 and ACC-1 export: the buttons wrap at 390px; the export error sits next to its Retry */
+.filters > .export, .settings .export { flex-basis: 100%; flex-wrap: wrap; gap: 0.5rem 0.75rem; }
 /* The CSV button is as wide as its longer label, busy or not, so neither button moves (L111) */
 .stack { display: inline-grid; place-items: center; }
 .stack > span, .stack::after { grid-area: 1 / 1; }

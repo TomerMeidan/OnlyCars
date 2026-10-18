@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useLocation } from 'react-router-dom'
-import { api, currencies, limit, type User } from '../api'
+import { api, ApiError, apiResponse, currencies, limit, type User } from '../api'
 import { useAuth } from '../auth'
 import { errorMessage } from '../i18n'
 import { usePage } from '../usePage'
@@ -39,6 +39,36 @@ export default function SettingsPage() {
     setSaved(false)
     setSaved(await saveSettings({ [field]: value }, at(field)))
     setBusy(false)
+  }
+
+  // ACC-1: everything the user owns as one JSON file, under the server's file name. One export at a time.
+  const [exp, setExp] = useState<{ busy?: boolean; done?: boolean; error?: unknown } | null>(null)
+  const exportButton = useRef<HTMLButtonElement>(null)
+  // Leaving the page mid-export cancels the request and never downloads.
+  const exportAbort = useRef<AbortController>(null)
+  useEffect(() => () => exportAbort.current?.abort(), [])
+  async function exportData() {
+    if (exp?.busy) return // aria-disabled rather than disabled, so the button keeps focus
+    setExp({ busy: true })
+    const { signal } = (exportAbort.current = new AbortController())
+    try {
+      const res = await apiResponse('/me/export', 'GET', undefined, signal)
+      const blob = await res.blob()
+      // filename= up to ";" (ASP.NET writes it unquoted, then filename*); else the same UTC date from the body.
+      const name = res.headers.get('Content-Disposition')?.match(/filename="?([^";]+)/)?.[1]
+        ?? `onlycars-export-${JSON.parse(await blob.text()).exportedAt.slice(0, 10)}.json`
+      if (signal.aborted) return
+      const a = document.createElement('a')
+      a.href = URL.createObjectURL(blob)
+      a.download = name
+      a.click()
+      setTimeout(() => URL.revokeObjectURL(a.href))
+      setExp({ done: true })
+    } catch (error) {
+      if (signal.aborted) return
+      setExp({ error })
+      exportButton.current?.focus() // pressing Export again is the retry
+    }
   }
 
   const errorFor = (field: Field) =>
@@ -99,6 +129,22 @@ export default function SettingsPage() {
         {errorFor('reminderLeadDays')}
       </form>
       <p role="status">{saved && t('saved')}</p>
+      <section className="field" aria-labelledby="your-data">
+        <h2 id="your-data">{t('yourData')}</h2>
+        <p className="muted">{t('exportDataHint')}</p>
+        <div className="actions export">
+          <button type="button" className="stack" ref={exportButton} data-alt={t(exp?.busy ? 'exportData' : 'exportDataBusy')}
+            aria-disabled={!!exp?.busy} onClick={exportData}>
+            <span>{exp?.busy ? t('exportDataBusy') : t('exportData')}</span>
+          </button>
+        </div>
+        <p role="status">{exp?.done && t('downloaded')}</p>
+        {exp?.error != null && (
+          <p className="error" role="alert">
+            {t('exportDataFailed')} {exp.error instanceof ApiError && exp.error.status === 429 ? t('exportTooMany') : errorMessage(exp.error)}
+          </p>
+        )}
+      </section>
     </div>
   )
 }

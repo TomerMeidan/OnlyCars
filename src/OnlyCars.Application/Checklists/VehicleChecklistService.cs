@@ -164,6 +164,7 @@ public class VehicleChecklistService(IAppDbContext db, VehicleService vehicleSer
         OdometerReading? reading = null;
         if (request.OdometerKm is { } km)
         {
+            OdometerService.EnsureRoom(readings);
             reading = new OdometerReading { VehicleId = vehicle.Id, ValueKm = km, ReadingDate = runAt, Source = OdometerSource.Checklist };
             OdometerService.Validate(readings, reading, km, runAt, request.ConfirmCorrection);
         }

@@ -390,8 +390,14 @@ export function applyTheme(theme: User['theme'] | undefined) {
   else delete document.documentElement.dataset.theme
 }
 
-// A FormData body goes as multipart: the browser sets its Content-Type with the boundary.
 export async function api<T>(path: string, method = 'GET', body?: unknown): Promise<T> {
+  const res = await apiResponse(path, method, body)
+  return res.status === 204 ? (undefined as T) : res.json()
+}
+
+// The checked response itself, for a download that needs its headers and its body as a blob.
+// A FormData body goes as multipart: the browser sets its Content-Type with the boundary.
+export async function apiResponse(path: string, method = 'GET', body?: unknown, signal?: AbortSignal): Promise<Response> {
   const token = getToken()
   const form = body instanceof FormData
   const res = await fetch(`/api${path}`, {
@@ -401,6 +407,7 @@ export async function api<T>(path: string, method = 'GET', body?: unknown): Prom
       ...(token && { Authorization: `Bearer ${token}` }),
     },
     body: body === undefined ? undefined : form ? body : JSON.stringify(body),
+    signal,
   })
   if (res.status === 401 && token) {
     setToken(null)
@@ -410,7 +417,7 @@ export async function api<T>(path: string, method = 'GET', body?: unknown): Prom
     const problem = await res.json().catch(() => null)
     throw new ApiError(res.status, problem, res.statusText)
   }
-  return res.status === 204 ? (undefined as T) : res.json()
+  return res
 }
 
 // The API accepts an out-of-order reading once the user confirms it is a correction.

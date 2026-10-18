@@ -58,12 +58,14 @@ builder.Services.AddCors(options =>
     {
         var origins = builder.Configuration.GetSection("Client:Origins").Get<string[]>()
                       ?? ["http://localhost:5173"];
-        policy.WithOrigins(origins).AllowAnyHeader().AllowAnyMethod();
+        // Content-Disposition carries the export's file name (ACC-1), read by the client on a cross-origin deploy.
+        policy.WithOrigins(origins).AllowAnyHeader().AllowAnyMethod().WithExposedHeaders("Content-Disposition");
     });
 });
 
 var app = builder.Build();
 
+app.UseNoSniff();
 app.UseExceptionHandler(_ => { });
 
 // Forwarded headers, CORS, authentication and the rate limiter, in the order they must run. Before HTTPS redirection, which needs X-Forwarded-Proto.

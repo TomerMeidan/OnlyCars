@@ -21,6 +21,12 @@ public static class RequestLimits
     /// <summary>Applied to every file upload (car photo, service record attachments), one budget per signed-in user: 2 at once and <c>UploadPermitLimit</c> per window.</summary>
     public const string UploadPolicy = "upload";
 
+    /// <summary>Applied to the data export (ACC-1), one budget per signed-in user: 1 at once and <c>ExportPermitLimit</c> per window.</summary>
+    public const string ExportPolicy = "export";
+
+    /// <summary>Exports running at once across all users (ACC-1); a further one is a 429 <c>http.429</c>.</summary>
+    public const int MaxExportsAtOnce = 3;
+
     /// <summary>App-wide request body limit (L37): a larger body is a 413 <c>http.413</c>. Auth keeps its smaller attribute.</summary>
     public const long MaxBodyBytes = 65_536;
 
@@ -33,7 +39,8 @@ public static class RequestLimits
             .Validate(o => new[]
                 {
                     o.AuthPermitLimit, o.AuthWindowSeconds, o.GlobalPermitLimit, o.GlobalWindowSeconds,
-                    o.FailedLoginLimit, o.FailedLoginWindowSeconds, o.UploadPermitLimit, o.UploadWindowSeconds
+                    o.FailedLoginLimit, o.FailedLoginWindowSeconds, o.UploadPermitLimit, o.UploadWindowSeconds,
+                    o.ExportPermitLimit, o.ExportWindowSeconds
                 }.All(v => v > 0), "Every RateLimiting value must be positive.")
             .ValidateOnStart();
         var limits = section.Get<RateLimitOptions>() ?? new RateLimitOptions();
@@ -59,14 +66,10 @@ public static class RequestLimits
             // rejection on an auth endpoint still gets http.429.
             o.AddPolicy(AuthPolicy, new AuthLimitPolicy(limits));
             // Concurrency first, so a request it turns away doesn't use up the window. Rejections get http.429 (OnRejected below).
-            o.AddPolicy(UploadPolicy, ctx => RateLimitPartition.Get(UserKey(ctx), _ => RateLimiter.CreateChained(
-                new ConcurrencyLimiter(new ConcurrencyLimiterOptions { PermitLimit = 2, QueueLimit = 0 }),
-                new FixedWindowRateLimiter(new FixedWindowRateLimiterOptions
-                {
-                    PermitLimit = limits.UploadPermitLimit,
-                    Window = TimeSpan.FromSeconds(limits.UploadWindowSeconds),
-                    QueueLimit = 0
-                }))));
+            o.AddPolicy(UploadPolicy, ctx => PerUser(ctx, 2, limits.UploadPermitLimit, limits.UploadWindowSeconds));
+            // One app-wide limiter shared by every user's partition: an export holds the whole account in memory.
+            var exportsAppWide = new ConcurrencyLimiter(new ConcurrencyLimiterOptions { PermitLimit = MaxExportsAtOnce, QueueLimit = 0 });
+            o.AddPolicy(ExportPolicy, ctx => PerUser(ctx, 1, limits.ExportPermitLimit, limits.ExportWindowSeconds, exportsAppWide));
             o.OnRejected = (context, ct) => RejectAsync(context, "http.429", ct);
         });
 
@@ -86,6 +89,21 @@ public static class RequestLimits
         (ctx.User.FindFirstValue(JwtRegisteredClaimNames.Sub) ?? ctx.User.FindFirstValue(ClaimTypes.NameIdentifier)) is { } id
             ? "user:" + id
             : "ip:" + ClientKey(ctx.Connection.RemoteIpAddress);
+
+    // appWide (optional) sits between the user's concurrency and window, so an app-wide rejection doesn't use up the user's window.
+    private static RateLimitPartition<string> PerUser(HttpContext ctx, int concurrent, int permitLimit, int windowSeconds,
+        RateLimiter? appWide = null) =>
+        RateLimitPartition.Get(UserKey(ctx), _ => RateLimiter.CreateChained(new RateLimiter?[]
+        {
+            new ConcurrencyLimiter(new ConcurrencyLimiterOptions { PermitLimit = concurrent, QueueLimit = 0 }),
+            appWide,
+            new FixedWindowRateLimiter(new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = permitLimit,
+                Window = TimeSpan.FromSeconds(windowSeconds),
+                QueueLimit = 0
+            })
+        }.OfType<RateLimiter>().ToArray()));
 
     private sealed class AuthLimitPolicy(RateLimitOptions limits) : IRateLimiterPolicy<string>
     {

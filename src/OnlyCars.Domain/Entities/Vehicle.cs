@@ -4,6 +4,8 @@ namespace OnlyCars.Domain.Entities;
 
 public class Vehicle : Entity
 {
+    public const int MaxPerUser = 50;
+
     public Guid UserId { get; set; }
     public User? User { get; set; }
 

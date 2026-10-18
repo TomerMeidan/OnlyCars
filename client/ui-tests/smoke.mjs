@@ -5492,6 +5492,133 @@ for (const s of setups) {
     await page.waitForLoadState('networkidle')
     if (await rem.count()) throw new Error('Reminders with only an archived car')
   })
+  // ACC-1: Export my data on Settings. The server allows 5 exports per 10 minutes per user: this step makes 3 real ones.
+  await step('export-data', async () => {
+    const XD = { export: key('exportData'), busy: key('exportDataBusy'), done: key('downloaded'), failed: key('exportDataFailed'),
+      rate: he ? 'יותר מדי בקשות ייצוא. אפשר לנסות שוב בעוד כמה דקות.' : 'Too many exports. Try again in a few minutes.' }
+    // The NOT-1 user is signed in; give it a car with a service record to find in the file.
+    const xCar = await apiCall('POST', '/vehicles', { nickname: 'Export car', initialOdometerKm: 5000, readingDate: ntToday })
+    await apiCall('POST', `/vehicles/${xCar.id}/service-records`, { date: ntToday, odometerKm: 5000, totalCost: 120.5 })
+    const email = await page.evaluate(() => JSON.parse(localStorage.getItem('user')).email)
+    await openSettings()
+    const sec = page.locator('main section[aria-labelledby=your-data]')
+    const btn = sec.locator('.export button.stack')
+    const alert = sec.locator('[role=alert]')
+    const exportUrl = '**/api/me/export'
+    let sent = 0
+    const count = (r) => r.url().endsWith('/api/me/export') && sent++
+    page.on('request', count)
+    // A real download, by keyboard, through a slow route: busy keeps the width and focus, a second press sends nothing.
+    const slow = async (r) => { await page.waitForTimeout(700); await r.continue().catch(() => {}) }
+    await page.route(exportUrl, slow, { times: 1 })
+    const width = (await btn.boundingBox()).width
+    await page.locator('main form:has(input[name=reminderLeadDays]) button').focus()
+    await page.keyboard.press('Tab')
+    await focusIs('main section[aria-labelledby=your-data] button.stack', 'Export after the lead days Save')
+    if ((await page.evaluate(() => getComputedStyle(document.activeElement).outlineStyle)) !== 'solid') throw new Error('no focus ring')
+    const dl = page.waitForEvent('download', { timeout: 15000 })
+    await page.keyboard.press('Enter')
+    await btn.filter({ hasText: XD.busy }).waitFor({ timeout: 3000 })
+    if ((await btn.getAttribute('aria-disabled')) !== 'true') throw new Error('not aria-disabled while busy')
+    if ((await btn.boundingBox()).width !== width) throw new Error(`width ${width} became ${(await btn.boundingBox()).width}`)
+    await page.keyboard.press('Enter')
+    await btn.click({ force: true }) // Playwright waits for aria-disabled to clear otherwise
+    await focusIs('main section[aria-labelledby=your-data] button.stack', 'Export while busy')
+    const file = await dl
+    const text = readFileSync(await file.path(), 'utf8')
+    const data = JSON.parse(text)
+    if (sent !== 1) throw new Error(`${sent} export requests`)
+    const name = `onlycars-export-${data.exportedAt.slice(0, 10)}.json`
+    if (file.suggestedFilename() !== name) throw new Error(`file name ${file.suggestedFilename()}, want ${name}`)
+    const keys = 'formatVersion,exportedAt,units,account,vehicles,checklistTemplates,tireSets'
+    if (Object.keys(data).join() !== keys) throw new Error(`top-level keys ${Object.keys(data)}`)
+    if (data.account.email !== email) throw new Error(`account ${data.account.email}`)
+    const car = data.vehicles.find((v) => v.id === xCar.id)
+    if (car?.nickname !== 'Export car' || car.serviceRecords[0]?.totalCost !== 120.5) throw new Error(`car ${JSON.stringify(car)?.slice(0, 200)}`)
+    if (/passwordHash|https:\/\//i.test(text)) throw new Error('a password hash or a link in the file')
+    if (plain(await sec.locator('[role=status]').textContent()) !== XD.done) throw new Error('Downloaded not announced')
+    if ((await btn.textContent()) !== XD.export) throw new Error(`button "${await btn.textContent()}" after the download`)
+    // Without Content-Disposition the name comes from exportedAt.
+    await page.route(exportUrl, async (r) => {
+      const res = await r.fetch()
+      const headers = res.headers()
+      delete headers['content-disposition']
+      await r.fulfill({ response: res, headers })
+    }, { times: 1 })
+    const dl2 = page.waitForEvent('download', { timeout: 15000 })
+    await btn.click()
+    const name2 = (await dl2).suggestedFilename()
+    if (!/^onlycars-export-\d{4}-\d{2}-\d{2}\.json$/.test(name2)) throw new Error(`fallback name ${name2}`)
+    // A 500: the translated error, no Retry button, focus on Export, no download, and "Downloaded" is gone; Export again downloads for real.
+    const before = downloads
+    await page.route(exportUrl, (r) => r.fulfill({ status: 500, contentType: 'application/json', body: '{}' }), { times: 1 })
+    await btn.click()
+    await alert.waitFor()
+    if (plain(await alert.textContent()) !== `${XD.failed} ${HS.generic}`) throw new Error(`500 error "${await alert.textContent()}"`)
+    if (plain(await sec.locator('[role=status]').textContent())) throw new Error('Downloaded still shown after a failure')
+    if (downloads !== before) throw new Error('a failed export downloaded a file')
+    if ((await sec.getByRole('button').count()) !== 1) throw new Error('a second button in Your data after the error')
+    await focusIs('main section[aria-labelledby=your-data] button.stack', 'Export after the error')
+    const retried = page.waitForEvent('download', { timeout: 15000 })
+    await page.keyboard.press('Enter')
+    if ((await retried).suggestedFilename() !== name) throw new Error('Export again file name')
+    await alert.waitFor({ state: 'detached' })
+    await focusIs('main section[aria-labelledby=your-data] button.stack', 'Export after exporting again')
+    // A 429: the export's own message, still no Retry, focus on Export.
+    await page.route(exportUrl, (r) => r.fulfill({ status: 429, contentType: 'application/problem+json', headers: { 'Retry-After': '600' },
+      body: JSON.stringify({ status: 429, code: 'http.429', title: 'Too many requests' }) }), { times: 1 })
+    await btn.click()
+    await alert.waitFor()
+    if (plain(await alert.textContent()) !== `${XD.failed} ${XD.rate}`) throw new Error(`429 error "${await alert.textContent()}"`)
+    if ((await sec.getByRole('button').count()) !== 1) throw new Error('a Retry after the 429')
+    await focusIs('main section[aria-labelledby=your-data] button.stack', 'Export after the 429')
+    await at390('settings with the export error', 'export-data-390')
+    // Leaving the page mid-export aborts the request and downloads nothing.
+    const left = downloads
+    const aborted = page.waitForEvent('requestfailed', (r) => r.url().endsWith('/api/me/export'))
+    await page.route(exportUrl, async (r) => { await page.waitForTimeout(1500); await r.continue().catch(() => {}) }, { times: 1 })
+    await btn.click()
+    await btn.filter({ hasText: XD.busy }).waitFor()
+    await page.click('header a[href="/"]')
+    await page.locator('main h1').waitFor()
+    await aborted
+    await page.waitForTimeout(2000)
+    if (downloads !== left) throw new Error('an export downloaded after leaving Settings')
+    page.off('request', count)
+    if (sent !== 6) throw new Error(`${sent} export requests in all`)
+    run.badResponses = run.badResponses.filter((r) => !r.includes('/api/me/export')) // the forced failures
+    forget500()
+  })
+  // ACC-1 caps: each create's 400 tooMany shows its own message with the max.
+  await step('acc1-caps', async () => {
+    const CAP = he
+      ? { car: 'אפשר להוסיף עד 50 רכבים.', record: 'אפשר לרשום לרכב עד 2,000 טיפולים.', reading: 'אפשר להוסיף לרכב עד 5,000 קריאות קילומטראז׳.' }
+      : { car: 'You can have up to 50 cars.', record: 'A car can have up to 2,000 service records.', reading: 'A car can have up to 5,000 odometer readings.' }
+    const cap = (code, max) => problem({ title: 'Validation failed', status: 400, code, max })
+    const is = async (loc, want, what) => { await loc.waitFor(); if (plain(await loc.textContent()) !== want) throw new Error(`${what} "${await loc.textContent()}"`) }
+    const [bad, logged] = [run.badResponses.length, run.consoleErrors.length]
+    const capCar = await apiCall('POST', '/vehicles', { nickname: 'Cap car', initialOdometerKm: 5000, readingDate: ntToday })
+    await page.goto(`${BASE}/cars/new`)
+    await page.fill('input[name=nickname]', 'Cap car 2')
+    await page.fill('input[name=initialOdometerKm]', '1000')
+    await page.route('**/api/vehicles', cap('vehicle.tooMany', 50), { times: 1 })
+    await page.click('form button:not(.link)')
+    await is(page.locator('main [role=alert]'), CAP.car, 'car cap')
+    await page.goto(`${BASE}/`)
+    const quick = page.locator(`.cars > li[data-id="${capCar.id}"] .quick`)
+    await quick.locator('input[type=number]').fill('6000')
+    await page.route(`**/api/vehicles/${capCar.id}/odometer`, cap('odometer.tooMany', 5000), { times: 1 })
+    await quick.locator('button').click()
+    await is(quick.locator('.error'), CAP.reading, 'reading cap')
+    await page.goto(`${BASE}/cars/${capCar.id}`)
+    await recordBtn.click()
+    await page.route('**/service-records', cap('serviceRecord.tooMany', 2000), { times: 1 })
+    await recordForm.locator('button:not(.link)').click()
+    await is(recordForm.locator('[role=alert]'), CAP.record, 'service cap')
+    // The three forced 400s.
+    run.badResponses.splice(bad, Infinity, ...run.badResponses.slice(bad).filter((r) => !r.startsWith('400 POST')))
+    run.consoleErrors.splice(logged, Infinity, ...run.consoleErrors.slice(logged).filter((e) => !e.includes('status of 400')))
+  })
   await step('switch-language', async () => {
     const before = await page.getAttribute('html', 'dir')
     await page.click('header nav button.link >> nth=0')

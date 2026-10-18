@@ -119,6 +119,7 @@ public partial class MaintenanceTaskService(IAppDbContext db, VehicleService veh
         var cost = request?.Cost;
         ValidateCost(cost);
         var notes = TrimNotes(request?.Notes);
+        await EnsureRecordRoomAsync(vehicle.Id, ct);
 
         var record = new ServiceRecord
         {
@@ -145,10 +146,23 @@ public partial class MaintenanceTaskService(IAppDbContext db, VehicleService veh
 
         // Its value is the current odometer, so it skips the date-order checks (decisions.md).
         var readings = await db.OdometerReadings.Where(r => r.VehicleId == vehicle.Id).ToListAsync(ct);
+        OdometerService.EnsureRoom(readings);
         LogServiceReading(vehicle, readings, ServiceReading(record));
 
         await db.SaveChangesAsync(ct);
         return new(record.Id, ToDto(task, vehicle, today));
+    }
+
+    // Voided records count. shortcut: two simultaneous creates at the cap can both pass; harmless, add a lock if the limit ever matters.
+    private async Task EnsureRecordRoomAsync(Guid vehicleId, CancellationToken ct)
+    {
+        if (await db.ServiceRecords.CountAsync(r => r.VehicleId == vehicleId, ct) >= ServiceRecord.MaxPerVehicle)
+        {
+            throw new ValidationFailedException("serviceRecord.tooMany", $"A car can have up to {ServiceRecord.MaxPerVehicle} service records.")
+            {
+                Extensions = { ["max"] = ServiceRecord.MaxPerVehicle }
+            };
+        }
     }
 
     /// <summary>The car's non-voided service records, newest first (same order as the history search).</summary>
@@ -318,7 +332,9 @@ public partial class MaintenanceTaskService(IAppDbContext db, VehicleService veh
             Items = items
         };
 
+        await EnsureRecordRoomAsync(vehicle.Id, ct);
         var readings = await db.OdometerReadings.Where(r => r.VehicleId == vehicle.Id).ToListAsync(ct);
+        OdometerService.EnsureRoom(readings);
         var reading = ServiceReading(record);
         OdometerService.Validate(readings, reading, odometerKm, date, request.ConfirmCorrection);
 

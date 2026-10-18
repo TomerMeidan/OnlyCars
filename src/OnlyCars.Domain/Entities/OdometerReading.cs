@@ -8,6 +8,7 @@ public class OdometerReading : Entity
     public Vehicle? Vehicle { get; set; }
 
     public const decimal MaxValueKm = 10_000_000;
+    public const int MaxPerVehicle = 5_000;
 
     public decimal ValueKm { get; set; }
     public DateOnly ReadingDate { get; set; }

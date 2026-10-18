@@ -44,6 +44,15 @@ public class VehicleService(IAppDbContext db, IFileStorage? storage = null, ILog
             OdometerService.ValidateDate(readingDate);
         }
 
+        // Archived cars count. shortcut: two simultaneous creates at 49 can both pass; harmless, add a lock if the limit ever matters.
+        if (await db.Vehicles.CountAsync(v => v.UserId == userId, ct) >= Vehicle.MaxPerUser)
+        {
+            throw new ValidationFailedException("vehicle.tooMany", $"You can have up to {Vehicle.MaxPerUser} cars.")
+            {
+                Extensions = { ["max"] = Vehicle.MaxPerUser }
+            };
+        }
+
         if (!string.IsNullOrWhiteSpace(request.Vin))
         {
             var vinTaken = await db.Vehicles.AnyAsync(v => v.UserId == userId && v.Vin == request.Vin, ct);

@@ -17,6 +17,10 @@ public class RateLimitOptions
     public int UploadPermitLimit { get; set; } = 10;
     public int UploadWindowSeconds { get; set; } = 10 * 60;
 
+    /// <summary>Data exports per signed-in user per window (ACC-1); at most 1 runs at once per user.</summary>
+    public int ExportPermitLimit { get; set; } = 5;
+    public int ExportWindowSeconds { get; set; } = 10 * 60;
+
     /// <summary>Failed logins per normalized email per window; a success does not count.</summary>
     public int FailedLoginLimit { get; set; } = 10;
     public int FailedLoginWindowSeconds { get; set; } = 15 * 60;
