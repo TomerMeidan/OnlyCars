@@ -30,6 +30,9 @@ public class AppDbContext : DbContext, IAppDbContext
     public DbSet<TireCheck> TireChecks => Set<TireCheck>();
     public DbSet<TireMeasurement> TireMeasurements => Set<TireMeasurement>();
     public DbSet<TireRotation> TireRotations => Set<TireRotation>();
+    public DbSet<VehicleDocument> VehicleDocuments => Set<VehicleDocument>();
+    public DbSet<NotificationRule> NotificationRules => Set<NotificationRule>();
+    public DbSet<Notification> Notifications => Set<Notification>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

@@ -11,6 +11,8 @@ using OnlyCars.Application.Checklists.Dtos;
 using OnlyCars.Application.Common.Exceptions;
 using OnlyCars.Application.Maintenance;
 using OnlyCars.Application.Maintenance.Dtos;
+using OnlyCars.Application.Reminders;
+using OnlyCars.Application.Reminders.Dtos;
 using OnlyCars.Application.Tires;
 using OnlyCars.Application.Tires.Dtos;
 using OnlyCars.Application.Vehicles;
@@ -579,6 +581,53 @@ public class MaintenanceSchemaTests : IAsyncLifetime
         await using var check = Context();
         Assert.Single(check.Attachments);
         Assert.Single(storage.Objects);
+    }
+
+    // --- NOT-1: two first saves of one unique row; the loser updates the winner's row instead of a 500. ---
+
+    [Fact]
+    public async Task Snooze_OnSqlServer_TwoFirstSnoozesOfOneItem_OneRow_TheLaterDateWins()
+    {
+        var car = await AddCarAsync();
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var doc = new VehicleDocument { VehicleId = car.Id, Type = VehicleDocumentType.Insurance, ExpiryDate = today };
+        db.VehicleDocuments.Add(doc);
+        await db.SaveChangesAsync();
+        var race = new BeforeSave();
+        await using var context = Context(race);
+        race.Next = async () =>
+        {
+            await using var other = Context();
+            await new ReminderService(other).SnoozeAsync(car.UserId, new SnoozeRequest("Document", doc.Id, 30, today));
+        };
+
+        var result = await new ReminderService(context).SnoozeAsync(car.UserId, new SnoozeRequest("Document", doc.Id, 7, today));
+
+        Assert.Equal(today.AddDays(7), result.SnoozedUntil);
+        await using var check = Context();
+        Assert.Equal(today.AddDays(7), (await check.Notifications.SingleAsync()).SnoozedUntil);
+    }
+
+    [Fact]
+    public async Task LeadDays_OnSqlServer_TwoFirstSaves_OneRule_TheLaterValueAndTheOtherSettingsSave()
+    {
+        var car = await AddCarAsync();
+        var race = new BeforeSave();
+        await using var context = Context(race);
+        AuthService Auth(AppDbContext c) => new(c, new PasswordHasher<User>(), new FakeJwtTokenService(),
+            new MemoryCache(new MemoryCacheOptions()), Options.Create(new RateLimitOptions()));
+        race.Next = async () =>
+        {
+            await using var other = Context();
+            await Auth(other).UpdateSettingsAsync(car.UserId, new UpdateSettingsRequest(ReminderLeadDays: 10));
+        };
+
+        var saved = await Auth(context).UpdateSettingsAsync(car.UserId, new UpdateSettingsRequest(Theme: "Dark", ReminderLeadDays: 20));
+
+        Assert.Equal((20, Theme.Dark), (saved.ReminderLeadDays, saved.Theme));
+        await using var check = Context();
+        Assert.Equal(20, (await check.NotificationRules.SingleAsync(r => r.UserId == car.UserId)).LeadDays);
+        Assert.Equal(Theme.Dark, (await check.Users.SingleAsync(u => u.Id == car.UserId)).Theme);
     }
 
     /// <summary>Simulates another request saving first: runs <see cref="Next"/> once, at the start of the next save.</summary>

@@ -8,12 +8,13 @@ import { usePage } from '../usePage'
 import { useRow } from '../useRow'
 import { Odometer, OdometerQuickEntry } from './CarsPage'
 import { ChecklistsSection } from './ChecklistsSection'
+import { DocumentsSection } from './DocumentsSection'
 import { IssuesSection } from './IssuesSection'
 import { ServiceHistory } from './ServiceHistory'
 import { TasksSection, type TaskUndo } from './TasksSection'
 import { TiresSection } from './TiresSection'
 
-// Car detail page: maintenance tasks, to-dos, checklists, tires, the service history, then the odometer history.
+// Car detail page: maintenance tasks, to-dos, documents, checklists, tires, the service history, then the odometer history.
 export default function CarPage() {
   const { t } = useTranslation()
   const d = useDistance()
@@ -89,6 +90,7 @@ export default function CarPage() {
 
       <TasksSection car={car} undo={undo} setUndo={setUndo} onOdometerChanged={load} />
       <IssuesSection car={car} version={issuesVersion} />
+      <DocumentsSection car={car} />
       <ChecklistsSection car={car} onChanged={load} onIssuesChanged={() => setIssuesVersion((v) => v + 1)} />
       <TiresSection car={car} />
       <ServiceHistory car={car} onChanged={() => { setUndo(null); load() }} />

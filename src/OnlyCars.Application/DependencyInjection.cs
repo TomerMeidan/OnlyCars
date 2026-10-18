@@ -6,6 +6,7 @@ using OnlyCars.Application.Issues;
 using OnlyCars.Application.Maintenance;
 using OnlyCars.Application.Odometer;
 using OnlyCars.Application.Reports;
+using OnlyCars.Application.Reminders;
 using OnlyCars.Application.Tires;
 using OnlyCars.Application.Vehicles;
 using OnlyCars.Domain.Entities;
@@ -30,6 +31,8 @@ public static class DependencyInjection
         services.AddScoped<IssueService>();
         services.AddScoped<TireService>();
         services.AddScoped<ReportService>();
+        services.AddScoped<VehicleDocumentService>();
+        services.AddScoped<ReminderService>();
 
         return services;
     }

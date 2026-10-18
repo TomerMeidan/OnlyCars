@@ -4,7 +4,7 @@ import { api, applyTheme, cachedUser, getToken, setToken, USER_KEY, type AuthRes
 import i18n, { toLocale } from './i18n'
 import { distance } from './units'
 
-type Settings = Partial<Pick<User, 'locale' | 'theme' | 'currency' | 'distanceUnit'>>
+type Settings = Partial<Pick<User, 'locale' | 'theme' | 'currency' | 'distanceUnit' | 'reminderLeadDays'>>
 
 interface AuthState {
   user: User | null

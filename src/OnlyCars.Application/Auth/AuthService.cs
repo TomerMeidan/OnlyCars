@@ -6,6 +6,7 @@ using Microsoft.Extensions.Options;
 using OnlyCars.Application.Auth.Dtos;
 using OnlyCars.Application.Common;
 using OnlyCars.Application.Common.Exceptions;
+using OnlyCars.Application.Reminders;
 using OnlyCars.Domain;
 using OnlyCars.Domain.Entities;
 
@@ -43,7 +44,7 @@ public class AuthService(
         }
 
         ValidateCurrency(request.Currency);
-        var locale = ParseEnum<Locale>(request.Locale, "settings.invalidLocale");
+        var locale = EnumRules.Parse<Locale>(request.Locale, "settings.invalidLocale");
 
         if (await db.Users.AnyAsync(u => u.Email == email, ct))
         {
@@ -118,27 +119,74 @@ public class AuthService(
         }
 
         Interlocked.Decrement(ref counter.Count); // a success gives its attempt back
-        return BuildResponse(user);
+        return BuildResponse(user, await ReminderService.LeadDaysAsync(db, user.Id, ct));
     }
 
     public async Task<UserDto> GetMeAsync(Guid userId, CancellationToken ct = default) =>
-        ToDto(await FindUserAsync(userId, ct));
+        ToDto(await FindUserAsync(userId, ct), await ReminderService.LeadDaysAsync(db, userId, ct));
 
     public async Task<UserDto> UpdateSettingsAsync(Guid userId, UpdateSettingsRequest request, CancellationToken ct = default)
     {
         // Validate every field before touching the user, so one bad field saves nothing.
-        var locale = ParseEnum<Locale>(request.Locale, "settings.invalidLocale");
-        var theme = ParseEnum<Theme>(request.Theme, "settings.invalidTheme");
+        var locale = EnumRules.Parse<Locale>(request.Locale, "settings.invalidLocale");
+        var theme = EnumRules.Parse<Theme>(request.Theme, "settings.invalidTheme");
         ValidateCurrency(request.Currency);
-        var distanceUnit = ParseEnum<DistanceUnit>(request.DistanceUnit, "settings.invalidDistanceUnit");
+        var distanceUnit = EnumRules.Parse<DistanceUnit>(request.DistanceUnit, "settings.invalidDistanceUnit");
+        if (request.ReminderLeadDays is < NotificationRule.MinLeadDays or > NotificationRule.MaxLeadDays)
+        {
+            throw new ValidationFailedException("settings.invalidLeadDays",
+                $"Reminder lead time must be {NotificationRule.MinLeadDays} to {NotificationRule.MaxLeadDays} days.")
+            {
+                Extensions = { ["min"] = NotificationRule.MinLeadDays, ["max"] = NotificationRule.MaxLeadDays }
+            };
+        }
 
         var user = await FindUserAsync(userId, ct);
         user.Locale = locale ?? user.Locale;
         user.Theme = theme ?? user.Theme;
         user.Currency = request.Currency ?? user.Currency;
         user.DistanceUnit = distanceUnit ?? user.DistanceUnit;
-        await db.SaveChangesAsync(ct);
-        return ToDto(user);
+        NotificationRule? added = null;
+        if (request.ReminderLeadDays is { } leadDays)
+        {
+            var rule = await InAppRuleAsync(userId, ct);
+            if (rule is null)
+            {
+                rule = added = new NotificationRule { UserId = userId, Channel = NotificationChannel.InApp };
+                db.NotificationRules.Add(rule);
+            }
+
+            SetLeadDays(rule, leadDays);
+        }
+
+        try
+        {
+            await db.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateException) when (added is not null)
+        {
+            // A simultaneous first lead-day save won the unique (UserId, Channel) index: update its rule instead, once.
+            db.NotificationRules.Remove(added); // detaches the failed insert; the user's other changes stay tracked
+            var winner = await InAppRuleAsync(userId, ct);
+            if (winner is null)
+            {
+                throw;
+            }
+
+            SetLeadDays(winner, added.LeadDays);
+            await db.SaveChangesAsync(ct);
+        }
+
+        return ToDto(user, await ReminderService.LeadDaysAsync(db, userId, ct));
+    }
+
+    private Task<NotificationRule?> InAppRuleAsync(Guid userId, CancellationToken ct) =>
+        db.NotificationRules.FirstOrDefaultAsync(r => r.UserId == userId && r.Channel == NotificationChannel.InApp, ct);
+
+    private static void SetLeadDays(NotificationRule rule, int leadDays)
+    {
+        rule.LeadDays = leadDays;
+        rule.UpdatedAt = DateTimeOffset.UtcNow;
     }
 
     // Not found only for a still-valid token of a deleted account.
@@ -153,22 +201,8 @@ public class AuthService(
         }
     }
 
-    // Exact enum names only, the UserDto JSON casing; Enum.TryParse would also accept "1" or "dark".
-    private static T? ParseEnum<T>(string? value, string code) where T : struct, Enum
-    {
-        if (value is null)
-        {
-            return null;
-        }
-        if (!Enum.GetNames<T>().Contains(value))
-        {
-            throw new ValidationFailedException(code, $"{typeof(T).Name} must be one of {string.Join(", ", Enum.GetNames<T>())}.");
-        }
-        return Enum.Parse<T>(value);
-    }
-
-    private static UserDto ToDto(User user) =>
-        new(user.Id, user.Email, user.DistanceUnit, user.Currency, user.Locale, user.Theme);
+    private static UserDto ToDto(User user, int reminderLeadDays) =>
+        new(user.Id, user.Email, user.DistanceUnit, user.Currency, user.Locale, user.Theme, reminderLeadDays);
 
     private static UnauthorizedException InvalidCredentials() => new("auth.invalidCredentials", "Invalid email or password.");
 
@@ -210,9 +244,9 @@ public class AuthService(
         public DateTimeOffset ResetsAt { get; } = resetsAt;
     }
 
-    private AuthResponse BuildResponse(User user)
+    private AuthResponse BuildResponse(User user, int reminderLeadDays = NotificationRule.DefaultLeadDays)
     {
         var (token, expiresAt) = jwtTokenService.CreateToken(user);
-        return new AuthResponse(token, expiresAt, ToDto(user));
+        return new AuthResponse(token, expiresAt, ToDto(user, reminderLeadDays));
     }
 }

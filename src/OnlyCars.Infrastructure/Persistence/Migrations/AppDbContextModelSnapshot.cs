@@ -347,6 +347,76 @@ namespace OnlyCars.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("OnlyCars.Domain.Entities.Notification", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<int>("Kind")
+                        .HasColumnType("int");
+
+                    b.Property<Guid>("RefId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset?>("SentAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateOnly?>("SnoozedUntil")
+                        .HasColumnType("date");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("VehicleId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId", "Kind", "RefId")
+                        .IsUnique();
+
+                    b.ToTable("Notifications");
+                });
+
+            modelBuilder.Entity("OnlyCars.Domain.Entities.NotificationRule", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("Channel")
+                        .HasColumnType("int");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<int>("LeadDays")
+                        .HasColumnType("int");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId", "Channel")
+                        .IsUnique();
+
+                    b.ToTable("NotificationRules", t =>
+                        {
+                            t.HasCheckConstraint("CK_NotificationRules_LeadDays", "[LeadDays] BETWEEN 1 AND 365");
+                        });
+                });
+
             modelBuilder.Entity("OnlyCars.Domain.Entities.OdometerReading", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1042,6 +1112,44 @@ namespace OnlyCars.Infrastructure.Persistence.Migrations
                     b.ToTable("VehicleChecklists");
                 });
 
+            modelBuilder.Entity("OnlyCars.Domain.Entities.VehicleDocument", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal?>("Cost")
+                        .HasColumnType("decimal(12,2)");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateOnly>("ExpiryDate")
+                        .HasColumnType("date");
+
+                    b.Property<string>("Notes")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<int>("Type")
+                        .HasColumnType("int");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid>("VehicleId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("VehicleId", "ExpiryDate");
+
+                    b.ToTable("VehicleDocuments", t =>
+                        {
+                            t.HasCheckConstraint("CK_VehicleDocuments_Cost", "[Cost] IS NULL OR [Cost] >= 0");
+                        });
+                });
+
             modelBuilder.Entity("OnlyCars.Domain.Entities.Attachment", b =>
                 {
                     b.HasOne("OnlyCars.Domain.Entities.ChecklistRun", "ChecklistRun")
@@ -1151,6 +1259,28 @@ namespace OnlyCars.Infrastructure.Persistence.Migrations
                     b.Navigation("Template");
 
                     b.Navigation("Vehicle");
+                });
+
+            modelBuilder.Entity("OnlyCars.Domain.Entities.Notification", b =>
+                {
+                    b.HasOne("OnlyCars.Domain.Entities.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("OnlyCars.Domain.Entities.NotificationRule", b =>
+                {
+                    b.HasOne("OnlyCars.Domain.Entities.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("OnlyCars.Domain.Entities.OdometerReading", b =>
@@ -1301,6 +1431,17 @@ namespace OnlyCars.Infrastructure.Persistence.Migrations
                         .IsRequired();
 
                     b.Navigation("Template");
+
+                    b.Navigation("Vehicle");
+                });
+
+            modelBuilder.Entity("OnlyCars.Domain.Entities.VehicleDocument", b =>
+                {
+                    b.HasOne("OnlyCars.Domain.Entities.Vehicle", "Vehicle")
+                        .WithMany()
+                        .HasForeignKey("VehicleId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
 
                     b.Navigation("Vehicle");
                 });

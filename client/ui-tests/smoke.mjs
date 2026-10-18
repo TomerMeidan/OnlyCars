@@ -369,9 +369,9 @@ for (const s of setups) {
   await step('tasks-empty-and-picker', async () => {
     await page.setViewportSize({ width: 390, height: 844 })
     await tasks.locator('p.muted').filter({ hasText: he ? 'עדיין אין משימות תחזוקה.' : 'No maintenance tasks yet.' }).waitFor()
-    // Maintenance first, then To-dos (MVP5-C), Checklists (MVP5-B), Tires (MVP5-D), the service history and the odometer history.
+    // Maintenance first, then To-dos (MVP5-C), Documents (NOT-1), Checklists (MVP5-B), Tires (MVP5-D), the service history and the odometer history.
     const order = await page.evaluate(() => [...document.querySelectorAll('main section h2')].map((h) => h.id).join())
-    if (order !== 'maintenance,todos,checklists,tires,service-history,odometer-history') throw new Error(`sections: ${order}`)
+    if (order !== 'maintenance,todos,documents,checklists,tires,service-history,odometer-history') throw new Error(`sections: ${order}`)
     await tasks.getByRole('button', { name: TK.add }).click()
     const options = await tasks.locator('.picker li button').allTextContents()
     if (options.length !== 13) throw new Error(`${options.length} picker options`)
@@ -2746,7 +2746,7 @@ for (const s of setups) {
         soon: (n) => ['אין משימות לביצוע בקרוב', 'משימה אחת לביצוע בקרוב', 'שתי משימות לביצוע בקרוב'][n] ?? `${n} משימות לביצוע בקרוב`,
         month: (n, total) => (n ? `החודש: ${total} (${['', 'טיפול אחד', 'שני טיפולים'][n] || `${n} טיפולים`})` : 'החודש: אין טיפולים'),
         all: (n) => `כל המשימות (${n})`, noTasks: 'עדיין אין משימות תחזוקה.', addTask: 'הוספת משימה', status: { Overdue: 'באיחור', DueSoon: 'בקרוב' }, brakesLate: 'באיחור של 500 ק״מ' }
-    : { overdue: (n) => (n ? `${n} overdue` : 'Nothing overdue'), soon: (n) => (n ? `${n} due soon` : 'Nothing due soon'),
+    : { overdue: (n) => (n ? `${n} task${n === 1 ? '' : 's'} overdue` : 'No tasks overdue'), soon: (n) => (n ? `${n} task${n === 1 ? '' : 's'} due soon` : 'No tasks due soon'),
         month: (n, total) => (n ? `This month: ${total} (${n} service${n === 1 ? '' : 's'})` : 'This month: no services'),
         all: (n) => `All tasks (${n})`, noTasks: 'No maintenance tasks yet.', addTask: 'Add task', status: { Overdue: 'Overdue', DueSoon: 'Due soon' }, brakesLate: 'Overdue by 500 km' }
   const isDashGet = (u) => u.pathname === '/api/dashboard'
@@ -5193,6 +5193,304 @@ for (const s of setups) {
     const carLine = plain(await page.locator('main .print-only').textContent())
     if (carLine !== XP.line(ey, 'Export Car/2', date)) throw new Error(`car print line "${carLine}"`)
     await page.emulateMedia({ media: null })
+  })
+  // NOT-1: car documents, the dashboard's Reminders, snooze and lead days, as a fresh user so the reminders are only these.
+  const NT = he
+    ? { types: { Insurance: 'ביטוח', Inspection: 'טסט', Registration: 'רישיון רכב', Licence: 'רישיון נהיגה' },
+        empty: 'כדי לקבל תזכורת לפני שהתוקף פג, אפשר להוסיף ביטוח, טסט, רישיון רכב או רישיון נהיגה.',
+        in: (n) => `התוקף יפוג בעוד ${n} ימים`, today: 'התוקף פג היום', ago: (n) => `התוקף פג לפני ${n} ימים`, on: 'בתוקף עד ',
+        nothing: 'אין כרגע שום דבר שדורש תשומת לב.', snoozed: 'תזכורת אחת נדחתה', choices: ['יום', 'שבוע', 'חודש'], until: 'Oil change, Doc car: התזכורת נדחתה עד ', undo: 'ביטול הדחייה',
+        overdue: 'באיחור', oilLate: 'באיחור של 2,000 ק״מ', snoozeOf: (n) => `דחייה: ${n}, Doc car`, retry: 'ניסיון חוזר',
+        tooLate: 'התאריך לא יכול להיות אחרי ', tooEarly: 'התאריך לא יכול להיות לפני ',
+        tooMany: 'אפשר להוסיף לרכב עד 50 מסמכים. כדי להוסיף מסמך, יש למחוק אחד מהם.',
+        notFound: 'התזכורת הזו כבר לא קיימת. ייתכן שהפריט נמחק או שהרכב הועבר לארכיון.',
+        leadErr: 'יש להזין מספר ימים בין 1 ל־365.', leadLimit: 'יש להזין מספר שלם של ימים בין 1 ל־365.' }
+    : { types: { Insurance: 'Insurance', Inspection: 'Inspection', Registration: 'Registration', Licence: 'Licence' },
+        empty: 'Add the insurance, inspection, registration or licence to get a reminder before it expires.',
+        in: (n) => `Expires in ${n} days`, today: 'Expires today', ago: (n) => `Expired ${n} days ago`, on: 'Expires on ',
+        nothing: 'Nothing needs your attention.', snoozed: '1 snoozed', choices: ['1 day', '1 week', '1 month'], until: 'Oil change (Doc car) snoozed until ', undo: 'Undo',
+        overdue: 'Overdue', oilLate: 'Overdue by 2,000 km', snoozeOf: (n) => `Snooze: ${n}, Doc car`, retry: 'Retry',
+        tooLate: "The date can't be after ", tooEarly: "The date can't be before ",
+        tooMany: 'A car can have up to 50 documents. Delete one to add another.',
+        notFound: 'This reminder is gone. Its item may have been deleted or its car archived.',
+        leadErr: 'Enter a number of days from 1 to 365.', leadLimit: 'Enter a whole number of days from 1 to 365.' }
+  const docs = page.locator('section[aria-labelledby=documents]')
+  const rem = page.locator('section[aria-labelledby=reminders]')
+  const ntNamed = (list, name) => list.filter({ has: page.locator('.name', { hasText: new RegExp(`^${name}$`) }) })
+  const docRow = (type) => ntNamed(docs.locator('.documents > li'), NT.types[type])
+  const remRow = (name) => ntNamed(rem.locator('.tasks > li'), name)
+  const remNames = async () => (await rem.locator('.tasks > li .name').allTextContents()).map(plain)
+  const docBadge = async (loc) => plain(await loc.locator('.badge').textContent())
+  const fail500 = (r) => r.fulfill({ status: 500, contentType: 'application/json', body: '{}' })
+  const problem = (body, status = 400) => (r) => r.fulfill({ status, contentType: 'application/problem+json', body: JSON.stringify(body) })
+  let ntCarId, ntToday
+  await step('not1-error-codes', async () => {
+    // Every code in docs/contracts/NOT-1.md has a message in this language.
+    const codes = ['vehicleDocument.invalidType', 'vehicleDocument.invalidExpiryDate', 'vehicleDocument.invalidCost', 'vehicleDocument.invalidNotes', 'vehicleDocument.tooMany',
+      'vehicleDocument.vehicleArchived', 'vehicleDocument.invalidDate', 'vehicleDocument.notFound', 'vehicle.notFound', 'date.tooEarly', 'date.tooLate',
+      'reminder.invalidDate', 'reminder.invalidSnooze', 'reminder.notFound', 'settings.invalidLeadDays']
+    const errorsSrc = langSrc.slice(langSrc.indexOf('\n  errors: {'))
+    const missing = codes.filter((c) => { const [g, k] = c.split('.'); return !new RegExp(`\\n    ${g}: \\{((?!\\n    \\}).)*\\n      ${k}: `, 's').test(errorsSrc) })
+    if (missing.length) throw new Error(`no ${s.lng} message for ${missing}`)
+  })
+  await step('reminders-no-cars', async () => {
+    const auth = await (await page.request.post(`${BASE}/api/auth/register`, {
+      data: { email: `not1-${s.name}-${Date.now()}@onlycars.test`, password: 'Passw0rd!', locale: he ? 'He' : 'En', currency: 'ILS' },
+    })).json()
+    if (auth.user.reminderLeadDays !== 30) throw new Error(`reminderLeadDays ${auth.user.reminderLeadDays}`)
+    await page.evaluate(([token, user]) => { localStorage.setItem('token', token); localStorage.setItem('user', JSON.stringify(user)) }, [auth.token, auth.user])
+    await page.goto(`${BASE}/`)
+    await page.locator('main').getByText(he ? 'עדיין אין רכבים. אפשר להוסיף את הרכב הראשון.' : 'No cars yet. Add your first one.').waitFor()
+    if (await rem.count()) throw new Error('Reminders without a car')
+  })
+  await step('reminders-empty', async () => {
+    ntToday = await localDate()
+    ntCarId = (await apiCall('POST', '/vehicles', { nickname: 'Doc car', initialOdometerKm: 5000, readingDate: ntToday })).id
+    // A failure with Retry, loading while it retries, then the empty state.
+    // Every load fails until unrouted: in development StrictMode sends the first load twice and shows only the second.
+    const isList = (u) => u.pathname === '/api/reminders'
+    await page.route(isList, fail500)
+    await page.reload()
+    await rem.locator('[role=alert]').waitFor()
+    await page.unroute(isList, fail500)
+    if (plain(await rem.locator('[role=alert]').textContent()) !== RS.generic) throw new Error(`error "${await rem.locator('[role=alert]').textContent()}"`)
+    await page.route(isList, async (r) => { await page.waitForTimeout(700); await r.continue() }, { times: 1 })
+    const req = page.waitForRequest((r) => new URL(r.url()).pathname === '/api/reminders')
+    await rem.getByRole('button', { name: NT.retry }).click()
+    if (new URL((await req).url()).searchParams.get('today') !== ntToday) throw new Error(`today ${(await req).url()}`)
+    await rem.getByText(NT.nothing).waitFor()
+    await focusIs('#reminders', 'the h2 after Retry')
+    if (await rem.locator('[role=alert]').count()) throw new Error('error kept after Retry')
+    forget500()
+  })
+  await step('documents-add', async () => {
+    await page.setViewportSize({ width: 390, height: 844 })
+    await page.goto(`${BASE}/cars/${ntCarId}`)
+    await docs.getByText(NT.empty).waitFor()
+    const add = async (type, expiry, cost, notes) => {
+      await docs.locator('button.add').click()
+      const form = docs.locator('form')
+      await focusIs('section[aria-labelledby=documents] select[name=type]', `type after Add (${type})`)
+      await form.locator('select[name=type]').selectOption(type)
+      await form.locator('input[name=expiryDate]').fill(expiry)
+      if (cost != null) await form.locator('input[name=cost]').fill(String(cost))
+      if (notes) await form.locator('textarea[name=notes]').fill(notes)
+      const res = page.waitForResponse((r) => r.request().method() === 'POST' && new URL(r.url()).pathname === `/api/vehicles/${ntCarId}/documents`)
+      await form.locator('button:not(.link)').click()
+      const r = await res
+      if (r.status() !== 201 || new URL(r.url()).searchParams.get('today') !== ntToday) throw new Error(`POST ${r.status()} ${r.url()}`)
+      const body = r.request().postDataJSON()
+      if (JSON.stringify(body) !== JSON.stringify({ type, expiryDate: expiry, cost: cost ?? null, notes: notes ?? '' })) throw new Error(`body ${JSON.stringify(body)}`)
+      await focusIs(`section[aria-labelledby=documents] li[data-id="${(await r.json()).id}"] button.edit`, `Edit after adding ${type}`)
+    }
+    await add('Insurance', await histDay(10), 1250, 'Comprehensive')
+    await add('Inspection', ntToday)
+    await add('Registration', await histDay(-3))
+    await add('Licence', await histDay(100))
+    const types = (await docs.locator('.documents > li .name').allTextContents()).map(plain)
+    if (types.join() !== ['Registration', 'Inspection', 'Insurance', 'Licence'].map((x) => NT.types[x]).join()) throw new Error(`order ${types}`)
+    for (const [type, want] of [['Insurance', NT.in(10)], ['Inspection', NT.today], ['Registration', NT.ago(3)]]) {
+      if ((await docBadge(docRow(type))) !== want) throw new Error(`${type} badge "${await docBadge(docRow(type))}", want "${want}"`)
+    }
+    if (await docRow('Licence').locator('.badge').count()) throw new Error('a badge on an Ok document')
+    const licence = plain(await docRow('Licence').locator('p').first().textContent())
+    if (licence !== NT.on + (await fmtDay(await histDay(100)))) throw new Error(`Licence line "${licence}"`)
+    const ins = plain(await docRow('Insurance').textContent())
+    if (!ins.includes('1,250') || !ins.includes('Comprehensive')) throw new Error(`Insurance row "${ins}"`)
+    await noOverflow('documents at 390px')
+    await sweep('car page with documents')
+    await page.setViewportSize(s.viewport)
+  })
+  await step('documents-edit-delete', async () => {
+    // Out-of-range dates come back from the API, translated; focus returns to Save.
+    const edit = (type) => docRow(type).locator('button.edit')
+    await edit('Licence').click()
+    const form = docRow('Licence').locator('form')
+    for (const [date, msg, bound] of [['2101-01-01', NT.tooLate, '2100-12-31'], ['1899-12-31', NT.tooEarly, '1900-01-01']]) {
+      await form.locator('input[name=expiryDate]').fill(date)
+      await form.locator('button:not(.link)').click()
+      await form.locator('[role=alert]').waitFor()
+      const text = plain(await form.locator('[role=alert]').textContent())
+      if (text !== `${msg}${await fmtDay(bound)}.`) throw new Error(`${date}: "${text}"`)
+      await focusIs('section[aria-labelledby=documents] form button:not(.link)', `Save after ${date}`)
+    }
+    // A date error stays while another field changes and goes once the date is edited.
+    await form.locator('input[name=cost]').fill('5')
+    if (!(await form.locator('[role=alert]').count())) throw new Error('a date error cleared by editing the cost')
+    await form.locator('input[name=expiryDate]').fill(ntToday)
+    await form.locator('[role=alert]').waitFor({ state: 'detached' })
+    await page.keyboard.press('Escape')
+    await focusIs('section[aria-labelledby=documents] li button.edit', 'Edit after Escape')
+    // Renewing is editing the date.
+    await edit('Insurance').click()
+    await docRow('Insurance').locator('input[name=expiryDate]').fill(await histDay(5))
+    const put = page.waitForResponse((r) => r.request().method() === 'PUT' && r.url().includes('/documents/'))
+    await docRow('Insurance').locator('form button:not(.link)').click()
+    if ((await put).status() !== 200) throw new Error(`PUT ${(await put).status()}`)
+    await docRow('Insurance').locator('.badge', { hasText: NT.in(5) }).waitFor()
+    await focusIs('section[aria-labelledby=documents] li button.edit', 'Edit after Save')
+    // A 51st document: the API's limit, translated.
+    await page.route(`**/api/vehicles/${ntCarId}/documents?*`, (r) => (r.request().method() === 'POST' ? problem({ code: 'vehicleDocument.tooMany', max: 50 })(r) : r.continue()), { times: 1 })
+    await docs.locator('button.add').click()
+    await docs.locator('form input[name=expiryDate]').fill(ntToday)
+    await docs.locator('form button:not(.link)').click()
+    await docs.locator('form [role=alert]').waitFor()
+    if (plain(await docs.locator('form [role=alert]').textContent()) !== NT.tooMany) throw new Error(`tooMany "${await docs.locator('form [role=alert]').textContent()}"`)
+    await page.keyboard.press('Escape')
+    // Delete asks first; focus goes to the row now in its place.
+    await docRow('Licence').locator('button.edit + button').click()
+    await focusIs('section[aria-labelledby=documents] li .inline-form button.link', 'Cancel in the confirm')
+    await docRow('Licence').locator('button.danger').click()
+    await docRow('Licence').waitFor({ state: 'detached' })
+    await focusIs('section[aria-labelledby=documents] li button.edit', 'an Edit after Delete')
+    if ((await docs.locator('.documents > li').count()) !== 3) throw new Error('rows after Delete')
+    await page.screenshot({ path: `${OUT}/${s.name}-documents.png`, fullPage: true })
+  })
+  await step('reminders-list', async () => {
+    // An overdue task (due at 4,000 km) and an overdue checklist (due at 5,500 km) once the car is at 6,000 km.
+    await apiCall('POST', `/vehicles/${ntCarId}/tasks`, { name: 'Oil change', category: 'Oil', intervalKm: 1000, intervalDays: null, dueSoonPercent: 10, lastDoneOdometerKm: 3000, lastDoneDate: ntToday })
+    const tpl = await apiCall('POST', '/checklist-templates', { name: 'Lights check', items: [{ label: 'Lights', type: 'Check' }] })
+    await apiCall('POST', `/vehicles/${ntCarId}/checklists`, { templateId: tpl.id, intervalKm: 500, intervalDays: null, date: ntToday })
+    await apiCall('POST', `/vehicles/${ntCarId}/odometer`, { valueKm: 6000, readingDate: ntToday })
+    await page.evaluate(() => { window.noReload = true })
+    await page.click('header a.brand')
+    await arrivedAt(T.dashboard)
+    await remRow('Oil change').waitFor()
+    const want = [NT.types.Registration, 'Lights check', 'Oil change', NT.types.Inspection, NT.types.Insurance]
+    if ((await remNames()).join() !== want.join()) throw new Error(`reminders ${await remNames()}`)
+    const oil = plain(await remRow('Oil change').textContent())
+    if ((await docBadge(remRow('Oil change'))) !== NT.overdue || !oil.includes(NT.oilLate)) throw new Error(`task row "${oil}"`)
+    if ((await docBadge(remRow(NT.types.Registration))) !== NT.ago(3)) throw new Error(`Registration "${await docBadge(remRow(NT.types.Registration))}"`)
+    if ((await docBadge(remRow(NT.types.Insurance))) !== NT.in(5)) throw new Error(`Insurance "${await docBadge(remRow(NT.types.Insurance))}"`)
+    const links = await rem.locator('.tasks > li a').evaluateAll((as) => as.map((a) => `${a.getAttribute('href')} ${a.textContent}`))
+    if (links.length !== 5 || links.some((h) => h !== `/cars/${ntCarId} Doc car`)) throw new Error(`links ${links}`)
+    if (await rem.getByText(NT.snoozed).count()) throw new Error('a snoozed count with nothing snoozed')
+    const label = plain(await remRow('Oil change').locator('button.snooze').getAttribute('aria-label'))
+    if (label !== NT.snoozeOf('Oil change')) throw new Error(`Snooze label "${label}"`)
+    await at390('the dashboard with reminders', 'reminders')
+    await remRow(NT.types.Insurance).getByRole('link').click()
+    await arrivedAt('Doc car')
+    await page.click('header a.brand')
+    await remRow('Oil change').waitFor()
+    if (!(await page.evaluate(() => window.noReload))) throw new Error('the page reloaded')
+  })
+  await step('reminders-snooze', async () => {
+    await page.setViewportSize({ width: 390, height: 844 })
+    const oilSnooze = 'section[aria-labelledby=reminders] li[data-key^="Task-"] button.snooze'
+    const group = remRow('Oil change').locator('[role=group]')
+    // The first choice has focus when they open; Escape closes them and goes back to Snooze.
+    await remRow('Oil change').locator('button.snooze').click()
+    if (plain(await group.getAttribute('aria-label')) !== NT.snoozeOf('Oil change')) throw new Error(`group label "${await group.getAttribute('aria-label')}"`)
+    const choices = (await group.locator('button:not(.link)').allTextContents()).map(plain)
+    if (choices.join() !== NT.choices.join()) throw new Error(`choices ${choices}`)
+    await focusIs('section[aria-labelledby=reminders] [role=group] button', 'the first choice')
+    await noOverflow('the snooze choices')
+    await sweep('the dashboard with the snooze choices')
+    await page.screenshot({ path: `${OUT}/${s.name}-snooze-choices.png`, fullPage: true })
+    await page.keyboard.press('Escape')
+    await focusIs(oilSnooze, 'Snooze after Escape')
+    // A failed snooze keeps the choices, with the error and focus on the choice tried.
+    await page.route('**/api/reminders/snooze', fail500, { times: 1 })
+    await remRow('Oil change').locator('button.snooze').click()
+    await group.getByRole('button', { name: NT.choices[0], exact: true }).click()
+    await remRow('Oil change').locator('[role=alert]').waitFor()
+    if (plain(await remRow('Oil change').locator('[role=alert]').textContent()) !== RS.generic) throw new Error('snooze error')
+    await focusIs('section[aria-labelledby=reminders] [role=group] button:first-child', 'the choice after a failed snooze')
+    forget500()
+    // Keyboard: Tab to 1 week, Enter. The row goes, "Snoozed until" with Undo takes focus, and the count shows.
+    await page.keyboard.press('Tab')
+    const post = page.waitForResponse((r) => r.request().method() === 'POST' && r.url().endsWith('/api/reminders/snooze'))
+    await page.keyboard.press('Enter')
+    const body = (await post).request().postDataJSON()
+    if (body.kind !== 'Task' || body.days !== 7 || body.today !== ntToday) throw new Error(`snooze body ${JSON.stringify(body)}`)
+    const until = (await (await post).json()).snoozedUntil
+    if (until !== await histDay(7)) throw new Error(`snoozedUntil ${until}`)
+    await remRow('Oil change').waitFor({ state: 'detached' })
+    await focusIs('section[aria-labelledby=reminders] .undo button', 'Undo after snoozing')
+    const msg = plain(await rem.locator('.undo [id]').textContent())
+    if (msg !== `${NT.until}${await fmtDay(until)}.`) throw new Error(`undo message "${msg}"`)
+    if ((await rem.locator('.undo').getAttribute('role')) !== 'status') throw new Error('the message is not a live region')
+    if (plain(await rem.locator('.undo button').textContent()) !== NT.undo) throw new Error('Undo label')
+    await rem.getByText(NT.snoozed).waitFor()
+    await noOverflow('the snoozed message')
+    await sweep('the dashboard after snoozing')
+    await page.screenshot({ path: `${OUT}/${s.name}-snoozed.png`, fullPage: true })
+    // Undo brings the row back, with focus on its Snooze.
+    const del = page.waitForResponse((r) => r.request().method() === 'DELETE' && r.url().includes('/api/reminders/snooze?'))
+    await rem.locator('.undo button').click()
+    if (!(await del).url().includes('kind=Task&refId=')) throw new Error(`DELETE ${(await del).url()}`)
+    await remRow('Oil change').waitFor()
+    await focusIs(oilSnooze, 'Snooze after Undo')
+    await rem.locator('.undo').waitFor({ state: 'detached' })
+    if (await rem.getByText(NT.snoozed).count()) throw new Error('snoozed count after Undo')
+    // A reminder gone meanwhile: the API's 404, translated.
+    await page.route('**/api/reminders/snooze', problem({ code: 'reminder.notFound' }, 404), { times: 1 })
+    await remRow('Lights check').locator('button.snooze').click()
+    await remRow('Lights check').getByRole('button', { name: NT.choices[0], exact: true }).click()
+    await remRow('Lights check').locator('[role=alert]').waitFor()
+    if (plain(await remRow('Lights check').locator('[role=alert]').textContent()) !== NT.notFound) throw new Error('notFound message')
+    await page.keyboard.press('Escape')
+    // Snoozed for a month and left so: the count stays.
+    await remRow('Oil change').locator('button.snooze').click()
+    await remRow('Oil change').getByRole('button', { name: NT.choices[2], exact: true }).click()
+    await remRow('Oil change').waitFor({ state: 'detached' })
+    await rem.getByText(NT.snoozed).waitFor()
+    await page.setViewportSize(s.viewport)
+  })
+  await step('reminders-lead-days', async () => {
+    await page.evaluate(() => { window.noReload = true })
+    await openSettings()
+    const input = page.locator('input[name=reminderLeadDays]')
+    const form = page.locator('form', { has: input })
+    if ((await input.inputValue()) !== '30') throw new Error(`lead days ${await input.inputValue()}`)
+    if (!(await page.locator(`#${await input.getAttribute('aria-describedby')}`).isVisible())) throw new Error('no hint')
+    // Out of range: the browser stops it with the translated message, before any request.
+    let puts = 0
+    const count = (r) => r.method() === 'PUT' && puts++
+    page.on('request', count)
+    await input.fill('366')
+    await form.locator('button').click()
+    const v = plain(await input.evaluate((el) => el.validationMessage))
+    page.off('request', count)
+    if (v !== NT.leadLimit) throw new Error(`validation "${v}"`)
+    if (puts) throw new Error('366 was sent')
+    // The API's refusal, translated, and the saved value back.
+    await page.route('**/api/me/settings', problem({ code: 'settings.invalidLeadDays', min: 1, max: 365 }), { times: 1 })
+    await input.fill('20')
+    await form.locator('button').click()
+    await form.locator('[role=alert]').waitFor()
+    if (plain(await form.locator('[role=alert]').textContent()) !== NT.leadErr) throw new Error(`lead error "${await form.locator('[role=alert]').textContent()}"`)
+    if ((await input.inputValue()) !== '30') throw new Error(`not put back: ${await input.inputValue()}`)
+    await noOverflow('settings with lead days')
+    await sweep('settings with lead days')
+    // 3 days: Insurance (in 5 days) leaves Reminders; Inspection (today) stays. Back to 30 brings it back. No reload.
+    await page.click('header a.brand')
+    const setLead = async (n) => {
+      await openSettings()
+      await input.fill(String(n))
+      const res = putSettings()
+      await input.press('Enter')
+      if (JSON.stringify((await res).request().postDataJSON()) !== JSON.stringify({ reminderLeadDays: n })) throw new Error('PUT body')
+      await savedShown()
+      if ((await page.evaluate(() => JSON.parse(localStorage.getItem('user')).reminderLeadDays)) !== n) throw new Error('cached user')
+      await page.click('header a.brand')
+      await remRow(NT.types.Inspection).waitFor()
+    }
+    await setLead(3)
+    if ((await remNames()).includes(NT.types.Insurance)) throw new Error(`Insurance with 3 lead days: ${await remNames()}`)
+    await setLead(30)
+    await remRow(NT.types.Insurance).waitFor()
+    if (!(await page.evaluate(() => window.noReload))) throw new Error('the page reloaded')
+  })
+  await step('documents-archived', async () => {
+    await apiCall('POST', `/vehicles/${ntCarId}/archive`)
+    await page.goto(`${BASE}/cars/${ntCarId}`)
+    await docRow('Insurance').waitFor()
+    if (await docs.locator('button').count()) throw new Error("buttons on an archived car's documents")
+    await page.goto(`${BASE}/`)
+    await page.locator('main h1').waitFor()
+    await page.waitForLoadState('networkidle')
+    if (await rem.count()) throw new Error('Reminders with only an archived car')
   })
   await step('switch-language', async () => {
     const before = await page.getAttribute('html', 'dir')

@@ -29,6 +29,9 @@ public interface IAppDbContext
     DbSet<TireCheck> TireChecks { get; }
     DbSet<TireMeasurement> TireMeasurements { get; }
     DbSet<TireRotation> TireRotations { get; }
+    DbSet<VehicleDocument> VehicleDocuments { get; }
+    DbSet<NotificationRule> NotificationRules { get; }
+    DbSet<Notification> Notifications { get; }
 
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 }

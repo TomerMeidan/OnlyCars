@@ -6,9 +6,10 @@ import { api, byUrgency, isOrderError, localToday, runPath, type Dashboard, type
 import { useAuth, useDistance } from '../auth'
 import { usePage } from '../usePage'
 import { useRow } from '../useRow'
+import { RemindersCard } from './RemindersCard'
 import { Remaining, StatusBadge, UndoBar, type TaskUndo } from './TasksSection'
 
-// The dashboard on `/`: the summary, then one card per active car in the server's urgency order, then archived cars if shown.
+// The dashboard on `/`: the summary, the reminders, then one card per active car in the server's urgency order, then archived cars if shown.
 export default function CarsPage() {
   const { t, i18n } = useTranslation()
   const lng = i18n.resolvedLanguage
@@ -116,6 +117,8 @@ export default function CarsPage() {
       ) : (
         error == null && <div className="card summary"><p className="muted" role="status">{t('loading')}</p></div>
       )}
+      {/* Not without active cars: the dashboard's own empty state shows instead. */}
+      {data && data.dash.vehicles.length > 0 && <RemindersCard version={data} />}
       <label className="inline">
         <input type="checkbox" checked={showArchived} onChange={(e) => { setUndo(null); setShowArchived(e.target.checked) }} />
         {t('showArchived')}

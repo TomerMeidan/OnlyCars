@@ -73,15 +73,15 @@ export function Remaining({ km, days }: { km: number | null; days: number | null
   return <Trans i18nKey={late ? 'overdueBy' : 'left'} components={{ x: <span>{list}</span> }} />
 }
 
-// "Marked as done." and Undo on a task's row, on the car page and the dashboard.
-export function UndoBar({ taskId, busy, onClick }: { taskId: string; busy: boolean; onClick: MouseEventHandler<HTMLButtonElement> }) {
+// "Marked as done." and Undo on a task's row, on the car page and the dashboard; also "Snoozed until" on the dashboard's Reminders.
+export function UndoBar({ taskId, busy, onClick, message, label }: { taskId: string; busy: boolean; onClick: MouseEventHandler<HTMLButtonElement>; message?: string; label?: string }) {
   const { t } = useTranslation()
   return (
     <div className="undo" role="status">
       {/* Focus lands on Undo in the same render as the bar, so Undo also carries the message. */}
-      <span id={`undo-${taskId}`}>{t('markedDone')}</span>
+      <span id={`undo-${taskId}`}>{message ?? t('markedDone')}</span>
       {/* aria-disabled, not disabled: a disabled button drops focus to body while Undo runs. */}
-      <button className="link" aria-describedby={`undo-${taskId}`} aria-disabled={busy} onClick={(e) => !busy && onClick(e)}>{t('undo')}</button>
+      <button className="link" aria-describedby={`undo-${taskId}`} aria-disabled={busy} onClick={(e) => !busy && onClick(e)}>{label ?? t('undo')}</button>
     </div>
   )
 }

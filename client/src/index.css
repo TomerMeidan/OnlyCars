@@ -207,8 +207,8 @@ button.danger { background: var(--danger); border-color: var(--danger); color: #
 .tasks time, .services time { white-space: nowrap; }
 .tasks .actions, .services .actions { flex-wrap: wrap; }
 .status-Ok { --status: var(--status-ok); }
-.status-DueSoon { --status: var(--status-soon); }
-.status-Overdue { --status: var(--status-overdue); }
+.status-DueSoon, .status-Expiring { --status: var(--status-soon); }
+.status-Overdue, .status-Expired { --status: var(--status-overdue); }
 .badge.status { color: var(--status); border-color: currentColor; font-weight: 600; }
 /* A block child starts at the inline start, so the fill grows from the right in Hebrew. */
 .bar { block-size: 0.5rem; border-radius: 999px; background: var(--line); overflow: hidden; margin-block: 0.25rem; }
@@ -311,7 +311,7 @@ details > summary { padding-block: 0.625rem; cursor: pointer; }
 
 /* To-dos on a car (MVP5-C): the title, the user's line breaks kept in the description */
 .issues .name { font-weight: 600; }
-.issues .notes { white-space: pre-line; }
+.issues .notes, .documents .notes { white-space: pre-line; }
 
 /* Tires (MVP5-D): a set's facts wrap as one line of label: value pairs; storage notes keep the user's line breaks */
 .facts { display: flex; flex-wrap: wrap; gap: 0 1rem; }

@@ -87,3 +87,34 @@ public enum TirePosition
     RR,
     Spare
 }
+
+public enum VehicleDocumentType
+{
+    Insurance,
+    Inspection,
+    Registration,
+    Licence
+}
+
+// Computed on read, never stored.
+public enum DocumentStatus
+{
+    Ok,
+    Expiring,
+    Expired
+}
+
+// InApp holds the reminder lead days (NOT-1); Email arrives with NOT-2.
+public enum NotificationChannel
+{
+    Email,
+    Push,
+    InApp
+}
+
+public enum NotificationKind
+{
+    Task,
+    Document,
+    Checklist
+}

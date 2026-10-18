@@ -12,6 +12,7 @@ export interface User {
   currency: string
   locale: 'En' | 'He'
   theme: 'Light' | 'Dark' | 'System'
+  reminderLeadDays: number // NOT-1: days before a document's expiry that it shows as Expiring, 1 to 365
 }
 
 export interface AuthResponse {
@@ -313,6 +314,39 @@ export interface CostReport {
   cars: { vehicleId: string; nickname: string; isArchived: boolean; serviceTotal: number; kmDriven: number; costPerKm: number | null; purchasePrice: number | null; totalCostOfOwnership: number | null }[]
 }
 
+// NOT-1: a car's insurance, inspection, registration or licence. daysLeft is expiryDate - today: 0 expires today, negative expired that many days ago.
+export type DocumentType = 'Insurance' | 'Inspection' | 'Registration' | 'Licence'
+export const documentTypes: DocumentType[] = ['Insurance', 'Inspection', 'Registration', 'Licence']
+export interface VehicleDocument {
+  id: string
+  vehicleId: string
+  type: DocumentType
+  expiryDate: string
+  cost: number | null
+  notes: string | null
+  status: 'Ok' | 'Expiring' | 'Expired'
+  daysLeft: number
+}
+
+// GET /reminders: due tasks and checklists and expiring documents of active cars, most urgent first, minus the snoozed ones.
+export interface Reminder {
+  kind: 'Task' | 'Checklist' | 'Document'
+  refId: string
+  vehicleId: string
+  vehicleNickname: string
+  name: string | null // null for a document
+  documentType: DocumentType | null
+  status: 'Overdue' | 'DueSoon' | 'Expired' | 'Expiring'
+  dueDate: string | null // documents only
+  remainingKm: number | null
+  remainingDays: number | null // a document's daysLeft
+}
+export interface Reminders {
+  leadDays: number
+  snoozedCount: number
+  items: Reminder[]
+}
+
 // ProblemDetails from the API; `code` is translated by errorMessage() in i18n.ts.
 export interface Problem {
   title?: string
@@ -323,6 +357,9 @@ export interface Problem {
   currentKm?: number
   index?: number // the 0-based item row of a serviceItem.* or checklistItem.* error
   minDate?: string // the earliest accepted date of a date.tooEarly error
+  maxDate?: string // the latest accepted date of a date.tooLate error
+  min?: number // settings.invalidLeadDays
+  max?: number // settings.invalidLeadDays, vehicleDocument.tooMany
   mountOdometerKm?: number // tireMount.odometerBeforeMount: the odometer when the set went on
   mountedAt?: string // tireMount.dateBeforeMount: the date the set went on
   maxBytes?: number // file.quotaExceeded: the user's storage limit

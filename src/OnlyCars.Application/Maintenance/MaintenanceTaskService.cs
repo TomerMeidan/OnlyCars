@@ -6,6 +6,7 @@ using OnlyCars.Application.Common;
 using OnlyCars.Application.Common.Exceptions;
 using OnlyCars.Application.Maintenance.Dtos;
 using OnlyCars.Application.Odometer;
+using OnlyCars.Application.Reminders;
 using OnlyCars.Application.Vehicles;
 using OnlyCars.Domain;
 using OnlyCars.Domain.Entities;
@@ -93,6 +94,7 @@ public partial class MaintenanceTaskService(IAppDbContext db, VehicleService veh
         var task = await FindAsync(vehicle.Id, taskId, ct);
         // The join FK doesn't cascade (one cascade path only on SQL Server); the records and their readings stay as history.
         db.ServiceRecordTasks.RemoveRange(await db.ServiceRecordTasks.Where(j => j.MaintenanceTaskId == task.Id).ToListAsync(ct));
+        await ReminderService.RemoveSnoozeAsync(db, userId, NotificationKind.Task, task.Id, ct);
         db.MaintenanceTasks.Remove(task);
         await db.SaveChangesAsync(ct);
     }

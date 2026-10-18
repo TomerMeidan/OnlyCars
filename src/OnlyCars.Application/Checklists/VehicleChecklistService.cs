@@ -6,6 +6,7 @@ using OnlyCars.Application.Common;
 using OnlyCars.Application.Common.Exceptions;
 using OnlyCars.Application.Maintenance;
 using OnlyCars.Application.Odometer;
+using OnlyCars.Application.Reminders;
 using OnlyCars.Application.Vehicles;
 using OnlyCars.Domain;
 using OnlyCars.Domain.Entities;
@@ -104,6 +105,7 @@ public class VehicleChecklistService(IAppDbContext db, VehicleService vehicleSer
             throw new ConflictException("vehicleChecklist.hasRuns", "This checklist has runs. Turn it off instead.");
         }
 
+        await ReminderService.RemoveSnoozeAsync(db, userId, NotificationKind.Checklist, checklist.Id, ct);
         db.VehicleChecklists.Remove(checklist);
         await db.SaveChangesAsync(ct);
     }

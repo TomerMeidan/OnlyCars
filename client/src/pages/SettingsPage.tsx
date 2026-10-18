@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useLocation } from 'react-router-dom'
-import { api, currencies, type User } from '../api'
+import { api, currencies, limit, type User } from '../api'
 import { useAuth } from '../auth'
 import { errorMessage } from '../i18n'
 import { usePage } from '../usePage'
 
-type Field = 'locale' | 'theme' | 'currency' | 'distanceUnit'
+type Field = 'locale' | 'theme' | 'currency' | 'distanceUnit' | 'reminderLeadDays'
 
 export default function SettingsPage() {
   const { t, i18n } = useTranslation()
@@ -20,6 +20,10 @@ export default function SettingsPage() {
   const at = (field: Field) => `${field}@${key}`
   const currencyNames = new Intl.DisplayNames([i18n.resolvedLanguage ?? 'en'], { type: 'currency' })
   usePage(t('settings'))
+  // Typed here and saved with Save; follows the saved value (a refresh, or put back after a failed save).
+  const savedLead = String(user!.reminderLeadDays ?? '') // undefined in a user cached before NOT-1, until the refresh below
+  const [lead, setLead] = useState({ saved: savedLead, value: savedLead })
+  if (lead.saved !== savedLead) setLead({ saved: savedLead, value: savedLead })
 
   // The page shows the cached user at once; this picks up changes made on another device.
   // A failed refresh is ignored: the cached values stay usable and each save returns the server's values.
@@ -28,7 +32,7 @@ export default function SettingsPage() {
     api<User>('/me').then((u) => saveStarted.current || storeUser(u), () => {})
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  async function save(field: Field, value: string) {
+  async function save(field: Field, value: string | number) {
     if (busy) return // the controlled value puts the control back
     saveStarted.current = true
     setBusy(true)
@@ -40,7 +44,7 @@ export default function SettingsPage() {
   const errorFor = (field: Field) =>
     settingsError?.at === at(field) && <p className="error" role="alert">{errorMessage(settingsError.err)}</p>
 
-  const radios = (field: Exclude<Field, 'currency'>, legend: string, values: string[], label: (v: string) => ReactNode) => (
+  const radios = (field: Exclude<Field, 'currency' | 'reminderLeadDays'>, legend: string, values: string[], label: (v: string) => ReactNode) => (
     <fieldset aria-disabled={busy}>
       <legend>{t(legend)}</legend>
       {values.map((v) => (
@@ -84,6 +88,16 @@ export default function SettingsPage() {
         {errorFor('currency')}
       </div>
       {radios('distanceUnit', 'distanceUnit', ['Km', 'Mi'], (v) => t(`distanceUnits.${v}`))}
+      <form className="inline-form" onSubmit={(e) => { e.preventDefault(); save('reminderLeadDays', Number(lead.value)) }}>
+        <label>
+          {t('leadDays')}
+          <input name="reminderLeadDays" type="number" inputMode="numeric" required min={1} max={365} step={1} value={lead.value}
+            aria-describedby="lead-days-hint" onChange={(e) => setLead({ ...lead, value: e.target.value })} onInput={limit(t('limits.leadDays'))} />
+        </label>
+        <button aria-disabled={busy}>{t('save')}</button>
+        <p id="lead-days-hint" className="muted">{t('leadDaysHint')}</p>
+        {errorFor('reminderLeadDays')}
+      </form>
       <p role="status">{saved && t('saved')}</p>
     </div>
   )
