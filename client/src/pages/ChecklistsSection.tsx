@@ -10,6 +10,7 @@ import { splitDays, unitDays, type Unit } from '../units'
 import { Due, Interval, StatusBadge } from './TasksSection'
 import { IssueForm } from './IssuesSection'
 import { focusIssue } from '../focusIssue'
+import { Attachments } from './ServiceHistory'
 
 // The server's cap on a checklist's time interval (10 years).
 const MAX_DAYS = 3650
@@ -34,6 +35,8 @@ export function ChecklistsSection({ car, onChanged, onIssuesChanged }: { car: Ve
   // Bumped to reload the list after a change here.
   const [version, setVersion] = useState(0)
   const form = useRow<'add'>()
+  // Set by "Add photos" after a Save: that run opens in its history, with focus on its Add photo. A new object per tap, so a second tap works too.
+  const [addPhotos, setAddPhotos] = useState<{ run: string } | null>(null)
   const sectionRef = useRef<HTMLElement>(null)
   // Selectors to focus after the next load, the first that matches; the h2 if none does.
   const focusNext = useRef<string[] | null>(back && [`li[data-id="${back.ran}"] a.run`])
@@ -77,7 +80,12 @@ export function ChecklistsSection({ car, onChanged, onIssuesChanged }: { car: Ve
           <button className="add" ref={form.opener('add')} onClick={() => form.open('add')}>{t('addChecklist')}</button>
         )}
       </div>
-      {savedId && <p role="status" id={savedId}>{t('runSaved', { count: back!.flagged })}</p>}
+      {savedId && (
+        <div className="row">
+          <p role="status" id={savedId}>{t('runSaved', { count: back!.flagged })}</p>
+          {back!.run && !readOnly && <button className="link add-photos" onClick={() => setAddPhotos({ run: back!.run! })}>{t('addPhotos')}</button>}
+        </div>
+      )}
 
       {form.mode === 'add' && (
         !available ? (
@@ -122,6 +130,7 @@ export function ChecklistsSection({ car, onChanged, onIssuesChanged }: { car: Ve
               checklist={c}
               readOnly={readOnly}
               describedBy={c.id === back?.ran ? savedId : undefined}
+              addPhotos={c.id === back?.ran ? addPhotos : null}
               onEdited={() => reload([`li[data-id="${c.id}"] button.edit`])}
               // The row that takes this one's place, then the first, then Add a checklist.
               onRemoved={() => reload([`.car-checklists > li:nth-child(${i + 1}) button.edit`, '.car-checklists > li button.edit', 'button.add'])}
@@ -219,11 +228,12 @@ function ScheduleForm({ row, templates, checklist, onSubmit }: {
   )
 }
 
-function ChecklistRow({ car, checklist: c, readOnly, describedBy, onEdited, onRemoved, onRunsChanged, onIssuesChanged }: {
+function ChecklistRow({ car, checklist: c, readOnly, describedBy, addPhotos, onEdited, onRemoved, onRunsChanged, onIssuesChanged }: {
   car: Vehicle
   checklist: VehicleChecklist
   readOnly: boolean
   describedBy?: string
+  addPhotos: { run: string } | null
   onEdited: () => void
   onRemoved: () => void
   onRunsChanged: () => void
@@ -282,16 +292,17 @@ function ChecklistRow({ car, checklist: c, readOnly, describedBy, onEdited, onRe
           </div>
         </div>
       )}
-      <RunHistory carId={car.id} checklist={c} readOnly={readOnly} onChanged={onRunsChanged} onIssuesChanged={onIssuesChanged} />
+      <RunHistory carId={car.id} checklist={c} readOnly={readOnly} addPhotos={addPhotos} onChanged={onRunsChanged} onIssuesChanged={onIssuesChanged} />
     </li>
   )
 }
 
 // "History (3)", collapsed; the runs load the first time it opens.
-function RunHistory({ carId, checklist: c, readOnly, onChanged, onIssuesChanged }: {
+function RunHistory({ carId, checklist: c, readOnly, addPhotos, onChanged, onIssuesChanged }: {
   carId: string
   checklist: VehicleChecklist
   readOnly: boolean
+  addPhotos: { run: string } | null
   onChanged: () => void
   onIssuesChanged: () => void
 }) {
@@ -305,10 +316,28 @@ function RunHistory({ carId, checklist: c, readOnly, onChanged, onIssuesChanged 
   // Selectors to focus after the next change of the runs, the first that matches; the summary if none does.
   const focusNext = useRef<string[] | null>(null)
 
-  const load = () => api<ChecklistRun[]>(`/vehicle-checklists/${encodeURIComponent(c.id)}/runs`).then(
+  const runsPath = `/vehicle-checklists/${encodeURIComponent(c.id)}/runs`
+  const load = () => api<ChecklistRun[]>(runsPath).then(
     (rs) => { setRuns(rs); setError(null) },
     (err) => { focusNext.current = null; setError(err) },
   ).finally(() => setRetrying(false))
+  // One run as stored now (fresh photo links), with the others; checklistRun.notFound once it's deleted.
+  const reloadRun = async (id: string) => {
+    const rs = await api<ChecklistRun[]>(runsPath)
+    setRuns(rs)
+    const r = rs.find((x) => x.id === id)
+    if (!r) throw new ApiError(404, { code: 'checklistRun.notFound' }, 'Not Found')
+    return r
+  }
+
+  // "Add photos": open the history (the toggle loads it the first time) and that run, then focus its Add photo.
+  useEffect(() => {
+    const box = ref.current
+    if (!addPhotos || !box) return
+    focusNext.current = [`.run-list > li[data-id="${addPhotos.run}"] button.add-file`]
+    if (runs) load()
+    box.open = true
+  }, [addPhotos]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const sels = focusNext.current
@@ -340,7 +369,9 @@ function RunHistory({ carId, checklist: c, readOnly, onChanged, onIssuesChanged 
       ) : (
         <ol className="run-list">
           {runs.map((r, i) => (
-            <RunRow key={r.id} run={r} carId={carId} checklistName={c.name} readOnly={readOnly} onIssue={(itemId, issueId, message) => {
+            <RunRow key={r.id} run={r} carId={carId} checklistName={c.name} readOnly={readOnly} expand={addPhotos?.run === r.id ? addPhotos : null}
+              onPhotos={(x) => setRuns((rs) => rs && rs.map((y) => (y.id === x.id ? x : y)))} reload={() => reloadRun(r.id)}
+              onGone={() => { focusNext.current = []; load() }} onIssue={(itemId, issueId, message) => {
               // Created (here or in another tab): focus on its "To-do created"; its to-do deleted elsewhere: on Create to-do.
               focusNext.current = [`.run-items > li[data-id="${itemId}"] button.to-issue`, `.run-items > li[data-id="${itemId}"] button.create-issue`]
               setNote(message ?? null)
@@ -361,11 +392,15 @@ function RunHistory({ carId, checklist: c, readOnly, onChanged, onIssuesChanged 
   )
 }
 
-function RunRow({ run: r, carId, checklistName, readOnly, onIssue, onDeleted }: {
+function RunRow({ run: r, carId, checklistName, readOnly, expand, onPhotos, reload, onGone, onIssue, onDeleted }: {
   run: ChecklistRun
   carId: string
   checklistName: string
   readOnly: boolean
+  expand: { run: string } | null // "Add photos" for this run: a new object per tap
+  onPhotos: (run: ChecklistRun) => void // its photos changed, or got fresh links
+  reload: () => Promise<ChecklistRun>
+  onGone: () => void // deleted meanwhile (another tab)
   onIssue: ItemIssueProps['onIssue']
   onDeleted: () => void
 }) {
@@ -373,13 +408,17 @@ function RunRow({ run: r, carId, checklistName, readOnly, onIssue, onDeleted }: 
   const d = useDistance()
   const { mode, open, close, busy, error, run, opener } = useRow<'delete'>()
   const date = fmtDate(r.runAt, i18n.resolvedLanguage)
+  const box = useRef<HTMLDetailsElement>(null)
+  // Open on each tap, also after the user closed it; runs before the history's focus effect (child effects first).
+  useEffect(() => { if (expand && box.current) box.current.open = true }, [expand])
 
   return (
     <li data-id={r.id}>
-      <details>
+      <details ref={box}>
         <summary>
           <time dateTime={r.runAt}>{date}</time> · <span className="value"><bdi>{d.fmt(r.odometerKm)}</bdi> {d.vars.distUnit}</span> ·{' '}
           <span className={r.flaggedCount ? 'flag' : 'muted'}>{t('flaggedCount', { count: r.flaggedCount })}</span>
+          {r.attachments.length > 0 && <> · <span className="muted photo-count">{t('photoCount', { count: r.attachments.length })}</span></>}
         </summary>
         <ul className="run-items">
           {r.items.map((it) => (
@@ -391,6 +430,8 @@ function RunRow({ run: r, carId, checklistName, readOnly, onIssue, onDeleted }: 
             </li>
           ))}
         </ul>
+        <Attachments kind="photo" parent={r} url={`/checklist-runs/${encodeURIComponent(r.id)}`} canAdd={!readOnly} canDelete addLabel={t('addPhotoTo', { date })}
+          isGone={(err) => err instanceof ApiError && err.problem.code === 'checklistRun.notFound'} load={reload} onChange={onPhotos} onGone={onGone} />
       </details>
       {r.notes && <p className="notes" dir="auto">{r.notes}</p>}
       {!readOnly && mode === 'view' && (
@@ -400,7 +441,7 @@ function RunRow({ run: r, carId, checklistName, readOnly, onIssue, onDeleted }: 
       )}
       {mode === 'delete' && (
         <div className="inline-form" onKeyDown={(e) => !busy && e.key === 'Escape' && open('view')}>
-          <p>{t('confirmDeleteRun')}</p>
+          <p>{t('confirmDeleteRun')}{r.attachments.length > 0 && ` ${t('photosDeletedToo')}`}</p>
           {error != null && <p className="error" role="alert">{errorMessage(error)}</p>}
           <div className="actions">
             <button className="danger" disabled={busy} onClick={(e) => run(async () => {

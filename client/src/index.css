@@ -369,4 +369,6 @@ details > summary { padding-block: 0.625rem; cursor: pointer; }
 .files li { display: flex; flex-wrap: wrap; align-items: center; gap: 0 0.75rem; }
 .files li > a { display: inline-flex; align-items: center; min-height: 2.75rem; min-width: 0; }
 .files li > a bdi, .files li > bdi { min-width: 0; }
+/* FILE-3: a run's photos sit inside .tasks, whose bdis are LTR; a file name takes its direction from its own text, as on a service */
+.tasks .files li > a bdi, .tasks .files li > bdi { unicode-bidi: plaintext; }
 .files > button { justify-self: start; }

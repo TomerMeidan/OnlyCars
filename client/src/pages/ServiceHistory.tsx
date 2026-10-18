@@ -1,7 +1,7 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState, type FormEvent, type MouseEvent, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
-import { api, ApiError, attachmentTypes, fileError, isGoneRecord, isOrderError, itemsTotal, limit, localToday, type Attachment, type MaintenanceTask, type ServiceItem, type ServiceRecord, type Vehicle } from '../api'
+import { api, ApiError, attachmentTypes, fileError, isGoneRecord, photoTypes, isOrderError, itemsTotal, limit, localToday, type Attachment, type MaintenanceTask, type ServiceItem, type ServiceRecord, type Vehicle } from '../api'
 import { useAuth, useDistance } from '../auth'
 import { errorMessage, fmtDate, money } from '../i18n'
 import { useItemErrors } from '../useItemErrors'
@@ -421,7 +421,12 @@ export function ServiceRow({ car, record: r, url, readOnly, openOnly, onEdited, 
         </ul>
       )}
 
-      <Attachments record={r} url={url} canAdd={!readOnly} canDelete={!openOnly} addLabel={t('addFileTo', vars)} onChange={onFiles} onGone={onGone} />
+      <Attachments kind="file" parent={r} url={url} canAdd={!readOnly} canDelete={!openOnly} addLabel={t('addFileTo', vars)} onChange={onFiles} onGone={onGone}
+        isGone={isGoneRecord} load={async () => {
+          const fresh = (await api<ServiceRecord[]>(`/vehicles/${encodeURIComponent(r.vehicleId)}/service-records`)).find((x) => x.id === r.id)
+          if (!fresh) throw new ApiError(404, { code: 'serviceRecord.notFound' }, 'Not Found')
+          return fresh
+        }} />
 
       {!readOnly && mode === 'view' && (
         <div className="actions">
@@ -458,17 +463,31 @@ const isStale = (a: Attachment) => Date.now() - (signedAt.get(a) ?? 0) >= 55 * 6
 // Signed storage links are https; anything else (javascript:, data:, http:) is never opened.
 const isHttps = (u: string) => { try { return new URL(u).protocol === 'https:' } catch { return false } }
 
-// FILE-2: a service's files under its row. Open everywhere; Delete on the car page; Add file there too, unless the car is archived.
-// Each change saves at once. Focus returns to Add file after an upload, and to the list (or Add file when it empties) after a delete.
-function Attachments({ record, url, canAdd, canDelete, addLabel, onChange, onGone }: {
-  record: ServiceRecord
-  url: string // the record's path
+// What differs between a service's files (FILE-2) and a run's photos (FILE-3): the types, the words, and the error texts that
+// replace errorMessage()'s (file.* name the car photo; attachment.tooMany is one code for both parents).
+const kinds = {
+  file: { types: attachmentTypes, list: 'attachments', add: 'addFile', busy: 'uploadingFile', confirm: 'confirmDeleteFile',
+    errors: (c: string) => c.startsWith('file.') && `attachmentFile.${c.slice(5)}` },
+  photo: { types: photoTypes, list: 'photos', add: 'addPhoto', busy: 'uploadingPhoto', confirm: 'confirmDeletePhoto',
+    errors: (c: string) => (c.startsWith('attachment.') ? `runPhoto.${c.slice(11)}` : c === 'file.quotaExceeded' && 'attachmentFile.quotaExceeded') },
+}
+
+// A parent's files under its row: a service's files (FILE-2) or a run's photos (FILE-3). Open everywhere; Delete where canDelete;
+// Add where canAdd (not on an archived car), one upload at a time. Each change saves at once.
+// Focus returns to Add after an upload, and to the list (or Add when it empties) after a delete.
+export function Attachments<T extends { attachments: Attachment[] }>({ kind, parent, url, canAdd, canDelete, addLabel, isGone, load, onChange, onGone }: {
+  kind: keyof typeof kinds
+  parent: T
+  url: string // the parent's path
   canAdd: boolean
   canDelete: boolean
   addLabel: string
-  onChange: (record: ServiceRecord) => void
+  isGone: (err: unknown) => boolean // the parent was deleted meanwhile
+  load: () => Promise<T> // the parent as stored now, with fresh links; throws the gone error once it's deleted
+  onChange: (parent: T) => void
   onGone: () => void
 }) {
+  const k = kinds[kind]
   const { t, i18n } = useTranslation()
   const lng = i18n.resolvedLanguage
   // The mode is the id of the file whose Delete is being confirmed.
@@ -479,7 +498,7 @@ function Attachments({ record, url, canAdd, canDelete, addLabel, onChange, onGon
   const pick = useRef<HTMLButtonElement>(null)
   const group = useRef<HTMLDivElement>(null)
   const refocus = useRef<'add' | 'list' | null>(null)
-  const files = record.attachments
+  const files = parent.attachments
 
   useEffect(() => { for (const a of files) if (!signedAt.has(a)) signedAt.set(a, Date.now()) }, [files])
 
@@ -496,20 +515,20 @@ function Attachments({ record, url, canAdd, canDelete, addLabel, onChange, onGon
     refocus.current = 'add'
     setUploading(true)
     const err = await row.run(async () => {
-      const invalid = fileError(file, attachmentTypes)
+      const invalid = fileError(file, k.types)
       if (invalid) throw invalid
       const body = new FormData()
       body.append('file', file)
       try {
-        onChange(await api<ServiceRecord>(`${url}/attachments`, 'POST', body))
+        onChange(await api<T>(`${url}/attachments`, 'POST', body))
       } catch (e) {
-        // Raced a Delete or another upload: the message stays, over the files as they are now (or the record is gone).
+        // Raced a Delete or another upload: the message stays, over the files as they are now (or the parent is gone).
         if (e instanceof ApiError && e.problem.code === 'concurrency.conflict') await reload()
         throw e
       }
     })
     setUploading(false)
-    if (isGoneRecord(err)) onGone()
+    if (isGone(err)) onGone()
   }
 
   async function remove(a: Attachment, retryFrom: HTMLElement) {
@@ -517,13 +536,13 @@ function Attachments({ record, url, canAdd, canDelete, addLabel, onChange, onGon
     // Already deleted (another tab): it goes from the list too, with the message.
     if (err && !(err instanceof ApiError && err.problem.code === 'attachment.notFound')) return
     refocus.current = 'list'
-    onChange({ ...record, attachments: files.filter((x) => x.id !== a.id) })
+    onChange({ ...parent, attachments: files.filter((x) => x.id !== a.id) })
     row.close()
   }
 
   // A link older than 55 minutes would land on the storage's expired-link error: the window opens now, in the click, so pop-up
-  // blockers allow it, and gets the fresh URL once the records are reloaded.
-  // shortcut: reloads all of the car's records for one fresh URL (there is no single-record GET); add one if cars get thousands of services.
+  // blockers allow it, and gets the fresh URL once the parent is reloaded.
+  // shortcut: load() fetches all of the car's records (or the checklist's runs) for one fresh URL; add a single-parent GET if those reach thousands.
   async function open(e: MouseEvent<HTMLAnchorElement>, a: Attachment) {
     if (!isStale(a)) return
     e.preventDefault()
@@ -536,20 +555,17 @@ function Attachments({ record, url, canAdd, canDelete, addLabel, onChange, onGon
       if (w) w.location.href = href
     })
     if (err) w?.close()
-    if (isGoneRecord(err)) onGone()
+    if (isGone(err)) onGone()
   }
 
-  // The record as stored now, with fresh links; serviceRecord.notFound once it's deleted.
   async function reload() {
-    const fresh = (await api<ServiceRecord[]>(`/vehicles/${encodeURIComponent(record.vehicleId)}/service-records`)).find((x) => x.id === record.id)
-    if (!fresh) throw new ApiError(404, { code: 'serviceRecord.notFound' }, 'Not Found')
+    const fresh = await load()
     onChange(fresh)
     return fresh
   }
 
-  // file.* name the car photo; here they get the files' wording.
-  const code = error instanceof ApiError ? error.problem.code ?? '' : ''
-  const message = code.startsWith('file.') ? t(`errors.attachmentFile.${code.slice(5)}`, { defaultValue: errorMessage(error) }) : errorMessage(error)
+  const own = k.errors(error instanceof ApiError ? error.problem.code ?? '' : '')
+  const message = own ? t(`errors.${own}`, { defaultValue: errorMessage(error) }) : errorMessage(error)
   const size = (b: number) => {
     const [n, unit] = b < 1_048_576 ? [Math.max(b / 1024, 0.1), 'kb' as const] : [b / 1_048_576, 'mb' as const]
     return <><bdi>{n.toLocaleString(lng, { maximumFractionDigits: 1 })}</bdi> {t(unit)}</>
@@ -557,10 +573,10 @@ function Attachments({ record, url, canAdd, canDelete, addLabel, onChange, onGon
 
   if (!canDelete && files.length === 0) return null
   return (
-    <div className="files" role="group" aria-label={t('attachments')} tabIndex={-1} ref={group}>
+    <div className="files" role="group" aria-label={t(k.list)} tabIndex={-1} ref={group}>
       {files.length > 0 && (
         <>
-          <span className="muted" aria-hidden="true">{t('attachments')}</span>
+          <span className="muted" aria-hidden="true">{t(k.list)}</span>
           <ul>
             {files.map((a) => (
               <li key={a.id}>
@@ -575,7 +591,7 @@ function Attachments({ record, url, canAdd, canDelete, addLabel, onChange, onGon
                 )}
                 {mode === a.id && (
                   <div className="inline-form" onKeyDown={(e) => !busy && e.key === 'Escape' && row.open('view')}>
-                    <p>{t('confirmDeleteFile')}</p>
+                    <p>{t(k.confirm)}</p>
                     <div className="actions">
                       <button type="button" className="danger" aria-busy={busy} disabled={busy} onClick={(e) => remove(a, e.currentTarget)}>{t('delete')}</button>
                       <button type="button" className="link" disabled={busy} onClick={() => row.open('view')} autoFocus>{t('cancel')}</button>
@@ -591,12 +607,12 @@ function Attachments({ record, url, canAdd, canDelete, addLabel, onChange, onGon
         <>
           <button type="button" className="add-file" ref={pick} aria-label={uploading ? undefined : addLabel} aria-busy={uploading} aria-disabled={busy}
             onClick={() => !busy && input.current?.click()}>
-            {t(uploading ? 'uploadingFile' : 'addFile')}
+            {t(uploading ? k.busy : k.add)}
           </button>
-          <input ref={input} type="file" accept={attachmentTypes} hidden onChange={(e) => upload(e.target.files?.[0])} />
+          <input ref={input} type="file" accept={k.types} hidden onChange={(e) => upload(e.target.files?.[0])} />
         </>
       )}
-      {error != null && !isGoneRecord(error) && <p className="error" role="alert">{message}</p>}
+      {error != null && !isGone(error) && <p className="error" role="alert">{message}</p>}
     </div>
   )
 }

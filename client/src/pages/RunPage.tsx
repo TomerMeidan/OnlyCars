@@ -94,7 +94,7 @@ export default function RunPage() {
           return { templateItemId: it.id, isFlagged: a.hand, ...(it.type === 'Check' ? { boolValue: a.bool } : it.type === 'Number' ? { numberValue: numberOf(a) } : { textValue: a.text }) }
         }),
       })
-      const ret: RunReturn = { ran: checklist.id, flagged: r.run.flaggedCount }
+      const ret: RunReturn = { ran: checklist.id, flagged: r.run.flaggedCount, run: r.run.id }
       // Opened from the car page: back to it, so one more Back leaves the car page. Otherwise replace the run form, so Back can't reopen it and save twice.
       if ((location.state as { fromCar?: boolean } | null)?.fromCar) {
         runReturn.current = ret

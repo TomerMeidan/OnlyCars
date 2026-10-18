@@ -1,3 +1,4 @@
+using OnlyCars.Application.Maintenance.Dtos;
 using OnlyCars.Domain;
 
 namespace OnlyCars.Application.Checklists.Dtos;
@@ -32,8 +33,9 @@ public record ChecklistRunItemDto(Guid Id, Guid? TemplateItemId, string Label, C
     decimal? MaxValue, bool? BoolValue, decimal? NumberValue, string? TextValue, bool IsFlagged, Guid? IssueId);
 
 // OdometerReadingId is the Checklist reading the run logged, null when no odometer was entered (OdometerKm is then the car's odometer).
+// Attachments are the run's photos (FILE-3), oldest first, in the service record shape.
 public record ChecklistRunDto(Guid Id, Guid VehicleChecklistId, DateOnly RunAt, decimal OdometerKm, Guid? OdometerReadingId, string? Notes,
-    int FlaggedCount, List<ChecklistRunItemDto> Items);
+    int FlaggedCount, List<ChecklistRunItemDto> Items, List<AttachmentDto> Attachments);
 
 public record ChecklistRunItemRequest(Guid? TemplateItemId, bool? BoolValue, decimal? NumberValue, string? TextValue, bool IsFlagged = false);
 

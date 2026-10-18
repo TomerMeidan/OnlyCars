@@ -1,5 +1,6 @@
 using System.Linq.Expressions;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using OnlyCars.Application.Checklists.Dtos;
 using OnlyCars.Application.Common;
 using OnlyCars.Application.Common.Exceptions;
@@ -12,8 +13,10 @@ using OnlyCars.Domain.Entities;
 namespace OnlyCars.Application.Checklists;
 
 /// <summary>Checklists attached to cars and their runs (MVP5-B, decisions.md "Checklist run rules, MVP5-B").</summary>
-public class VehicleChecklistService(IAppDbContext db, VehicleService vehicleService)
+public class VehicleChecklistService(IAppDbContext db, VehicleService vehicleService, IOptions<StorageOptions>? storageOptions = null)
 {
+    private readonly AttachmentFiles attachmentFiles = new(db, vehicleService, storageOptions);
+
     // shortcut: no GET /api/vehicle-checklists/{id}; the run page loads this whole list, fine at a few checklists per car, add it if lists grow.
     public async Task<List<VehicleChecklistDto>> ListAsync(Guid userId, Guid vehicleId, CancellationToken ct = default)
     {
@@ -111,15 +114,16 @@ public class VehicleChecklistService(IAppDbContext db, VehicleService vehicleSer
     public async Task<List<ChecklistRunDto>> ListRunsAsync(Guid userId, Guid id, CancellationToken ct = default)
     {
         var checklist = await FindOwnedAsync(userId, id, ct);
-        var runs = await db.ChecklistRuns.Include(r => r.Items)
+        var runs = await db.ChecklistRuns.Include(r => r.Items).Include(r => r.Attachments)
             .Where(r => r.VehicleChecklistId == checklist.Id)
             .OrderByDescending(r => r.RunAt).ThenByDescending(r => r.CreatedAt)
             // shortcut: newest 200 runs only, no paging (decisions.md, LOW-3); page it if a car ever needs older runs on screen.
             .Take(MaxRunsListed)
+            .AsSplitQuery()
             .ToListAsync(ct);
         var issues = await db.Issues.Where(i => i.SourceRunItem!.Run!.VehicleChecklistId == checklist.Id)
             .ToDictionaryAsync(i => i.SourceRunItemId!.Value, i => i.Id, ct);
-        return runs.Select(r => ToDto(r, issues)).ToList();
+        return runs.Select(r => ToDto(r, issues, userId, checklist.VehicleId)).ToList();
     }
 
     /// <summary>
@@ -187,7 +191,7 @@ public class VehicleChecklistService(IAppDbContext db, VehicleService vehicleSer
         }
 
         await db.SaveChangesAsync(ct);
-        return new(ToDto(run, new Dictionary<Guid, Guid>()), await DtoAsync(checklist.Id, ct));
+        return new(ToDto(run, new Dictionary<Guid, Guid>(), userId, vehicle.Id), await DtoAsync(checklist.Id, ct));
     }
 
     /// <summary>
@@ -198,13 +202,18 @@ public class VehicleChecklistService(IAppDbContext db, VehicleService vehicleSer
     {
         var run = await db.ChecklistRuns
             .Include(r => r.Items)
+            .Include(r => r.Attachments)
             .Include(r => r.VehicleChecklist).ThenInclude(c => c!.Vehicle)
+            .AsSplitQuery()
             .FirstOrDefaultAsync(r => r.Id == runId && r.VehicleChecklist!.Vehicle!.UserId == userId, ct)
             ?? throw new NotFoundException(nameof(ChecklistRun), runId);
         var checklist = run.VehicleChecklist!;
         var now = DateTimeOffset.UtcNow;
 
         db.ChecklistRuns.Remove(run);
+        // The photo link doesn't cascade (SQL Server's one-path rule): the rows go here, the objects after the save.
+        var photos = run.Attachments.ToList();
+        db.Attachments.RemoveRange(photos);
 
         // The to-do link doesn't cascade (SQL Server's one-path rule): the run's to-dos stay, without their source.
         foreach (var issue in await db.Issues.Where(i => i.SourceRunItem!.RunId == run.Id).ToListAsync(ct))
@@ -235,6 +244,45 @@ public class VehicleChecklistService(IAppDbContext db, VehicleService vehicleSer
         (checklist.LastRunDate, checklist.LastRunOdometerKm) = last;
         checklist.UpdatedAt = now;
         await db.SaveChangesAsync(ct);
+        await attachmentFiles.DeleteObjectsAsync(photos, AttachmentFiles.RunPrefix(userId, checklist.VehicleId, run.Id));
+    }
+
+    /// <summary>
+    /// A photo (JPEG, PNG or WebP, metadata stripped; no PDF) on the caller's run, in the order of the FILE-3 contract; a turned-off
+    /// checklist's runs still take photos. Returns the run with its photos.
+    /// </summary>
+    public async Task<ChecklistRunDto> AddRunAttachmentAsync(Guid userId, Guid runId, byte[]? content, string? fileName, CancellationToken ct = default)
+    {
+        vehicleService.Storage();
+        var run = await db.ChecklistRuns
+            .Include(r => r.Items)
+            .Include(r => r.Attachments)
+            .Include(r => r.VehicleChecklist).ThenInclude(c => c!.Vehicle)
+            .AsSplitQuery()
+            .FirstOrDefaultAsync(r => r.Id == runId && r.VehicleChecklist!.Vehicle!.UserId == userId, ct)
+            ?? throw new NotFoundException(nameof(ChecklistRun), runId);
+        var vehicle = run.VehicleChecklist!.Vehicle!;
+
+        await attachmentFiles.AddAsync(userId, vehicle, run, run.Attachments, AttachmentFiles.RunPrefix(userId, vehicle.Id, run.Id),
+            content, fileName, photosOnly: true, ct);
+        var issues = await db.Issues.Where(i => i.SourceRunItem!.RunId == run.Id).ToDictionaryAsync(i => i.SourceRunItemId!.Value, i => i.Id, ct);
+        return ToDto(run, issues, userId, vehicle.Id);
+    }
+
+    /// <summary>Deletes the row, then the object (a failed object delete is logged). Allowed on an archived car.</summary>
+    public async Task DeleteRunAttachmentAsync(Guid userId, Guid runId, Guid attachmentId, CancellationToken ct = default)
+    {
+        vehicleService.Storage();
+        // One scoped lookup: another user's run or photo, or a mismatched path, is the same 404.
+        var found = await db.Attachments
+            .Where(a => a.Id == attachmentId && a.ChecklistRunId == runId && a.ChecklistRun!.VehicleChecklist!.Vehicle!.UserId == userId)
+            .Select(a => new { Attachment = a, a.ChecklistRun!.VehicleChecklist!.VehicleId })
+            .FirstOrDefaultAsync(ct)
+            ?? throw new NotFoundException(nameof(Attachment), attachmentId);
+
+        db.Attachments.Remove(found.Attachment);
+        await db.SaveChangesAsync(ct);
+        await attachmentFiles.DeleteObjectsAsync([found.Attachment], AttachmentFiles.RunPrefix(userId, found.VehicleId, runId));
     }
 
     /// <summary>
@@ -355,11 +403,13 @@ public class VehicleChecklistService(IAppDbContext db, VehicleService vehicleSer
             c.LastRunOdometerKm, runCount, s.Status, s.RemainingKm, s.RemainingDays, s.Progress);
     }
 
-    private static ChecklistRunDto ToDto(ChecklistRun r, Dictionary<Guid, Guid> issueByItem) => new(r.Id, r.VehicleChecklistId, r.RunAt,
-        r.OdometerKm, r.OdometerReadingId, r.Notes,
+    // userId and vehicleId are the caller's, already checked to own the run; they only build the photo key check.
+    private ChecklistRunDto ToDto(ChecklistRun r, Dictionary<Guid, Guid> issueByItem, Guid userId, Guid vehicleId) => new(r.Id,
+        r.VehicleChecklistId, r.RunAt, r.OdometerKm, r.OdometerReadingId, r.Notes,
         r.Items.Count(i => i.IsFlagged),
         r.Items.OrderBy(i => i.SortOrder)
             .Select(i => new ChecklistRunItemDto(i.Id, i.TemplateItemId, i.LabelSnapshot, i.Type, i.Unit, i.MinValue, i.MaxValue,
                 i.BoolValue, i.NumberValue, i.TextValue, i.IsFlagged, issueByItem.TryGetValue(i.Id, out var issueId) ? issueId : null))
-            .ToList());
+            .ToList(),
+        attachmentFiles.ToDtos(r.Attachments, AttachmentFiles.RunPrefix(userId, vehicleId, r.Id)));
 }

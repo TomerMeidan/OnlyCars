@@ -2,15 +2,20 @@ using OnlyCars.Domain.Common;
 
 namespace OnlyCars.Domain.Entities;
 
-/// <summary>A stored file (receipt photo, PDF) of a service record. FileUrl holds the storage key; clients only get a signed URL.</summary>
+/// <summary>
+/// A stored file of a service record (receipt photo, PDF) or of a checklist run (photo); exactly one parent is set (a check constraint).
+/// FileUrl holds the storage key; clients only get a signed URL.
+/// </summary>
 public class Attachment : Entity
 {
     public const int MaxFileNameLength = 255;
-    public const int MaxPerServiceRecord = 10;
+    public const int MaxPerParent = 10;
 
-    /// <summary>Nullable as in Part 2 (ChecklistRunId comes with FILE-3); always set today.</summary>
     public Guid? ServiceRecordId { get; set; }
     public ServiceRecord? ServiceRecord { get; set; }
+
+    public Guid? ChecklistRunId { get; set; }
+    public ChecklistRun? ChecklistRun { get; set; }
 
     public string FileUrl { get; set; } = string.Empty;
     public string FileName { get; set; } = string.Empty;

@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.ModelBinding;
 using Microsoft.AspNetCore.RateLimiting;
 using OnlyCars.Api.Common;
+using OnlyCars.Application.Common;
 using OnlyCars.Application.Maintenance;
 using OnlyCars.Application.Maintenance.Dtos;
 
@@ -70,10 +71,10 @@ public class MaintenanceTasksController(MaintenanceTaskService taskService) : Co
     [HttpPost("vehicles/{vehicleId:guid}/service-records/{recordId:guid}/attachments")]
     [EnableRateLimiting(RequestLimits.UploadPolicy)]
     [DisableFormValueBinding]
-    [RequestSizeLimit(MaintenanceTaskService.MaxAttachmentBytes + 64 * 1024)] // the file plus the multipart framing; the service checks the file itself
+    [RequestSizeLimit(AttachmentFiles.MaxBytes + 64 * 1024)] // the file plus the multipart framing; the service checks the file itself
     public async Task<ActionResult<ServiceRecordDto>> AddAttachment(Guid vehicleId, Guid recordId, CancellationToken ct)
     {
-        var (content, fileName) = await UploadedFile.ReadAsync(Request, MaintenanceTaskService.AttachmentTooLarge, ct);
+        var (content, fileName) = await UploadedFile.ReadAsync(Request, AttachmentFiles.TooLarge, ct);
         return Ok(await taskService.AddAttachmentAsync(User.GetUserId(), vehicleId, recordId, content, fileName, ct));
     }
 

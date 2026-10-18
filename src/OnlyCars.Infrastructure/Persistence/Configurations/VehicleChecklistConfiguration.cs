@@ -33,6 +33,8 @@ public class ChecklistRunConfiguration : IEntityTypeConfiguration<ChecklistRun>
     {
         builder.Property(r => r.OdometerKm).HasColumnType("decimal(12,2)");
         builder.Property(r => r.Notes).HasMaxLength(ChecklistRun.MaxNotesLength);
+        // A photo upload sets UpdatedAt, so an upload overlapping a run delete or another upload saves second as a conflict (FILE-3).
+        builder.Property(r => r.UpdatedAt).IsConcurrencyToken();
 
         builder.HasOne(r => r.VehicleChecklist)
             .WithMany(c => c.Runs)

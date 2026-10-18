@@ -85,6 +85,16 @@ public class AttachmentConfiguration : IEntityTypeConfiguration<Attachment>
             .HasForeignKey(a => a.ServiceRecordId)
             .OnDelete(DeleteBehavior.Cascade);
 
+        // The car already cascades to attachments through its service records, so this path can't (SQL Server):
+        // VehicleChecklistService deletes a run's attachment rows itself.
+        builder.HasOne(a => a.ChecklistRun)
+            .WithMany(r => r.Attachments)
+            .HasForeignKey(a => a.ChecklistRunId)
+            .OnDelete(DeleteBehavior.NoAction);
+
         builder.HasIndex(a => a.ServiceRecordId);
+        builder.HasIndex(a => a.ChecklistRunId);
+        builder.ToTable(t => t.HasCheckConstraint("CK_Attachments_OneParent",
+            "([ServiceRecordId] IS NOT NULL AND [ChecklistRunId] IS NULL) OR ([ServiceRecordId] IS NULL AND [ChecklistRunId] IS NOT NULL)"));
     }
 }

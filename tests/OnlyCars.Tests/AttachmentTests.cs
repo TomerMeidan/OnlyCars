@@ -21,9 +21,9 @@ public class AttachmentTests : FileTestBase
 
     public AttachmentTests() => tasks = new MaintenanceTaskService(db, vehicles);
 
-    private static readonly byte[] Pdf = "%PDF-1.7\n%\u00e2\u00e3\n1 0 obj <</Author (Me) /GPS (32.08)>> endobj\n%%EOF\n"u8.ToArray();
+    internal static readonly byte[] Pdf = "%PDF-1.7\n%\u00e2\u00e3\n1 0 obj <</Author (Me) /GPS (32.08)>> endobj\n%%EOF\n"u8.ToArray();
 
-    private static byte[] Webp()
+    internal static byte[] Webp()
     {
         byte[] body = [.. "WEBP"u8, .. "VP8L"u8, 5, 0, 0, 0, 0x2F, 0, 0, 0, 0, 0]; // one VP8L chunk, padded to even
         byte[] webp = [.. "RIFF"u8, 0, 0, 0, 0, .. body];
@@ -99,7 +99,7 @@ public class AttachmentTests : FileTestBase
     public async Task EmptyOrOver10MB_IsRejected_BeforeAnyUpload()
     {
         var (car, record) = await RecordAsync();
-        byte[] tooBig = [.. Pdf, .. new byte[MaintenanceTaskService.MaxAttachmentBytes + 1 - Pdf.Length]];
+        byte[] tooBig = [.. Pdf, .. new byte[AttachmentFiles.MaxBytes + 1 - Pdf.Length]];
 
         var empty = await Assert.ThrowsAsync<ValidationFailedException>(() => tasks.AddAttachmentAsync(userId, car, record, [], "a.pdf"));
         var missing = await Assert.ThrowsAsync<ValidationFailedException>(() => tasks.AddAttachmentAsync(userId, car, record, null, null));
@@ -107,7 +107,7 @@ public class AttachmentTests : FileTestBase
         await tasks.AddAttachmentAsync(userId, car, record, tooBig[..^1], "exactly-10MB.pdf");
 
         Assert.Equal(("file.required", "file.required", "file.tooLarge"), (empty.Code, missing.Code, large.Code));
-        Assert.Equal(MaintenanceTaskService.MaxAttachmentBytes, large.Extensions["maxBytes"]);
+        Assert.Equal(AttachmentFiles.MaxBytes, large.Extensions["maxBytes"]);
         Assert.Single(storage.Objects);
     }
 
@@ -115,7 +115,7 @@ public class AttachmentTests : FileTestBase
     public async Task TheEleventhFile_IsTooMany_CheckedBeforeTheFileItself()
     {
         var (car, record) = await RecordAsync();
-        for (var i = 0; i < Attachment.MaxPerServiceRecord; i++)
+        for (var i = 0; i < Attachment.MaxPerParent; i++)
         {
             await tasks.AddAttachmentAsync(userId, car, record, Pdf, $"{i}.pdf");
         }
@@ -307,14 +307,14 @@ public class AttachmentTests : FileTestBase
     [InlineData("folder/", "receipt.pdf")]
     [InlineData(" \u202E ", "receipt.pdf")]
     public void FileName_IsCleaned(string? name, string expected) =>
-        Assert.Equal(expected, MaintenanceTaskService.CleanFileName(name, "pdf"));
+        Assert.Equal(expected, AttachmentFiles.CleanFileName(name, "pdf"));
 
     [Fact]
     public void FileName_LongerThan255_IsCutKeepingTheExtension_WithoutSplittingASurrogatePair()
     {
-        var plain = MaintenanceTaskService.CleanFileName(new string('a', 300) + ".pdf", "pdf");
-        var emoji = MaintenanceTaskService.CleanFileName(new string('a', 249) + "😀😀😀.jpeg", "jpg");
-        var hugeExtension = MaintenanceTaskService.CleanFileName("a." + new string('b', 300), "pdf");
+        var plain = AttachmentFiles.CleanFileName(new string('a', 300) + ".pdf", "pdf");
+        var emoji = AttachmentFiles.CleanFileName(new string('a', 249) + "😀😀😀.jpeg", "jpg");
+        var hugeExtension = AttachmentFiles.CleanFileName("a." + new string('b', 300), "pdf");
 
         Assert.Equal(new string('a', 251) + ".pdf", plain);
         Assert.Equal(new string('a', 249) + ".jpeg", emoji); // the cut at 250 falls inside the first emoji
@@ -357,7 +357,7 @@ public class AttachmentTests : FileTestBase
     }
 
     [Theory]
-    [InlineData(MaintenanceTaskService.MaxAttachmentBytes + 1)] // the service's own check
+    [InlineData(AttachmentFiles.MaxBytes + 1)] // the service's own check
     [InlineData(12_000_000)] // over the request limit: Kestrel refuses the body (same code)
     public async Task Http_Over10MB_Is413FileTooLarge(int size)
     {
@@ -373,7 +373,7 @@ public class AttachmentTests : FileTestBase
         var (status, body) = await ReadAsync(await client.SendAsync(request));
 
         Assert.Equal((HttpStatusCode.RequestEntityTooLarge, "file.tooLarge"), (status, body.GetProperty("code").GetString()));
-        Assert.Equal(MaintenanceTaskService.MaxAttachmentBytes, body.GetProperty("maxBytes").GetInt32());
+        Assert.Equal(AttachmentFiles.MaxBytes, body.GetProperty("maxBytes").GetInt32());
         Assert.Empty(storage.Objects);
     }
 

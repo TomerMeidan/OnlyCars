@@ -213,6 +213,7 @@ export interface ChecklistRun {
   notes: string | null
   flaggedCount: number
   items: ChecklistRunItem[]
+  attachments: Attachment[] // photos (FILE-3), upload order
 }
 
 // A to-do on a car (MVP5-C). The server lists open ones first (newest first), then done ones (newest resolvedAt first).
@@ -397,8 +398,8 @@ export const fileError = (file: File, types = photoTypes) =>
   : file.type && !types.split(',').includes(file.type) ? new ApiError(400, { code: 'file.unsupportedType' }, 'Bad Request')
   : null
 
-// Where the run page sends the user back to: the checklist whose Run button gets focus, and the flagged count after a Save.
-export type RunReturn = { ran: string; flagged?: number }
+// Where the run page sends the user back to: the checklist whose Run button gets focus, and after a Save the flagged count and the run (for Add photos).
+export type RunReturn = { ran: string; flagged?: number; run?: string }
 // A Save that goes back in history can't carry state, so it leaves its RunReturn here for the car page (which clears it, also when it fails to load).
 export const runReturn: { current: RunReturn | null } = { current: null }
 export const runPath = (carId: string, checklistId: string) => `/cars/${encodeURIComponent(carId)}/checklists/${encodeURIComponent(checklistId)}/run`

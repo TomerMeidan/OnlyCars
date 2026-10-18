@@ -14,6 +14,8 @@ namespace OnlyCars.Application.Maintenance;
 
 public partial class MaintenanceTaskService(IAppDbContext db, VehicleService vehicleService, IOptions<StorageOptions>? storageOptions = null)
 {
+    private readonly AttachmentFiles attachmentFiles = new(db, vehicleService, storageOptions);
+
     public async Task<List<TaskTemplateDto>> TemplatesAsync(CancellationToken ct = default)
     {
         var templates = await db.TaskTemplates.OrderBy(t => t.Category).ThenBy(t => t.Key).ToListAsync(ct);
@@ -563,10 +565,7 @@ public partial class MaintenanceTaskService(IAppDbContext db, VehicleService veh
             throw;
         }
 
-        foreach (var attachment in attachments)
-        {
-            await vehicleService.DeleteQuietlyAsync(AttachmentKey(attachment, userId, vehicle.Id));
-        }
+        await attachmentFiles.DeleteObjectsAsync(attachments, AttachmentFiles.ServiceRecordPrefix(userId, vehicle.Id, record.Id));
 
         var today = TodayUtc();
         return tasks.Select(t => ToDto(t, vehicle, today)).ToList();
@@ -735,7 +734,7 @@ public partial class MaintenanceTaskService(IAppDbContext db, VehicleService veh
         r.Items.OrderBy(i => i.SortOrder)
             .Select(i => new ServiceItemDto(i.Id, i.Description, i.Brand, i.PartNumber, i.Quantity, i.UnitCost, i.IsLabor)).ToList(),
         r.VehicleId,
-        r.Attachments.OrderBy(a => a.CreatedAt).ThenBy(a => a.Id).Select(a => ToDto(a, userId, r.VehicleId)).ToList());
+        attachmentFiles.ToDtos(r.Attachments, AttachmentFiles.ServiceRecordPrefix(userId, r.VehicleId, r.Id)));
 
     // Scoped to the owned vehicle, so another car's task id is simply not found.
     private async Task<MaintenanceTask> FindAsync(Guid vehicleId, Guid taskId, CancellationToken ct) =>

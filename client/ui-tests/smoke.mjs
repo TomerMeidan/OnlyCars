@@ -3637,6 +3637,221 @@ for (const s of setups) {
     await page.waitForFunction((sel) => !document.querySelector(`${sel} .open-issues p.muted`), isSel, { timeout: 5000 })
     if ((await isSec.locator('.open-issues > li').count()) !== 2) throw new Error('the to-dos went with the run')
   })
+  // FILE-3: photos on a saved run, on Monthly quick check (no runs after checklist-run-history). Two images go to the real API and R2
+  // (with FILE-1's and FILE-2's 6 uploads, 8 of this user's 10 per 10 minutes); the run is deleted at the end, with its photos, and
+  // again in a finally. Client checks send nothing; the server errors, 10 photos, no storage, the archived car and the stale link are mocked.
+  const RF = {
+    addPhotos: key('addPhotos'), add: key('addPhoto'), confirm: key('confirmDeletePhoto'), deletedToo: key('photosDeletedToo'), list: key('photos'),
+    count: (n) => (n === 2 ? key('photoCount_two') : key('photoCount_other')).replace('{{count, number}}', n.toLocaleString(s.lng)),
+    tooLarge: inBlock('file', 'tooLarge'), unsupported: inBlock('file', 'unsupportedType'), unavailable: inBlock('file', 'storageUnavailable'),
+    tooMany: inBlock('runPhoto', 'tooMany'), quota: inBlock('attachmentFile', 'quotaExceeded'), conflict: inBlock('concurrency', 'conflict'), rate: PH.tooMany,
+    notFound: inBlock('runPhoto', 'notFound'), archived: inBlock('runPhoto', 'vehicleArchived'),
+  }
+  let photoRunId
+  const RUNROW = () => `.run-list > li[data-id="${photoRunId}"]`
+  const PF = () => `${RUNROW()} .files`
+  const PADD = () => `${PF()} button.add-file`
+  const runPhotoRequests = []
+  page.on('request', (r) => r.url().includes('/checklist-runs/') && r.url().includes('/attachments') && runPhotoRequests.push(r.method()))
+  async function choosePhoto(file) {
+    const [chooser] = await Promise.all([page.waitForEvent('filechooser'), page.click(PADD())])
+    await chooser.setFiles(file)
+  }
+  async function photoErrorIs(want, what) {
+    let got
+    for (const end = Date.now() + 5000; Date.now() < end; await page.waitForTimeout(100)) {
+      got = plain((await page.locator(`${PF()} p.error[role=alert]`).textContent({ timeout: 5000 }).catch(() => '')) ?? '')
+      if (got === want) return
+    }
+    throw new Error(`${what}: "${got}"`)
+  }
+  const runPhotoName = `${'tyre-photo-'.repeat(11)}.png` // 125 characters, no spaces
+  const runPhotoHe = 'צמיג שחוק בצד ימין.jpg'
+  await step('run-photos', async () => {
+    try {
+      // Save a run; the confirmation offers Add photos, which opens that run with focus on its Add photo.
+      await page.goto(`${BASE}${ckCarPath()}`)
+      await ckRow('Monthly quick check').locator('a.run').click()
+      await arrivedAt(CK.title('Monthly quick check', 'Dash car'))
+      await runItem(0).locator('input[type=radio]').first().check()
+      await runItem(1).locator('input[type=number]').fill('2.2')
+      const saved = page.waitForResponse((r) => r.url().endsWith('/runs') && r.request().method() === 'POST')
+      await runForm.locator('> .actions > button:not(.link)').click()
+      photoRunId = (await (await saved).json()).run.id
+      await page.waitForURL((u) => u.pathname === ckCarPath())
+      const addPhotos = ckSec.locator('button.add-photos')
+      await addPhotos.waitFor()
+      if (plain(await addPhotos.textContent()) !== RF.addPhotos) throw new Error(`button "${await addPhotos.textContent()}"`)
+      await tall(addPhotos, 'Add photos')
+      await addPhotos.click()
+      await focusIs(PADD(), 'Add photo after Add photos')
+      // A second tap after the run was closed opens it again.
+      await page.locator(`${RUNROW()} summary`).click()
+      await page.locator(PADD()).waitFor({ state: 'hidden' })
+      await addPhotos.click()
+      await focusIs(PADD(), 'Add photo after a second Add photos')
+      if (plain(await page.locator(PADD()).textContent()) !== RF.add) throw new Error(`Add photo "${await page.locator(PADD()).textContent()}"`)
+      const input = page.locator(`${PF()} input[type=file]`)
+      if ((await input.getAttribute('accept')) !== 'image/jpeg,image/png,image/webp' || (await input.getAttribute('capture')) !== null) throw new Error('accept or capture')
+      if (await page.locator(`${PF()} ul`).count()) throw new Error('a list shows with no photos')
+      if (await page.locator(`${RUNROW()} summary .photo-count`).count()) throw new Error('a count with no photos')
+      // Client checks: nothing is sent.
+      runPhotoRequests.length = 0
+      await choosePhoto({ name: 'big.jpg', mimeType: 'image/jpeg', buffer: Buffer.alloc(12_000_000) })
+      await photoErrorIs(RF.tooLarge, '12 MB photo')
+      await choosePhoto({ name: 'scan.pdf', mimeType: 'application/pdf', buffer: pdf })
+      await photoErrorIs(RF.unsupported, 'a PDF')
+      await focusIs(PADD(), 'Add photo after the type error')
+      if (runPhotoRequests.length) throw new Error(`requests sent: ${runPhotoRequests}`)
+      // Two real uploads, one at a time; focus back on Add photo after each.
+      const post = () => page.waitForResponse((r) => r.url().endsWith('/attachments') && r.request().method() === 'POST')
+      for (const [i, file] of [[0, { name: runPhotoName, mimeType: 'image/png', buffer: await image('image/png') }], [1, { name: runPhotoHe, mimeType: 'image/jpeg', buffer: await image('image/jpeg') }]]) {
+        const res = post()
+        await choosePhoto(file)
+        if ((await res).status() !== 200) throw new Error(`upload ${i}: ${(await res).status()}`)
+        await page.locator(`${PF()} li >> nth=${i}`).waitFor()
+        await focusIs(PADD(), `Add photo after upload ${i}`)
+      }
+      if (await page.locator(`${PF()} p.error`).count()) throw new Error('the error stayed after the uploads')
+      // After a reload: the count on the collapsed row, then both photos in order, opening in a new tab.
+      await page.reload()
+      const monthly = ckRow('Monthly quick check')
+      await monthly.locator('details.run-history > summary').click()
+      const count = page.locator(`${RUNROW()} summary .photo-count`)
+      await count.waitFor()
+      if (plain(await count.textContent()) !== RF.count(2)) throw new Error(`count "${await count.textContent()}"`)
+      await page.locator(`${RUNROW()} summary`).click()
+      const names = await page.locator(`${PF()} li a bdi`).allTextContents()
+      if (JSON.stringify(names) !== JSON.stringify([runPhotoName, runPhotoHe])) throw new Error(`names ${JSON.stringify(names)}`)
+      if (plain(await page.locator(`${PF()} > span.muted`).textContent()) !== RF.list) throw new Error('the Photos label')
+      for (const [i, type] of [[0, 'image/png'], [1, 'image/jpeg']]) {
+        const r = await page.request.get(await page.locator(`${PF()} li a >> nth=${i}`).getAttribute('href'))
+        if (r.status() !== 200 || r.headers()['content-type'] !== type) throw new Error(`photo ${i}: ${r.status()} ${r.headers()['content-type']}`)
+      }
+      const [popup] = await Promise.all([page.waitForEvent('popup'), page.click(`${PF()} li a >> nth=0`)])
+      await popup.waitForURL((u) => u.pathname.endsWith('.png'), { timeout: 10000 })
+      await popup.close()
+      await page.setViewportSize({ width: 390, height: 844 })
+      await noOverflow('a 125-character and a Hebrew photo name in a run')
+      await sweep('a run with photos at 390px')
+      await page.screenshot({ path: `${OUT}/${s.name}-run-photos-390.png`, fullPage: true })
+      await page.setViewportSize(s.viewport)
+      // Delete one: the confirm, then focus goes to the list.
+      await page.locator(`${PF()} li >> nth=0`).locator('button.link').click()
+      if (plain(await page.locator(`${PF()} .inline-form p`).textContent()) !== RF.confirm) throw new Error('photo confirm text')
+      await focusIs(`${PF()} .inline-form button.link`, 'Cancel on the photo confirm')
+      const del = page.waitForResponse((r) => r.url().includes('/attachments/') && r.request().method() === 'DELETE')
+      await page.click(`${PF()} button.danger`)
+      if ((await del).status() !== 204) throw new Error(`photo delete ${(await del).status()}`)
+      await page.waitForFunction((sel) => document.querySelectorAll(`${sel} li`).length === 1, PF(), { timeout: 5000 })
+      await focusIs(PF(), 'the photos after a delete')
+      if (plain(await count.textContent()) !== key('photoCount_one').replace('{{count, number}}', (1).toLocaleString(s.lng))) throw new Error(`count after delete "${await count.textContent()}"`)
+      // The run's Delete confirm says its photos go too; afterwards the remaining photo's link is dead.
+      const left = await page.locator(`${PF()} li a`).getAttribute('href')
+      await page.locator(`${RUNROW()} button.delete-run`).click()
+      const confirm = page.locator(`${RUNROW()} > .inline-form p`)
+      if (plain(await confirm.textContent()) !== `${CK.confirmRun} ${RF.deletedToo}`) throw new Error(`run confirm "${await confirm.textContent()}"`)
+      await page.screenshot({ path: `${OUT}/${s.name}-run-photos-delete-run.png`, fullPage: true })
+      await page.click(`${RUNROW()} button.danger`)
+      await page.locator(RUNROW()).waitFor({ state: 'detached' })
+      photoRunId = null
+      const gone = await page.request.get(left)
+      if (gone.status() !== 404) throw new Error(`the deleted run's photo: ${gone.status()}`)
+    } finally {
+      if (photoRunId) await apiCall('DELETE', `/checklist-runs/${photoRunId}`).catch(() => {})
+      await page.setViewportSize(s.viewport)
+    }
+  })
+  await step('run-photos-states', async () => {
+    const runsUrl = `**/api/vehicle-checklists/${monthlyId}/runs`
+    const problem = (status, code) => ({ status, contentType: 'application/problem+json', body: JSON.stringify({ status, code }) })
+    photoRunId = '00000000-0000-4000-8000-0000000000aa'
+    const photo = (i, url = `https://files.test/__file/${i}.png`) => ({ id: `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`, fileName: `photo-${i}.png`, contentType: 'image/png', sizeBytes: 1_500_000 + i, url })
+    const fakeRun = (attachments) => ({ id: photoRunId, vehicleChecklistId: monthlyId, runAt: '2026-01-10', odometerKm: 50000, odometerReadingId: null, notes: null, flaggedCount: 0, items: [], attachments })
+    const withPhotos = (attachments) => ({ contentType: 'application/json', body: JSON.stringify([fakeRun(attachments)]) })
+    const openRun = async () => {
+      await page.goto(`${BASE}${ckCarPath()}`)
+      await ckRow('Monthly quick check').locator('details.run-history > summary').click()
+      await page.locator(`${RUNROW()} summary`).click()
+    }
+    try {
+      await page.route('**/__file/*', (r) => r.fulfill({ contentType: 'text/plain', body: 'ok' }))
+      await page.route(runsUrl, (r) => r.fulfill(withPhotos([])))
+      await openRun()
+      await page.locator(PADD()).waitFor()
+      // Busy while uploading, then each server error with the run's wording.
+      const png = await image('image/png')
+      for (const [status, code, want] of [[503, 'file.storageUnavailable', RF.unavailable], [400, 'attachment.tooMany', RF.tooMany], [400, 'file.quotaExceeded', RF.quota], [400, 'attachment.vehicleArchived', RF.archived], [429, 'http.429', RF.rate], [409, 'concurrency.conflict', RF.conflict]]) {
+        await page.route('**/checklist-runs/*/attachments', async (r) => { await page.waitForTimeout(600); await r.fulfill(problem(status, code)) }, { times: 1 })
+        await choosePhoto({ name: 'r.png', mimeType: 'image/png', buffer: png })
+        await page.waitForFunction((sel) => document.querySelector(sel)?.getAttribute('aria-busy') === 'true', PADD(), { timeout: 3000 })
+        if (plain(await page.locator(PADD()).textContent()) !== PH.uploading) throw new Error(`busy button "${await page.locator(PADD()).textContent()}"`)
+        await photoErrorIs(want, code)
+        if ((await page.getAttribute(PADD(), 'aria-busy')) !== 'false') throw new Error(`still busy after ${code}`)
+        await focusIs(PADD(), `Add photo after ${code}`)
+      }
+      // 10 photos, some without storage or with a non-https URL: no Add photo, those names plain text; long names fit at 390px.
+      await page.route(runsUrl, (r) => r.fulfill(withPhotos([...Array(10)].map((_, i) => ({ ...photo(i, { 1: null, 3: `http://files.test/__file/${i}.png` }[i]), ...(i === 4 && { fileName: runPhotoName }), ...(i === 5 && { fileName: runPhotoHe }) })))))
+      await openRun()
+      await page.locator(`${PF()} li >> nth=9`).waitFor()
+      if (await page.locator(PADD()).count()) throw new Error('Add photo shows with 10 photos')
+      if ((await page.locator(`${PF()} li a`).count()) !== 8) throw new Error('photos without an https URL are links')
+      if (plain(await page.locator(`${RUNROW()} summary .photo-count`).textContent()) !== RF.count(10)) throw new Error('count of 10')
+      await page.setViewportSize({ width: 390, height: 844 })
+      await noOverflow('10 photos with long names')
+      await sweep('10 photos')
+      await page.screenshot({ path: `${OUT}/${s.name}-run-photos-ten.png`, fullPage: true })
+      await page.setViewportSize(s.viewport)
+      // A photo deleted elsewhere: the message, and it leaves the list.
+      await page.route('**/checklist-runs/*/attachments/*', (r) => r.fulfill(problem(404, 'attachment.notFound')), { times: 1 })
+      await page.locator(`${PF()} li >> nth=0`).locator('button.link').click()
+      await page.click(`${PF()} button.danger`)
+      await photoErrorIs(RF.notFound, '404 on delete')
+      if ((await page.locator(`${PF()} li`).count()) !== 9) throw new Error('the missing photo stayed')
+      // An archived car: no Add photo, Delete works.
+      await page.route(`**/api/vehicles/${dashCarId}`, async (r) => { const res = await r.fetch(); await r.fulfill({ response: res, json: { ...(await res.json()), isArchived: true } }) })
+      await page.route(runsUrl, (r) => r.fulfill(withPhotos([photo(1)])))
+      await openRun()
+      await page.locator(`${PF()} li`).waitFor()
+      if (await page.locator(PADD()).count()) throw new Error('Add photo shows on an archived car')
+      await page.route('**/checklist-runs/*/attachments/*', (r) => r.fulfill({ status: 204 }), { times: 1 })
+      await page.locator(`${PF()} li button.link`).click()
+      await page.click(`${PF()} button.danger`)
+      await page.locator(`${PF()} ul`).waitFor({ state: 'detached' })
+      await focusIs(PF(), 'the photos group after the last delete on an archived car')
+      await page.unroute(`**/api/vehicles/${dashCarId}`)
+    } finally {
+      await page.unroute(runsUrl)
+      await page.unroute('**/checklist-runs/*/attachments')
+      await page.unroute('**/checklist-runs/*/attachments/*')
+      await page.unroute(`**/api/vehicles/${dashCarId}`)
+      await page.unroute('**/__file/*')
+    }
+    // A link older than 55 minutes: Open reloads the runs first and the new tab gets the fresh URL (fake clock, own context).
+    const ctx2 = await browser.newContext({ storageState: await ctx.storageState(), viewport: s.viewport, colorScheme: s.colorScheme, isMobile: s.isMobile, hasTouch: s.hasTouch })
+    try {
+      const p = await ctx2.newPage()
+      await p.clock.install()
+      let gets = 0, fresh = false
+      await ctx2.route('**/__file/*', (r) => r.fulfill({ contentType: 'text/plain', body: 'ok' }))
+      await p.route(runsUrl, (r) => { gets++; return r.fulfill(withPhotos([photo(1, `https://files.test/__file/${fresh ? 'fresh' : 'old'}.png`)])) })
+      await p.goto(`${BASE}${ckCarPath()}`)
+      await p.locator(`li[data-id="${monthlyId}"] details.run-history > summary`).click()
+      await p.locator(`${RUNROW()} summary`).click()
+      const link = p.locator(`${PF()} li a`)
+      await link.waitFor()
+      const loads = gets
+      fresh = true
+      await p.clock.fastForward('56:00')
+      const [tab] = await Promise.all([p.waitForEvent('popup'), link.click()])
+      await tab.waitForURL('**/fresh.png', { timeout: 5000 })
+      if (gets !== loads + 1) throw new Error(`${gets - loads} reloads, want 1`)
+      if (!(await link.getAttribute('href')).endsWith('/fresh.png')) throw new Error('the link kept the old URL')
+    } finally {
+      await ctx2.close()
+      photoRunId = null
+    }
+  })
   await step('dashboard-start-checklist', async () => {
     // Criterion 9: two enabled checklists open a list, most urgent first; Escape goes back to the button.
     await page.click('header a.brand')

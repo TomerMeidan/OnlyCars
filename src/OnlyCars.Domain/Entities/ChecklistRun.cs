@@ -18,4 +18,5 @@ public class ChecklistRun : Entity
     public OdometerReading? OdometerReading { get; set; }
 
     public List<ChecklistRunItem> Items { get; set; } = [];
+    public List<Attachment> Attachments { get; set; } = [];
 }

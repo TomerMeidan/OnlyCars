@@ -591,7 +591,7 @@ public class ChecklistRunTests
     private sealed class RunComparer : IEqualityComparer<ChecklistRunDto>
     {
         public bool Equals(ChecklistRunDto? a, ChecklistRunDto? b) =>
-            a! with { Items = b!.Items } == b && a.Items.SequenceEqual(b.Items);
+            a! with { Items = b!.Items, Attachments = b.Attachments } == b && a.Items.SequenceEqual(b.Items) && a.Attachments.SequenceEqual(b.Attachments);
 
         public int GetHashCode(ChecklistRunDto r) => r.Id.GetHashCode();
     }

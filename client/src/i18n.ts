@@ -266,6 +266,15 @@ const en = {
   runSaved_other: 'Run saved. {{count, number}} items flagged.',
   deleteRunOf: 'Delete the run from {{date}}',
   confirmDeleteRun: 'Delete this run? Its odometer reading is deleted with it.',
+  photosDeletedToo: 'Its photos are deleted too.',
+  // FILE-3: photos on a saved run; "Add photo" is the car photo's string.
+  photos: 'Photos',
+  addPhotos: 'Add photos',
+  addPhotoTo: 'Add photo to the run from {{date}}',
+  confirmDeletePhoto: 'Delete this photo?',
+  photoCount_one: '{{count, number}} photo',
+  photoCount_two: '{{count, number}} photos',
+  photoCount_other: '{{count, number}} photos',
   runTitle: '{{name}} for {{car}}',
   runOdometer: 'Odometer in {{distUnits}} (optional)',
   odometerNow: 'Now {{value}} {{distUnit}}. Leave empty to skip.',
@@ -412,6 +421,12 @@ const en = {
       tooMany: 'This service already has 10 files. Delete one to add another.',
       vehicleArchived: "This car is archived, so files can't be added. They can still be deleted.",
       notFound: 'This file was not found. It may have been deleted already.',
+    },
+    // Not an API code: attachment.tooMany on a run's photos.
+    runPhoto: {
+      tooMany: 'This run already has 10 photos. Delete one to add another.',
+      vehicleArchived: "This car is archived, so photos can't be added. They can still be deleted.",
+      notFound: 'This photo was not found. It may have been deleted already.',
     },
     // Not an API code: the file.* messages for a service's files instead of the car photo.
     attachmentFile: {
@@ -832,6 +847,14 @@ const he: typeof en = {
   runSaved_other: 'הבדיקה נשמרה. סומנו ⁦{{count, number}}⁩ בעיות.',
   deleteRunOf: 'מחיקת הבדיקה מ־{{date}}',
   confirmDeleteRun: 'למחוק את הבדיקה הזו? גם קריאת הקילומטראז׳ שלה תימחק.',
+  photosDeletedToo: 'גם התמונות שלה יימחקו.',
+  photos: 'תמונות',
+  addPhotos: 'הוספת תמונות',
+  addPhotoTo: 'הוספת תמונה לבדיקה מ־{{date}}',
+  confirmDeletePhoto: 'למחוק את התמונה הזו?',
+  photoCount_one: 'תמונה אחת',
+  photoCount_two: 'שתי תמונות',
+  photoCount_other: '⁦{{count, number}}⁩ תמונות',
   runTitle: '⁨{{name}}⁩ לרכב ⁨{{car}}⁩',
   runOdometer: 'קילומטראז׳ ב{{distUnits}} (לא חובה)',
   odometerNow: 'כרגע ⁦{{value}}⁩ {{distUnit}}. אפשר להשאיר ריק.',
@@ -974,6 +997,11 @@ const he: typeof en = {
       tooMany: 'לטיפול הזה כבר יש ⁦10⁩ קבצים. כדי להוסיף קובץ, יש למחוק אחד מהם.',
       vehicleArchived: 'הרכב בארכיון, ולכן אי אפשר להוסיף קבצים. עדיין אפשר למחוק קבצים קיימים.',
       notFound: 'הקובץ לא נמצא. ייתכן שהוא כבר נמחק.',
+    },
+    runPhoto: {
+      tooMany: 'לבדיקה הזו כבר יש ⁦10⁩ תמונות. כדי להוסיף תמונה, יש למחוק אחת מהן.',
+      vehicleArchived: 'הרכב בארכיון, ולכן אי אפשר להוסיף תמונות. עדיין אפשר למחוק תמונות קיימות.',
+      notFound: 'התמונה לא נמצאה. ייתכן שהיא כבר נמחקה.',
     },
     attachmentFile: {
       required: 'יש לבחור קובץ להעלאה.',

@@ -1,6 +1,6 @@
 -- L72 (LOW-4): one-off cleanup of the test users that browser tests, scripts and agents created on the LOCAL dev database.
 -- Not part of the app and not a migration. Deleting a user cascades to all of their data in the database.
--- Stored files are NOT deleted: R2 keeps each deleted user's objects under users/{id}/ (car photo, receipts) until an orphan
+-- Stored files are NOT deleted: R2 keeps each deleted user's objects under users/{id}/ (car photo, receipts, run photos) until an orphan
 -- sweep exists. The dry run lists the target user ids; keep that list if those prefixes should be removed from the bucket by hand.
 --
 -- Only machine-generated emails match: one tight LIKE per prefix and domain (the rules below), and the local part may hold
@@ -44,6 +44,7 @@ INSERT INTO @Rules VALUES
     ('agent file1-<word>-<s>',       'file1-[a-z]%-' + @D10 + '@example.test'),
     ('agent be-file1-fix<n>-<s>',    'be-file1-fix%-' + @D10 + '@onlycars.test'),
     ('agent file2-<ms>',             'file2-' + @D13 + '@example.test'),
+    ('agent file3-<ms>',             'file3-' + @D13 + '@example.test'),
     ('old qa+<run>-<ms>',            'qa+[a-z0-9]%-' + @D13 + '@example.com'),
     ('old dbg-<ms> onlycars.test',   'dbg-' + @D13 + '@onlycars.test'),
     ('old dbg<ms> x.com',            'dbg' + @D13 + '@x.com'),
@@ -58,7 +59,8 @@ INSERT INTO @MustNotMatch VALUES ('tommymeidan@gmail.com'), ('tomboi@gmail.com')
     ('rpt1-a-1234@example.com'), ('rpt1-c-132112091@example.com'), ('rpt1-a-132112091@gmail.com'), ('rpt1-a-1321120912@example.com'),
     ('probe-rpt-123@onlycars.test'), ('probe-rpt-1792226542697@gmail.com'), ('probe-1792226542697@onlycars.test'),
     ('file1-1792257093@example.test'), ('file1-check-1792257093@gmail.com'), ('file1-check-179225709@example.test'),
-    ('be-file1-fix-1792261851@example.test'), ('file2-1792271596454@onlycars.test'), ('file2-179227159645@example.test');
+    ('be-file1-fix-1792261851@example.test'), ('file2-1792271596454@onlycars.test'), ('file2-179227159645@example.test'),
+    ('file3-1792271596454@onlycars.test'), ('file3-179227159645@example.test');
 IF EXISTS (SELECT 1 FROM @MustNotMatch m JOIN @Rules r ON m.Email LIKE r.Pattern
            WHERE m.Email NOT LIKE '%[^a-z0-9+-]%@%' AND m.Email NOT LIKE '%@%@%')
     THROW 50001, 'Self-check failed: a rule matches an address it must never match.', 1;
@@ -86,6 +88,9 @@ END
 ELSE
 BEGIN
     BEGIN TRANSACTION;
+    -- Run photos don't cascade (SQL Server allows one cascade path to Attachments, taken by service records): delete them first.
+    DELETE a FROM Attachments a JOIN ChecklistRuns r ON r.Id = a.ChecklistRunId JOIN VehicleChecklists c ON c.Id = r.VehicleChecklistId
+        JOIN Vehicles v ON v.Id = c.VehicleId WHERE v.UserId IN (SELECT Id FROM @Targets);
     DELETE FROM Users WHERE Id IN (SELECT Id FROM @Targets);
     PRINT CONCAT('Deleted ', @@ROWCOUNT, ' users.');
     COMMIT;

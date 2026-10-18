@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Options;
 using OnlyCars.Application.Auth;
@@ -411,7 +412,7 @@ public class MaintenanceSchemaTests : IAsyncLifetime
     [Fact]
     public async Task Attachment_OnSqlServer_TwoSimultaneousUploadsAtNineFiles_OnlyOneSaves_TheOthersObjectIsDeleted()
     {
-        var (car, record) = await RecordWithFilesAsync(Attachment.MaxPerServiceRecord - 1);
+        var (car, record) = await RecordWithFilesAsync(Attachment.MaxPerParent - 1);
         storage.PutGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
         var first = Task.Run(() => Racer().AddAttachmentAsync(car.UserId, car.Id, record, Pdf, "a.pdf"));
@@ -424,8 +425,120 @@ public class MaintenanceSchemaTests : IAsyncLifetime
         Assert.Single(results, e => e is DbUpdateConcurrencyException);
         await using var check = Context();
         var keys = await check.Attachments.Select(a => a.FileUrl).ToListAsync();
-        Assert.Equal(Attachment.MaxPerServiceRecord, keys.Count);
+        Assert.Equal(Attachment.MaxPerParent, keys.Count);
         Assert.Equal(keys.Order(), storage.Objects.Keys.Order());
+    }
+
+    // --- FILE-3: run photos on the real database. ---
+
+    private VehicleChecklistService RunRacer()
+    {
+        var context = Context();
+        return new VehicleChecklistService(context, new VehicleService(context, storage));
+    }
+
+    private async Task<(Vehicle Car, Guid Run)> RunWithPhotosAsync(int photos)
+    {
+        var car = await AddCarAsync();
+        var template = await new ChecklistTemplateService(Context()).CreateAsync(car.UserId,
+            new ChecklistTemplateRequest("Walk-around", [new(null, "Lights", "Check", null, null, null)]));
+        var checklist = await RunRacer().AttachAsync(car.UserId, car.Id, new AttachChecklistRequest(template.Id, null, null, null));
+        var run = (await RunRacer().CreateRunAsync(car.UserId, checklist.Id,
+            new CreateChecklistRunRequest(null, null, null, [new ChecklistRunItemRequest(template.Items[0].Id, true, null, null)]))).Run.Id;
+        for (var i = 0; i < photos; i++)
+        {
+            await RunRacer().AddRunAttachmentAsync(car.UserId, run, Png, $"{i}.png");
+        }
+
+        return (car, run);
+    }
+
+    private static readonly byte[] Png = Convert.FromBase64String(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==");
+
+    [Fact]
+    public async Task RunAttachments_OnSqlServer_HaveExactlyOneParent_AreIndexedByRun_AndGoWithTheCarAndTheUser()
+    {
+        var (car, run) = await RunWithPhotosAsync(1);
+        var record = (await Racer().CreateRecordAsync(car.UserId, car.Id, new CreateServiceRecordRequest(null, 1_000, null, null, null, []))).Record.Id;
+        await Racer().AddAttachmentAsync(car.UserId, car.Id, record, Pdf, "r.pdf");
+
+        foreach (var (recordId, runId) in new (Guid?, Guid?)[] { (null, null), (record, run) })
+        {
+            await using var bad = Context();
+            bad.Attachments.Add(new Attachment { ServiceRecordId = recordId, ChecklistRunId = runId, FileUrl = "k", FileName = "x", ContentType = "image/png", SizeBytes = 1 });
+            var ex = await Assert.ThrowsAsync<DbUpdateException>(() => bad.SaveChangesAsync());
+            Assert.Contains("CK_Attachments_OneParent", ex.InnerException!.Message);
+        }
+
+        var index = await db.Database.SqlQuery<string>(
+            $"SELECT c.name AS Value FROM sys.indexes i JOIN sys.index_columns ic ON ic.object_id = i.object_id AND ic.index_id = i.index_id JOIN sys.columns c ON c.object_id = ic.object_id AND c.column_id = ic.column_id WHERE i.name = 'IX_Attachments_ChecklistRunId'")
+            .ToListAsync();
+        Assert.Equal(["ChecklistRunId"], index);
+
+        // The run link doesn't cascade (one cascade path per table), so a raw car or user delete must remove the run photo rows first,
+        // as scripts/cleanup-test-users.sql does; the app has no car or account delete yet.
+        var blocked = await Assert.ThrowsAsync<SqlException>(() => db.Users.Where(u => u.Id == car.UserId).ExecuteDeleteAsync());
+        Assert.Contains("FK_Attachments_ChecklistRuns_ChecklistRunId", blocked.Message);
+        await db.Attachments.Where(a => a.ChecklistRun!.VehicleChecklist!.Vehicle!.UserId == car.UserId).ExecuteDeleteAsync();
+        await db.Users.Where(u => u.Id == car.UserId).ExecuteDeleteAsync();
+        Assert.Equal(0, await db.Attachments.CountAsync());
+        Assert.Equal(0, await db.ChecklistRuns.CountAsync());
+    }
+
+    [Fact]
+    public async Task RunAttachment_OnSqlServer_ARunDeleteThatSavesDuringTheUpload_Wins_TheUploadFails_AndItsObjectIsDeleted()
+    {
+        var (car, run) = await RunWithPhotosAsync(1);
+        storage.PutGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var upload = Task.Run(() => RunRacer().AddRunAttachmentAsync(car.UserId, run, Png, "late.png"));
+        await WaitForPutsAsync(1);
+        await RunRacer().DeleteRunAsync(car.UserId, run);
+        storage.PutGate.SetResult();
+
+        // The handler turns it into 409 concurrency.conflict (GlobalExceptionHandlerTests).
+        await Assert.ThrowsAsync<DbUpdateConcurrencyException>(() => upload);
+        await using var check = Context();
+        Assert.Empty(check.Attachments);
+        Assert.Empty(check.ChecklistRuns);
+        Assert.Empty(storage.Objects);
+    }
+
+    [Fact]
+    public async Task RunAttachment_OnSqlServer_TwoSimultaneousUploadsAtNinePhotos_OnlyOneSaves_TheOthersObjectIsDeleted()
+    {
+        var (car, run) = await RunWithPhotosAsync(Attachment.MaxPerParent - 1);
+        storage.PutGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var first = Task.Run(() => RunRacer().AddRunAttachmentAsync(car.UserId, run, Png, "a.png"));
+        var second = Task.Run(() => RunRacer().AddRunAttachmentAsync(car.UserId, run, Png, "b.png"));
+        await WaitForPutsAsync(2);
+        storage.PutGate.SetResult();
+
+        var results = await Task.WhenAll(Settle(first), Settle(second));
+        Assert.Single(results, e => e is null);
+        Assert.Single(results, e => e is DbUpdateConcurrencyException);
+        await using var check = Context();
+        var keys = await check.Attachments.Select(a => a.FileUrl).ToListAsync();
+        Assert.Equal(Attachment.MaxPerParent, keys.Count);
+        Assert.Equal(keys.Order(), storage.Objects.Keys.Order());
+    }
+
+    [Fact]
+    public async Task RunDelete_OnSqlServer_AfterAnUploadSavedSinceItsRead_IsAConcurrencyException_AndKeepsEverything()
+    {
+        var (car, run) = await RunWithPhotosAsync(0);
+        var interceptor = new BeforeSave();
+        await using var context = Context(interceptor);
+        var deleter = new VehicleChecklistService(context, new VehicleService(context, storage));
+        interceptor.Next = () => RunRacer().AddRunAttachmentAsync(car.UserId, run, Png, "a.png");
+
+        await Assert.ThrowsAsync<DbUpdateConcurrencyException>(() => deleter.DeleteRunAsync(car.UserId, run));
+
+        await using var check = Context();
+        Assert.Single(check.Attachments);
+        Assert.Single(storage.Objects);
     }
 
     /// <summary>Simulates another request saving first: runs <see cref="Next"/> once, at the start of the next save.</summary>
