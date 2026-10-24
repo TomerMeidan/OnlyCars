@@ -423,6 +423,9 @@ namespace OnlyCars.Infrastructure.Persistence.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<Guid?>("ClientRequestId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("datetimeoffset");
 
@@ -447,6 +450,10 @@ namespace OnlyCars.Infrastructure.Persistence.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("ServiceRecordId");
+
+                    b.HasIndex("VehicleId", "ClientRequestId")
+                        .IsUnique()
+                        .HasFilter("[ClientRequestId] IS NOT NULL");
 
                     b.HasIndex("VehicleId", "ReadingDate")
                         .IsDescending(false, true);

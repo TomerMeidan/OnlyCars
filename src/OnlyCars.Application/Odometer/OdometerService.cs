@@ -31,6 +31,12 @@ public class OdometerService(IAppDbContext db, VehicleService vehicleService)
     public async Task<OdometerReadingDto> AddAsync(Guid userId, Guid vehicleId, AddOdometerReadingRequest request, CancellationToken ct = default)
     {
         var vehicle = await vehicleService.FindOwnedAsync(userId, vehicleId, ct);
+        // A resend after a lost reply returns the saved reading as it is now, before the cap and date-order checks.
+        if (request.ClientRequestId is { } requestId && await FindByRequestIdAsync(vehicle.Id, requestId, ct) is { } sent)
+        {
+            return ToDto(sent);
+        }
+
         var readings = await LoadReadingsAsync(vehicle.Id, ct);
         EnsureRoom(readings);
 
@@ -39,7 +45,8 @@ public class OdometerService(IAppDbContext db, VehicleService vehicleService)
             VehicleId = vehicle.Id,
             ValueKm = request.ValueKm,
             ReadingDate = request.ReadingDate ?? DateOnly.FromDateTime(DateTime.UtcNow),
-            Source = OdometerSource.Manual
+            Source = OdometerSource.Manual,
+            ClientRequestId = request.ClientRequestId
         };
         Validate(readings, reading, reading.ValueKm, reading.ReadingDate, request.ConfirmCorrection);
 
@@ -47,9 +54,26 @@ public class OdometerService(IAppDbContext db, VehicleService vehicleService)
         readings.Add(reading);
         Recompute(vehicle, readings);
 
-        await db.SaveChangesAsync(ct);
+        try
+        {
+            await db.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateException) when (request.ClientRequestId is not null)
+        {
+            // A simultaneous post of the same id won the unique (VehicleId, ClientRequestId) index and recomputed the car itself.
+            if (await FindByRequestIdAsync(vehicle.Id, request.ClientRequestId.Value, ct) is { } winner && winner.Id != reading.Id)
+            {
+                return ToDto(winner);
+            }
+
+            throw;
+        }
+
         return ToDto(reading);
     }
+
+    private Task<OdometerReading?> FindByRequestIdAsync(Guid vehicleId, Guid requestId, CancellationToken ct) =>
+        db.OdometerReadings.AsNoTracking().FirstOrDefaultAsync(r => r.VehicleId == vehicleId && r.ClientRequestId == requestId, ct);
 
     public async Task<OdometerReadingDto> UpdateAsync(Guid userId, Guid vehicleId, Guid readingId, UpdateOdometerReadingRequest request, CancellationToken ct = default)
     {

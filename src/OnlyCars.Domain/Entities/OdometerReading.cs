@@ -17,4 +17,7 @@ public class OdometerReading : Entity
     /// <summary>Set on the reading a reset logged, so undo can find and remove it.</summary>
     public Guid? ServiceRecordId { get; set; }
     public ServiceRecord? ServiceRecord { get; set; }
+
+    /// <summary>Id the client made for an offline-queued reading, so a resend returns this reading instead of adding another (OFF-1).</summary>
+    public Guid? ClientRequestId { get; set; }
 }

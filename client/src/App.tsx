@@ -1,8 +1,9 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link, Navigate, NavLink, Route, Routes, useLocation } from 'react-router-dom'
 import { useAuth } from './auth'
 import { errorMessage, toLocale } from './i18n'
+import { readQueue, sendQueue } from './offline'
 import AuthPage from './pages/AuthPage'
 import CarPage from './pages/CarPage'
 import CarFormPage from './pages/CarFormPage'
@@ -21,6 +22,17 @@ export default function App() {
   // A failure is kept with the page it happened on, so navigating (or logging out) clears it.
   const at = `header@${useLocation().key}`
   const [langBusy, setLangBusy] = useState(false)
+
+  // OFF-1: queued readings go on app start, after login and when the connection is back.
+  const userId = user?.id
+  useEffect(() => {
+    if (!userId) return
+    const send = () => sendQueue(userId)
+    send()
+    addEventListener('online', send)
+    return () => removeEventListener('online', send)
+  }, [userId])
+  const confirmLogout = () => (!readQueue(userId!).length || confirm(t('logoutLosesReadings'))) && logout()
 
   // Signed in, the switch also saves the language to the account.
   async function switchLanguage() {
@@ -53,7 +65,7 @@ export default function App() {
           {user && <NavLink to="/checklists">{t('checklists')}</NavLink>}
           {user && <NavLink to="/tires">{t('tires')}</NavLink>}
           {user && <NavLink to="/settings">{t('settings')}</NavLink>}
-          {user && <button className="link" onClick={logout}>{t('logout')}</button>}
+          {user && <button className="link" onClick={confirmLogout}>{t('logout')}</button>}
         </nav>
       </header>
       <main>

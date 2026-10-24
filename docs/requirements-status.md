@@ -1,20 +1,20 @@
 # OnlyCars: Requirements Status
 
-**Audit date:** 2026-10-24 (thirty-sixth audit, short sign-off of PWA-1; PWA-1 is uncommitted in the working tree)
-**Overall:** MVP steps 1 to 4 are complete. Step 5 is done except reminder emails (NOT-2), which wait for the owner's email provider. PWA-1 is signed off: spec 12 "installable PWA" is Done. Next: OFF-1 (offline odometer entry that syncs later, the last spec 12 gap). No deployment tickets until the owner asks.
+**Audit date:** 2026-10-24 (thirty-seventh audit, short sign-off of OFF-1; OFF-1 is uncommitted in the working tree)
+**Overall:** MVP steps 1 to 4 are complete. Step 5 is done except reminder emails (NOT-2), which wait for the owner's email provider. OFF-1 is signed off: spec 12 "offline odometer entry" is Done, so spec 12 is complete. Next: NAV-1 (phone navigation). No deployment tickets until the owner asks.
 
 | Status | Count |
 |---|---|
-| Done | 47 |
+| Done | 48 |
 | API only | 0 |
 | Partial | 2 |
-| Missing | 2 |
+| Missing | 1 |
 | Deferred | 6 |
 | **Total** | **57** |
 
-How this was checked (thirty-sixth audit, short sign-off of PWA-1 per decisions.md "Faster pipeline (owner)"; I re-ran no test suites and no browser scripts):
-- Reported by other agents, not re-run by me: smoke `SMOKE_ALL=1` 142 of 142 in all 4 setups (incl. the new `pwa-install`); code review with one Medium and one Low fixed in the fix round; browser QA installed it in Chrome desktop and at 390px with no installability errors; offline shell, deep link and both fonts in en and he.
-- Not tested by anyone: the install on a real iPhone (owner); smoke's SIGINT cleanup path; the full smoke after the last `preview.unref()` change (L190).
+How this was checked (thirty-seventh audit, short sign-off of OFF-1 per decisions.md "Faster pipeline (owner)"; I re-ran no test suites and no browser scripts):
+- Reported by other agents, not re-run by me: `dotnet test` 729 of 729; smoke `SMOKE_ALL=1` 143 of 143 per setup before the fix round, and all 4 setups (572 of 572 steps) after it; code review approve; security pass; Hebrew review; browser QA in desktop-light-en km and 390px mobile-dark-he miles.
+- Not tested by anyone: the second-tab `storage` update (L192); the offline language switch (L189); a real phone losing signal.
 - The notes from earlier audits are in git history.
 
 ## 1. Vehicles
@@ -132,7 +132,7 @@ How this was checked (thirty-sixth audit, short sign-off of PWA-1 per decisions.
 | Per-user data isolation, data export and delete-account | **Done** | Isolation: every vehicle, odometer and task call checks ownership and returns 404 for other users' data (`VehicleService.cs:113-128`). Tests: `VehicleServiceTests.cs:52`, `OdometerServiceTests.cs:78`. Export (ACC-1, signed off): "Export my data" in Settings, "Your data" (`SettingsPage.tsx:44-60,132-147`) downloads `onlycars-export-YYYY-MM-DD.json` from `GET /api/me/export` (`MeController.cs:39-50`, `ExportService.cs`), with everything the user owns and nothing of other users, no password hash, keys or links (`ExportTests.cs`, 23 tests; security live check with two users); per user 1 at once and 5 per 10 minutes, 3 at once app-wide; en/he; smoke `export-data` in 4 setups and browser QA. Delete-account (ACC-2, signed off 2026-10-24): Settings, "Your data", "Delete my account" opens an inline panel (`SettingsPage.tsx:80-107,183-201`) that warns it can't be undone, points to Export, and asks for the password; `DELETE /api/me` (`MeController.cs:35-41`) removes run-photo rows, then the user (everything else cascades) in one transaction, then every R2 object under `users/{id}/` (`AccountService.cs:14-48`, `R2FileStorage.DeletePrefixAsync`, paged); a deleted user's token gets 401; wrong passwords count toward the login lockout; per user 1 at once and 5 per 10 minutes; en/he (`i18n.ts:221-231,884-894`); tests `AccountDeleteTests.cs`; smoke `delete-account-errors` and `delete-account` in 4 setups; browser QA in desktop-light-en and mobile-dark-he 390px. | Nothing for the spec. Lows L172 to L181 (no retry when the R2 delete fails, a mid-delete run-photo upload gives a 500, polish). |
 | Hebrew and English UI, including RTL | **Done** | Every UI string exists in `en` and `he`, and `he: typeof en` makes the compiler enforce it (`i18n.ts`). `dir` is set to rtl or ltr. Every API error now has a stable `code` (`AppException.cs`, `GlobalExceptionHandler.cs`, fallback `http.<status>` in `Program.cs`). The client translates the code, or shows a translated generic message for unknown codes (`i18n.ts:154-157`). Tests: `GlobalExceptionHandlerTests.cs`. Browser: the Hebrew error screenshots `mobile-dark-he-05-*` and `-08-*`. | Nothing. SET-1 saves the language to `User.Locale` from Settings and the header switch, applies it at login, and register saves the form's language (smoke `settings-language`; `qaset1-mobile-dark-he-17-after-login.png`). |
 | Receipt image storage with size limits | **Done** | FILE-1 built the storage: a private R2 bucket behind `IFileStorage` (`src/OnlyCars.Application/Common/IFileStorage.cs`, R2 implementation in `src/OnlyCars.Infrastructure/Storage/`), a 10 MB limit on the upload endpoint only (`VehiclesController.cs:47`), type by content and metadata stripped (`ImageFiles.cs`), a per-user upload limit (`RequestLimits.cs`, policy `upload`); used by the car photo and, since FILE-2, by receipts: 10 MB per file, 10 files per record and a 1 GiB quota per user over attachments (`StorageOptions.cs:9`, 400 `file.quotaExceeded`); since FILE-3 also by run photos (10 per run), with the quota summing service files and run photos on both endpoints (`AttachmentFiles.cs:67-69,110`). Since ACC-2 the files leave with the account: every object under `users/{id}/` is deleted after the database commit (`AccountService.cs:48`). | Nothing for the spec. A failed R2 delete is only logged, with no retry (L172; the orphan sweep under Later). The real-iPhone camera check stays with the owner (L134). |
-| Offline-tolerant odometer entry (sync later) | **Missing** | The service worker caches only the app shell. | Quick entry posts directly and fails when offline. There is no queue. |
+| Offline-tolerant odometer entry (sync later) | **Done** | OFF-1 (signed off 2026-10-24). API: `OdometerReading.ClientRequestId` with a filtered unique index on (`VehicleId`, `ClientRequestId`) (migration `20261024132337_OdometerClientRequestId`); a repeated id returns the existing reading with 200 before the date-order and cap checks, also in a race (`OdometerService.cs`, `tests/OnlyCars.Tests/OfflineOdometerTests.cs`; 729 tests pass). UI: a per-user queue and saved car list in `localStorage` (`client/src/offline.ts`), queued only on a network failure, sent oldest first on `online`, app start, login and "Send now"; "Not sent" items with "Save as correction" and "Delete"; the offline entry panel on the dashboard (`CarsPage.tsx`); en/he (`i18n.ts`). Tests: `client/ui-tests/offline.test.mjs`, smoke `offline-odometer` in 4 setups; browser QA desktop en km and 390px he dark miles. | Nothing for the spec. Only the dashboard's quick entry works offline (by decision). Lows L191 to L196. |
 
 ### Data model checks (Part 2, tables for MVP steps 1 to 3 so far)
 - Done: `User`, `Vehicle` and `OdometerReading` have all spec fields, plus Id, CreatedAt and UpdatedAt.
@@ -165,7 +165,7 @@ How this was checked (thirty-sixth audit, short sign-off of PWA-1 per decisions.
 | Deploy gate | **SEC-1 signed off.** Nothing else blocks a first deploy except the owner's Azure account. The owner said not to deploy yet (decisions.md, 2026-10-15, "When to deploy"), so no deployment tickets are queued. |
 | 3. Service history with costs | **Complete. MVP3-A, MVP3-B, MVP3-C, MVP3-D and FILE-2 (attachments) are signed off.** Files: receipt photos and PDFs added to a saved service, opened and deleted from its row, opened from `/history`. Working end to end in EN and HE: the service history on `/cars/:id`, recording a past service (date, odometer, shop or DIY, cost, notes, several tasks, parts and labour) with the date-order rules, editing everything on a record (shop, cost, notes, items, date, odometer and tasks, with the car's odometer and the tasks' last done following), deleting any record, and a `/history` page that filters and searches all cars. LOW-1 (the first Low batch) is signed off too. |
 | 4. Dashboard with due/overdue status | **Complete. MVP4-A and LOW-2 are signed off; "Start a checklist" came with MVP5-B.** The dashboard on `/`: overdue and due-soon counts, this month's spend linking to `/history`, and per-car cards with the next 3 tasks, one-tap Mark done with Undo, quick odometer entry and Start a checklist, in EN and HE. |
-| 5. Checklists, tires, reports, notifications | **All but email. Spec 12's delete-account is done too (ACC-2). Checklists are complete: MVP5-A, MVP5-B, MVP5-C and FILE-3 (photos on runs) are signed off. Tires are done: MVP5-D (sets, mounts, swap, km per set, storage notes) and MVP5-E (pressure, tread depth, rotations) are signed off. LOW-3, LOW-4 and LOW-5 are signed off. Reports are done: RPT-1 (cost per car, category, month and year, cost per km, TCO), RPT-2 (charts) and RPT-3 (CSV and PDF export) are signed off. The browser QA catch-up over MVP5-C to RPT-3 passed.** LOW-6, LOW-7, LOW-8 and PWA-1 are signed off. NOT-1 (in-app reminders: car documents, the Reminders card with snooze, lead days in Settings) is signed off. The client redesign ("the glovebox service book", 18156cd) is approved by the owner. Remaining: reminder emails (spec 9 bullet 1, NOT-2), waiting for the owner's email provider. While it waits: OFF-1 (spec 12) is next. |
+| 5. Checklists, tires, reports, notifications | **All but email. Spec 12's delete-account is done too (ACC-2). Checklists are complete: MVP5-A, MVP5-B, MVP5-C and FILE-3 (photos on runs) are signed off. Tires are done: MVP5-D (sets, mounts, swap, km per set, storage notes) and MVP5-E (pressure, tread depth, rotations) are signed off. LOW-3, LOW-4 and LOW-5 are signed off. Reports are done: RPT-1 (cost per car, category, month and year, cost per km, TCO), RPT-2 (charts) and RPT-3 (CSV and PDF export) are signed off. The browser QA catch-up over MVP5-C to RPT-3 passed.** LOW-6, LOW-7, LOW-8, PWA-1 and OFF-1 are signed off. NOT-1 (in-app reminders: car documents, the Reminders card with snooze, lead days in Settings) is signed off. The client redesign ("the glovebox service book", 18156cd) is approved by the owner. Remaining: reminder emails (spec 9 bullet 1, NOT-2), waiting for the owner's email provider. OFF-1 (offline odometer entry) is signed off. While NOT-2 waits: NAV-1 (phone navigation) is next. |
 
 ## Ticket queue
 
@@ -182,11 +182,20 @@ How this was checked (thirty-sixth audit, short sign-off of PWA-1 per decisions.
 | 9 | LOW-8: Lows L141 to L181 (with the client-today date fix, L155) | BE, then FE | **Signed off** 2026-10-24 |
 | - | Client redesign, "the glovebox service book" (`docs/design.md`) | FE | **Approved by the owner**, committed 18156cd |
 | 10 | PWA-1: app icons, a verified install, fonts cached for offline (spec 12) | FE | **Signed off** 2026-10-24 |
-| 11 | OFF-1: offline odometer entry that syncs later (spec 12) | small BE, then FE | **Next** (written below); no owner input needed |
-| 12 | NAV-1: phone navigation (bottom tab bar or "More" menu) | FE | After OFF-1 (designer proposal) |
+| 11 | OFF-1: offline odometer entry that syncs later (spec 12) | small BE, then FE | **Signed off** 2026-10-24 |
+| 12 | NAV-1: phone navigation (bottom tab bar and "More" menu) | FE | **Next** (written below); no owner input needed |
 | - | NOT-2: email when due | BE, then FE | **Blocked:** needs the owner's email provider, sender address and credentials. Goes next as soon as the owner answers. |
 
 ## Signed-off tickets
+- **OFF-1 (uncommitted in the working tree): signed off 2026-10-24.** Short sign-off under "Faster pipeline (owner)"; I re-ran no suites. Spec 12 "Offline-tolerant odometer entry (sync later)" Missing to Done.
+  - Reported evidence: `dotnet test` 729 of 729; smoke `SMOKE_ALL=1` 143 of 143 per setup, and all 4 setups (572 of 572 steps) after the fix round; code review approve; security pass; Hebrew review (6 wording changes, for example "discard" is מחיקה and "offline" is בלי אינטרנט; English "Discard" became "Delete"); browser QA pass in desktop-light-en km and 390px mobile-dark-he miles (miles sent as km, a 401 keeps the queue, a second user isolated, the logout confirm).
+  - AC1 [BE] pass: a repeated `clientRequestId` returns the existing reading with 200 and no new row, also after an edit and before the date-order and cap checks; the same id on another vehicle is independent; the race gives one row; no id behaves as before; the migration applies.
+  - AC2, AC3 [FE] pass: an offline entry is queued with "Waiting to send" and a count, kept across a reload; sent oldest first with its entry date on reconnect, app start, login or "Send now"; a lost reply adds no second reading.
+  - AC4 [FE] pass: a refused reading stays as "Not sent" with the translated reason; "Save as correction" only for the two date-order codes; "Delete" (was "Discard") removes it after a confirm; nothing is dropped silently. A reading for a car archived meanwhile is sent like any other.
+  - AC5 [FE] pass: a 401 keeps the queue for the same user, sent after they log in again; when another user logs in on the same browser, the previous user's queued readings and saved car list are removed (not only hidden); Logout with readings waiting asks to confirm, then clears them; account delete clears them. A user's own queued readings are never dropped by age; the saved car list expires after 30 days.
+  - AC6 [FE] pass: en and he (RTL), 390px, 44px targets, smoke in 4 setups, lint and build clean.
+  - Fix round: the in-flight send guard was shared across users and had no test (code review, 2 Mediums); other users' keys removed at login, the car list dropped after 30 days, `JSON.parse` guarded (security Lows); a separate "Not sent" count (QA Low).
+  - Accepted (decisions.md, "OFF-1 sign-off"): the archived-car, other-user and no-age-limit rules above; the generic offline dashboard error (L191). The new Lows are L191 to L196.
 - **PWA-1 (uncommitted in the working tree): signed off 2026-10-24.** Short sign-off under "Faster pipeline (owner)"; I re-ran no suites. Spec 12 "Mobile-first responsive UI, installable PWA" Partial to Done.
   - Reported evidence: smoke `SMOKE_ALL=1` 142 of 142 in all 4 setups (incl. `pwa-install`); code review: the service worker only precaches, a `NavigationRoute` with an `/api` denylist, font routes by origin, `/api` never cached or served; manifest; icon script with no new dependency; maskable geometry inside the safe circle. Fix round: an orphaned preview server on 4173 after a crash (Medium), a temp profile leak (Low), a nit.
   - AC1 to AC6 [FE] pass: icons and manifest (smoke `pwa-install`); no installability errors at desktop and 390px, service worker in control; offline shell, deep link and both Noto fonts in en and he (RTL); the offline dashboard shows its error with Retry, never stale API data, and Retry and login work when back online; maskable and `any` icon screenshots; smoke in 4 setups, dev server without a service worker.
@@ -392,53 +401,50 @@ Every Low finding from QA and review lands here (decisions.md, "Faster pipeline 
 | L187 | LOW-8b QA | Smoke leaves the NOT-1 time-zone cars in the dev DB until its user is deleted at the end; a run that stops early leaves them. | Smoke |
 | L188 | PWA-1 QA | The 192 and 512 `any` icons' dark tile almost disappears on dark backgrounds (launchers, dark taskbars); only the dial shows. A thin light rim or a lighter tile would fix it. | FE, icons |
 | L189 | PWA-1 QA | Offline, the language switch fails (the settings save) and adds a second identical "Something went wrong" message. Existing behaviour; show one message only, and consider keeping the language locally while offline. | FE, settings |
+| L191 | OFF-1 QA | Offline, the dashboard error says "Something went wrong" instead of saying you are offline. Show a translated "You are offline" message when the request got no response. | FE, dashboard |
+| L192 | OFF-1 review | The second-tab `storage` event update (one tab queues, the other shows it) has no test. | FE tests |
+| L193 | OFF-1 review | A repeated create returns `valueKm` as `12345.00`, the first create `12345`. Return the same shape both times. | BE, odometer |
+| L194 | OFF-1 review | An all-zero GUID is accepted as `clientRequestId`, so every such reading on a car would count as "the same". Reject `Guid.Empty` with 400. | BE, odometer |
+| L195 | OFF-1 housekeeping | Test user `off1-1660725773@example.com` is left in the dev DB and `scripts/cleanup-test-users.sql` has no `off1-<10 digits>` rule. Add one. | Script |
+| L196 | OFF-1 | L189 (the offline language switch) is still open; with OFF-1 the app is used offline more, so take it in the next LOW-n. | FE, settings |
 | L190 | PWA-1 review | Smoke's SIGINT cleanup path (stopping the preview server on Ctrl+C) is untested, and the full smoke was not re-run after `preview.unref()` (only a setup check). | Smoke |
 
 ## Next ticket
 
-### OFF-1: offline odometer entry that syncs later
+### NAV-1: phone navigation (bottom tab bar and "More" menu)
 
-**Goal:** As a user in a garage with no signal, I can enter my car's odometer on the dashboard, and the app sends it by itself when I'm back online, without losing or doubling a reading.
+**Goal:** As a user on my phone, I reach any page with one thumb from a bar at the bottom, and the header no longer fills a third of the screen.
 
-**Spec:** 12, "Offline-tolerant odometer entry (sync later)" (Missing). Done when AC1 to AC6 pass.
+**Spec:** 12, "Mobile-first responsive UI" (already Done; this is a usability fix from the designer: at 390px the Hebrew header wraps to three rows). No status change; done when AC1 to AC6 pass.
 
-**Who:** backend-engineer first (small: one field, one migration, contract `docs/contracts/OFF-1.md`), then frontend-engineer. No new dependency (`localStorage` is enough for a handful of readings; no IndexedDB library). Security review runs (data kept in the browser, auth edge cases); Hebrew review for the new strings.
+**Who:** frontend-engineer only (no API change, no contract). A short design note in `docs/design.md` ("Phone navigation") first. No new dependency; icons, if any, are inline SVG like the brand dial. Hebrew review for the new strings. No security review (no auth, storage or data change).
 
-**Binding decisions:** "Odometer reading dates" (date order, confirm a correction), "Quick-add reading date" (the client's local date), "PWA-1 sign-off" (the service worker never caches or serves `/api/`), "Offline odometer entry, OFF-1" (the choices below), "Leaner pipeline (owner)", and the smoke rule in "FILE-3 sign-off".
+**Binding decisions:** "Client redesign" (design tokens, `NavLink` `aria-current`, WCAG AA), "Offline odometer entry, OFF-1" and "OFF-1 sign-off" (Logout with readings waiting still asks to confirm), "Phone navigation, NAV-1" (the choices below), "Leaner pipeline (owner)", and the smoke rule in "FILE-3 sign-off".
 
-**Scope**
-
-*Backend (backend-engineer):*
-- `OdometerReading.ClientRequestId` (`Guid?`), a filtered unique index on (`VehicleId`, `ClientRequestId`) where not null, and a migration.
-- `POST /api/vehicles/{vehicleId}/odometer` (`AddOdometerReadingRequest`) takes an optional `clientRequestId`. If the vehicle already has a reading with that id, return that reading with 200 and create nothing (even if it was edited since), before the date-order and cap checks. Two identical posts at once give one row (the unique index; the loser returns the winner's reading). Not added to the reading DTOs or the export.
-
-*Frontend (frontend-engineer):*
-- **Queue:** a per-user list in `localStorage` (the key includes the user id) of `{ clientRequestId, vehicleId, valueKm, readingDate, confirmCorrection, state, errorCode }`. Values are stored in km (converted at entry, as `CarsPage.tsx:291` does today); `readingDate` is `localToday()` at the moment of entry. At most 20 items; a 21st is refused with a message.
-- **When it queues:** only when the POST fails without a response (network error) or `navigator.onLine` is false. An HTTP error (400, 404, 429, 500) is shown as today and never queued.
-- **Dashboard offline:** on each successful dashboard load, keep a minimal per-user list of the active cars (`id`, `nickname`, `currentOdometerKm`, the load time) in `localStorage`. When the dashboard can't load, show the existing error with Retry and below it an "Offline odometer entry" panel with one quick-entry row per car from that list, its odometer labelled "last known" with the time. Nothing else is shown from it.
-- **Sync:** on the `online` event, on app start, after login, and from a "Send now" button: send the queued items oldest first, one at a time, with their original date and `clientRequestId`. On success remove the item and reload the dashboard.
-- **Refused items:** stay in the queue as "Not sent" with the translated reason and two actions: "Save as correction" (only for `odometer.lowerThanPrevious` and `odometer.higherThanNext`; resends with `confirmCorrection: true` and the same id) and "Discard".
-- **Smoke step `offline-odometer`** on the production build (as `pwa-install` does), using `context.setOffline`.
+**Scope (frontend-engineer):**
+- `client/src/App.tsx` header and `client/src/index.css`. Below 40em (the breakpoint `index.css` already uses), when logged in: the header keeps only the brand (a link to `/`); a bar fixed to the bottom of the screen has five items: Dashboard (`/`), Service history (`/history`), Checklists (`/checklists`), Tires (`/tires`) and More. More opens a menu with Reports (`/reports`), Settings (`/settings`), the language switch and Log out.
+- Short tab labels where the full one doesn't fit (new keys in `en` and `he`, for example "History" and היסטוריה); every item shows its text, an icon is optional.
+- From 40em up, and when logged out at any width: the header as today, no bottom bar.
 
 **Acceptance criteria**
-1. [BE] A POST with a `clientRequestId` the vehicle already has returns the existing reading with 200 and no new row, also after that reading was edited, and before the date-order and cap checks; the same id on another vehicle (or another user's) creates a normal reading; two identical posts at once give exactly one row; a POST without it behaves as today. Tests on LocalDB, including the race; the migration applies to the dev DB.
-2. [FE] Offline (the page already open, or reloaded offline after one online visit), a quick entry on the dashboard is queued: the form clears, the car shows "Waiting to send: 12,345 km" (in the user's unit) and a pending count, with no error screen; it survives a reload and an app restart. An HTTP error while online is shown as today and never queued.
-3. [FE] Back online (the `online` event, app start, login or "Send now"), queued readings are sent oldest first with their entry date, showing "Sending…"; the pending note goes away and the car's odometer and tasks update. If the connection drops after the server saved but before the reply, the retry adds no second reading (smoke aborts the first response, then counts one row).
-4. [FE] A queued reading the server refuses (date order, archived or deleted car, invalid value, cap, 429) stays as "Not sent" with the translated reason; "Save as correction" appears only for the two date-order codes and resends with `confirmCorrection: true`; "Discard" removes it after a confirm. Nothing is dropped silently.
-5. [FE] The queue and the car list belong to one user: a 401 keeps them and they are sent after the same user logs in again; another user on the same browser never sees or sends them; Logout with items pending asks to confirm that they will be lost, then clears them; account delete clears them.
-6. [FE] Works in Hebrew (RTL) and English, at 390px with no sideways scrolling and 44px tap targets, on the design tokens; smoke `SMOKE_ALL=1` passes in all 4 setups, each run alone; lint and build clean; the dev server on 5173 keeps working.
+1. [FE] At 390px, logged in, in en and he: the header is one row; the bottom bar shows the five items in one row, each at least 44px tall, labels not cut off; the current page is marked with `aria-current="page"` (two cues, as in `docs/design.md`), and More is marked when the page is Reports or Settings. Every page in the app is reachable in at most two taps.
+2. [FE] More is a button with `aria-expanded` and `aria-controls`; its menu opens above the bar, closes on Esc (focus back on More), on a tap outside and after choosing an item; the keyboard reaches every item in order (RTL in Hebrew). The language switch and Log out behave as today, including the OFF-1 confirm when readings are waiting to be sent.
+3. [FE] Nothing is hidden behind the bar: the page gets bottom padding for the bar plus `env(safe-area-inset-bottom)` (iPhone home indicator); the last form button, Undo, the offline entry panel and error messages on every page can be scrolled into view above it; a focused field is not covered. The bar is hidden when printing (the existing print styles).
+4. [FE] From 40em up, the header and its nav are exactly as today (the desktop smoke screenshots look the same); logged out, there is no bottom bar at any width.
+5. [FE] On the design tokens (the bar on `--cluster`, the current item in `--cluster-ink` with the amber mark, as the header does), light and dark at WCAG AA, reduced motion respected; no sideways scrolling at 360 and 390px; works installed as a PWA (standalone) and in the browser.
+6. [FE] Smoke: the existing navigation steps pass at both widths; a new step `phone-nav` at 390px in en and he checks the header height (one row), the five items, More by keyboard (open, Esc, focus back) and that the last button on `/settings` is clickable above the bar. `SMOKE_ALL=1` passes in all 4 setups, each run alone; lint and build clean; the dev server on 5173 keeps working.
 
-**Empty, error and loading states:** with no queue, the dashboard is as today. The offline panel with no saved car list says to open the app online once. Sending shows "Sending…"; a refused item shows its reason (AC4).
+**Empty, error and loading states:** no data is loaded by the bar. While the user is loading (first paint), no bar, as with the header nav today. The language switch's busy and error behaviour stays as today (its offline error is L189, not this ticket).
 
-**Out of scope:** offline for any other form (the car page's readings, Mark done, services, checklists, tires, documents, Settings and the language switch, L189); showing cached dashboard data beyond the minimal car list; the Background Sync API or sending while the app is closed (iOS has none); push notifications; editing a queued reading (discard and enter again); a reading deleted on the server and then retried with the same id is created again (accepted, rare).
+**Out of scope:** desktop navigation changes; a side drawer or hamburger menu; badges or counts on the tabs (for example due tasks); hiding the bar on scroll; swipe gestures; the offline language switch (L189, L196); new pages.
 
-**Open questions:** none block the ticket; the choices above are recorded as delegated in decisions.md ("Offline odometer entry, OFF-1"). Still waiting on the owner: the email service for NOT-2.
+**Open questions:** none block the ticket; the tab choice, the 40em breakpoint and "More" holding Reports, Settings, the language switch and Log out are delegated in decisions.md ("Phone navigation, NAV-1"). The owner may reorder the tabs after using it. Still waiting on the owner: the email service for NOT-2.
+
 
 ---
 
 ### Later
 - **NOT-2:** email when a task, checklist or document is due (spec 9 bullet 1), using NOT-1's reminders, `Notification.SentAt` to avoid duplicate sends and an `Email` `NotificationRule`. Needs the owner's email provider, sender address and credentials (user-secrets).
-- **NAV-1 (designer proposal):** at 390px the Hebrew header wraps to three rows; a phone bottom tab bar or a "More" menu for the less-used pages. A small FE ticket after OFF-1, with a design note in `docs/design.md` first.
 - **Small UX (designer proposals, next LOW-n or a UX ticket):** "3 of 5 checked" progress on the checklist run page; a one-line value statement on the login page (en and he, with Hebrew review).
 - **Predicted due date** from `AvgKmPerDay` (spec 2.3, optional).
 - **Orphan sweep:** delete R2 prefixes `users/{id}/` whose user no longer exists (test users removed by `scripts/cleanup-test-users.sql`, and any storage failure ACC-2 logs; the fix for L172).
@@ -446,9 +452,8 @@ Every Low finding from QA and review lands here (decisions.md, "Faster pipeline 
 - **Car delete** (not asked for; cars are archived): if ever added, it must delete run-photo rows first and `Notifications WHERE VehicleId` in code, as the account delete does.
 
 ## Changed since last audit
-- **Signed off:** PWA-1 (uncommitted in the working tree): app icons, a verified install in Chrome (desktop and 390px), fonts offline, `/api` never cached. Smoke 142 of 142 in 4 setups.
-- **Status changes:** spec 12 "Mobile-first responsive UI, installable PWA" Partial to Done. Counts: Done 47, Partial 2, Missing 2, Deferred 6.
-- **Backlog:** new Lows L188 to L190.
-- **New decisions** (`docs/decisions.md`, 2026-10-24): "PWA-1 sign-off", "Offline odometer entry, OFF-1".
-- **Waiting on the owner:** the real iPhone install; the optional in-app "Install app" button (default no).
-- **Next ticket:** OFF-1 (offline odometer entry that syncs later), written in full above. NOT-2 stays blocked on the owner's email provider.
+- **Signed off:** OFF-1 (uncommitted in the working tree): the dashboard's quick odometer entry works offline and is sent later, with no doubled readings. 729 backend tests; smoke in 4 setups.
+- **Status changes:** spec 12 "Offline-tolerant odometer entry (sync later)" Missing to Done. Counts: Done 48, Partial 2, Missing 1, Deferred 6.
+- **Backlog:** new Lows L191 to L196.
+- **New decisions** (`docs/decisions.md`, 2026-10-24): "OFF-1 sign-off", "Phone navigation, NAV-1".
+- **Next ticket:** NAV-1 (phone bottom tab bar and "More" menu), written in full above. NOT-2 stays blocked on the owner's email provider.

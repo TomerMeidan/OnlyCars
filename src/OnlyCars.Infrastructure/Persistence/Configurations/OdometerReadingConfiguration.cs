@@ -24,5 +24,10 @@ public class OdometerReadingConfiguration : IEntityTypeConfiguration<OdometerRea
         // Index OdometerReading(VehicleId, ReadingDate DESC)
         builder.HasIndex(o => new { o.VehicleId, o.ReadingDate })
             .IsDescending(false, true);
+
+        // One reading per client request id and car (OFF-1); readings without an id are not limited.
+        builder.HasIndex(o => new { o.VehicleId, o.ClientRequestId })
+            .IsUnique()
+            .HasFilter("[ClientRequestId] IS NOT NULL");
     }
 }

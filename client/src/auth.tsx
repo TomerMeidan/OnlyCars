@@ -2,6 +2,7 @@ import { createContext, useContext, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { api, applyTheme, cachedUser, getToken, setToken, USER_KEY, type AuthResponse, type User } from './api'
 import i18n, { toLocale } from './i18n'
+import { clearOffline, pruneOffline } from './offline'
 import { distance } from './units'
 
 type Settings = Partial<Pick<User, 'locale' | 'theme' | 'currency' | 'distanceUnit' | 'reminderLeadDays'>>
@@ -39,6 +40,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const locale = mode === 'register' ? toLocale(i18n.resolvedLanguage) : undefined
     const res = await api<AuthResponse>(`/auth/${mode}`, 'POST', { email, password, currency, locale })
     setToken(res.token)
+    pruneOffline(res.user.id)
     storeUser(res.user)
   }
 
@@ -61,7 +63,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }
 
+  // Also clears the user's offline readings and car list (OFF-1); a 401 in api() keeps them for the next login.
   const logout = () => {
+    if (user) clearOffline(user.id)
     setToken(null)
     localStorage.removeItem(USER_KEY)
     setUser(null)

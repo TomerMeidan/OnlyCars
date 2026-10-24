@@ -238,6 +238,7 @@ button.link:hover:not(:disabled, [aria-disabled='true']) { background: none; tex
 .quick { display: flex; flex-wrap: wrap; gap: 0.5rem; }
 .quick input[type='number'] { flex: 1; min-width: 9rem; }
 .quick .error, .quick label { flex-basis: 100%; }
+.pending { list-style: none; padding: 0; margin: 0; } /* OFF-1: a car's queued readings */
 
 /* Car detail: odometer history, newest first */
 .history { list-style: none; padding: 0; margin: 0; }

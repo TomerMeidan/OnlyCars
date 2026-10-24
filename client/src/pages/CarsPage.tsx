@@ -1,11 +1,12 @@
 import { useEffect, useLayoutEffect, useRef, useState, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
-import { errorMessage, money } from '../i18n'
+import { errorMessage, fmtDate, money } from '../i18n'
 import { Link } from 'react-router-dom'
-import { api, byUrgency, isOrderError, localToday, runPath, type Dashboard, type DashboardTask, type Vehicle, type VehicleChecklist } from '../api'
+import { api, ApiError, byUrgency, isOrderError, localToday, runPath, type Dashboard, type DashboardTask, type Vehicle, type VehicleChecklist } from '../api'
 import { useAuth, useDistance } from '../auth'
 import { usePage } from '../usePage'
 import { useRow } from '../useRow'
+import { discard, enqueue, MAX_QUEUE, newRequestId, readQueue, saveAsCorrection, saveCars, savedCars, sendQueue, useQueue, type Queued } from '../offline'
 import { RemindersCard } from './RemindersCard'
 import { Remaining, StatusBadge, UndoBar, type TaskUndo } from './TasksSection'
 
@@ -37,7 +38,15 @@ export default function CarsPage() {
     if (then) pending.current.push(then)
     const done = () => pending.current.splice(0).forEach((f) => f())
     return Promise.all([api<Dashboard>(`/dashboard?today=${today}`), api<Vehicle[]>(`/vehicles?includeArchived=${showArchived}`)]).then(
-      ([dash, cars]) => { if (n === request.current) { setData({ dash, cars, today }); setError(null); done() } },
+      ([dash, cars]) => {
+        if (n !== request.current) return
+        setData({ dash, cars, today })
+        setError(null)
+        done()
+        // OFF-1: the active cars, for the offline entry panel; and the server answers again, so send what waits.
+        saveCars(user!.id, cars.filter((c) => !c.isArchived).map(({ id, nickname, currentOdometerKm }) => ({ id, nickname, currentOdometerKm })))
+        if (readQueue(user!.id).some((i) => i.state === 'waiting')) sendQueue(user!.id) // not for refused ones alone: each load would resend them
+      },
       (err) => {
         if (n !== request.current) return
         // A failed reload keeps focus where it was (MVP1-C); only if `then` removed the focused control (the Undo bar) does the target apply.
@@ -56,6 +65,16 @@ export default function CarsPage() {
   useEffect(() => {
     load()
   }, [showArchived]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // OFF-1: after queued readings were sent, the odometers and tasks follow.
+  const queue = useQueue(user!.id)
+  const sentSeen = useRef(queue.sent)
+  useEffect(() => {
+    if (queue.sent === sentSeen.current) return
+    sentSeen.current = queue.sent
+    load()
+  }, [queue.sent]) // eslint-disable-line react-hooks/exhaustive-deps
+  const offlineCars = error != null && !data ? savedCars(user!.id) : null
 
   // Before paint, so focus never sits on body between the reloaded cards and their target.
   useLayoutEffect(() => {
@@ -105,6 +124,8 @@ export default function CarsPage() {
         <Link to="/cars/new" className="button">{t('addCar')}</Link>
       </div>
       {retryFailed}
+      {queue.items.length > 0 && <QueueCard names={new Map((data?.cars ?? savedCars(user!.id)?.cars ?? []).map((c) => [c.id, c.nickname]))} />}
+      {error != null && !data && <OfflineEntry saved={offlineCars} onSaved={() => load()} />}
       {data ? (
         <div className="card summary">
           <Counts overdue={data.dash.overdueCount} dueSoon={data.dash.dueSoonCount} />
@@ -145,9 +166,10 @@ export default function CarsPage() {
             </div>
             {!car.isArchived && (
               // Only if the card's move dropped focus.
-              <OdometerQuickEntry car={car} onSaved={() => reloadThenFocus(() =>
+              <OdometerQuickEntry car={car} queue onSaved={() => reloadThenFocus(() =>
                 document.activeElement === document.body ? document.querySelector<HTMLElement>(`.cars > li[data-id="${car.id}"] .quick button`) : null)} />
             )}
+            <PendingNotes carId={car.id} />
             {dash && (
               <>
                 <Counts overdue={dash.overdueCount} dueSoon={dash.dueSoonCount} />
@@ -273,7 +295,8 @@ function CarActions({ car, onArchived }: { car: Vehicle; onArchived: () => Promi
   )
 }
 
-export function OdometerQuickEntry({ car, onSaved }: { car: Vehicle; onSaved: () => void }) {
+// queue (the dashboard only, OFF-1): a reading that gets no answer is kept to send later instead of showing an error.
+export function OdometerQuickEntry({ car, onSaved, queue }: { car: Pick<Vehicle, 'id' | 'currentOdometerKm'>; onSaved: () => void; queue?: boolean }) {
   const { t } = useTranslation()
   const d = useDistance()
   const [value, setValue] = useState('')
@@ -281,19 +304,31 @@ export function OdometerQuickEntry({ car, onSaved }: { car: Vehicle; onSaved: ()
   const [needsConfirm, setNeedsConfirm] = useState(false)
   const [confirmCorrection, setConfirmCorrection] = useState(false)
   const [busy, setBusy] = useState(false)
+  const { user } = useAuth()
 
   async function submit(e: FormEvent) {
     e.preventDefault()
     setBusy(true)
     setError(null)
-    try {
-      // A ticked box that is hidden again must not confirm a later reading.
-      await api(`/vehicles/${car.id}/odometer`, 'POST', { valueKm: d.toKm(Number(value), car.currentOdometerKm), readingDate: localToday(), confirmCorrection: needsConfirm && confirmCorrection })
+    const cleared = () => {
       setValue('')
       setNeedsConfirm(false)
       setConfirmCorrection(false)
+    }
+    // A ticked box that is hidden again must not confirm a later reading. The id makes a resend after a lost reply harmless (OFF-1).
+    const body = { valueKm: d.toKm(Number(value), car.currentOdometerKm), readingDate: localToday(), confirmCorrection: needsConfirm && confirmCorrection, clientRequestId: newRequestId() }
+    try {
+      if (queue && !navigator.onLine) throw new TypeError('offline')
+      await api(`/vehicles/${car.id}/odometer`, 'POST', body)
+      cleared()
       onSaved()
     } catch (err) {
+      // No answer (offline, or the connection dropped): kept to send later. An HTTP error shows as before.
+      if (queue && !(err instanceof ApiError)) {
+        if (enqueue(user!.id, { ...body, vehicleId: car.id })) cleared()
+        else setError(new ApiError(0, { code: 'offline.queueFull', max: MAX_QUEUE }, ''))
+        return
+      }
       setError(err)
       setNeedsConfirm(isOrderError(err))
     } finally {
@@ -322,6 +357,106 @@ export function OdometerQuickEntry({ car, onSaved }: { car: Vehicle; onSaved: ()
         </label>
       )}
     </form>
+  )
+}
+
+// OFF-1: the car's queued readings, under its quick entry.
+function PendingNotes({ carId }: { carId: string }) {
+  const { t } = useTranslation()
+  const d = useDistance()
+  const { items, sending } = useQueue(useAuth().user!.id)
+  const mine = items.filter((i) => i.vehicleId === carId)
+  if (!mine.length) return null
+  return (
+    <ul className="pending">
+      {mine.map((i) => (
+        <li key={i.clientRequestId} className={i.state === 'notSent' ? 'error' : 'muted'}>
+          {t(i.clientRequestId === sending ? 'readingSending' : i.state === 'waiting' ? 'readingWaiting' : 'readingNotSent', { ...d.vars, value: d.fmt(i.valueKm) })}
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+// OFF-1: every queued reading with its state and Send now; a refused one with its reason, Save as correction (date order only) and Discard.
+function QueueCard({ names }: { names: Map<string, string> }) {
+  const { t } = useTranslation()
+  const userId = useAuth().user!.id
+  const { items, sending } = useQueue(userId)
+  const waiting = items.filter((i) => i.state === 'waiting').length
+  const notSent = items.length - waiting
+  return (
+    <section className="card queue" aria-labelledby="queue-title">
+      <h2 id="queue-title">{t('queueTitle')}</h2>
+      <p role="status">{sending ? t('sendingNow') : [waiting && t('queueCount', { count: waiting }), notSent && t('notSentCount', { count: notSent })].filter(Boolean).join(' ')}</p>
+      <ul className="tasks">
+        {items.map((i) => <QueuedRow key={i.clientRequestId} item={i} name={names.get(i.vehicleId)} busy={sending != null} />)}
+      </ul>
+      <div className="actions">
+        <button className="more" aria-disabled={sending != null} onClick={() => !sending && sendQueue(userId)}>{t('sendNow')}</button>
+      </div>
+    </section>
+  )
+}
+
+function QueuedRow({ item, name, busy }: { item: Queued; name: string | undefined; busy: boolean }) {
+  const { t, i18n } = useTranslation()
+  const d = useDistance()
+  const userId = useAuth().user!.id
+  const { mode, open, opener } = useRow<'discard'>()
+  const err = new ApiError(400, item.error ?? {}, '')
+  // The order messages' own wording here: there is no box to tick.
+  const reason = isOrderError(err) ? errorMessage(err, undefined, `queued.${item.error!.code!.split('.')[1]}`) : errorMessage(err)
+  return (
+    <li>
+      <div className="task-head">
+        <span className="name">{name ?? t('unknownCar')}</span>
+        <span><bdi>{d.fmt(item.valueKm)}</bdi> {d.vars.distUnit} · <time dateTime={item.readingDate}>{fmtDate(item.readingDate, i18n.resolvedLanguage)}</time></span>
+      </div>
+      {item.state === 'waiting' ? <p className="muted">{t('waitingToSend')}</p> : <p className="error" role="alert">{t('notSentBecause', { reason })}</p>}
+      {item.state === 'notSent' && mode === 'view' && (
+        <div className="actions">
+          {isOrderError(err) && <button className="more" aria-disabled={busy} onClick={() => !busy && saveAsCorrection(userId, item.clientRequestId)}>{t('saveAsCorrection')}</button>}
+          <button className="link" ref={opener('discard')} aria-disabled={busy} onClick={() => !busy && open('discard')}>{t('discard')}</button>
+        </div>
+      )}
+      {mode === 'discard' && (
+        <div className="inline-form" onKeyDown={(e) => e.key === 'Escape' && open('view')}>
+          <p>{t('confirmDiscardReading')}</p>
+          <div className="actions">
+            <button className="danger" onClick={() => discard(userId, item.clientRequestId)}>{t('discard')}</button>
+            <button type="button" className="link" onClick={() => open('view')} autoFocus>{t('cancel')}</button>
+          </div>
+        </div>
+      )}
+    </li>
+  )
+}
+
+// OFF-1: when the dashboard can't load, one quick entry per car from the last load, its odometer marked last known.
+function OfflineEntry({ saved, onSaved }: { saved: ReturnType<typeof savedCars>; onSaved: () => void }) {
+  const { t, i18n } = useTranslation()
+  const d = useDistance()
+  const at = saved && new Date(saved.at).toLocaleString(i18n.resolvedLanguage, { dateStyle: 'medium', timeStyle: 'short' })
+  return (
+    <section className="card offline" aria-labelledby="offline-title">
+      <h2 id="offline-title">{t('offlineEntry')}</h2>
+      {!saved?.cars.length ? <p className="muted">{t('offlineNoCars')}</p> : (
+        <>
+          <p className="muted">{t('offlineHint')}</p>
+          <ul className="tasks">
+            {saved.cars.map((car) => (
+              <li key={car.id} data-id={car.id}>
+                <span className="name">{car.nickname}</span>
+                <p className="muted">{t('lastKnown', { ...d.vars, value: d.fmt(car.currentOdometerKm), at })}</p>
+                <OdometerQuickEntry car={car} queue onSaved={onSaved} />
+                <PendingNotes carId={car.id} />
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+    </section>
   )
 }
 

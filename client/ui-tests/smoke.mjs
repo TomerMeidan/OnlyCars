@@ -5867,6 +5867,248 @@ for (const s of setups) {
       rmSync(profile, { recursive: true, force: true, maxRetries: 5 })
     }
   })
+  // OFF-1: offline odometer entry on the production build (its service worker serves the app offline). Two users of its own,
+  // deleted at the end; the setup's page is not used, so the steps after it are not affected.
+  await step('offline-odometer', async () => {
+    const OF = { km: he ? 'ק״מ' : 'km', waiting: (v) => key('readingWaiting').replace('{{value}}', v).replace('{{distUnit}}', he ? 'ק״מ' : 'km'),
+      count1: key('queueCount_one').replace('{{count, number}}', '1'), notSent1: key('notSentCount_one').replace('{{count, number}}', '1'), sendNow: key('sendNow'), sending: key('sendingNow'), correction: key('saveAsCorrection'), discard: key('discard'),
+      confirmDiscard: key('confirmDiscardReading'), offlineTitle: key('offlineEntry'), noCars: key('offlineNoCars'), logout: key('logoutLosesReadings'),
+      lastKnown: key('lastKnown').split('{{value}}')[0], notSent: key('notSentBecause').replace('{{reason}}', ''),
+      orderTail: inBlock('queued', 'lowerThanPrevious').split(')')[1], notFound: copy(/^ {4}vehicle: \{[\s\S]*?^ {6}notFound: (['"])(.*)\1,$/gm), full: inBlock('offline', 'queueFull').split('{{max, number}}') }
+    const today = await localDate()
+    const signUp = async (tag) => {
+      const email = `ui-off1-${tag}-${s.name}-${Date.now()}@onlycars.test`
+      const r = await page.request.post(`${BASE}/api/auth/register`, { data: { email, password: 'Passw0rd!', locale: he ? 'He' : 'En' } })
+      if (!r.ok()) throw new Error(`register ${tag}: ${r.status()}`)
+      return { email, ...(await r.json()) }
+    }
+    const as = (auth) => async (method, path, data) => {
+      const r = await page.request.fetch(`${BASE}/api${path}`, { method, headers: { Authorization: `Bearer ${auth.token}` }, data })
+      if (!r.ok()) throw new Error(`${method} ${path}: ${r.status()}`)
+      return r.status() === 204 ? null : r.json()
+    }
+    const U = await signUp('u'), V = await signUp('v')
+    const profile = mkdtempSync(join(tmpdir(), 'onlycars-off1-'))
+    let pctx, pp, failure
+    try {
+      const carId = (await as(U)('POST', '/vehicles', { nickname: 'Offline car', initialOdometerKm: 10000, readingDate: today })).id
+      await as(U)('POST', `/vehicles/${carId}/tasks`, { name: 'Off oil', category: 'Oil', intervalKm: 5000, intervalDays: null, dueSoonPercent: 10, lastDoneOdometerKm: 10000, lastDoneDate: today })
+      const readings = async () => (await as(U)('GET', `/vehicles/${carId}/odometer`)).map((r) => Number(r.valueKm))
+      pctx = await chromium.launchPersistentContext(profile, { channel: 'chrome', timezoneId: process.env.UI_TZ, viewport: s.viewport, colorScheme: s.colorScheme, isMobile: s.isMobile, hasTouch: s.hasTouch })
+      pp = pctx.pages()[0] ?? await pctx.newPage()
+      await pp.goto(`${PREVIEW}/login`)
+      await pp.evaluate(([t, u, l]) => { localStorage.setItem('token', t); localStorage.setItem('user', JSON.stringify(u)); localStorage.setItem('i18nextLng', l) }, [U.token, U.user, s.lng])
+      await pp.goto(`${PREVIEW}/`)
+      await pp.evaluate(() => navigator.serviceWorker.ready)
+      await pp.reload()
+      const card = () => pp.locator(`.cars > li[data-id="${carId}"]`)
+      const queueCard = () => pp.locator('section.queue')
+      const panel = () => pp.locator('section.offline')
+      const pageAlert = () => pp.locator('main > .row [role=alert]')
+      const textOf = async (loc) => plain(await loc.textContent())
+      const posts = []
+      pp.on('request', (r) => r.method() === 'POST' && pathOf(r) === `/api/vehicles/${carId}/odometer` && posts.push(r.postDataJSON()))
+      const odoRoute = (u) => u.pathname === `/api/vehicles/${carId}/odometer`
+      const check390 = async (what, shot) => {
+        if (!s.isMobile) await pp.setViewportSize({ width: 390, height: 844 })
+        const px = await pp.evaluate(() => document.documentElement.scrollWidth - 390)
+        if (px > 0) throw new Error(`${px}px horizontal overflow with ${what}`)
+        const small = await pp.evaluate(() => [...document.querySelectorAll('main a, main button')].filter((el) => el.checkVisibility())
+          .map((el) => { const r = el.getBoundingClientRect(); return [el.textContent.trim(), Math.round(r.height), el.matches('button.link') ? Math.round(r.width) : 44] })
+          .filter(([, h, w]) => h < 44 || w < 44))
+        if (small.length) throw new Error(`${what} under 44px: ${JSON.stringify(small)}`)
+        await pp.screenshot({ path: `${OUT}/${s.name}-${shot}.png`, fullPage: true })
+        if (!s.isMobile) await pp.setViewportSize(s.viewport)
+      }
+      const enter = async (scope, value) => {
+        await scope.locator('.quick input[type=number]').fill(String(value))
+        await scope.locator('.quick button').click()
+      }
+      await card().waitFor()
+      if (await queueCard().count()) throw new Error('a queue card with nothing queued')
+
+      // AC2: an HTTP error while online shows as today and is not queued.
+      await pp.route(odoRoute, (r) => r.fulfill({ status: 500, contentType: 'application/json', body: '{}' }), { times: 1 })
+      await enter(card(), 11000)
+      await card().locator('.quick [role=alert]').waitFor()
+      if (await queueCard().count() || await pp.evaluate(() => Object.keys(localStorage).some((k) => k.startsWith('odometerQueue:')))) throw new Error('an HTTP error was queued')
+      await card().locator('.quick input[type=number]').fill('')
+      posts.length = 0
+
+      // AC2: offline with the page open: queued, the form clears, the car shows it waiting, no error screen.
+      const tasksBefore = await textOf(card().locator('.dash-tasks'))
+      await pctx.setOffline(true)
+      await enter(card(), 12345)
+      await card().locator('.pending').waitFor()
+      if (await textOf(card().locator('.pending')) !== OF.waiting('12,345')) throw new Error(`pending note "${await textOf(card().locator('.pending'))}"`)
+      if (await card().locator('.quick input[type=number]').inputValue() !== '') throw new Error('the form kept the value')
+      if (!(await textOf(queueCard().locator('[role=status]'))).includes(OF.count1)) throw new Error(`count "${await textOf(queueCard().locator('[role=status]'))}"`)
+      if (await pageAlert().count()) throw new Error('an error screen after queueing')
+      await pp.screenshot({ path: `${OUT}/${s.name}-offline-queued.png`, fullPage: true })
+
+      // AC2: reloaded offline: the error with Retry, then the offline panel with the last known odometer and the waiting reading.
+      await pp.reload()
+      await pageAlert().waitFor()
+      await panel().waitFor()
+      if (!(await textOf(panel())).includes(OF.lastKnown) || !(await textOf(panel())).includes('10,000')) throw new Error(`panel "${await textOf(panel())}"`)
+      const prow = panel().locator(`li[data-id="${carId}"]`)
+      if (await textOf(prow.locator('.pending')) !== OF.waiting('12,345')) throw new Error('the reading did not survive the reload')
+      await enter(prow, 12400)
+      await prow.locator('.pending li').nth(1).waitFor()
+      await enter(prow, 5000) // lower than the others: the server refuses it later
+      await prow.locator('.pending li').nth(2).waitFor()
+      // A full queue refuses the 21st with a message (20 stand-ins, then the real 3 put back).
+      const real = await pp.evaluate((k) => localStorage.getItem(k), `odometerQueue:${U.user.id}`)
+      await pp.evaluate(([k, v]) => localStorage.setItem(k, JSON.stringify(Array(20).fill(JSON.parse(v)[0]))), [`odometerQueue:${U.user.id}`, real])
+      await enter(prow, 12500)
+      const fullText = await textOf(prow.locator('.quick [role=alert]'))
+      if (!fullText.startsWith(OF.full[0]) || !fullText.endsWith(OF.full[1]) || !fullText.includes('20')) throw new Error(`queue full "${fullText}"`)
+      await pp.evaluate(([k, v]) => localStorage.setItem(k, v), [`odometerQueue:${U.user.id}`, real])
+      await check390('the offline panel', 'offline-panel-390')
+      // An app restart: a new window, still offline.
+      await pp.close()
+      pp = await pctx.newPage()
+      pp.on('request', (r) => r.method() === 'POST' && pathOf(r) === `/api/vehicles/${carId}/odometer` && posts.push(r.postDataJSON()))
+      await pp.goto(`${PREVIEW}/`)
+      await panel().locator(`li[data-id="${carId}"] .pending li`).nth(2).waitFor()
+
+      // AC3: back online, the online event sends (each run stops at its first failure: here no answer at all, nothing saved).
+      await pp.route(odoRoute, (r) => r.abort())
+      await pctx.setOffline(false)
+      for (let i = 0; i < 50 && !posts.length; i++) await pp.waitForTimeout(100)
+      await pp.waitForTimeout(500)
+      if (!posts.length || posts.some((b) => b.valueKm !== 12345)) throw new Error(`reconnect POSTs ${posts.map((b) => b.valueKm)}, want only the oldest`)
+      // Send now: the server saves it but the reply is lost, so it stays waiting; Send now again resends it with the same id and date
+      // (one row), then the rest oldest first, showing Sending…; the refused one stays as Not sent.
+      await pp.unroute(odoRoute)
+      await pp.route(odoRoute, async (r) => { await r.fetch(); await r.abort() }, { times: 1 })
+      const sendNow = queueCard().getByRole('button', { name: OF.sendNow, exact: true })
+      const tries = posts.length
+      await sendNow.click()
+      for (let i = 0; i < 50 && posts.length === tries; i++) await pp.waitForTimeout(100)
+      await pp.waitForTimeout(300)
+      if (posts.length !== tries + 1) throw new Error(`${posts.length - tries} POSTs after a lost reply, want 1 (then stop)`)
+      if ((await readings()).filter((v) => v === 12345).length !== 1) throw new Error('the lost reply was not saved once')
+      if (await textOf(pp.locator('.pending li').first()) !== OF.waiting('12,345')) throw new Error('not waiting after a lost reply')
+      await pp.route(odoRoute, async (r) => { await new Promise((ok) => setTimeout(ok, 600)); await r.fallback() })
+      await sendNow.click()
+      await queueCard().locator('[role=status]').filter({ hasText: OF.sending }).waitFor({ timeout: 3000 })
+      await pp.locator('.cars > li').first().waitFor({ timeout: 10000 }) // a send reloads the dashboard
+      await card().locator('.pending li.error').waitFor({ timeout: 10000 })
+      await pp.unroute(odoRoute)
+      const sent = posts.slice(tries).map((b) => `${b.valueKm}:${b.readingDate}:${b.confirmCorrection}`)
+      if (sent.join() !== [12345, 12345, 12400, 5000].map((v) => `${v}:${today}:false`).join()) throw new Error(`POSTs ${sent.join()}`)
+      if (new Set(posts.map((b) => `${b.valueKm}:${b.clientRequestId}`)).size !== 3 || new Set(posts.map((b) => b.clientRequestId)).size !== 3) throw new Error('ids not kept per reading')
+      const vals = await readings()
+      if (vals.filter((v) => v === 12345).length !== 1 || !vals.includes(12400) || vals.includes(5000)) throw new Error(`readings ${vals.join()}`)
+      await pp.waitForFunction((id) => document.querySelector(`.cars > li[data-id="${id}"] .odometer`)?.getAttribute('aria-label').startsWith('12,400'), carId, { timeout: 5000 })
+      if (await textOf(card().locator('.dash-tasks')) === tasksBefore) throw new Error('the tasks did not follow')
+
+      // AC4: the refused one: Not sent with the order reason and Save as correction; a 404 one: its reason, no Save as correction.
+      const rows = queueCard().locator('.tasks > li')
+      if (await rows.count() !== 1) throw new Error(`${await rows.count()} rows left`)
+      const count = await textOf(queueCard().locator('[role=status]'))
+      if (count !== OF.notSent1) throw new Error(`count "${count}" with every reading refused`)
+      const why = await textOf(rows.first().locator('[role=alert]'))
+      if (!why.startsWith(OF.notSent.trim()) || !why.includes('12,400') || !why.endsWith(OF.orderTail)) throw new Error(`reason "${why}"`)
+      await pctx.setOffline(true)
+      await enter(card(), 13000)
+      await rows.nth(1).waitFor()
+      await pp.route(odoRoute, (r) => r.request().postDataJSON().valueKm === 13000
+        ? r.fulfill({ status: 404, contentType: 'application/problem+json', body: JSON.stringify({ status: 404, code: 'vehicle.notFound' }) }) : r.fallback())
+      await pctx.setOffline(false)
+      await rows.nth(1).locator('[role=alert]').waitFor({ timeout: 10000 })
+      await pp.unroute(odoRoute)
+      if (!(await textOf(rows.nth(1).locator('[role=alert]'))).includes(OF.notFound)) throw new Error('404 reason')
+      if (await rows.nth(1).getByRole('button', { name: OF.correction }).count()) throw new Error('Save as correction on a 404')
+      await check390('the Not sent readings', 'offline-not-sent-390')
+      await rows.nth(1).getByRole('button', { name: OF.discard, exact: true }).click()
+      if (!(await textOf(rows.nth(1))).includes(OF.confirmDiscard)) throw new Error('no discard confirm')
+      await rows.nth(1).locator('button.danger').click()
+      await rows.nth(1).waitFor({ state: 'detached' })
+      await rows.first().getByRole('button', { name: OF.correction, exact: true }).click()
+      await queueCard().waitFor({ state: 'detached', timeout: 10000 })
+      if (posts.at(-1).confirmCorrection !== true || posts.at(-1).clientRequestId !== posts.find((b) => b.valueKm === 5000).clientRequestId) throw new Error('the correction was not the same id, confirmed')
+      if (!(await readings()).includes(5000) || (await readings()).includes(13000)) throw new Error('correction or discard did not hold')
+
+      // AC5: a 401 keeps the queue and the same user's login sends it; another user's login never sees or sends it, and removes it.
+      const queueThen401 = async (v) => {
+        await pctx.setOffline(true)
+        await enter(card(), v)
+        await card().locator('.pending').waitFor()
+        await pp.evaluate(() => localStorage.setItem('token', 'expired'))
+        await pctx.setOffline(false)
+        await pp.waitForURL('**/login', { timeout: 10000 })
+        if (!(await pp.evaluate((k) => localStorage.getItem(k), `odometerQueue:${U.user.id}`))) throw new Error('a 401 dropped the queue')
+      }
+      const logIn = async (who) => {
+        await pp.fill('input[name=email]', who.email)
+        await pp.fill('input[name=password]', 'Passw0rd!')
+        await pp.click('form button:not(.link)')
+        await pp.locator('a[href="/cars/new"]').waitFor()
+      }
+      await queueThen401(14000)
+      await logIn(U)
+      await pp.waitForFunction((k) => !localStorage.getItem(k), `odometerQueue:${U.user.id}`, { timeout: 10000 })
+      if (!(await readings()).includes(14000)) throw new Error('not sent after logging in again')
+      await queueThen401(14500)
+      const before = posts.length
+      await logIn(V)
+      await pp.locator('main h1').waitFor()
+      await pp.waitForTimeout(500)
+      if (await queueCard().count() || posts.length !== before) throw new Error('another user saw or sent the queue')
+      const others = await pp.evaluate((id) => Object.keys(localStorage).filter((k) => k.endsWith(id)), U.user.id)
+      if (others.length) throw new Error(`another user's login left ${others}`)
+      await pp.locator('header nav button.link').last().click() // V has nothing queued: no confirm
+      await logIn(U)
+
+      // AC5: Log out with a reading waiting asks first; Cancel keeps both; OK logs out and clears them. Account delete clears them.
+      const queueOnline = async (v) => {
+        await pp.route(odoRoute, (r) => r.abort(), { times: 1 })
+        await enter(card(), v)
+        await card().locator('.pending').waitFor()
+      }
+      await card().waitFor()
+      await queueOnline(15000)
+      let asked
+      pp.once('dialog', (d) => { asked = d.message(); d.dismiss() })
+      await pp.locator('header nav button.link').last().click()
+      if (plain(asked ?? '') !== OF.logout) throw new Error(`logout asked "${asked}"`)
+      if (!(await card().count())) throw new Error('Cancel logged out')
+      pp.once('dialog', (d) => d.accept())
+      await pp.locator('header nav button.link').last().click()
+      await pp.locator('input[name=email]').waitFor()
+      const leftover = () => pp.evaluate((id) => Object.keys(localStorage).filter((k) => k.endsWith(id)), U.user.id)
+      if ((await leftover()).length) throw new Error(`left after logout: ${await leftover()}`)
+      await logIn(U)
+      await card().waitFor()
+      await queueOnline(16000)
+      await pp.goto(`${PREVIEW}/settings`)
+      await pp.locator('main section[aria-labelledby=your-data] > .actions > button.danger').click()
+      await pp.locator('form[aria-labelledby=delete-account-title] input[name=password]').fill('Passw0rd!')
+      await pp.locator('form[aria-labelledby=delete-account-title] button.danger').click()
+      await pp.waitForURL('**/login')
+      if ((await leftover()).length) throw new Error(`left after account delete: ${await leftover()}`)
+      U.deleted = true
+      // With no saved car list, the offline panel asks to open the app online once.
+      await logIn(V)
+      await pp.evaluate((id) => localStorage.removeItem(`offlineCars:${id}`), V.user.id)
+      await pctx.setOffline(true)
+      await pp.reload()
+      if (await textOf(panel().locator('p')) !== OF.noCars) throw new Error(`no cars "${await textOf(panel())}"`)
+      await pctx.setOffline(false)
+    } catch (e) {
+      failure = e
+      await pp?.screenshot({ path: `${OUT}/${s.name}-offline-failed.png`, fullPage: true }).catch(() => {})
+    }
+    await pctx?.close()
+    rmSync(profile, { recursive: true, force: true, maxRetries: 5 })
+    for (const who of U.deleted ? [V] : [U, V]) {
+      const r = await page.request.delete(`${BASE}/api/me`, { headers: { Authorization: `Bearer ${who.token}` }, data: { password: 'Passw0rd!' } })
+      if (r.status() !== 204) failure ??= new Error(`cleanup delete: ${r.status()}`)
+    }
+    if (failure) throw failure
+  })
   await step('switch-language', async () => {
     const before = await page.getAttribute('html', 'dir')
     await page.click('header nav button.link >> nth=0')
