@@ -2071,7 +2071,7 @@ for (const s of setups) {
   const SE = he ? { settings: 'הגדרות', saved: 'נשמר', hint: key('currencyHint') } : { settings: 'Settings', saved: 'Saved', hint: key('currencyHint') }
   const osTheme = s.colorScheme === 'light' ? 'Light' : 'Dark'
   const forced = osTheme === 'Light' ? 'Dark' : 'Light'
-  const BG = { Light: 'rgb(230, 233, 238)', Dark: 'rgb(17, 21, 28)' } // --bg
+  const BG = { Light: 'rgb(230, 233, 227)', Dark: 'rgb(12, 18, 21)' } // --bg
   const looks = () => page.evaluate(() => ({
     attr: document.documentElement.dataset.theme ?? null,
     bg: getComputedStyle(document.documentElement).backgroundColor,
@@ -3625,9 +3625,11 @@ for (const s of setups) {
     if (plain(await top.locator('.name').textContent()) !== 'Inflate the tires' || !plain(await top.textContent()).includes(IS.from('Monthly quick check', date))) throw new Error(`to-do "${plain(await top.textContent())}"`)
     // The saved description in the row: right to left in Hebrew, with the date's day at its start (right) and the year at its end (left).
     const notes = await top.locator('p.notes').evaluate((el) => {
-      const t = el.firstChild, s = t.data, x = (sub) => { const r = document.createRange(), i = s.lastIndexOf(sub); r.setStart(t, i); r.setEnd(t, i + sub.length); return r.getBoundingClientRect().x }
+      const t = el.firstChild, s = t.data, box = (sub) => { const r = document.createRange(), i = s.lastIndexOf(sub); r.setStart(t, i); r.setEnd(t, i + sub.length); return r.getBoundingClientRect() }
+      // Read first in RTL: on an earlier line, or further right on the same line (the text may wrap at 390px).
+      const first = (a, b) => { const [p, q] = [box(a), box(b)]; return p.bottom <= q.top + 1 || (Math.abs(p.top - q.top) < 2 && p.x > q.x) }
       const year = String(new Date().getFullYear())
-      return { rtl: el.matches(':dir(rtl)'), dayRightOfYear: x(String(new Date().getDate())) > x(year), valueRightOfName: x('1.8') > x('Monthly') }
+      return { rtl: el.matches(':dir(rtl)'), dayRightOfYear: first(String(new Date().getDate()), year), valueRightOfName: first('1.8', 'Monthly') }
     })
     if (he && !(notes.rtl && notes.dayRightOfYear && notes.valueRightOfName)) throw new Error(`description layout ${JSON.stringify(notes)}`)
     // To-do created moves focus to that to-do.

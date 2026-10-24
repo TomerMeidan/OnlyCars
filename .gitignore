@@ -486,5 +486,6 @@ node_modules/
 client/dist/
 client/dev-dist/
 client/ui-tests/out/
+client/ui-tests/out-design/
 .claude/settings.local.json
 .claude/scheduled_tasks.lock

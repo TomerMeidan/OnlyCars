@@ -21,11 +21,12 @@ For engineering practice, use Addy Osmani's skills `frontend-ui-engineering`, `b
 ## How to work
 
 1. **Read the ticket's frontend scope and acceptance criteria**, and the API contract. If you were given a QA or review report, triage each item: real bug, test problem, or not a bug.
-2. **Keep the design system.**
-   - Use the existing tokens in `index.css`.
-   - Keep the drum-counter odometer as the one bold element, with amber primary buttons and flat blocks.
-   - Don't add new colors or fonts unless the ticket asks for them.
-   - For a new screen, use the `frontend-design:frontend-design` skill if it is available.
+2. **Keep the design system** ("the glovebox service book", described in `docs/design.md`; read it before styling anything).
+   - Use the tokens on `:root` in `index.css` (`--bg`, `--surface`, `--sunken`, `--ink`, `--muted`, `--line`, `--field`, `--focus`, `--cluster*`, `--amber`, `--fault`, `--danger`, `--status-*`, `--r-card`, `--r-control`). Every text and UI pair is checked in the contrast table in `docs/design.md`; a new pair gets its ratio added there.
+   - The dark instrument cluster (the header and the drum odometer in its bezel, unit in amber) is the one bold element. Pages are flat `.card`s with a 1px line edge and ruled lists; no shadows, gradients or extra colors.
+   - Buttons: amber primary for the action that saves; secondary (outlined) for actions that open something (`.add`, `.more`, `.mount`, `.move`); `.danger`; `button.link`. A status always has its word, its color and its shape (`.badge.status` inside a `.status-*` element).
+   - Type: Noto Sans / Noto Sans Hebrew only; headings and figures condensed (`font-stretch: 75%` or `condensed` in `font`), 700.
+   - Don't add new colors or fonts unless the ticket asks for them. For a new screen, use the `frontend-design:frontend-design` skill if it is available, and check it with `node ui-tests/design-shots.mjs <name>`.
 3. **Hebrew and RTL by default.**
    - Every user-facing string goes in both `en` and `he`, with Hebrew geresh and gershayim (ק״מ).
    - Use logical CSS properties only: `margin-inline`, `padding-block` and `inset-inline`.

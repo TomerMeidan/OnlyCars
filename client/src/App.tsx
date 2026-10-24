@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Link, Navigate, Route, Routes, useLocation } from 'react-router-dom'
+import { Link, Navigate, NavLink, Route, Routes, useLocation } from 'react-router-dom'
 import { useAuth } from './auth'
 import { errorMessage, toLocale } from './i18n'
 import AuthPage from './pages/AuthPage'
@@ -34,16 +34,25 @@ export default function App() {
   return (
     <>
       <header>
-        <Link to="/" className="brand">{t('appName')}</Link>
+        <Link to="/" className="brand">
+          {/* The dial from the favicon; the name next to it is the link's text. */}
+          <svg viewBox="0 0 48 48" aria-hidden="true">
+            <path d="M10 31a14 14 0 1 1 28 0" fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round" />
+            <path d="M24 31 32.5 20" stroke="var(--cluster-ink)" strokeWidth="3.5" strokeLinecap="round" />
+            <circle cx="24" cy="31" r="3.5" fill="var(--cluster-ink)" />
+          </svg>
+          {t('appName')}
+        </Link>
+        {/* NavLink marks the current page with aria-current="page", which the stylesheet lights up. */}
         <nav>
           <button className="link" onClick={switchLanguage} aria-disabled={langBusy}>
             {otherLang === 'he' ? 'עברית' : 'English'}
           </button>
-          {user && <Link to="/history">{t('serviceHistory')}</Link>}
-          {user && <Link to="/reports">{t('reports')}</Link>}
-          {user && <Link to="/checklists">{t('checklists')}</Link>}
-          {user && <Link to="/tires">{t('tires')}</Link>}
-          {user && <Link to="/settings">{t('settings')}</Link>}
+          {user && <NavLink to="/history">{t('serviceHistory')}</NavLink>}
+          {user && <NavLink to="/reports">{t('reports')}</NavLink>}
+          {user && <NavLink to="/checklists">{t('checklists')}</NavLink>}
+          {user && <NavLink to="/tires">{t('tires')}</NavLink>}
+          {user && <NavLink to="/settings">{t('settings')}</NavLink>}
           {user && <button className="link" onClick={logout}>{t('logout')}</button>}
         </nav>
       </header>

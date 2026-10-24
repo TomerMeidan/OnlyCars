@@ -1,29 +1,42 @@
-/* Each token is light-dark(light, dark); color-scheme picks one: the OS by default, or the user's theme via data-theme.
+/* OnlyCars design system: "the glovebox service book". See docs/design.md for the idea, the contrast table and the components.
+   Each token is light-dark(light, dark); color-scheme picks one: the OS by default, or the user's theme via data-theme.
    Lightning CSS in the Vite build compiles light-dark() into a fallback for older browsers, so don't set build.cssTarget to esnext. */
 :root {
-  --bg: light-dark(#e6e9ee, #11151c);
-  --surface: light-dark(#ffffff, #1a2029);
-  --ink: light-dark(#1b2433, #e8ebf0);
-  --muted: light-dark(#5a6475, #97a1b0);
-  --line: light-dark(#cdd3dc, #2d3541);
-  --amber: light-dark(#f0a81c, #f5b53a);
-  --fault: light-dark(#c2321f, #ff7a66);
+  /* Paper and ink. Text pairs are 4.5:1 or more, field borders 3:1 or more (docs/design.md has every ratio). */
+  --bg: light-dark(#e6e9e3, #0c1215);
+  --surface: light-dark(#fcfcfa, #151e22);
+  --sunken: light-dark(#eff1ec, #10181b);
+  --ink: light-dark(#142229, #e7ecea);
+  --muted: light-dark(#505e64, #9ba9aa);
+  --line: light-dark(#cbd1ca, #2a363b);
+  --field: light-dark(#788589, #6b7b80);
+  --focus: light-dark(#142229, #f5b53a);
+  /* The instrument cluster: the header and the odometer bezel, dark in both themes */
+  --cluster: light-dark(#0f1a1f, #060b0d);
+  --cluster-ink: #eef2ef;
+  --cluster-muted: #a7b4b5;
+  --drum-digit: #f2f4f2;
+  --drum-lead: #56656b;
+  /* Signal colors */
+  --amber: light-dark(#f2a516, #f5b53a);
+  --on-amber: #142229;
+  --fault: light-dark(#b8321f, #ff7a66);
   --danger: light-dark(#b42318, #d92d20); /* white text 6.6:1 light, 4.8:1 dark */
-  --drum: light-dark(#141b26, #080b10);
-  --drum-digit: #f2f4f7;
-  --drum-lead: light-dark(#5b6678, #4a5466);
-  /* Task status: text on --surface 5.3:1 or more (6.4:1 dark), bar fill on --line 3.5:1 or more (4.8:1 dark) */
-  --status-ok: light-dark(#1e7a46, #5cc98d);
-  --status-soon: light-dark(#94580a, #f5b53a);
+  /* Status: text on --surface 5.4:1 or more, on its 10% tint 4.7:1 or more; bar fill on --line 3.5:1 or more */
+  --status-ok: light-dark(#1d7745, #5cc98d);
+  --status-soon: light-dark(#8a5206, #f5b53a);
   --status-overdue: light-dark(#b3311d, #ff7a66);
 
-  --sans: 'IBM Plex Sans', 'IBM Plex Sans Hebrew', system-ui, 'Segoe UI', Arial, sans-serif;
-  --gauge: 'Barlow Condensed', 'Arial Narrow', sans-serif;
+  /* One family in two widths: condensed for headings and figures, normal for reading */
+  --sans: 'Noto Sans', 'Noto Sans Hebrew', system-ui, 'Segoe UI', Arial, sans-serif;
+  --r-card: 14px;
+  --r-control: 10px;
 
   color-scheme: light dark;
   font: 1rem/1.55 var(--sans);
   color: var(--ink);
   background: var(--bg);
+  -webkit-text-size-adjust: 100%;
 }
 :root[data-theme='light'] { color-scheme: light; }
 :root[data-theme='dark'] { color-scheme: dark; }
@@ -31,91 +44,124 @@
 * { box-sizing: border-box; }
 body { margin: 0; overflow-wrap: anywhere; } /* user free text (car and task names) without spaces must wrap, not widen the page */
 h1, h2, p { margin: 0; }
-h1 { font-size: 1.75rem; line-height: 1.2; font-weight: 600; }
-h2 { font-size: 1.25rem; line-height: 1.3; font-weight: 600; }
-a { color: inherit; text-underline-offset: 0.2em; }
+h1, h2, h3 { font-stretch: 75%; font-weight: 700; letter-spacing: 0.005em; }
+h1 { font-size: 2.125rem; line-height: 1.1; }
+h2 { font-size: 1.4rem; line-height: 1.2; }
+a { color: inherit; text-underline-offset: 0.22em; text-decoration-thickness: 1px; }
+a:hover { text-decoration-thickness: 2px; }
 
-:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
 
-/* Header */
+/* Header: the instrument cluster, with the brand on the start side and the page links after it */
 header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  flex-wrap: wrap; /* at 390px the nav takes its own line rather than breaking words */
-  column-gap: 1rem;
-  padding: 0.125rem 1rem; /* thin: the 44px links set the height */
-  background: var(--drum);
-  color: var(--drum-digit);
+  flex-wrap: wrap; /* at 390px the nav takes its own lines rather than breaking words */
+  column-gap: 1.5rem;
+  padding: 0.25rem 1rem;
+  background: var(--cluster);
+  color: var(--cluster-ink);
+  border-block-end: 3px solid var(--amber);
 }
 header :focus-visible { outline-color: var(--amber); }
 .brand {
-  font: 600 1.5rem/1 var(--gauge);
-  letter-spacing: 0.02em;
+  gap: 0.5rem;
+  font-weight: 800;
+  font-stretch: 75%;
+  font-size: 1.6rem;
+  line-height: 1;
   text-decoration: none;
 }
-nav { display: flex; flex-wrap: wrap; column-gap: 1.25rem; white-space: nowrap; }
-header button.link { color: inherit; }
+.brand svg { inline-size: 1.75rem; block-size: 1.75rem; color: var(--amber); flex-shrink: 0; }
+nav { display: flex; flex-wrap: wrap; column-gap: 1.25rem; white-space: nowrap; font-size: 0.95rem; }
+nav a { text-decoration: none; color: var(--cluster-muted); border-block-end: 2px solid transparent; }
+nav a:hover { color: var(--cluster-ink); }
+/* The page you are on: lit, and underlined in amber (the bar is the second cue besides the color) */
+nav a[aria-current='page'] { color: var(--cluster-ink); border-block-end-color: var(--amber); }
+header button.link { color: var(--cluster-muted); text-decoration: none; }
+header button.link:hover { color: var(--cluster-ink); }
 
 main {
-  max-width: 40rem;
+  max-width: 42rem;
   margin-inline: auto;
   padding: 1.5rem 1rem 3rem;
   display: grid;
   gap: 1.25rem;
 }
 
-/* Blocks */
+/* Blocks: a card is one page of the service book */
 .card {
   background: var(--surface);
-  border-radius: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-card);
   padding: 1.25rem;
   display: grid;
   gap: 1rem;
 }
 .narrow { max-width: 26rem; width: 100%; margin-inline: auto; }
 .intro { color: var(--muted); }
-.archived { opacity: 0.6; }
+.archived { opacity: 0.65; }
+.card.archived { background: var(--sunken); border-style: dashed; }
 
 .row { display: flex; justify-content: space-between; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
 .actions { display: flex; gap: 1.25rem; align-items: center; }
+/* Link lines stacked on a card (All tasks, Start a checklist, To-dos, Edit) read as one list of 44px rows, not separate paragraphs */
+.card > .actions + .actions, .card > .actions + .picker, .card > .picker + .actions { margin-block-start: -0.75rem; }
 .cars { list-style: none; padding: 0; margin: 0; display: grid; gap: 1rem; }
 .muted { color: var(--muted); }
 .badge {
-  font-size: 0.85rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  line-height: 1.4;
   padding: 0.1rem 0.6rem;
   border-radius: 999px;
   border: 1px solid var(--line);
   color: var(--muted);
+  white-space: nowrap;
 }
 .error { color: var(--fault); }
+p.error { font-weight: 500; }
 /* The car photo: a fixed box, so any photo shape fits and the page doesn't jump while it loads */
-.car-photo { display: block; inline-size: 100%; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 8px; background: var(--line); }
+.car-photo { display: block; inline-size: 100%; aspect-ratio: 16 / 9; object-fit: cover; border-radius: var(--r-control); background: var(--sunken); }
 .photo-field { display: grid; gap: 0.5rem; }
 .photo-field > span { font-size: 0.95rem; color: var(--muted); } /* as a field label */
 .photo-field .actions { flex-wrap: wrap; }
 
-/* Odometer drum: the one loud element */
-.reading { display: flex; align-items: flex-end; gap: 0.75rem; flex-wrap: wrap; }
+/* Odometer: the one loud element, a drum counter in a dark bezel with the unit lit in amber */
+.reading {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  flex-wrap: wrap;
+  justify-self: start;
+  padding-block: 0.5rem;
+  padding-inline: 0.5rem 0.875rem;
+  border-radius: 12px;
+  background: var(--cluster);
+  color: var(--cluster-ink);
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.06), inset 0 -10px 18px rgb(0 0 0 / 0.35);
+}
+.reading .muted { color: var(--cluster-muted); font-size: 0.9rem; }
 .odometer {
   direction: ltr;
   display: inline-flex;
   gap: 2px;
-  padding: 4px;
+  padding: 3px;
   border-radius: 6px;
-  background: var(--drum);
-  font: 600 2.25rem/1 var(--gauge);
+  background: #000;
+  font: 700 condensed 2.25rem/1 var(--sans);
   font-variant-numeric: tabular-nums;
 }
 .odometer > span {
   width: 0.78em;
-  height: 1.15em;
+  height: 1.2em;
   display: grid;
   place-items: center;
   overflow: hidden;
   border-radius: 2px;
   color: var(--drum-digit);
-  background: linear-gradient(#0c1118, #2b3445 42%, #2b3445 58%, #0c1118);
+  background: linear-gradient(#0a1013, #2a363d 42%, #2a363d 58%, #0a1013);
 }
 .odometer > span.lead { color: var(--drum-lead); }
 .odometer b { font-weight: inherit; }
@@ -123,10 +169,7 @@ main {
 @keyframes roll {
   from { transform: translateY(-110%); }
 }
-@media (prefers-reduced-motion: reduce) {
-  .odometer b.roll { animation: none; }
-}
-.unit { font: 500 1.25rem/1 var(--gauge); color: var(--muted); padding-block-end: 0.35rem; }
+.unit { font: 700 condensed 1.25rem/1 var(--sans); color: var(--amber); }
 
 /* Forms */
 label { display: grid; gap: 0.3rem; font-size: 0.95rem; color: var(--muted); }
@@ -136,36 +179,61 @@ input, select, textarea, button, .button {
   font: inherit;
   min-height: 2.75rem;
   padding: 0.5rem 0.75rem;
-  border-radius: 8px;
-  border: 1px solid var(--line);
+  border-radius: var(--r-control);
+  border: 1px solid var(--field);
   background: var(--surface);
   color: var(--ink);
 }
+input:hover, select:hover, textarea:hover { border-color: var(--ink); }
 input:focus-visible, select:focus-visible, textarea:focus-visible { border-color: var(--ink); }
-label.inline input { min-height: auto; accent-color: var(--ink); }
+input::placeholder, textarea::placeholder { color: var(--muted); opacity: 1; }
+label.inline input, input[type='checkbox'], input[type='radio'] { min-height: auto; accent-color: var(--focus); inline-size: 1.15rem; block-size: 1.15rem; margin: 0; }
 
+/* Primary: amber, like a lit telltale; the darker lower edge makes it read as a key you press */
 button, .button {
   background: var(--amber);
   border-color: var(--amber);
-  color: #1b2433;
-  font-weight: 600;
+  color: var(--on-amber);
+  font-weight: 650;
+  padding-inline: 1rem;
   cursor: pointer;
   text-decoration: none;
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  box-shadow: inset 0 -2px 0 rgb(0 0 0 / 0.18);
+  transition: transform 80ms ease-out, box-shadow 80ms ease-out, background-color 120ms;
 }
-button:disabled, [aria-disabled='true'] { opacity: 0.6; cursor: default; }
+button:hover:not(:disabled, [aria-disabled='true']), .button:hover { background-color: color-mix(in srgb, var(--amber) 88%, #fff); }
+button:active:not(:disabled, [aria-disabled='true']), .button:active { transform: translateY(1px); box-shadow: inset 0 -1px 0 rgb(0 0 0 / 0.18); }
+button:disabled, [aria-disabled='true'] { opacity: 0.55; cursor: default; }
+button[aria-disabled='true'], button[aria-busy='true'] { cursor: progress; }
+/* Secondary: outlined in ink, for "add" and other actions that open something rather than save it */
+button.add, button.add-file, button.more, button.mount, button.move, .picker li button, .picker li a.button {
+  background: var(--surface);
+  border-color: var(--field);
+  color: var(--ink);
+  box-shadow: none;
+}
+button.add:hover:not(:disabled, [aria-disabled='true']), button.add-file:hover:not(:disabled, [aria-disabled='true']), button.more:hover:not(:disabled, [aria-disabled='true']),
+button.mount:hover:not(:disabled, [aria-disabled='true']), button.move:hover:not(:disabled, [aria-disabled='true']), .picker li button:hover:not(:disabled), .picker li a.button:hover {
+  background: var(--sunken);
+  border-color: var(--ink);
+}
 button.link {
+  justify-content: start; /* the word sits at the start of its 44px box, in line with the text links */
   background: none;
   border: none;
+  box-shadow: none;
   padding: 0;
   min-inline-size: 2.75rem; /* a short word like "Edit" is still a 44px tap target */
-  font-weight: 400;
+  font-weight: 500;
   color: inherit;
   text-decoration: underline;
-  text-underline-offset: 0.2em;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.22em;
 }
+button.link:hover:not(:disabled, [aria-disabled='true']) { background: none; text-decoration-thickness: 2px; }
 
 .quick { display: flex; flex-wrap: wrap; gap: 0.5rem; }
 .quick input[type='number'] { flex: 1; min-width: 9rem; }
@@ -182,7 +250,7 @@ button.link {
   border-block-end: 1px solid var(--line);
 }
 .history li:last-child { border-block-end: none; }
-.history .value { font: 600 1.35rem/1.2 var(--gauge); font-variant-numeric: tabular-nums; margin-inline-end: auto; }
+.history .value { font: 700 condensed 1.4rem/1.2 var(--sans); font-variant-numeric: tabular-nums; margin-inline-end: auto; }
 .history bdi, .services .value bdi { direction: ltr; }
 .inline-form { flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: end; gap: 0.5rem 0.75rem; }
 .inline-form > label:not(.inline) { flex: 1 1 9rem; }
@@ -191,17 +259,20 @@ button.link {
 .inline-form > p, .inline-form > label.inline { flex-basis: 100%; }
 .inline-form > label.wide { flex-basis: 100%; }
 .inline-form > .pair { flex: 1 1 14rem; display: flex; align-items: end; gap: 0.5rem; }
-.inline-form > h3 { flex-basis: 100%; margin: 0; font-size: 1.05rem; } /* ACC-2: the delete-account panel's heading */
+.inline-form > h3 { flex-basis: 100%; margin: 0; font-size: 1.15rem; } /* ACC-2: the delete-account panel's heading */
 .pair > label { flex: 1; }
 button.danger { background: var(--danger); border-color: var(--danger); color: #fff; }
+button.danger:hover:not(:disabled, [aria-disabled='true']) { background: color-mix(in srgb, var(--danger) 88%, #000); }
+/* An open edit or confirm panel inside a list row sits on the sunken paper, so it reads as "being changed" */
+li > .inline-form { padding: 0.75rem; border-radius: var(--r-control); background: var(--sunken); }
 
 /* Car detail: maintenance tasks */
 .tasks, .services, .picker ul { list-style: none; padding: 0; margin: 0; }
 .tasks > li, .services > li { display: grid; gap: 0.25rem; padding-block: 0.75rem; border-block-end: 1px solid var(--line); }
 .tasks > li:last-child, .services > li:last-child { border-block-end: none; }
-.card.checklists { padding-inline: 1.25rem; } /* .tasks drops the card padding; the /checklists rows keep it */
+.card.tasks { padding-inline: 1.25rem; } /* .tasks drops the card padding; a card that is itself a list (/checklists, /tires) keeps it at the sides */
 .task-head { display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem 0.5rem; }
-.task-head .name { font-weight: 600; }
+.task-head .name { font-weight: 650; }
 /* The space goes on what follows the name: a name's own dir="auto" would put its end margin on the wrong side in Hebrew (L46). */
 .task-head .name + * { margin-inline-start: auto; }
 .tasks bdi, .picker bdi { direction: ltr; }
@@ -210,10 +281,22 @@ button.danger { background: var(--danger); border-color: var(--danger); color: #
 .status-Ok { --status: var(--status-ok); }
 .status-DueSoon, .status-Expiring { --status: var(--status-soon); }
 .status-Overdue, .status-Expired { --status: var(--status-overdue); }
-.badge.status { color: var(--status); border-color: currentColor; font-weight: 600; }
+/* A status is a telltale: its word, its color, and a shape (round OK, triangle Due soon, square Overdue), so color is never the only cue */
+.badge.status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35em;
+  color: var(--status);
+  border-color: currentColor;
+  background: color-mix(in srgb, var(--status) 10%, var(--surface));
+}
+.badge.status::before { content: ''; inline-size: 0.6em; block-size: 0.6em; background: currentColor; flex-shrink: 0; }
+.status-Ok .badge.status::before { border-radius: 50%; }
+.status-DueSoon .badge.status::before, .status-Expiring .badge.status::before { clip-path: polygon(50% 0, 100% 100%, 0 100%); inline-size: 0.7em; }
+.status-Overdue .badge.status::before, .status-Expired .badge.status::before { border-radius: 1px; }
 /* A block child starts at the inline start, so the fill grows from the right in Hebrew. */
 .bar { block-size: 0.5rem; border-radius: 999px; background: var(--line); overflow: hidden; margin-block: 0.25rem; }
-.bar > div { block-size: 100%; background: var(--status); }
+.bar > div { block-size: 100%; background: var(--status); border-radius: inherit; }
 .pct { display: flex; align-items: center; gap: 0.4rem; color: var(--ink); }
 .picker { display: grid; gap: 0.75rem; }
 .picker ul { display: grid; gap: 0.5rem; }
@@ -224,23 +307,34 @@ button.danger { background: var(--danger); border-color: var(--danger); color: #
   gap: 0 0.75rem;
   text-align: start;
   font-weight: 400;
-  color: var(--ink);
-  background: var(--surface);
-  border-color: var(--line);
 }
 
 /* Text links: a 44px tap target (link-style buttons get theirs from the button rule); the car name keeps its line height */
 .brand, nav a, h2 a, .actions a, .switch a, .services a.car, .report a { display: inline-flex; align-items: center; min-height: 2.75rem; }
-h2 a { margin-block: -0.5625rem; }
+h2 a { margin-block: calc((1lh - 2.75rem) / 2); text-decoration-thickness: 2px; text-decoration-color: var(--amber); }
 .actions a { min-inline-size: 2.75rem; justify-content: start; } /* a short "Edit" is 44px wide too, its text in line with the other links */
 
 /* "All cars": a 44px tap target from padding, with the focus ring on the text only */
-.back { justify-self: start; padding-block: 0.625rem; }
+.back { justify-self: start; padding-block: 0.625rem; color: var(--muted); }
+.back:hover { color: var(--ink); }
 .back:focus-visible { outline: none; }
-.back:focus-visible span { outline: 2px solid var(--ink); outline-offset: 2px; }
+.back:focus-visible span { outline: 3px solid var(--focus); outline-offset: 2px; }
 
-/* After a reset: "Marked as done." and Undo, on that row */
-.undo { display: flex; flex-wrap: wrap; align-items: center; gap: 0 1rem; padding-inline: 0.75rem; border-inline-start: 3px solid var(--amber); }
+/* After a reset: "Marked as done." and Undo, on that row; it slides in so the change is seen */
+.undo {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 1rem;
+  padding-inline: 0.75rem;
+  border-inline-start: 3px solid var(--amber);
+  border-radius: 4px;
+  background: var(--sunken);
+  animation: rise 160ms ease-out;
+}
+@keyframes rise {
+  from { opacity: 0; transform: translateY(4px); }
+}
 
 /* Settings: each radio group is a row of 44px labels */
 .settings fieldset, .inline-form > fieldset { border: none; margin: 0; padding: 0; min-width: 0; display: flex; flex-wrap: wrap; gap: 0 1.5rem; }
@@ -248,17 +342,18 @@ h2 a { margin-block: -0.5625rem; }
 .settings legend, .inline-form legend { padding: 0; font-size: 0.95rem; color: var(--muted); }
 .settings fieldset > p { flex-basis: 100%; }
 .settings .field { display: grid; gap: 0.3rem; }
+.settings > section { padding-block-start: 1.25rem; border-block-start: 1px solid var(--line); } /* "Your data" is its own page section */
 
 /* Car detail: service history, newest first */
-.services .value { font: 600 1.35rem/1.2 var(--gauge); font-variant-numeric: tabular-nums; }
+.services .value { font: 700 condensed 1.4rem/1.2 var(--sans); font-variant-numeric: tabular-nums; }
 .services .notes { white-space: pre-line; } /* keeps the user's line breaks; long words wrap through body's overflow-wrap */
 
 /* Service line items: a bordered block per row in the form, a wrapping line per item in the history */
 .inline-form > .items { flex-basis: 100%; display: grid; gap: 0.75rem; }
-.item { margin: 0; padding: 0.5rem 0.75rem 0.75rem; min-width: 0; border: 1px solid var(--line); border-radius: 8px; display: flex; flex-wrap: wrap; align-items: end; gap: 0.5rem 0.75rem; }
+.item { margin: 0; padding: 0.5rem 0.75rem 0.75rem; min-width: 0; border: 1px solid var(--line); border-radius: var(--r-control); background: var(--surface); display: flex; flex-wrap: wrap; align-items: end; gap: 0.5rem 0.75rem; }
 .item > label { flex: 1 1 9rem; }
 .item > label.wide, .item > p { flex-basis: 100%; }
-.inline-form input[readonly] { background: var(--bg); } /* the item sum: shown, not typed */
+.inline-form input[readonly] { background: var(--sunken); } /* the item sum: shown, not typed */
 .service-items { list-style: none; padding: 0; margin: 0; display: grid; gap: 0.25rem; }
 .service-items li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 0.75rem; }
 .service-items bdi { font-variant-numeric: tabular-nums; }
@@ -271,21 +366,21 @@ h2 a { margin-block: -0.5625rem; }
 .services a.car { font-weight: 600; }
 
 /* Dashboard: the summary, each card's counts, and its first tasks with Mark done beside them */
-/* Three stacked lines, so the loading placeholder can be exactly as tall: two count lines, the gap, the 44px link, the padding */
-.summary { min-block-size: calc(2 * 1.55rem + 1rem + 2.75rem + 2.5rem); align-content: start; }
+/* Three stacked lines, so the loading placeholder can be exactly as tall: two count lines, the gap, the 44px link, the padding, the 1px border */
+.summary { min-block-size: calc(2 * 1.55rem + 1rem + 2.75rem + 2.5rem + 2px); align-content: start; }
 .summary .counts { flex-direction: column; }
 .summary a { display: inline-flex; align-items: center; min-height: 2.75rem; }
 .counts { display: flex; flex-wrap: wrap; gap: 0 1.25rem; font-weight: 600; }
 .counts > [class^='status-'] { color: var(--status); }
 .dash-tasks > li { grid-template-columns: 1fr auto; column-gap: 0.75rem; align-items: center; }
-.dash-tasks > li > button.done { grid-column: 2; grid-row: 1 / span 2; }
+.dash-tasks > li > button.done { grid-column: 2; grid-row: 1 / span 2; padding-inline: 0.75rem; }
 .dash-tasks > li > .undo, .dash-tasks > li > .error { grid-column: 1 / -1; }
 /* A long name wraps beside its status badge instead of pushing the badge to the next line. */
 .dash-tasks .task-head { flex-wrap: nowrap; align-items: baseline; }
 .dash-tasks .badge.status { flex-shrink: 0; white-space: nowrap; }
 
 /* Checklist item rows: move up and down as square neutral buttons, so the amber Save stays the one primary button */
-button.move { min-inline-size: 2.75rem; padding-inline: 0; color: var(--ink); background: var(--surface); border-color: var(--line); }
+button.move { min-inline-size: 2.75rem; padding-inline: 0; }
 .item > .actions { flex-basis: 100%; }
 .item > label.num { flex: 1 1 5rem; } /* unit, min and max share one row at 390px */
 /* Signed numbers are typed LTR; in Hebrew they still sit on the start (right) side like the other inputs. */
@@ -360,11 +455,11 @@ details > summary { padding-block: 0.625rem; cursor: pointer; }
 .print-only { display: none; }
 /* Print (Save as PDF): black on white in either theme, no navigation, filters or buttons; links print as text */
 @media print {
-  :root, :root[data-theme] { color-scheme: light; --bg: #fff; --surface: #fff; --ink: #000; }
+  :root, :root[data-theme] { color-scheme: light; --bg: #fff; --surface: #fff; --sunken: #fff; --ink: #000; --cluster: #fff; --cluster-ink: #000; --cluster-muted: #000; }
   header, .filters, main button { display: none; }
   .print-only { display: block; }
   main { max-width: none; padding: 0; }
-  .card { padding: 0; break-inside: avoid; }
+  .card { padding: 0; border: none; break-inside: avoid; }
   .report a { text-decoration: none; min-height: 0; }
   .month-chart span, .category-chart span { print-color-adjust: exact; }
 }
@@ -381,3 +476,8 @@ details > summary { padding-block: 0.625rem; cursor: pointer; }
 .files > button { justify-self: start; }
 /* Read by screen readers, not shown (for example "(opens in a new tab)" on file links). */
 .visually-hidden { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+
+/* Motion is short and only answers an action (the drum rolling, a key press, the Undo bar); none of it when the user asks for less. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}

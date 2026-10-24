@@ -10,8 +10,8 @@ export default defineConfig({
       manifest: {
         name: 'OnlyCars',
         short_name: 'OnlyCars',
-        theme_color: '#1B2433',
-        background_color: '#E6E9EE',
+        theme_color: '#0F1A1F',
+        background_color: '#E6E9E3',
         display: 'standalone',
         icons: [{ src: 'favicon.svg', sizes: 'any', type: 'image/svg+xml' }],
       },
