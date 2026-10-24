@@ -2,7 +2,7 @@ import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { flushSync } from 'react-dom'
 import { useTranslation } from 'react-i18next'
 import { Link, useSearchParams } from 'react-router-dom'
-import { api, ApiError, type CostReport, type ServiceRecord, type ServiceRecordPage, type Vehicle } from '../api'
+import { api, ApiError, download, type CostReport, type ServiceRecord, type ServiceRecordPage, type Vehicle } from '../api'
 import { useAuth, useDistance } from '../auth'
 import { toCsv } from '../csv'
 import { errorMessage, money } from '../i18n'
@@ -109,11 +109,7 @@ export default function ReportsPage() {
       const safe = vehicleId && nickname(r, vehicleId)
         .replace(/[\\/:*?"<>|\s\x00-\x1f\x7f-\x9f​-‏‪-‮⁦-⁩]+/g, '-') // eslint-disable-line no-control-regex
         .replace(/^[-.]+|[-.]+$/g, '')
-      const a = document.createElement('a')
-      a.href = URL.createObjectURL(new Blob([toCsv(rows)], { type: 'text/csv;charset=utf-8' }))
-      a.download = `onlycars-${r.year}${safe ? `-${safe}` : ''}.csv`
-      a.click()
-      setTimeout(() => URL.revokeObjectURL(a.href))
+      download(new Blob([toCsv(rows)], { type: 'text/csv;charset=utf-8' }), `onlycars-${r.year}${safe ? `-${safe}` : ''}.csv`)
       setCsv(null)
     } catch (error) {
       setCsv({ at: keyNow.current, error })
@@ -222,7 +218,7 @@ export default function ReportsPage() {
         <label>
           {t('reportYear')}
           <select value={yearOk ? year : ''} onChange={(e) => update('year', e.target.value)}>
-            {!yearOk && <option value="" disabled />}
+            {!yearOk && <option value="" disabled>{t('noYear')}</option>}
             {years.map((y) => <option key={y} value={y}>{y}</option>)}
           </select>
         </label>

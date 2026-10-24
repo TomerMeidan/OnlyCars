@@ -38,6 +38,7 @@ All tokens live on `:root` in `client/src/index.css` as `light-dark(light, dark)
 | focus ring on surface (UI) | 15.8 | 9.3 |
 | on-amber on amber | 7.9 | 9.0 |
 | white on danger | 6.6 | 4.8 |
+| busy or disabled danger (`--danger` 50% with `--field`) on surface / white on it | 5.6 / 5.7 | 3.2 / 5.4 |
 | cluster-ink / cluster-muted / amber on cluster | 15.6 / 8.3 / 8.6 | 17.5 / 9.3 / 10.9 |
 | fault on surface / bg | 5.8 / 4.9 | 6.6 / 7.4 |
 | status ok / soon / overdue on surface | 5.4 / 6.2 / 6.1 | 8.2 / 9.3 / 6.6 |
@@ -71,13 +72,13 @@ Amber on the light surface is 2.0:1, so amber is never used for text or a ring o
   - Secondary (`.add`, `.add-file`, `.more`, `.mount`, `.move`, picker rows): surface fill, `--field` border, ink text; hover goes sunken with an ink border. Use it for actions that open a form rather than save one, so a section has at most one amber button at rest.
   - Danger (`.danger`): `--danger` fill, white text.
   - Link (`button.link`): underlined text, 44px tap target, thicker underline on hover.
-  - Busy: `disabled` or `aria-disabled="true"` at 0.55 opacity (the progress cursor for `aria-disabled`/`aria-busy`). Buttons whose label changes while busy keep their width with `.stack` and `data-alt`.
+  - Busy: `disabled` or `aria-disabled="true"` at 0.55 opacity (the progress cursor for `aria-disabled`/`aria-busy`). A busy or disabled danger button is greyed instead (`--danger` mixed half with `--field`, full opacity), so it keeps 3:1 on the page. Buttons whose label changes while busy keep their width with `.stack` and `data-alt`.
 - **Inputs**: 44px tall, surface fill, `--field` border (3:1), ink border on hover and focus, `--muted` placeholder. Checkboxes and radios use `--focus` as the accent color; the whole label is the 44px tap target (`label.inline`).
 - **Cards**: `.card` is a page: surface, 1px line edge, 14px radius. An archived car is dashed and sunken.
 - **Lists**: ruled rows (`.tasks`, `.services`, `.history`, `.figures`), 1px `--line` between rows. An open edit or confirm panel in a row sits on `--sunken`.
 - **Status**: a telltale badge with the word, the status color on a 10% tint, and a shape: a circle for OK, a triangle for Due soon / Expiring, a square for Overdue / Expired. Progress bars fill from the inline start (the right in Hebrew) with the status color.
 - **Odometer**: the drum counter (each digit a cell; leading zeros dimmed; only changed digits roll) inside a dark bezel with the unit in amber condensed, and the km/day average beside it in `--cluster-muted`. It is the one bold element on a screen.
-- **Undo bar**: sunken, amber inline-start rule, slides in.
+- **Undo bar**: sunken, amber inline-start rule, slides in. A one-time notice (`.notice`, such as "Your account was deleted." on `/login`) looks the same.
 - **Empty, loading, error**: empty is a plain `--muted` sentence with the action next to it; loading is a `--muted` `role="status"` line in the place the content will take; errors are `--fault` text (500 weight) with `role="alert"` and a Retry button where a retry makes sense.
 
 ## Motion

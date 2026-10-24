@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useLocation } from 'react-router-dom'
-import { accountDeleted, api, ApiError, apiResponse, currencies, limit, type User } from '../api'
+import { accountDeleted, api, ApiError, apiResponse, currencies, download, limit, type User } from '../api'
 import { useAuth } from '../auth'
 import { errorMessage } from '../i18n'
 import { usePage } from '../usePage'
@@ -54,15 +54,12 @@ export default function SettingsPage() {
     try {
       const res = await apiResponse('/me/export', 'GET', undefined, signal)
       const blob = await res.blob()
+      // A stream cut off mid-file still comes as a 200: a file that doesn't parse is an error, never saved (L162).
+      const data = JSON.parse(await blob.text())
       // filename= up to ";" (ASP.NET writes it unquoted, then filename*); else the same UTC date from the body.
-      const name = res.headers.get('Content-Disposition')?.match(/filename="?([^";]+)/)?.[1]
-        ?? `onlycars-export-${JSON.parse(await blob.text()).exportedAt.slice(0, 10)}.json`
+      const name = res.headers.get('Content-Disposition')?.match(/filename="?([^";]+)/)?.[1] ?? `onlycars-export-${data.exportedAt.slice(0, 10)}.json`
       if (signal.aborted) return
-      const a = document.createElement('a')
-      a.href = URL.createObjectURL(blob)
-      a.download = name
-      a.click()
-      setTimeout(() => URL.revokeObjectURL(a.href))
+      download(blob, name)
       setExp({ done: true })
     } catch (error) {
       if (signal.aborted) return

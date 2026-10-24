@@ -12,6 +12,11 @@ assert.equal(toCsv([['a,b', 'say "hi"', 'x\r\ny', 5, -5], ['=1', '+1', '-1', '@a
 assert.equal(toCsv([['a;b', ' =1', ' +1', '　-1', '\x01@a', '＝1', '＋1', '－1', '＠a', '\nx', 'a=1']]),
   '﻿"a;b",\' =1,\' +1,\'　-1,\'\x01@a,\'＝1,\'＋1,\'－1,\'＠a,"\'\nx",a=1\r\n')
 
+// LOW-8: task, service and checklist calls carry ?today=, so mocks and waits match the path alone.
+// at() matches on the path only, so at('/service-records') also catches /api/service-records?skip=...
+const ats = new Map() // one function per path, so unroute(at(x)) finds the route(at(x))
+const at = (end) => ats.get(end) ?? ats.set(end, (u) => u.pathname.endsWith(end)).get(end)
+const pathOf = (x) => new URL(x.url()).pathname
 const BASE = process.env.BASE_URL ?? 'http://localhost:5173'
 const OUT = process.env.OUT_DIR ?? 'ui-tests/out'
 mkdirSync(OUT, { recursive: true })
@@ -343,18 +348,18 @@ for (const s of setups) {
   const serviceItems = () => services.locator('.services > li')
   const recordForm = services.locator('form')
   const recordBtn = services.getByRole('button', { name: SV.record, exact: true })
-  const isRecordPost = (r) => r.method() === 'POST' && r.url().endsWith('/service-records')
+  const isRecordPost = (r) => r.method() === 'POST' && pathOf(r).endsWith('/service-records')
   await step('service-history-empty', async () => {
     await page.setViewportSize({ width: 390, height: 844 })
     const empty = services.locator('p.muted', { hasText: SV.empty })
     await empty.waitFor()
     noLatin(await services.textContent(), 'service history')
     // A failed load shows the translated error in the section; the rest of the page stays.
-    await page.route('**/service-records', (r) => r.fulfill({ status: 500, contentType: 'application/json', body: '{}' }))
+    await page.route(at('/service-records'), (r) => r.fulfill({ status: 500, contentType: 'application/json', body: '{}' }))
     await page.reload()
     const alert = services.locator('[role=alert]')
     await alert.waitFor()
-    await page.unroute('**/service-records')
+    await page.unroute(at('/service-records'))
     if ((await alert.textContent()) !== SV.generic) throw new Error(`load error "${await alert.textContent()}"`)
     if (!(await page.locator('.history li').count())) throw new Error('odometer history gone with the service history error')
     run.badResponses = run.badResponses.filter((r) => !r.startsWith('500 '))
@@ -396,7 +401,7 @@ for (const s of setups) {
     await sweep('car page with the add form open')
   })
   await step('add-task-template', async () => {
-    const res = page.waitForResponse((r) => r.request().method() === 'POST' && r.url().endsWith('/tasks'))
+    const res = page.waitForResponse((r) => r.request().method() === 'POST' && pathOf(r).endsWith('/tasks'))
     await tasks.locator('form button:not(.link)').click()
     const body = (await res).request().postDataJSON()
     if (!body.templateId?.endsWith('09')) throw new Error(`templateId ${body.templateId}`)
@@ -415,7 +420,7 @@ for (const s of setups) {
     await form.locator('input[name=name]').fill(TK.wash)
     // No interval: the client stops it before sending.
     let posted = 0
-    const countPost = (r) => r.method() === 'POST' && r.url().endsWith('/tasks') && posted++
+    const countPost = (r) => r.method() === 'POST' && pathOf(r).endsWith('/tasks') && posted++
     page.on('request', countPost)
     await form.locator('button:not(.link)').click()
     await page.waitForTimeout(300)
@@ -434,7 +439,7 @@ for (const s of setups) {
     noLatin(err, 'error')
     if ((await form.locator('input[name=name]').inputValue()) !== TK.wash) throw new Error('form lost its input')
     await form.locator('input[name=lastDoneOdometerKm]').fill('58000')
-    const res = page.waitForResponse((r) => r.request().method() === 'POST' && r.url().endsWith('/tasks'))
+    const res = page.waitForResponse((r) => r.request().method() === 'POST' && pathOf(r).endsWith('/tasks'))
     await form.locator('button:not(.link)').click()
     const body = (await res).request().postDataJSON()
     if (body.templateId !== null || body.intervalDays !== 180 || body.intervalKm !== null) throw new Error(`body ${JSON.stringify(body)}`)
@@ -558,10 +563,10 @@ for (const s of setups) {
   })
   await step('tasks-load-error', async () => {
     // Every load fails until unrouted: dev StrictMode mounts twice and only the second request's answer counts.
-    await page.route('**/api/vehicles/*/tasks', (r) => r.fulfill({ status: 500, contentType: 'application/json', body: '{}' }))
+    await page.route(at('/tasks'), (r) => r.fulfill({ status: 500, contentType: 'application/json', body: '{}' }))
     await page.reload()
     const alert = await tasks.locator('[role=alert]').textContent()
-    await page.unroute('**/api/vehicles/*/tasks')
+    await page.unroute(at('/tasks'))
     if (alert !== (he ? 'משהו השתבש. אפשר לנסות שוב.' : 'Something went wrong. Please try again.')) throw new Error(`alert "${alert}"`)
     await page.locator('.quick input[type=number]').waitFor()
     await page.locator('.history li').first().waitFor()
@@ -650,7 +655,7 @@ for (const s of setups) {
     }
     // 390px wide with the longest remaining line (a mocked row), in either language.
     await page.setViewportSize({ width: 390, height: 844 })
-    await page.route('**/api/vehicles/*/tasks', async (r) => {
+    await page.route(at('/tasks'), async (r) => {
       const res = await r.fetch()
       const ts = await res.json()
       ts.push({ ...ts[0], id: '00000000-0000-0000-0000-0000000000ff', name: 'Longest', status: 'Overdue', intervalKm: 1, intervalDays: 1, remainingKm: -1000000, remainingDays: -7300, progress: 2 })
@@ -658,7 +663,7 @@ for (const s of setups) {
     })
     await page.reload()
     await taskRow('Longest').waitFor()
-    await page.unroute('**/api/vehicles/*/tasks')
+    await page.unroute(at('/tasks'))
     const longest = plain(await taskRow('Longest').textContent())
     if (!longest.includes(he ? 'באיחור של 1,000,000 ק״מ וגם כ־243 חודשים' : 'Overdue by 1,000,000 km and about 243 months')) throw new Error(`longest "${longest}"`)
     // MVP2-B Low 2: a non-breaking space keeps each number with its unit word.
@@ -671,7 +676,7 @@ for (const s of setups) {
     await page.setViewportSize(s.viewport)
     await page.evaluate(() => { window.noReload = true })
     // Hold the task reload so the in-between state is visible: the old rows stay.
-    await page.route('**/api/vehicles/*/tasks', async (r) => { await page.waitForTimeout(700); await r.continue() }, { times: 1 })
+    await page.route(at('/tasks'), async (r) => { await page.waitForTimeout(700); await r.continue() }, { times: 1 })
     await page.fill('.quick input[type=number]', '61001')
     await page.click('.quick button')
     await page.waitForFunction(() => document.querySelector('.odometer')?.getAttribute('aria-label')?.replace(/\D/g, '') === '61001')
@@ -731,7 +736,7 @@ for (const s of setups) {
   const localDate = () => page.evaluate(() => new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10))
   const histDay = (offset) => page.evaluate((o) => new Date(Date.now() + o * 86_400_000 - new Date().getTimezoneOffset() * 60_000).toISOString().slice(0, 10), offset)
   const serviceRows = () => page.locator('.history li').filter({ hasText: RS.service })
-  const isReset = (r) => r.method() === 'POST' && r.url().endsWith('/reset')
+  const isReset = (r) => r.method() === 'POST' && pathOf(r).endsWith('/reset')
   const forget500 = () => {
     run.badResponses = run.badResponses.filter((r) => !r.startsWith('500 ')) // the forced failure
     run.consoleErrors = run.consoleErrors.filter((e) => !e.includes('500'))
@@ -741,7 +746,7 @@ for (const s of setups) {
     if (await taskRow(TK.belt).locator('button.done').count()) throw new Error('Mark done on a disabled task')
     if (await taskBtn(RS.cost, TK.belt).count()) throw new Error('Add cost or notes on a disabled task')
     // A failed reset: the translated error on the row, the rows kept, focus back on Mark done.
-    await page.route('**/reset', (r) => r.fulfill({ status: 500, contentType: 'application/json', body: '{}' }), { times: 1 })
+    await page.route(at('/reset'), (r) => r.fulfill({ status: 500, contentType: 'application/json', body: '{}' }), { times: 1 })
     await taskBtn(RS.done, 'Oil').click()
     const alert = await taskRow('Oil').locator('[role=alert]').textContent()
     if (alert !== RS.generic) throw new Error(`reset error "${alert}"`)
@@ -752,7 +757,7 @@ for (const s of setups) {
     let posts = 0
     const count = (r) => isReset(r) && posts++
     page.on('request', count)
-    await page.route('**/reset', async (r) => { await page.waitForTimeout(500); await r.continue() }, { times: 1 })
+    await page.route(at('/reset'), async (r) => { await page.waitForTimeout(500); await r.continue() }, { times: 1 })
     const res = page.waitForResponse((r) => isReset(r.request()))
     await taskBtn(RS.done, 'Oil').click()
     if (!(await taskBtn(RS.done, 'Oil').isDisabled())) throw new Error('Mark done not disabled while saving')
@@ -783,7 +788,7 @@ for (const s of setups) {
   })
   await step('undo-reset', async () => {
     // A failed undo keeps the bar, shows the error on the row, and focus stays on Undo.
-    await page.route('**/void', (r) => r.fulfill({ status: 500, contentType: 'application/json', body: '{}' }), { times: 1 })
+    await page.route(at('/void'), (r) => r.fulfill({ status: 500, contentType: 'application/json', body: '{}' }), { times: 1 })
     await taskRow('Oil').locator('.undo button').click()
     const alert = await taskRow('Oil').locator('[role=alert]').textContent()
     if (alert !== RS.generic) throw new Error(`undo error "${alert}"`)
@@ -832,7 +837,7 @@ for (const s of setups) {
     await form.locator('input[name=cost]').fill('120.50')
     await form.locator('textarea[name=notes]').fill('  Castrol 5W-30 ')
     // A failed reset keeps the form, shows the error, and puts focus back on the form's Mark done.
-    await page.route('**/reset', (r) => r.fulfill({ status: 500, contentType: 'application/json', body: '{}' }), { times: 1 })
+    await page.route(at('/reset'), (r) => r.fulfill({ status: 500, contentType: 'application/json', body: '{}' }), { times: 1 })
     await form.locator('button:not(.link)').click()
     const failed = await form.locator('[role=alert]').textContent()
     if (failed !== RS.generic) throw new Error(`cost form error "${failed}"`)
@@ -869,13 +874,13 @@ for (const s of setups) {
   })
   await step('tasks-reload-error-keeps-rows', async () => {
     // Low 1: a reset reloads the car and then the tasks; that reload fails, and the rows stay with the error above them.
-    await page.route('**/api/vehicles/*/tasks', (r) => r.fulfill({ status: 500, contentType: 'application/json', body: '{}' }))
-    const failed = page.waitForResponse((r) => r.url().endsWith('/tasks') && r.status() === 500)
+    await page.route(at('/tasks'), (r) => r.fulfill({ status: 500, contentType: 'application/json', body: '{}' }))
+    const failed = page.waitForResponse((r) => pathOf(r).endsWith('/tasks') && r.status() === 500)
     await taskBtn(RS.done, 'Coolant').click()
     await failed
     const alert = tasks.locator(':scope > p.error[role=alert]')
     await alert.waitFor()
-    await page.unroute('**/api/vehicles/*/tasks')
+    await page.unroute(at('/tasks'))
     if ((await alert.textContent()) !== RS.generic) throw new Error(`alert "${await alert.textContent()}"`)
     if ((await taskNames()).length !== 6) throw new Error(`rows ${await taskNames()}`)
     const above = await alert.evaluate((p) => !!(p.compareDocumentPosition(p.parentElement.querySelector('.tasks')) & Node.DOCUMENT_POSITION_FOLLOWING))
@@ -937,7 +942,7 @@ for (const s of setups) {
     await recordForm.getByRole('checkbox', { name: 'Brakes', exact: true }).check()
     const typed = JSON.stringify(await formValues())
     // A failed save keeps the form and every value, with the error, and focus back on Save.
-    await page.route('**/service-records', (r) => r.fulfill({ status: 500, contentType: 'application/json', body: '{}' }), { times: 1 })
+    await page.route(at('/service-records'), (r) => r.fulfill({ status: 500, contentType: 'application/json', body: '{}' }), { times: 1 })
     await recordForm.locator('button:not(.link)').click()
     const alert = recordForm.locator('[role=alert]')
     await alert.waitFor()
@@ -991,7 +996,7 @@ for (const s of setups) {
     if (posts) throw new Error(`${posts} POSTs for a future date`)
     // If the server rejects one anyway (a device clock ahead), the error is translated and tied to the date.
     await date.fill(await day(0))
-    await page.route('**/service-records', (r) => r.fulfill({ status: 400, contentType: 'application/json', body: JSON.stringify({ code: 'serviceRecord.futureDate' }) }), { times: 1 })
+    await page.route(at('/service-records'), (r) => r.fulfill({ status: 400, contentType: 'application/json', body: JSON.stringify({ code: 'serviceRecord.futureDate' }) }), { times: 1 })
     await save.click()
     const alert = recordForm.locator('[role=alert]')
     await alert.waitFor()
@@ -1088,7 +1093,7 @@ for (const s of setups) {
     if ((await recordForm.locator('.items[role=group]').getAttribute('aria-label')) !== SV.items) throw new Error('items group name')
     // An item error stays on the row it was about when an earlier row is removed, and goes with that row.
     for (const n of [0, 1, 2]) { await addPart.click(); await itemInput(recordForm, n, 0).fill(`Part ${n + 1}`); await itemInput(recordForm, n, 4).fill('10') }
-    await page.route('**/service-records', (r) => r.fulfill({ status: 400, contentType: 'application/json', body: JSON.stringify({ code: 'serviceItem.invalidQuantity', index: 1 }) }), { times: 1 })
+    await page.route(at('/service-records'), (r) => r.fulfill({ status: 400, contentType: 'application/json', body: JSON.stringify({ code: 'serviceItem.invalidQuantity', index: 1 }) }), { times: 1 })
     await recordForm.locator('button:not(.link)').click()
     await itemRows(recordForm).nth(1).locator('[role=alert]').waitFor()
     forgetExpected(400)
@@ -1121,7 +1126,7 @@ for (const s of setups) {
     // Criterion 10: an item error from the server shows on its row, naming it; every typed value stays.
     const itemValues = () => itemRows(recordForm).evaluateAll((fs) => fs.map((f) => [...f.querySelectorAll('input')].map((i) => i.value)))
     const typed = JSON.stringify([await itemValues(), await formValues()])
-    await page.route('**/service-records', (r) => r.fulfill({ status: 400, contentType: 'application/json', body: JSON.stringify({ code: 'serviceItem.invalidQuantity', index: 1 }) }), { times: 1 })
+    await page.route(at('/service-records'), (r) => r.fulfill({ status: 400, contentType: 'application/json', body: JSON.stringify({ code: 'serviceItem.invalidQuantity', index: 1 }) }), { times: 1 })
     const save = recordForm.locator('button:not(.link)')
     await save.click()
     const itemAlert = itemRows(recordForm).nth(1).locator('[role=alert]')
@@ -1248,7 +1253,7 @@ for (const s of setups) {
     await focusIs(del, 'after Escape on the Delete confirm')
     // A failed delete keeps the row, with the error on it and focus back on the confirm button.
     await row.locator('button.delete-service').click()
-    await page.route('**/void', (r) => r.fulfill({ status: 500, contentType: 'application/json', body: '{}' }), { times: 1 })
+    await page.route(at('/void'), (r) => r.fulfill({ status: 500, contentType: 'application/json', body: '{}' }), { times: 1 })
     await confirm.click()
     await row.locator('[role=alert]').waitFor()
     if ((await row.locator('[role=alert]').textContent()) !== SV.generic) throw new Error('delete error')
@@ -1268,7 +1273,7 @@ for (const s of setups) {
     await services.locator(`li[data-id="${backdatedId}"]`).waitFor({ state: 'detached' })
     await focusIs('.services > li:first-child button.delete-service', 'after deleting the oldest row')
     // MVP3-A review 1: deleting a Mark done from the history also ends its Undo bar in the tasks (it would answer 409).
-    const reset = page.waitForResponse((r) => r.request().method() === 'POST' && r.url().endsWith('/reset'))
+    const reset = page.waitForResponse((r) => r.request().method() === 'POST' && pathOf(r).endsWith('/reset'))
     await tasks.locator(`button[aria-label="${RS.done}Oil"]`).click()
     const resetId = (await (await reset).json()).serviceRecordId
     await taskRow('Oil').locator('.undo').waitFor()
@@ -1281,7 +1286,7 @@ for (const s of setups) {
     const top = services.locator(`li[data-id="${topId}"]`)
     await top.locator('button.delete-service').click()
     await voidElsewhere(topId)
-    await page.route('**/void', (r) => r.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ code: 'serviceRecord.notFound' }) }), { times: 1 })
+    await page.route(at('/void'), (r) => r.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ code: 'serviceRecord.notFound' }) }), { times: 1 })
     await top.locator('button.danger').click()
     await services.locator('p[role=status]', { hasText: SV.gone }).waitFor()
     await top.waitFor({ state: 'detached' })
@@ -1415,8 +1420,8 @@ for (const s of setups) {
     await form.getByRole('checkbox', { name: 'Oil', exact: true }).check()
     await form.locator('input[name=shopName]').fill('Kept shop')
     await page.route('**/service-records/*', (r) => (r.request().method() === 'PUT' ? r.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ code: 'maintenanceTask.notFound' }) }) : r.fallback()), { times: 1 })
-    const reload = page.waitForRequest((q) => q.method() === 'GET' && q.url().endsWith(`/vehicles/${carId()}/tasks`))
-    await page.route(`**/vehicles/${carId()}/tasks`, async (r) => { const res = await r.fetch(); await r.fulfill({ response: res, json: (await res.json()).filter((x) => x.name !== 'Oil') }) }, { times: 2 })
+    const reload = page.waitForRequest((q) => q.method() === 'GET' && pathOf(q).endsWith(`/vehicles/${carId()}/tasks`))
+    await page.route(at(`/vehicles/${carId()}/tasks`), async (r) => { const res = await r.fetch(); await r.fulfill({ response: res, json: (await res.json()).filter((x) => x.name !== 'Oil') }) }, { times: 2 })
     await form.locator(':scope > .actions button:not(.link)').click()
     await reload
     await form.getByRole('checkbox', { name: 'Oil', exact: true }).waitFor({ state: 'detached' })
@@ -1678,6 +1683,20 @@ for (const s of setups) {
       await photoLoaded('.photo-field img', '/ok.png')
       if (reloads !== 1) throw new Error(`${reloads} car requests after the upload 409, want 1`)
       await page.screenshot({ path: `${OUT}/${s.name}-photo-conflict-upload.png` })
+      // LOW-8 L142: a remove 409 while the photo is still there (the other change replaced it): the confirm stays with the message and focus on Remove.
+      await page.route(carUrl, (r) => { reloads++; return r.fulfill(carWith(`${BASE}/__photo/ok.png`)) }, { times: 1 })
+      await page.route('**/photo', (r) => r.fulfill(problem(409, 'concurrency.conflict')), { times: 1 })
+      await page.click('.photo-field .actions button.link')
+      await page.click('.photo-field button.danger')
+      await photoAlertIs(PH.conflict, '409 on remove with the photo kept')
+      if (reloads !== 2) throw new Error(`${reloads - 1} car requests after the remove 409 with the photo kept, want 1`)
+      await photoLoaded('.photo-field img', '/ok.png')
+      if (!(await page.locator('.photo-field .inline-form').count())) throw new Error('the remove confirm closed with the photo still there')
+      await focusIs('.photo-field button.danger', 'Remove after the 409 with the photo kept')
+      await page.screenshot({ path: `${OUT}/${s.name}-photo-conflict-remove-kept.png` })
+      await page.keyboard.press('Escape')
+      await page.locator('.photo-field .inline-form').waitFor({ state: 'detached' })
+      reloads = 1 // the next case counts from the upload 409 alone
       await page.route(carUrl, (r) => { reloads++; return r.fulfill(carWith(null)) }, { times: 1 })
       await page.route('**/photo', (r) => r.fulfill(problem(409, 'concurrency.conflict')), { times: 1 })
       await page.click('.photo-field .actions button.link')
@@ -2338,7 +2357,7 @@ for (const s of setups) {
     await add.locator('input[name=name]').fill('Mile wash')
     await add.locator('input[name=intervalKm]').fill('5000')
     if ((await add.locator('input[name=lastDoneOdometerKm]').inputValue()) !== '50100') throw new Error('add form last done not in miles')
-    const taskPost = page.waitForResponse((r) => r.request().method() === 'POST' && r.url().endsWith('/tasks'))
+    const taskPost = page.waitForResponse((r) => r.request().method() === 'POST' && pathOf(r).endsWith('/tasks'))
     await add.locator('button:not(.link)').click()
     body = (await taskPost).request().postDataJSON()
     if (body.intervalKm !== 8047 || body.lastDoneOdometerKm !== 80628) throw new Error(`task POST ${JSON.stringify(body)}`)
@@ -2882,7 +2901,7 @@ for (const s of setups) {
     await focusIs(`li[data-id="${taskIds.Oil}"] .undo button`, 'Undo after Mark done')
     let release
     const held = new Promise((r) => { release = r })
-    await page.route('**/void', async (r) => { await held; await r.continue() }, { times: 1 })
+    await page.route(at('/void'), async (r) => { await held; await r.continue() }, { times: 1 })
     await dashRow('Oil').locator('.undo button').click()
     const archived = page.locator('main > label.inline input')
     await archived.check()
@@ -2931,7 +2950,7 @@ for (const s of setups) {
     let releaseGet
     const heldGet = new Promise((r) => { releaseGet = r })
     await page.route(isDashGet, async (r) => { await heldGet; await r.continue() }, { times: 1 })
-    const voided = page.waitForResponse((r) => r.url().endsWith('/void'))
+    const voided = page.waitForResponse((r) => pathOf(r).endsWith('/void'))
     await dashRow('Brakes').locator('.undo button').click()
     await voided
     await page.getByRole('button', { name: HS.retry, exact: true }).click()
@@ -2943,7 +2962,7 @@ for (const s of setups) {
     await markBrakes().waitFor()
     forget500()
     // Criterion 8: a failed Mark done shows on that row, keeps the page, and focus returns to Mark done.
-    await page.route('**/reset', (r) => r.fulfill({ status: 500, contentType: 'application/json', body: '{}' }), { times: 1 })
+    await page.route(at('/reset'), (r) => r.fulfill({ status: 500, contentType: 'application/json', body: '{}' }), { times: 1 })
     await dashRow('Brakes').getByRole('button', { name: RS.done + 'Brakes', exact: true }).click()
     const alert = dashRow('Brakes').locator('[role=alert]')
     await alert.waitFor()
@@ -3308,7 +3327,8 @@ for (const s of setups) {
     await form.locator('> .actions > button:not(.link)').click()
     if ((await res).status() !== 201) throw new Error(`save ${(await res).status()}`)
     const names = () => clRows.locator('.name').allTextContents()
-    const order = (await names()).join('|')
+    let order // the list refetches after the 201, so poll it
+    for (let i = 0; i < 20 && (order = (await names()).join('|')) !== 'Alpha check|Beta check|beta check'; i++) await page.waitForTimeout(200)
     if (order !== 'Alpha check|Beta check|beta check') throw new Error(`order after Save ${order}`)
     await page.reload()
     await clRows.nth(2).waitFor()
@@ -3392,7 +3412,7 @@ for (const s of setups) {
     await ckForm.locator('input[name=intervalKm]').fill('5000')
     await ckForm.locator('input[name=intervalTime]').fill('30')
     await ckForm.locator('select[name=intervalUnit]').selectOption('days')
-    let res = page.waitForResponse((r) => r.url().endsWith(`/vehicles/${dashCarId}/checklists`) && r.request().method() === 'POST')
+    let res = page.waitForResponse((r) => pathOf(r).endsWith(`/vehicles/${dashCarId}/checklists`) && r.request().method() === 'POST')
     await ckForm.locator('> .actions > button:not(.link)').click()
     const attached = await (await res).json()
     monthlyId = attached.id
@@ -3405,7 +3425,7 @@ for (const s of setups) {
     // The second, manual only: no badge. The picker no longer offers the first.
     await ckSec.getByRole('button', { name: CK.add, exact: true }).click()
     if ((await ckForm.locator('select[name=templateId] option').allTextContents()).join() !== 'Pre-road-trip') throw new Error('an attached template is offered')
-    res = page.waitForResponse((r) => r.url().endsWith(`/vehicles/${dashCarId}/checklists`) && r.request().method() === 'POST')
+    res = page.waitForResponse((r) => pathOf(r).endsWith(`/vehicles/${dashCarId}/checklists`) && r.request().method() === 'POST')
     await ckForm.locator('> .actions > button:not(.link)').click()
     const manual = await (await res).json()
     await focusIs(`li[data-id="${manual.id}"] a.run`, 'Run after attaching manual only')
@@ -3470,13 +3490,13 @@ for (const s of setups) {
     forgetCk(400, '/runs')
     // A failed save keeps everything, with a translated error.
     await runForm.locator('input[name=odometerKm]').fill(String(before + 500))
-    await page.route('**/runs', (r) => r.fulfill({ status: 500, contentType: 'application/json', body: '{}' }), { times: 1 })
+    await page.route(at('/runs'), (r) => r.fulfill({ status: 500, contentType: 'application/json', body: '{}' }), { times: 1 })
     await runForm.locator('> .actions > button:not(.link)').click()
     await runForm.locator('[role=alert]', { hasText: HS.generic }).waitFor()
     forget500()
     if ((await value.inputValue()) !== '1.8' || !(await notOk.isChecked()) || !(await hand.isChecked())) throw new Error('answers lost after a failed save')
     // An item error shows inside its item, with the value marked invalid; a changed checklist shows above Save.
-    const fail = (body) => page.route('**/runs', (r) => r.fulfill({ status: 400, contentType: 'application/json', body: JSON.stringify(body) }), { times: 1 })
+    const fail = (body) => page.route(at('/runs'), (r) => r.fulfill({ status: 400, contentType: 'application/json', body: JSON.stringify(body) }), { times: 1 })
     await fail({ code: 'checklistItem.invalidValue', index: 1 })
     await runForm.locator('> .actions > button:not(.link)').click()
     const itemAlert = runItem(1).locator('[role=alert]')
@@ -3492,7 +3512,7 @@ for (const s of setups) {
     // A future date is stopped in the browser, with the translated message.
     const runAt = runForm.locator('input[name=runAt]')
     let posted = false
-    const onPost = (r) => { if (r.url().endsWith('/runs') && r.method() === 'POST') posted = true }
+    const onPost = (r) => { if (pathOf(r).endsWith('/runs') && r.method() === 'POST') posted = true }
     page.on('request', onPost)
     await runAt.fill(await page.evaluate(() => new Date(Date.now() + 86400000 - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10)))
     await runForm.locator('> .actions > button:not(.link)').click()
@@ -3513,7 +3533,7 @@ for (const s of setups) {
     if (dir !== 'ltr' || align !== (he ? 'right' : 'start')) throw new Error(`value direction ${dir} ${align}`)
     await page.screenshot({ path: `${OUT}/${s.name}-checklist-run-form.png`, fullPage: true })
     await page.setViewportSize(s.viewport)
-    const res = page.waitForResponse((r) => r.url().endsWith('/runs') && r.request().method() === 'POST')
+    const res = page.waitForResponse((r) => pathOf(r).endsWith('/runs') && r.request().method() === 'POST')
     await runForm.locator('> .actions > button:not(.link)').click()
     const body = (await res).request().postDataJSON()
     if (body.items[0].numberValue !== undefined || body.items[1].numberValue !== 1.8 || body.items[1].boolValue !== undefined || body.items[2].isFlagged !== true) throw new Error(JSON.stringify(body))
@@ -3547,7 +3567,7 @@ for (const s of setups) {
     await arrivedAt(CK.title('Monthly quick check', 'Dash car'))
     await runItem(0).locator('input[type=radio]').first().check()
     await runItem(1).locator('input[type=number]').fill('2.2')
-    await page.route('**/runs', (r) => r.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ run: { flaggedCount: 0 } }) }), { times: 1 })
+    await page.route(at('/runs'), (r) => r.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ run: { flaggedCount: 0 } }) }), { times: 1 })
     await page.route(`**/api/vehicles/${dashCarId}`, (r) => r.fulfill({ status: 500, contentType: 'application/json', body: '{}' }), { times: 1 })
     await runForm.locator('> .actions > button:not(.link)').click()
     await page.waitForURL((u) => u.pathname === ckCarPath())
@@ -3830,7 +3850,7 @@ for (const s of setups) {
       await arrivedAt(CK.title('Monthly quick check', 'Dash car'))
       await runItem(0).locator('input[type=radio]').first().check()
       await runItem(1).locator('input[type=number]').fill('2.2')
-      const saved = page.waitForResponse((r) => r.url().endsWith('/runs') && r.request().method() === 'POST')
+      const saved = page.waitForResponse((r) => pathOf(r).endsWith('/runs') && r.request().method() === 'POST')
       await runForm.locator('> .actions > button:not(.link)').click()
       ;({ id: photoRunId, odometerReadingId: photoReading } = (await (await saved).json()).run)
       await page.waitForURL((u) => u.pathname === ckCarPath())
@@ -4127,8 +4147,14 @@ for (const s of setups) {
     const row = ckRow('Attached late')
     const linesAre = async (want, what) => {
       await row.waitFor()
-      const got = (await row.locator(':scope > p.muted').allTextContents()).slice(1).map(plain) // after the interval line
-      if (got.join('|') !== want.join('|')) throw new Error(`${what}: "${got.join('|')}", want "${want.join('|')}"`)
+      // The list reloads after a run delete: give it a moment before reading.
+      let got
+      for (let i = 0; i < 10; i++) {
+        got = (await row.locator(':scope > p.muted').allTextContents()).slice(1).map(plain) // after the interval line
+        if (got.join('|') === want.join('|')) return
+        await page.waitForTimeout(300)
+      }
+      throw new Error(`${what}: "${got.join('|')}", want "${want.join('|')}"`)
     }
     const lastOn = async (d) => `${he ? 'בוצעה לאחרונה ב־' : 'Last run on '}${await fmtDay(d)}`
     await page.goto(`${BASE}${ckCarPath()}`)
@@ -4137,7 +4163,14 @@ for (const s of setups) {
     const r2 = await runOn(today)
     await page.reload()
     await linesAre([await lastOn(today)], 'with a run today')
-    for (const r of [r2, r1]) await apiCall('DELETE', `/checklist-runs/${r.run.id}`)
+    // LOW-8 L147: deleting the latest run in the browser brings back the older run's "Last run on" and "Counting from" the attach date.
+    const latest = row.locator(`.run-list > li[data-id="${r2.run.id}"]`)
+    await row.locator('details.run-history > summary').click()
+    await latest.locator('button.delete-run').click()
+    await latest.locator('button.danger').click()
+    await latest.waitFor({ state: 'detached' })
+    await linesAre([await lastOn(old), `${he ? 'הספירה התחילה ב־' : 'Counting from '}${await fmtDay(today)}`], 'after deleting the latest run')
+    await apiCall('DELETE', `/checklist-runs/${r1.run.id}`)
     await apiCall('DELETE', `/vehicle-checklists/${vc.id}`)
     await apiCall('DELETE', `/checklist-templates/${tpl.id}`)
     await page.goto(`${BASE}/`) // dashboard-open-issues starts on the dashboard
@@ -4772,12 +4805,12 @@ for (const s of setups) {
     await page.locator('main .by-car').waitFor()
     forgetCk(400, '/reports/costs')
     // A bad year in the URL: its message and a way to this year.
-    // LOW-7 L112: and the Year box shows no year, not the current one: not a number, or a number the API refuses.
+    // LOW-7 L112: and the Year box shows its "No year" option, not the current one: not a number, or a number the API refuses.
     for (const bad of ['1800', '2025abc']) {
       await page.goto(`${BASE}/reports?year=${bad}`)
       if (plain(await alert.textContent()) !== RP.badYear) throw new Error(`bad year ${bad}: "${await alert.textContent()}"`)
       const shownYear = await page.locator(yearSel).evaluate((el) => el.selectedOptions[0]?.textContent ?? '')
-      if ((await page.inputValue(yearSel)) !== '' || shownYear !== '') throw new Error(`Year box "${shownYear}" for the year ${bad}`)
+      if ((await page.inputValue(yearSel)) !== '' || plain(shownYear) !== key('noYear')) throw new Error(`Year box "${shownYear}" for the year ${bad}`)
     }
     await page.getByRole('button', { name: RP.thisYear, exact: true }).click()
     await page.locator('main .months').waitFor()
@@ -5057,6 +5090,7 @@ for (const s of setups) {
     await xBtns.first().click()
     const alert = page.locator('main .filters .export [role=alert]')
     if (plain(await alert.textContent()) !== `${XP.failed} ${HS.generic}`) throw new Error(`CSV error "${await alert.textContent()}"`)
+    await focusIs('main .filters .export button:first-child', 'the CSV button after a failed export') // LOW-8 L147
     await page.waitForTimeout(300)
     if (downloads !== before) throw new Error('a failed export downloaded a file')
     await page.unroute(recs)
@@ -5207,8 +5241,8 @@ for (const s of setups) {
         tooMany: 'אפשר להוסיף לרכב עד 50 מסמכים. כדי להוסיף מסמך, יש למחוק אחד מהם.',
         notFound: 'התזכורת הזו כבר לא קיימת. ייתכן שהפריט נמחק או שהרכב הועבר לארכיון.',
         leadErr: 'יש להזין מספר ימים בין 1 ל־365.', leadLimit: 'יש להזין מספר שלם של ימים בין 1 ל־365.' }
-    : { types: { Insurance: 'Insurance', Inspection: 'Inspection', Registration: 'Registration', Licence: 'Licence' },
-        empty: 'Add the insurance, inspection, registration or licence to get a reminder before it expires.',
+    : { types: { Insurance: 'Insurance', Inspection: 'Inspection', Registration: 'Registration', Licence: "Driver's license" },
+        empty: "Add the insurance, inspection, registration or driver's license to get a reminder before it expires.",
         in: (n) => `Expires in ${n} days`, today: 'Expires today', ago: (n) => `Expired ${n} days ago`, on: 'Expires on ',
         nothing: 'Nothing needs your attention.', snoozed: '1 snoozed', choices: ['1 day', '1 week', '1 month'], until: 'Oil change (Doc car) snoozed until ', undo: 'Undo',
         overdue: 'Overdue', oilLate: 'Overdue by 2,000 km', snoozeOf: (n) => `Snooze: ${n}, Doc car`, retry: 'Retry',
@@ -5322,6 +5356,15 @@ for (const s of setups) {
     await form.locator('input[name=cost]').fill('5')
     if (!(await form.locator('[role=alert]').count())) throw new Error('a date error cleared by editing the cost')
     await form.locator('input[name=expiryDate]').fill(ntToday)
+    await form.locator('[role=alert]').waitFor({ state: 'detached' })
+    // LOW-8 L158: a non-date error (the cost's, mocked) also stays while another field changes and goes once its own field is edited.
+    await page.route(`**/api/vehicles/${ntCarId}/documents/*`, (r) => (r.request().method() === 'PUT' ? problem({ code: 'vehicleDocument.invalidCost' })(r) : r.fallback()), { times: 1 })
+    await form.locator('button:not(.link)').click()
+    await form.locator('[role=alert]').waitFor()
+    if (plain(await form.locator('[role=alert]').textContent()) !== inBlock('vehicleDocument', 'invalidCost')) throw new Error(`cost error "${await form.locator('[role=alert]').textContent()}"`)
+    await form.locator('textarea[name=notes]').fill('changed')
+    if (!(await form.locator('[role=alert]').count())) throw new Error('a cost error cleared by editing the notes')
+    await form.locator('input[name=cost]').fill('6')
     await form.locator('[role=alert]').waitFor({ state: 'detached' })
     await page.keyboard.press('Escape')
     await focusIs('section[aria-labelledby=documents] li button.edit', 'Edit after Escape')
@@ -5496,6 +5539,78 @@ for (const s of setups) {
     await page.waitForLoadState('networkidle')
     if (await rem.count()) throw new Error('Reminders with only an archived car')
   })
+  // LOW-8 criterion 2 (L155, L160): with the browser 14 hours ahead of UTC and 11 behind, a task due today, one due yesterday and a document
+  // expiring today show the same status on the car page, the dashboard and Reminders, as of the browser's date. Then snooze and Mark done,
+  // and a document deleted in a second tab. As the NOT-1 user, in a new context with that time zone.
+  for (const timezoneId of ['Pacific/Kiritimati', 'Pacific/Pago_Pago']) await step(`time-zone-${timezoneId.split('/')[1]}`, async () => {
+    const tz = await browser.newContext({ timezoneId, viewport: s.viewport, colorScheme: s.colorScheme, isMobile: s.isMobile, hasTouch: s.hasTouch })
+    try {
+      const p = await tz.newPage()
+      p.on('pageerror', (e) => run.consoleErrors.push(`${timezoneId}: ${e}`))
+      await p.goto(`${BASE}/login`)
+      const today = await p.evaluate(() => new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10))
+      const day = (n) => new Date(Date.parse(today) + n * 86_400_000).toISOString().slice(0, 10)
+      const car = await apiCall('POST', '/vehicles', { nickname: `TZ ${timezoneId.split('/')[1]}`, initialOdometerKm: 1000, readingDate: day(-40) })
+      const task = (name, last) => apiCall('POST', `/vehicles/${car.id}/tasks`, { name, category: 'Other', intervalKm: null, intervalDays: 30, dueSoonPercent: 10, lastDoneOdometerKm: 1000, lastDoneDate: last })
+      const [dueToday, dueYesterday] = [await task('Due today', day(-30)), await task('Due yesterday', day(-31))]
+      const doc = await apiCall('POST', `/vehicles/${car.id}/documents?today=${today}`, { type: 'Inspection', expiryDate: today, cost: null, notes: null })
+      const want = { [dueToday.id]: 'status-DueSoon', [dueYesterday.id]: 'status-Overdue', [doc.id]: 'status-Expiring' }
+      const expect = async (where, rows) => {
+        for (const [id, li] of Object.entries(rows)) {
+          await li.waitFor()
+          const got = `${await li.getAttribute('class')} ${plain(await li.locator('.badge').first().textContent())}`
+          if (!`${got} `.startsWith(`${want[id]} `)) throw new Error(`${timezoneId} ${where}: "${got}", want ${want[id]} (browser date ${today})`)
+          want[id] = got // the same class and badge text in the next place
+        }
+      }
+      await p.evaluate(([t, u, l]) => { localStorage.setItem('token', t); localStorage.setItem('user', JSON.stringify(u)); localStorage.setItem('i18nextLng', l) }, [not1Auth.token, not1Auth.user, s.lng])
+      const tasksGet = p.waitForRequest((r) => r.method() === 'GET' && pathOf(r) === `/api/vehicles/${car.id}/tasks`)
+      await p.goto(`${BASE}/cars/${car.id}`)
+      if (new URL((await tasksGet).url()).searchParams.get('today') !== today) throw new Error(`tasks today ${(await tasksGet).url()}`)
+      const taskLi = (id) => p.locator(`section[aria-labelledby=maintenance] li[data-id="${id}"]`)
+      await expect('car page', { [dueToday.id]: taskLi(dueToday.id), [dueYesterday.id]: taskLi(dueYesterday.id), [doc.id]: p.locator(`.documents > li[data-id="${doc.id}"]`) })
+      if (plain(await p.locator(`.documents > li[data-id="${doc.id}"] .badge`).textContent()) !== NT.today) throw new Error('document not "expires today"')
+      await p.goto(`${BASE}/`)
+      const dashLi = (id) => p.locator(`.cars > li[data-id="${car.id}"] .dash-tasks > li[data-id="${id}"]`)
+      await expect('dashboard', { [dueToday.id]: dashLi(dueToday.id), [dueYesterday.id]: dashLi(dueYesterday.id) })
+      const remLi = (kind, id) => p.locator(`section[aria-labelledby=reminders] li[data-key="${kind}-${id}"]`)
+      await expect('Reminders', { [dueToday.id]: remLi('Task', dueToday.id), [dueYesterday.id]: remLi('Task', dueYesterday.id), [doc.id]: remLi('Document', doc.id) })
+      await p.screenshot({ path: `${OUT}/${s.name}-tz-${timezoneId.split('/')[1]}.png`, fullPage: true })
+      // Snooze the overdue task, then Mark done on its dashboard row: it stays out of Reminders and is no longer counted as snoozed.
+      const remSec = p.locator('section[aria-labelledby=reminders]')
+      const remApi = async () => (await p.request.get(`${BASE}/api/reminders?today=${today}`, { headers: { Authorization: `Bearer ${not1Auth.token}` } })).json()
+      const snoozedBefore = (await remApi()).snoozedCount
+      await remLi('Task', dueYesterday.id).locator('button.snooze').click()
+      await remLi('Task', dueYesterday.id).locator('[role=group] button:not(.link)').first().click()
+      await remLi('Task', dueYesterday.id).waitFor({ state: 'detached' })
+      await remSec.locator('.undo').waitFor()
+      if ((await remApi()).snoozedCount !== snoozedBefore + 1) throw new Error('the snooze was not counted')
+      const reset = p.waitForRequest((r) => r.method() === 'POST' && pathOf(r).endsWith(`/tasks/${dueYesterday.id}/reset`))
+      await dashLi(dueYesterday.id).locator('button.done').click()
+      if (new URL((await reset).url()).searchParams.get('today') !== today) throw new Error(`reset today ${(await reset).url()}`)
+      await p.locator(`.cars > li[data-id="${car.id}"] .dash-tasks > li.status-Ok[data-id="${dueYesterday.id}"]`).waitFor()
+      await p.waitForLoadState('networkidle')
+      const r = await remApi()
+      if (r.items.some((x) => x.refId === dueYesterday.id)) throw new Error('the done task is still a reminder')
+      if (await remLi('Task', dueYesterday.id).count()) throw new Error('the done task came back in Reminders')
+      if (r.snoozedCount !== snoozedBefore) throw new Error(`snoozedCount ${r.snoozedCount} after Mark done, want ${snoozedBefore}`)
+      // documentGone: the document is deleted in a second tab while this one edits it.
+      await p.goto(`${BASE}/cars/${car.id}`)
+      await p.locator(`.documents > li[data-id="${doc.id}"] button.edit`).click()
+      const p2 = await tz.newPage()
+      await p2.goto(`${BASE}/cars/${car.id}`)
+      await p2.locator(`.documents > li[data-id="${doc.id}"] button.edit + button`).click()
+      await p2.locator(`.documents > li[data-id="${doc.id}"] button.danger`).click()
+      await p2.locator(`.documents > li[data-id="${doc.id}"]`).waitFor({ state: 'detached' })
+      await p.locator(`.documents > li[data-id="${doc.id}"] form button:not(.link)`).click()
+      await p.locator('section[aria-labelledby=documents] > p[role=status]', { hasText: key('documentGone') }).waitFor()
+      if (await p.locator(`.documents > li[data-id="${doc.id}"]`).count()) throw new Error('the deleted document is still listed')
+      await p.waitForFunction(() => document.activeElement?.matches('section[aria-labelledby=documents] button.add'), null, { timeout: 3000 })
+      await apiCall('POST', `/vehicles/${car.id}/archive`)
+    } finally {
+      await tz.close()
+    }
+  })
   // ACC-1: Export my data on Settings. The server allows 5 exports per 10 minutes per user: this step makes 3 real ones.
   await step('export-data', async () => {
     const XD = { export: key('exportData'), busy: key('exportDataBusy'), done: key('downloaded'), failed: key('exportDataFailed'),
@@ -5577,6 +5692,16 @@ for (const s of setups) {
     if (plain(await alert.textContent()) !== `${XD.failed} ${XD.rate}`) throw new Error(`429 error "${await alert.textContent()}"`)
     if ((await sec.locator('button:not([aria-expanded])').count()) !== 1) throw new Error('a Retry after the 429')
     await focusIs('main section[aria-labelledby=your-data] button.stack', 'Export after the 429')
+    // LOW-8 L162: a file cut off mid-stream still comes as a 200: it is not saved, and the export error shows (mocked).
+    const cut = downloads
+    await page.route(exportUrl, (r) => r.fulfill({ status: 200, contentType: 'application/json', headers: { 'Content-Disposition': 'attachment; filename=onlycars-export-cut.json' },
+      body: '{"formatVersion":1,"exportedAt":"2026-10-24T00:00:00Z","vehicles":[{"id":"' }), { times: 1 })
+    await btn.click()
+    await alert.waitFor()
+    if (plain(await alert.textContent()) !== `${XD.failed} ${HS.generic}`) throw new Error(`cut-off file error "${await alert.textContent()}"`)
+    await page.waitForTimeout(300)
+    if (downloads !== cut) throw new Error('a cut-off export was saved')
+    await focusIs('main section[aria-labelledby=your-data] button.stack', 'Export after the cut-off file')
     await at390('settings with the export error', 'export-data-390')
     // Leaving the page mid-export aborts the request and downloads nothing.
     const left = downloads
@@ -5590,7 +5715,7 @@ for (const s of setups) {
     await page.waitForTimeout(2000)
     if (downloads !== left) throw new Error('an export downloaded after leaving Settings')
     page.off('request', count)
-    if (sent !== 6) throw new Error(`${sent} export requests in all`)
+    if (sent !== 7) throw new Error(`${sent} export requests in all`)
     run.badResponses = run.badResponses.filter((r) => !r.includes('/api/me/export')) // the forced failures
     forget500()
   })
@@ -5617,9 +5742,37 @@ for (const s of setups) {
     await is(quick.locator('.error'), CAP.reading, 'reading cap')
     await page.goto(`${BASE}/cars/${capCar.id}`)
     await recordBtn.click()
-    await page.route('**/service-records', cap('serviceRecord.tooMany', 2000), { times: 1 })
+    await page.route(at('/service-records'), cap('serviceRecord.tooMany', 2000), { times: 1 })
     await recordForm.locator('button:not(.link)').click()
     await is(recordForm.locator('[role=alert]'), CAP.record, 'service cap')
+    // LOW-8 L167: the real car cap. A fresh user gets 50 cars through the API, the 51st through the UI shows the message; the user is then deleted.
+    const capAuth = await (await page.request.post(`${BASE}/api/auth/register`, {
+      data: { email: `other-cap-${s.name}-${Date.now()}@onlycars.test`, password: 'Passw0rd!', locale: he ? 'He' : 'En', currency: 'ILS' } })).json()
+    const capHeaders = { Authorization: `Bearer ${capAuth.token}` }
+    let capDeleted
+    const capCtx = await browser.newContext({ viewport: s.viewport, colorScheme: s.colorScheme, isMobile: s.isMobile, hasTouch: s.hasTouch })
+    try {
+      for (let i = 1; i <= 50; i++) {
+        const r = await page.request.post(`${BASE}/api/vehicles`, { headers: capHeaders, data: { nickname: `Cap ${i}`, initialOdometerKm: 1000 } })
+        if (r.status() !== 201) throw new Error(`car ${i}: ${r.status()}`)
+      }
+      const p = await capCtx.newPage()
+      p.on('pageerror', (e) => run.consoleErrors.push(`cap user: ${e}`))
+      await p.goto(`${BASE}/login`)
+      await p.evaluate(([t, u, l]) => { localStorage.setItem('token', t); localStorage.setItem('user', JSON.stringify(u)); localStorage.setItem('i18nextLng', l) }, [capAuth.token, capAuth.user, s.lng])
+      await p.goto(`${BASE}/cars/new`)
+      await p.fill('input[name=nickname]', 'Cap 51')
+      await p.fill('input[name=initialOdometerKm]', '1000')
+      const res = p.waitForResponse((r) => r.request().method() === 'POST' && pathOf(r) === '/api/vehicles')
+      await p.click('form button:not(.link)')
+      if ((await res).status() !== 400) throw new Error(`51st car: ${(await res).status()}`)
+      await is(p.locator('main [role=alert]'), CAP.car, 'real car cap')
+      await p.screenshot({ path: `${OUT}/${s.name}-car-cap-real.png`, fullPage: true })
+    } finally {
+      await capCtx.close()
+      capDeleted = (await page.request.delete(`${BASE}/api/me`, { headers: capHeaders, data: { password: 'Passw0rd!' } })).status()
+    }
+    if (capDeleted !== 204) throw new Error(`delete the cap user: ${capDeleted}`)
     // The three forced 400s.
     run.badResponses.splice(bad, Infinity, ...run.badResponses.slice(bad).filter((r) => !r.startsWith('400 POST')))
     run.consoleErrors.splice(logged, Infinity, ...run.consoleErrors.slice(logged).filter((e) => !e.includes('status of 400')))
@@ -5645,11 +5798,13 @@ for (const s of setups) {
   const daPassword = daPanel.locator('input[name=password]')
   const daConfirm = daPanel.locator('button.danger')
   const daAlert = daPanel.locator('[role=alert]')
-  // Only the DELETE; the page's GET /me goes through.
-  const onDelete = (fn) => page.route('**/api/me', (r) => (r.request().method() === 'DELETE' ? fn(r) : r.fallback()), { times: 1 })
+  // Only the DELETE; the page's GET /me goes through. Each mock is removed after its DELETE (L176): { times: 1 } would count a GET's fallback too.
+  let daMock
+  const onDelete = (fn) => page.route('**/api/me', daMock = (r) => (r.request().method() === 'DELETE' ? fn(r) : r.fallback()))
+  const offDelete = () => page.unroute('**/api/me', daMock)
   const daIs = async (want, what) => { await daAlert.waitFor(); if (plain(await daAlert.textContent()) !== want) throw new Error(`${what} "${await daAlert.textContent()}"`) }
   const daForgetFrom = (bad, logged) => {
-    run.badResponses.splice(bad, Infinity, ...run.badResponses.slice(bad).filter((r) => !/^(400|429|401) (DELETE|POST) .*\/api\/(me|auth\/login)$/.test(r)))
+    run.badResponses.splice(bad, Infinity, ...run.badResponses.slice(bad).filter((r) => !/^(400|429|401) (DELETE|POST) .*\/api\/(me|auth\/login)$|^401 GET .*\/api\//.test(r)))
     run.consoleErrors.splice(logged, Infinity, ...run.consoleErrors.slice(logged).filter((e) => !/status of (400|401|429)|ERR_FAILED/.test(e)))
   }
   await step('delete-account-errors', async () => {
@@ -5686,6 +5841,7 @@ for (const s of setups) {
     await onDelete((r) => r.fulfill({ status: 400, contentType: 'application/problem+json', body: JSON.stringify({ status: 400, code: 'auth.credentialsRequired' }) }))
     await daConfirm.click()
     await daIs(DA.required, 'empty password')
+    await offDelete()
     await focusIs('form[aria-labelledby=delete-account-title] input[name=password][aria-invalid=true]', 'password after credentialsRequired')
     await daPassword.fill('Wr0ngPassword!')
     await page.keyboard.press('Enter')
@@ -5697,55 +5853,90 @@ for (const s of setups) {
     await onDelete((r) => r.fulfill({ status: 429, contentType: 'application/problem+json', headers: { 'Retry-After': '600' }, body: JSON.stringify({ status: 429, code: 'http.429' }) }))
     await daConfirm.click()
     await daIs(`${DA.failed} ${DA.rate}`, '429')
+    await offDelete()
     await focusIs('#delete-account-error', 'the 429 message')
     if (await daPassword.getAttribute('aria-invalid')) throw new Error('password marked invalid after a 429')
     await at390('the delete-account panel with an error', 'delete-account-390')
     await onDelete((r) => r.abort())
     await daConfirm.click()
     await daIs(`${DA.failed} ${RS.generic}`, 'network failure')
+    await offDelete()
     await focusIs('#delete-account-error', 'the network failure message')
     await apiCall('GET', '/me')
     daForgetFrom(bad, logged)
   })
   await step('delete-account', async () => {
     const [bad, logged] = [run.badResponses.length, run.consoleErrors.length]
-    if (!(await daPanel.count())) { await openSettings(); await daOpener.click() }
-    // Through a slow route: busy keeps the width, a second Enter sends nothing; then 204 signs out to /login with the note.
-    let sent = 0
-    const count = (r) => r.url().endsWith('/api/me') && r.method() === 'DELETE' && sent++
-    page.on('request', count)
-    await onDelete(async (r) => { await page.waitForTimeout(700); await r.fallback() })
-    const width = (await daConfirm.boundingBox()).width
-    await daPassword.fill('Passw0rd!')
-    await page.keyboard.press('Enter')
-    await daConfirm.filter({ hasText: DA.busy }).waitFor({ timeout: 3000 })
-    if ((await daConfirm.getAttribute('aria-disabled')) !== 'true') throw new Error('not aria-disabled while busy')
-    if ((await daConfirm.boundingBox()).width !== width) throw new Error(`width ${width} became ${(await daConfirm.boundingBox()).width}`)
-    await page.keyboard.press('Enter')
-    await page.waitForURL('**/login')
-    page.off('request', count)
-    if (sent !== 1) throw new Error(`${sent} DELETE /api/me requests`)
-    const note = page.locator('main [role=status]#account-deleted')
-    if (plain(await note.textContent()) !== DA.done) throw new Error(`note "${await note.textContent()}"`)
-    await focusIs('main h1[aria-describedby=account-deleted]', 'h1 with the note on /login')
-    await titleIs(T.login)
-    if (await page.evaluate(() => localStorage.getItem('token') ?? localStorage.getItem('user'))) throw new Error('token or user left in storage')
-    // The old password no longer logs in; the note doesn't come back.
-    await page.fill('input[name=email]', registered.user.email)
-    await page.fill('input[name=password]', 'Passw0rd!')
-    await page.click('form button:not(.link)')
-    await page.locator('main [role=alert]').filter({ hasText: DA.loginWrong }).waitFor()
-    await page.reload()
-    await page.locator('input[name=email]').waitFor()
-    if (await note.count()) throw new Error('the note came back after a reload')
-    // The same email registers again; that user and the NOT-1 user (its Cap car, L168) are deleted through the API, as the UI does.
-    const again = await page.request.post(`${BASE}/api/auth/register`, { data: { email: registered.user.email, password: 'Passw0rd!' } })
-    if (!again.ok()) throw new Error(`register again: ${again.status()}`)
-    for (const token of [(await again.json()).token, not1Auth?.token]) {
+    let failure
+    try {
+      // LOW-8 L178: a service file uploaded now to R2; its signed URL serves it before the delete and finds nothing after.
+      const fileCar = (await apiCall('GET', '/vehicles'))[0]
+      const fileRec = (await apiCall('POST', `/vehicles/${fileCar.id}/service-records`, { odometerKm: fileCar.currentOdometerKm, totalCost: 1 })).record
+      const token = await page.evaluate(() => localStorage.getItem('token'))
+      const up = await page.request.post(`${BASE}/api/vehicles/${fileCar.id}/service-records/${fileRec.id}/attachments`,
+        { headers: { Authorization: `Bearer ${token}` }, multipart: { file: { name: 'l178.png', mimeType: 'image/png', buffer: await image('image/png') } } })
+      if (!up.ok()) throw new Error(`upload: ${up.status()}`)
+      const fileUrl = (await up.json()).attachments.at(-1)?.url // the response is the record, the new file last
+      if (!fileUrl) throw new Error('no signed URL (storage off?)')
+      if ((await page.request.get(fileUrl)).status() !== 200) throw new Error('the signed URL fails before the delete') // never printed: a credential
+      if (!(await daPanel.count())) { await openSettings(); await daOpener.click() }
+      // Through a slow route: busy keeps the width, a second Enter sends nothing; then 204 signs out to /login with the note.
+      let sent = 0
+      const count = (r) => r.url().endsWith('/api/me') && r.method() === 'DELETE' && sent++
+      page.on('request', count)
+      await onDelete(async (r) => { await page.waitForTimeout(700); await r.fallback() })
+      const width = (await daConfirm.boundingBox()).width
+      await daPassword.fill('Passw0rd!')
+      await page.keyboard.press('Enter')
+      await daConfirm.filter({ hasText: DA.busy }).waitFor({ timeout: 3000 })
+      if ((await daConfirm.getAttribute('aria-disabled')) !== 'true') throw new Error('not aria-disabled while busy')
+      if ((await daConfirm.boundingBox()).width !== width) throw new Error(`width ${width} became ${(await daConfirm.boundingBox()).width}`)
+      await page.keyboard.press('Enter')
+      await page.waitForURL('**/login')
+      await offDelete()
+      page.off('request', count)
+      if (sent !== 1) throw new Error(`${sent} DELETE /api/me requests`)
+      const note = page.locator('main [role=status]#account-deleted')
+      if (plain(await note.textContent()) !== DA.done) throw new Error(`note "${await note.textContent()}"`)
+      if (!(await note.evaluate((el) => el.matches('.notice')))) throw new Error('the note is not in the notice style') // L181
+      await page.screenshot({ path: `${OUT}/${s.name}-account-deleted-note.png` })
+      // The files go after the commit: the same signed URL now gets 404 from R2 (a few tries, as the delete may still be finishing).
+      let fileStatus
+      for (let i = 0; i < 10 && (fileStatus = (await page.request.get(fileUrl)).status()) !== 404; i++) await page.waitForTimeout(500)
+      if (fileStatus !== 404) throw new Error(`the signed URL answers ${fileStatus} after the delete, want 404`)
+      await focusIs('main h1[aria-describedby=account-deleted]', 'h1 with the note on /login')
+      await titleIs(T.login)
+      if (await page.evaluate(() => localStorage.getItem('token') ?? localStorage.getItem('user'))) throw new Error('token or user left in storage')
+      // The old password no longer logs in; the note doesn't come back.
+      await page.fill('input[name=email]', registered.user.email)
+      await page.fill('input[name=password]', 'Passw0rd!')
+      await page.click('form button:not(.link)')
+      await page.locator('main [role=alert]').filter({ hasText: DA.loginWrong }).waitFor()
+      await page.reload()
+      await page.locator('input[name=email]').waitFor()
+      if (await note.count()) throw new Error('the note came back after a reload')
+      // The same email registers again.
+      const again = await page.request.post(`${BASE}/api/auth/register`, { data: { email: registered.user.email, password: 'Passw0rd!' } })
+      if (!again.ok()) throw new Error(`register again: ${again.status()}`)
+      // LOW-8 L174: that user is signed in here and deleted elsewhere (another device): the next call's 401 clears the token and the cached user.
+      const againAuth = await again.json()
+      await page.evaluate(([t, u]) => { localStorage.setItem('token', t); localStorage.setItem('user', JSON.stringify(u)) }, [againAuth.token, againAuth.user])
+      const elsewhere = await page.request.delete(`${BASE}/api/me`, { headers: { Authorization: `Bearer ${againAuth.token}` }, data: { password: 'Passw0rd!' } })
+      if (elsewhere.status() !== 204) throw new Error(`delete elsewhere: ${elsewhere.status()}`)
+      await page.goto(`${BASE}/`)
+      await page.waitForURL('**/login')
+      await page.locator('input[name=email]').waitFor()
+      if (await page.evaluate(() => localStorage.getItem('token') ?? localStorage.getItem('user'))) throw new Error('token or cached user left after a 401')
+    } catch (e) { failure = e }
+    // Cleanup even if a check above failed: `registered` (or its re-registration) if it still logs in, and the NOT-1 user
+    // (its Cap car, L168) through the API, as the UI does; filter(Boolean): its step may have failed (L175). The first error wins.
+    const login = await page.request.post(`${BASE}/api/auth/login`, { data: { email: registered.user.email, password: 'Passw0rd!' } })
+    for (const token of [login.ok() && (await login.json()).token, not1Auth?.token].filter(Boolean)) {
       const r = await page.request.delete(`${BASE}/api/me`, { headers: { Authorization: `Bearer ${token}` }, data: { password: 'Passw0rd!' } })
-      if (r.status() !== 204) throw new Error(`cleanup delete: ${r.status()}`)
+      if (r.status() !== 204) failure ??= new Error(`cleanup delete: ${r.status()}`)
     }
     daForgetFrom(bad, logged)
+    if (failure) throw failure
   })
 
   report.push(run)

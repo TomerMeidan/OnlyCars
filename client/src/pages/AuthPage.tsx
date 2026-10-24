@@ -37,7 +37,7 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
     <form className="card narrow" onSubmit={submit}>
       {/* Focus lands on the h1 after the redirect, so it carries the note too. */}
       <h1 tabIndex={-1} aria-describedby={deleted ? 'account-deleted' : undefined}>{t(mode)}</h1>
-      {deleted && <p id="account-deleted" role="status">{t('accountDeleted')}</p>}
+      {deleted && <p id="account-deleted" className="notice" role="status">{t('accountDeleted')}</p>}
       <p className="intro">{t('intro')}</p>
       <label>
         {t('email')}

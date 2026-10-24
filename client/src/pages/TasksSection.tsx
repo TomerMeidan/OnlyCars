@@ -74,14 +74,14 @@ export function Remaining({ km, days }: { km: number | null; days: number | null
 }
 
 // "Marked as done." and Undo on a task's row, on the car page and the dashboard; also "Snoozed until" on the dashboard's Reminders.
-export function UndoBar({ taskId, busy, onClick, message, label }: { taskId: string; busy: boolean; onClick: MouseEventHandler<HTMLButtonElement>; message?: string; label?: string }) {
+export function UndoBar({ id, busy, onClick, message, label }: { id: string; busy: boolean; onClick: MouseEventHandler<HTMLButtonElement>; message?: string; label?: string }) {
   const { t } = useTranslation()
   return (
     <div className="undo" role="status">
       {/* Focus lands on Undo in the same render as the bar, so Undo also carries the message. */}
-      <span id={`undo-${taskId}`}>{message ?? t('markedDone')}</span>
+      <span id={`undo-${id}`}>{message ?? t('markedDone')}</span>
       {/* aria-disabled, not disabled: a disabled button drops focus to body while Undo runs. */}
-      <button className="link" aria-describedby={`undo-${taskId}`} aria-disabled={busy} onClick={(e) => !busy && onClick(e)}>{label ?? t('undo')}</button>
+      <button className="link" aria-describedby={`undo-${id}`} aria-disabled={busy} onClick={(e) => !busy && onClick(e)}>{label ?? t('undo')}</button>
     </div>
   )
 }
@@ -411,7 +411,7 @@ function TaskRow({ task, url, currentKm, readOnly, onSaved, onDeleted, onReset, 
         />
       </p>
 
-      {onUndo && mode === 'view' && <UndoBar taskId={task.id} busy={busy} onClick={(e) => run(onUndo, e.currentTarget)} />}
+      {onUndo && mode === 'view' && <UndoBar id={task.id} busy={busy} onClick={(e) => run(onUndo, e.currentTarget)} />}
       {!readOnly && mode === 'view' && (
         <div className="actions">
           {task.isEnabled && (

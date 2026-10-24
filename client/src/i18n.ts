@@ -188,6 +188,8 @@ const en = {
   retry: 'Retry',
   reports: 'Reports',
   reportYear: 'Year',
+  // the empty choice for a year that isn't in the list (L145)
+  noYear: 'No year',
   reportsEmpty: 'No service costs yet.',
   goToCars: 'Go to the cars',
   showThisYear: 'Show this year',
@@ -348,10 +350,10 @@ const en = {
   // NOT-1: car documents and the dashboard's Reminders. <n> wraps numbers in <bdi>, <d> is a date.
   documents: 'Documents',
   addDocument: 'Add a document',
-  noDocuments: 'Add the insurance, inspection, registration or licence to get a reminder before it expires.',
+  noDocuments: "Add the insurance, inspection, registration or driver's license to get a reminder before it expires.",
   documentType: 'Type',
   expiryDate: 'Expiry date',
-  docType: { Insurance: 'Insurance', Inspection: 'Inspection', Registration: 'Registration', Licence: 'Licence' },
+  docType: { Insurance: 'Insurance', Inspection: 'Inspection', Registration: 'Registration', Licence: "Driver's license" },
   expiresOn: 'Expires on <d>{{date}}</d>',
   expired_one: 'Expired <n>{{count, number}}</n> day ago',
   expired_two: 'Expired <n>{{count, number}}</n> days ago',
@@ -376,7 +378,7 @@ const en = {
   snoozedUntil: '{{name}} ({{car}}) snoozed until {{date}}.',
   undoSnooze: 'Undo',
   leadDays: 'Remind me before a document expires (days)',
-  leadDaysHint: 'From 1 to 365 days. For insurance, inspection, registration and licence.',
+  leadDaysHint: "From 1 to 365 days. For insurance, inspection, registration and driver's license.",
   // MVP5-D: tire sets on /tires and on the car page. <n> wraps numbers in <bdi>; <c> is the car's name, <f>, <t> and <d> are dates.
   tires: 'Tires',
   newTireSet: 'New set',
@@ -853,6 +855,7 @@ const he: typeof en = {
   retry: 'ניסיון חוזר',
   reports: 'דוחות',
   reportYear: 'שנה',
+  noYear: 'ללא שנה',
   reportsEmpty: 'עדיין אין עלויות טיפולים.',
   goToCars: 'מעבר לרכבים',
   showThisYear: 'הצגת השנה הנוכחית',

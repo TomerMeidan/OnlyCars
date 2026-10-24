@@ -213,7 +213,7 @@ function DashTask({ task, onReset, onUndo }: { task: DashboardTask; onReset: () 
       </div>
       <p><Remaining km={task.remainingKm} days={task.remainingDays} /></p>
       <button className="done" aria-label={t('markDoneTask', { name: task.name })} disabled={busy} onClick={(e) => run(onReset, e.currentTarget)}>{t('markDone')}</button>
-      {onUndo && <UndoBar taskId={task.id} busy={busy} onClick={(e) => run(onUndo, e.currentTarget)} />}
+      {onUndo && <UndoBar id={task.id} busy={busy} onClick={(e) => run(onUndo, e.currentTarget)} />}
       {error != null && <p className="error" role="alert">{errorMessage(error)}</p>}
     </li>
   )

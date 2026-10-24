@@ -263,8 +263,11 @@ button.link:hover:not(:disabled, [aria-disabled='true']) { background: none; tex
 .pair > label { flex: 1; }
 button.danger { background: var(--danger); border-color: var(--danger); color: #fff; }
 button.danger:hover:not(:disabled, [aria-disabled='true']) { background: color-mix(in srgb, var(--danger) 88%, #000); }
+/* Busy or disabled danger (L179): a greyed red rather than a faded one, 3:1 or more on the page and 4.5:1 or more for its white text */
+button.danger:is(:disabled, [aria-disabled='true']) { opacity: 1; background: color-mix(in srgb, var(--danger) 50%, var(--field)); border-color: transparent; }
 /* An open edit or confirm panel inside a list row sits on the sunken paper, so it reads as "being changed" */
-li > .inline-form { padding: 0.75rem; border-radius: var(--r-control); background: var(--sunken); }
+li > .inline-form, .settings section > .inline-form { padding: 0.75rem; border-radius: var(--r-control); background: var(--sunken); } /* and the delete-account panel (L180) */
+.settings section > .inline-form .actions { flex-wrap: wrap; } /* its padding leaves no room for Cancel beside the long Delete at 390px */
 
 /* Car detail: maintenance tasks */
 .tasks, .services, .picker ul { list-style: none; padding: 0; margin: 0; }
@@ -278,6 +281,10 @@ li > .inline-form { padding: 0.75rem; border-radius: var(--r-control); backgroun
 .tasks bdi, .picker bdi { direction: ltr; }
 .tasks time, .services time { white-space: nowrap; }
 .tasks .actions, .services .actions { flex-wrap: wrap; }
+/* A reminder's car link truncates with an ellipsis (the full name stays its text), so Snooze keeps its line at 390px (L151) */
+.tasks .actions:has(> a.car) { flex-wrap: nowrap; min-inline-size: 0; } /* in the row's grid, so the row doesn't grow to the full name */
+.tasks a.car > span { min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tasks a.car + button { flex-shrink: 0; }
 .status-Ok { --status: var(--status-ok); }
 .status-DueSoon, .status-Expiring { --status: var(--status-soon); }
 .status-Overdue, .status-Expired { --status: var(--status-overdue); }
@@ -320,8 +327,8 @@ h2 a { margin-block: calc((1lh - 2.75rem) / 2); text-decoration-thickness: 2px; 
 .back:focus-visible { outline: none; }
 .back:focus-visible span { outline: 3px solid var(--focus); outline-offset: 2px; }
 
-/* After a reset: "Marked as done." and Undo, on that row; it slides in so the change is seen */
-.undo {
+/* After a reset: "Marked as done." and Undo, on that row; it slides in so the change is seen. A .notice ("Your account was deleted.") looks the same. */
+.undo, .notice {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -332,6 +339,7 @@ h2 a { margin-block: calc((1lh - 2.75rem) / 2); text-decoration-thickness: 2px; 
   background: var(--sunken);
   animation: rise 160ms ease-out;
 }
+.notice { padding-block: 0.625rem; } /* no button to give it height */
 @keyframes rise {
   from { opacity: 0; transform: translateY(4px); }
 }

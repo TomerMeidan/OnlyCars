@@ -400,6 +400,7 @@ export async function api<T>(path: string, method = 'GET', body?: unknown): Prom
 export async function apiResponse(path: string, method = 'GET', body?: unknown, signal?: AbortSignal): Promise<Response> {
   const token = getToken()
   const form = body instanceof FormData
+  if (todayCalls.test(`${method} ${path}`)) path += `?today=${localToday()}`
   const res = await fetch(`/api${path}`, {
     method,
     headers: {
@@ -411,6 +412,7 @@ export async function apiResponse(path: string, method = 'GET', body?: unknown, 
   })
   if (res.status === 401 && token) {
     setToken(null)
+    localStorage.removeItem(USER_KEY) // as logout() does, so another device's 401 leaves no cached user behind
     location.assign('/login')
   }
   if (!res.ok) {
@@ -418,6 +420,24 @@ export async function apiResponse(path: string, method = 'GET', body?: unknown, 
     throw new ApiError(res.status, problem, res.statusText)
   }
   return res
+}
+
+// LOW-8: the calls whose task and checklist statuses, and default dates, use the client's today: the table in docs/contracts/LOW-8.md.
+// A path that already has a query (the dashboard, the reminders) sends its own.
+const id = '[^/?]+'
+export const todayCalls = new RegExp(`^(${[
+  `(GET|POST) /vehicles/${id}/(tasks|checklists)`, `PUT /vehicles/${id}/tasks/${id}`, `POST /vehicles/${id}/tasks/${id}/reset`,
+  `POST /vehicles/${id}/service-records`, `PUT /vehicles/${id}/service-records/${id}`, `POST /vehicles/${id}/service-records/${id}/void`,
+  `PUT /vehicle-checklists/${id}`, `POST /vehicle-checklists/${id}/runs`, 'GET /(dashboard|reminders)',
+].join('|')})$`)
+
+// Saves a blob as a file: the CSV and the data export.
+export function download(blob: Blob, name: string) {
+  const a = document.createElement('a')
+  a.href = URL.createObjectURL(blob)
+  a.download = name
+  a.click()
+  setTimeout(() => URL.revokeObjectURL(a.href))
 }
 
 // The API accepts an out-of-order reading once the user confirms it is a correction.

@@ -63,7 +63,7 @@ export function RemindersCard({ version }: { version: unknown }) {
     <section className="card" aria-labelledby="reminders" ref={sectionRef}>
       <h2 id="reminders" tabIndex={-1}>{t('reminders')}</h2>
       {undo && (
-        <UndoBar taskId="snooze" busy={undoRow.busy} message={t('snoozedUntil', { name: nameOf(undo.item, t), car: undo.item.vehicleNickname, date: fmtDate(undo.until, i18n.resolvedLanguage) })} label={t('undoSnooze')}
+        <UndoBar id="snooze" busy={undoRow.busy} message={t('snoozedUntil', { name: nameOf(undo.item, t), car: undo.item.vehicleNickname, date: fmtDate(undo.until, i18n.resolvedLanguage) })} label={t('undoSnooze')}
           onClick={(e) => undoRow.run(unsnooze, e.currentTarget)} />
       )}
       {undoRow.error != null && <p className="error" role="alert">{errorMessage(undoRow.error)}</p>}
@@ -109,12 +109,12 @@ function ReminderRow({ item: x, onSnooze }: { item: Reminder; onSnooze: (days: n
         {doc ? <DocStatus status={x.status} daysLeft={x.remainingDays ?? 0} /> : <StatusBadge status={x.status as 'Overdue' | 'DueSoon'} />}
       </div>
       <p>{doc ? <ExpiresOn date={x.dueDate!} /> : <Remaining km={x.remainingKm} days={x.remainingDays} />}</p>
-      {mode === 'view' ? (
-        <div className="actions">
-          <Link to={`/cars/${encodeURIComponent(x.vehicleId)}`} dir="auto">{x.vehicleNickname}</Link>
-          <button className="link snooze" aria-label={label} ref={opener('pick')} onClick={() => open('pick')}>{t('snooze')}</button>
-        </div>
-      ) : (
+      {/* The car link stays while the choices are open (L150); a long name truncates so Snooze keeps its line (L151). */}
+      <div className="actions">
+        <Link className="car" to={`/cars/${encodeURIComponent(x.vehicleId)}`} dir="auto"><span>{x.vehicleNickname}</span></Link>
+        {mode === 'view' && <button className="link snooze" aria-label={label} ref={opener('pick')} onClick={() => open('pick')}>{t('snooze')}</button>}
+      </div>
+      {mode !== 'view' && (
         <div role="group" aria-label={label} onKeyDown={(e) => !busy && e.key === 'Escape' && open('view')}>
           <p>{t('snoozeFor')}</p>
           <div className="actions">

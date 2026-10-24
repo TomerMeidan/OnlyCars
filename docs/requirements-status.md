@@ -1,7 +1,7 @@
 # OnlyCars: Requirements Status
 
-**Audit date:** 2026-10-24 (thirty-fourth audit, short sign-off of ACC-2; LOW-7 to ACC-1 are committed, ACC-2 is uncommitted in the working tree)
-**Overall:** MVP steps 1 to 4 are complete. Step 5 is done except reminder emails (NOT-2), which wait for the owner's email provider. ACC-2 (delete my account from Settings, with the password) is signed off, so spec 12's privacy, export and delete-account row is Done, and so is receipt storage (files now leave with the account). Next: LOW-8 (Lows L141 to L181), then PWA-1. No deployment tickets until the owner asks.
+**Audit date:** 2026-10-24 (thirty-fifth audit, short sign-off of LOW-8; LOW-8a is committed as eb201e4, the client redesign the owner approved as 18156cd, and LOW-8b is uncommitted in the working tree)
+**Overall:** MVP steps 1 to 4 are complete. Step 5 is done except reminder emails (NOT-2), which wait for the owner's email provider. LOW-8 (Lows L141 to L181, with the client's today on every status endpoint) is signed off; no requirement status changes. Next: PWA-1 (app icons, a verified install, fonts cached for offline). No deployment tickets until the owner asks.
 
 | Status | Count |
 |---|---|
@@ -12,10 +12,10 @@
 | Deferred | 6 |
 | **Total** | **57** |
 
-How this was checked (thirty-fourth audit, short sign-off of ACC-2 per decisions.md "Faster pipeline (owner)"; I re-ran no test suites and no browser scripts):
-- Reported by other agents, not re-run by me: `dotnet test` 704, then 707 after the fix round, all pass; lint and `tsc` clean; smoke `SMOKE_ALL=1` 139 of 139 in all 4 setups (after QA fixed two outdated ACC-1 checks that counted the buttons in "Your data"). Code review: approve. Security: pass, no High; one Medium fixed (wrong delete passwords now count toward the login lockout). Hebrew review: good, 3 polish edits. Browser QA in desktop-light-en and mobile-dark-he at 390px: all hand tests pass (panel focus, wrong password, mocked 429, 500 and network error, Cancel and Escape, busy blocks a second send, a real delete lands on `/login` with the note once, the old token gets 401, the old password fails, the same email registers again, no overflow, 44px targets).
-- I checked in code: the endpoint (`MeController.cs:35-41`, policy `account-delete` at `RequestLimits.cs:27-28,76`), the service (`src/OnlyCars.Application/Account/AccountService.cs:14-48`: run photos first, then the user, then `DeletePrefixAsync` after the commit), the tests (`AccountDeleteTests.cs`, 12 test methods), the Settings panel (`SettingsPage.tsx:80-107,183-201`), the en/he strings (`i18n.ts:221-231,884-894`), the smoke steps `delete-account-errors` and `delete-account` (`smoke.mjs:5653-5747`, which also deletes the NOT-1 run user with its Cap car, closing L168) and the contract `docs/contracts/ACC-2.md`.
-- Not tested by anyone: that the R2 objects are really gone after a live delete (L178), a storage failure in a real run (L172), and a run-photo upload landing mid-delete (L173, found in review).
+How this was checked (thirty-fifth audit, short sign-off of LOW-8 per decisions.md "Faster pipeline (owner)" and "Leaner pipeline (owner)"; I re-ran no test suites and no browser scripts):
+- Reported by other agents, not re-run by me: LOW-8a `dotnet test` 722, all pass; code and security review no High or Medium after the fix round. LOW-8b: code review one Medium (smoke cleanup could leak users when a step failed), fixed with try/catch then cleanup; Hebrew review fine; browser QA smoke `SMOKE_ALL=1` 141 of 141 in all 4 setups, hand checks pass incl. the midnight checks in `Pacific/Kiritimati` and `Pacific/Pago_Pago`; final smoke after the fixes 141 of 141 in all 4 setups.
+- Not checked by me in code or in a browser: the individual LOW-8b fixes; I rely on the QA report. L146 and L153 were confirmed fixed by the redesign (18156cd) in that QA.
+- Not tested by anyone: a page left open across midnight without navigating (L186).
 - The notes from earlier audits are in git history.
 
 ## 1. Vehicles
@@ -166,7 +166,7 @@ How this was checked (thirty-fourth audit, short sign-off of ACC-2 per decisions
 | Deploy gate | **SEC-1 signed off.** Nothing else blocks a first deploy except the owner's Azure account. The owner said not to deploy yet (decisions.md, 2026-10-15, "When to deploy"), so no deployment tickets are queued. |
 | 3. Service history with costs | **Complete. MVP3-A, MVP3-B, MVP3-C, MVP3-D and FILE-2 (attachments) are signed off.** Files: receipt photos and PDFs added to a saved service, opened and deleted from its row, opened from `/history`. Working end to end in EN and HE: the service history on `/cars/:id`, recording a past service (date, odometer, shop or DIY, cost, notes, several tasks, parts and labour) with the date-order rules, editing everything on a record (shop, cost, notes, items, date, odometer and tasks, with the car's odometer and the tasks' last done following), deleting any record, and a `/history` page that filters and searches all cars. LOW-1 (the first Low batch) is signed off too. |
 | 4. Dashboard with due/overdue status | **Complete. MVP4-A and LOW-2 are signed off; "Start a checklist" came with MVP5-B.** The dashboard on `/`: overdue and due-soon counts, this month's spend linking to `/history`, and per-car cards with the next 3 tasks, one-tap Mark done with Undo, quick odometer entry and Start a checklist, in EN and HE. |
-| 5. Checklists, tires, reports, notifications | **All but email. Spec 12's delete-account is done too (ACC-2). Checklists are complete: MVP5-A, MVP5-B, MVP5-C and FILE-3 (photos on runs) are signed off. Tires are done: MVP5-D (sets, mounts, swap, km per set, storage notes) and MVP5-E (pressure, tread depth, rotations) are signed off. LOW-3, LOW-4 and LOW-5 are signed off. Reports are done: RPT-1 (cost per car, category, month and year, cost per km, TCO), RPT-2 (charts) and RPT-3 (CSV and PDF export) are signed off. The browser QA catch-up over MVP5-C to RPT-3 passed.** LOW-6 (files and photos Lows) and LOW-7 (reports, dashboard and checklists Lows) are signed off. NOT-1 (in-app reminders: car documents, the Reminders card with snooze, lead days in Settings) is signed off. Remaining: reminder emails (spec 9 bullet 1, NOT-2), waiting for the owner's email provider. While it waits: ACC-1 (data export) and ACC-2 (delete-account) are signed off; LOW-8 is next. |
+| 5. Checklists, tires, reports, notifications | **All but email. Spec 12's delete-account is done too (ACC-2). Checklists are complete: MVP5-A, MVP5-B, MVP5-C and FILE-3 (photos on runs) are signed off. Tires are done: MVP5-D (sets, mounts, swap, km per set, storage notes) and MVP5-E (pressure, tread depth, rotations) are signed off. LOW-3, LOW-4 and LOW-5 are signed off. Reports are done: RPT-1 (cost per car, category, month and year, cost per km, TCO), RPT-2 (charts) and RPT-3 (CSV and PDF export) are signed off. The browser QA catch-up over MVP5-C to RPT-3 passed.** LOW-6, LOW-7 and LOW-8 are signed off. NOT-1 (in-app reminders: car documents, the Reminders card with snooze, lead days in Settings) is signed off. The client redesign ("the glovebox service book", 18156cd) is approved by the owner. Remaining: reminder emails (spec 9 bullet 1, NOT-2), waiting for the owner's email provider. While it waits: PWA-1 is next, then OFF-1 (spec 12). |
 
 ## Ticket queue
 
@@ -180,12 +180,21 @@ How this was checked (thirty-fourth audit, short sign-off of ACC-2 per decisions
 | 6 | NOT-1: in-app reminders (documents, lead time, snooze) | BE, then FE | **Signed off** 2026-10-18 |
 | 7 | ACC-1: export my data (spec 12) | BE, then FE | **Signed off** 2026-10-18 |
 | 8 | ACC-2: delete my account (spec 12, L135) | BE, then FE | **Signed off** 2026-10-24 |
-| 9 | LOW-8: Lows L141 to L181 (with the client-today date fix, L155) | BE, then FE | **Next** (written below); no owner input needed |
-| 10 | PWA-1: app icons and a verified install (spec 12) | FE | After LOW-8 |
+| 9 | LOW-8: Lows L141 to L181 (with the client-today date fix, L155) | BE, then FE | **Signed off** 2026-10-24 |
+| - | Client redesign, "the glovebox service book" (`docs/design.md`) | FE | **Approved by the owner**, committed 18156cd |
+| 10 | PWA-1: app icons, a verified install, fonts cached for offline (spec 12) | FE | **Next** (written below); no owner input needed |
 | 11 | OFF-1: offline odometer entry that syncs later (spec 12) | FE, small BE | After PWA-1 |
+| 12 | NAV-1: phone navigation (bottom tab bar or "More" menu) | FE | After OFF-1 (designer proposal) |
 | - | NOT-2: email when due | BE, then FE | **Blocked:** needs the owner's email provider, sender address and credentials. Goes next as soon as the owner answers. |
 
 ## Signed-off tickets
+- **LOW-8 (LOW-8a committed as eb201e4; LOW-8b uncommitted in the working tree): signed off 2026-10-24.** Short sign-off under "Faster pipeline (owner)"; I re-ran no suites. Closes L141 to L181 except the owner's rows (L144, L148). No requirement status changes.
+  - Reported evidence: `dotnet test` 722, all pass; code and security review no High or Medium after the fix round (LOW-8a); code review one Medium fixed, Hebrew review fine, smoke `SMOKE_ALL=1` 141 of 141 in all 4 setups before and after the fixes, browser QA hand checks pass incl. midnight in UTC+14 and UTC-11 (LOW-8b).
+  - AC1, AC3 to AC5 [BE]: the optional client `today` on every task, checklist, dashboard and reminder status endpoint, checked once in `DateRules.ClientToday` after ownership and used as the default for reset, record, attach and run dates (L155, L157); the 5,000-reading cap on the legacy record-move path (L165); account delete X-locks the user's runs with deadlock priority high, so a racing photo or receipt upload gets 409, not 500 (L173); a non-hanging test for one delete at a time (L177); near-cap export about 0.5 s cold and 3 MB, so no fix ticket (L171); cleanup script with exact shapes on reserved domains, `not1-`, `acc1-` and `low7` rules, `QUOTED_IDENTIFIER ON`, proven on throwaway databases only (L143, L161, L170). Contract `docs/contracts/LOW-8.md`.
+  - AC2, AC6 to AC8 [FE]: `today` sent on exactly the contract's 13 endpoints (L155); a cut-off export is not saved (L162); a 401 clears the cached user too (L174); "No year" shown as visible text in the empty Year option (L145); reminder row car link and Snooze at 390px (L150, L151); UndoBar prop renamed (L156); "Driver's license" in English (L159, see below); one shared download helper (L169); busy danger button contrast (L179); delete panel styling (L180); the deleted-account note in the notice style (L181); smoke steps for L142, L147, L158, L160 (Kiritimati and Pago_Pago), L167, L175, L176, L178. L146 and L153 were fixed by the redesign (18156cd; QA confirmed).
+  - Fix round (LOW-8b): smoke cleanup in try/catch so a failed step no longer leaks users (Medium); the 401 filter scope; the cap user renamed `other-cap-…`; the flaky checklist-low3 order check now polls.
+  - **Deviation from the ticket:** L159 says "Driver's license", not "License" (delegated: plain "License" could mean the car's; Hebrew already רישיון נהיגה; decisions.md, "Driver's license wording"). L145 got visible text, not only an accessible label.
+  - Accepted (decisions.md, "LOW-8 sign-off"): the closures L141, L149, L152, L163, L164, L166 and L172 as listed in the ticket. The new Lows are L182 to L187.
 - **ACC-2 (uncommitted in the working tree): signed off 2026-10-24.** Short sign-off under "Faster pipeline (owner)"; I re-ran no suites. Spec 12 "Per-user data isolation, data export and delete-account" Partial to Done, and spec 12 "Receipt image storage with size limits" Partial to Done (the files now leave with the account; nothing else was missing). Closes L135 and L168.
   - Reported evidence: `dotnet test` 704, then 707 after the fix round; lint and `tsc` clean; smoke `SMOKE_ALL=1` 139 of 139 in all 4 setups; code review approve; security pass (no High); Hebrew review good with 3 edits (`deleteAccountTitle` and `accountDeleted` say שלך, "ללחוץ קודם" word order); browser QA hand tests pass in desktop-light-en and mobile-dark-he 390px. No migration.
   - AC1 to AC4 [BE] from the reported tests (`AccountDeleteTests.cs`: one of everything gone on LocalDB, a second user untouched, the storage fake gets `users/{id}/`, storage failure and no storage still delete, wrong and empty password, deleted user's token 401, the same email registers, prefix guard) and the contract `docs/contracts/ACC-2.md`. AC5 to AC8 [FE] from smoke `delete-account-errors` and `delete-account` (`smoke.mjs:5653-5747`) and browser QA. AC3 met with a change, below.
@@ -363,129 +372,73 @@ How this was checked (thirty-fourth audit, short sign-off of ACC-2 per decisions
 
 ## Low issues backlog
 
-Every Low finding from QA and review lands here (decisions.md, "Faster pipeline (owner)"). They are fixed together in a batch ticket LOW-n about every 3 tickets. LOW-1 closed L1 to L12, LOW-2 L13 to L26, LOW-3 L27 to L65, LOW-4 L66 to L86, LOW-5 L87 to L106 (L98 closed as not reproduced), LOW-6 L114 to L140 (L120 closed by L119, L128 closed as accepted; L124 was closed by FILE-2's cleanup script), LOW-7 L107 to L113; ACC-1's caps closed L154; ACC-2 closed L135 and L168; those rows are in git history. Open (L141 to L181 wait for LOW-8, except L144, L148 and L72, L105 and L134, which are the owner's):
+Every Low finding from QA and review lands here (decisions.md, "Faster pipeline (owner)"). They are fixed together in a batch ticket LOW-n about every 3 tickets. LOW-1 closed L1 to L12, LOW-2 L13 to L26, LOW-3 L27 to L65, LOW-4 L66 to L86, LOW-5 L87 to L106 (L98 closed as not reproduced), LOW-6 L114 to L140 (L120 closed by L119, L128 closed as accepted; L124 was closed by FILE-2's cleanup script), LOW-7 L107 to L113; ACC-1's caps closed L154; ACC-2 closed L135 and L168; LOW-8 closed L141 to L181 except L144 and L148 (L141, L149, L152, L163, L164, L166 and L172 as accepted, decisions.md "LOW-8 sign-off"; L146 and L153 by the redesign); those rows are in git history. Open (L144, L148, L72, L105 and L134 are the owner's; L182 to L187 wait for the next LOW-n):
 
 | # | From | Issue | Area |
 |---|---|---|---|
 | L134 | FILE-2 QA | Not tried on a real iPhone (camera photo converted to JPEG on upload, HEIC refused, the inline PDF view; since FILE-3 also a camera photo on a run). Needs a real device. | Owner or a device |
-| L141 | LOW-6 QA | The car photo race (two tabs changing the photo at once) is only mocked in smoke; QA saw a live 409, but no smoke step drives a real race. | Smoke |
-| L142 | LOW-6 review | Remove photo that gets a 409 while the photo still exists keeps the confirm open; only the no-photo case is smoke-tested. Add a mocked smoke step for it. | Smoke, car form |
-| L143 | LOW-6 review | Some `%` rules in `scripts/cleanup-test-users.sql` on reserved domains (`example.com` and the like) are still loose; the new domain guard keeps them safe. Tighten them when the script is next touched. | Script |
 | L144 | LOW-6 QA | The dev DB has new test users `qa-low6-…`; the cleanup script's rules cover them (joins L72, the owner's run). | Dev DB (owner) |
-| L145 | LOW-7 review | The empty Year option on `/reports` (shown for an invalid URL year) has no text, so a screen reader announces a blank choice. Give it an accessible label such as "No year" (en, he). | FE, reports, a11y |
-| L146 | LOW-7 QA | On `/checklists` the row Edit and Delete buttons sit about 8px in from the template name (button centering; pre-existing). Align them with the row edge. | FE, checklists |
-| L147 | LOW-7 QA | Not checked in a browser: "Last run on" after deleting the latest run (unit-tested only), and where focus lands after a failed CSV export. Add smoke steps when the area is next touched. | Smoke |
 | L148 | LOW-7 QA | The dev DB has new test users `qa-low7-…` and `qa+low7-…`; the cleanup script's rules cover them (joins L72, the owner's run). | Dev DB (owner) |
-| L149 | NOT-1 QA | Only the latest snooze can be undone; earlier ones show only as the snoozed count, with no list to undo them from. | FE, reminders |
-| L150 | NOT-1 QA | The car link in a reminder row is hidden while the snooze choices are open. | FE, reminders |
-| L151 | NOT-1 QA | At 390px, after a long car name, Snooze drops to its own line. | FE, reminders |
-| L152 | NOT-1 review | Overdue items without a day count (km-only tasks) sort after the dated ones (as in the contract); consider ordering them by how far over they are. | BE, reminders |
-| L153 | NOT-1 QA | Pre-existing tap targets: the "Show archived" checkbox is 13px and the Tires nav link 36px high (44 required). | FE, a11y |
-| L155 | NOT-1 review | Mixed dates: tasks and checklists use the server's UTC date, documents and snoozes the client's today, so around midnight they can disagree by a day. Fix: the client's today everywhere (the dashboard already sends it). | BE+FE, dates |
-| L156 | NOT-1 review | The UndoBar prop is still named `taskId` though it now undoes snoozes too. Rename. | FE |
-| L157 | NOT-1 review | `DateRules.ClientToday` refactor half done: 3 inline copies of the today check remain. Finish with L155. | BE |
-| L158 | NOT-1 review | The smoke check that a Documents form error clears on edit covers date codes only. | Smoke |
-| L159 | NOT-1 Hebrew/QA | English shows "Licence" (British) while the rest of the app and the spec use American spelling. Decided: show "License" in English; the API value stays `Licence` (decisions.md, "NOT-1 sign-off"). | FE, i18n |
-| L160 | NOT-1 QA | Not tested: two tabs at once (`documentGone`), the 51st document's message in the UI, a browser time zone other than the server's UTC, and snooze then Mark done. | Smoke |
-| L161 | NOT-1 | New test users `not1-…`, `qa-not1-…` and `sec-…` in the dev DB. `qa-not1-…` and `sec-…` are covered by existing rules; `not1-…` has no rule in `scripts/cleanup-test-users.sql`. Add it (joins L72, the owner's run). | Script |
-| L162 | ACC-1 review | If serialization fails in the middle of the streamed export, the client gets a 200 with a cut-off file. The client should check that the file parses before saving it, or the server should end with a marker. | BE+FE, export |
-| L163 | ACC-1 security | The export object (`ExportDto`) is still built whole in memory before it streams; bounded now by the caps and 3 at once. Stream per car if accounts grow. | BE, export |
-| L164 | ACC-1 review | Two creates at once can go one over a cap (as with the existing caps). | BE |
-| L165 | ACC-1 review | A rare legacy service-record edit path that re-creates its reading does not check the 5,000-reading cap. | BE |
-| L166 | ACC-1 security | Per-user rate-limiter partitions may keep idle timers (pre-existing, all per-user policies). | BE |
-| L167 | ACC-1 QA | The three cap messages are only mocked in the UI; no smoke step reaches a real cap. | Smoke |
-| L169 | ACC-1 review | The file download helper is duplicated in `SettingsPage.tsx` and `ReportsPage.tsx`. Share one. | FE |
-| L170 | ACC-1 | New test users `acc1-…`, `qa-acc1-…` and `secrev…` in the dev DB. `qa-acc1-…` and `secrev…` match existing rules; `acc1-…` has no rule in `scripts/cleanup-test-users.sql`. Add it with L161 (joins L72, the owner's run). | Script |
-| L171 | ACC-1 | The export has not been tried with a large account (near the caps): time, memory and file size. | BE, perf |
-| L172 | ACC-2 security | If the R2 delete fails after the commit, the files stay with no retry (only logged). The fix is the orphan sweep under "Later". | BE, storage |
-| L173 | ACC-2 security | A run-photo upload that lands in the middle of an account delete makes the delete return 500 (the account stays intact and a retry works). Fix with `UPDLOCK` on the run-photo read or a retry on FK error 547. | BE |
-| L174 | ACC-2 security | Other devices keep the cached user (`USER_KEY`) in localStorage after their 401 (`client/src/api.ts:412-414` clears only the token). Remove it there as `logout()` does. | FE |
-| L175 | ACC-2 review | The smoke cleanup token list (`smoke.mjs` about line 5741) should `.filter(Boolean)`: `not1Auth` may be undefined, which turns one failure into two. | Smoke |
-| L176 | ACC-2 review | The smoke DELETE mock with `{ times: 1 }` (`smoke.mjs` about line 5647) can be used up by a fallback GET. Call `unroute` after the DELETE instead. | Smoke |
-| L177 | ACC-2 review | The "1 at a time" per-user delete limit has no test. Add one or drop it from the contract. | BE, tests |
-| L178 | ACC-2 review | No smoke step proves the R2 objects are gone: fetch a file's signed URL before the delete and expect 404 after. | Smoke |
-| L179 | ACC-2 QA | The busy danger button has weak contrast in both themes (the shared `aria-disabled` style). | FE, a11y |
-| L180 | ACC-2 QA | The delete panel has no background or border and sits 8px under its opener. | FE, settings |
-| L181 | ACC-2 QA | The "Your account was deleted." note on `/login` is plain body text, easy to miss. Give it the notice style. | FE, auth |
 | L105 | RPT-3 | Nobody has opened the exported CSV in real Excel (Hebrew, the BOM, `;` locales) or used the real print dialog and "Save as PDF". No agent can; the owner checks once (CHECKLIST.md, "Waiting on the owner"). | Owner |
 | L72 | LOW-3 housekeeping | The local dev DB has leftover test users. `scripts/cleanup-test-users.sql` covers them (RPT prefixes added in LOW-5) but was never run; the owner decides (CHECKLIST.md, "Waiting on the owner"). | Dev DB (owner) |
+| L182 | LOW-8a security | The cleanup script's test-domain allow-list includes real registrable domains (`x.com`, `x.io`, `test.com`, `test.dev`, `t.dev`, `t.io`); only the exact shapes protect real accounts there. Move agent tests to `.test` domains and drop those from the list. | Script, tests |
+| L183 | LOW-8a review | Since L173, any transient save error on an attachment (for example a timeout) shows the 409 "reload" message instead of a 500 (`AttachmentFiles`). Map only the lock conflict to 409. | BE, files |
+| L184 | LOW-8a review | The `%` rules on `onlycars.test` stay loose (`ui-`, `qa-`, `qa3-`, `shot-`, `not1-`, `be-file1-fix`). Safe because the domain is reserved; tighten when next touched. | Script |
+| L185 | LOW-8b QA | The smoke `login-page` first-load focus check flaked once ("Execution context was destroyed", `smoke.mjs` about line 120). Wait for the navigation before reading focus. | Smoke |
+| L186 | LOW-8b QA | Not tested: a page left open across midnight without navigating (does the status update, or does it keep yesterday's `today` until a reload). | FE, dates |
+| L187 | LOW-8b QA | Smoke leaves the NOT-1 time-zone cars in the dev DB until its user is deleted at the end; a run that stops early leaves them. | Smoke |
 
 ## Next ticket
 
-### LOW-8: the Lows from LOW-6 QA to ACC-2 (L141 to L181)
+### PWA-1: app icons, a verified install, and fonts that work offline
 
-**Goal:** As a user, dates and reminders agree around midnight and in every time zone, and the small rough edges found since LOW-6 (reminders, Settings, the account screens, reports, checklists) are gone.
+**Goal:** As a user, I can install OnlyCars on my phone or desktop from Chrome, it gets a proper icon, and once installed it opens with its own fonts even without a connection.
 
-**Spec:** no requirement status changes; quality batch per decisions.md "Faster pipeline (owner)" (a LOW-n about every 3 tickets). Closes L141 to L181 except the owner's rows (L144, L148, L72, L105, L134).
+**Spec:** 12, "Mobile-first responsive UI, installable PWA" (Partial; the mobile half is done). Done when AC1 to AC6 pass; the real iPhone "Add to Home Screen" check goes to the owner's list (as L134).
 
-**Binding decisions:** "Faster pipeline (owner)", "NOT-1 sign-off" ("License" in English, API value `Licence`), "Delete account, ACC-2" (as updated in the fix round: wrong passwords count toward the lockout), "ACC-1 sign-off" (the caps), "Hebrew form of address", and the smoke rule in "FILE-3 sign-off" (never two smoke runs at once). The closures below are recorded in a decisions.md row "LOW-8 scope" at sign-off.
+**Who:** frontend-engineer only; no backend change, no API contract. No new runtime dependency (`vite-plugin-pwa` and Workbox are already installed).
 
-**Closed as accepted, no work** (the reason goes into the backlog note at sign-off):
-- L141 (real photo race in smoke): QA saw a live 409 and the mocked step covers the UI; a real two-tab race in smoke would be flaky.
-- L149 (only the latest snooze can be undone): as designed; a list of snoozed items to undo goes to "Later".
-- L152 (km-only overdue items sort after dated ones): keep the contract order.
-- L163 (export built whole in memory): bounded by the caps and 3 at once; reopen if the caps are raised.
-- L164 (two creates at once can go one over a cap): same as the accepted quota overshoot (L128).
-- L166 (idle per-user limiter timers): pre-existing in the framework's partitioned limiter; no measurable cost at this size.
-- L172 (no retry when the R2 delete fails): covered by the orphan sweep under "Later".
+**Binding decisions:** "Client redesign" (`docs/design.md`: the dial mark is the icon; `--cluster` `#0f1a1f` and the paper background as the manifest colors), "Faster pipeline (owner)", "Leaner pipeline (owner)" (no security review needed; no Hebrew review unless Hebrew strings change), and the smoke rule in "FILE-3 sign-off" (never two smoke runs at once).
 
 **Scope**
 
-*Backend (backend-engineer, runs first; contract changes, if any, in a short `docs/contracts/LOW-8.md`):*
-- **L155, L157, client today everywhere:** every endpoint that computes a task or checklist status (the car page's task and checklist lists, the dashboard, `GET /api/reminders`) takes an optional `today` query (`YYYY-MM-DD`) and uses `DateRules.ClientToday` (at most one day from UTC, 400 with the existing date code when off). Replace the 3 inline copies of the today check with `DateRules.ClientToday`. No `today` keeps the server's UTC date, so old clients still work.
-- **L165:** the legacy service-record edit path that re-creates its reading checks the 5,000-reading cap (the existing cap code).
-- **L173:** an account delete that races a run-photo upload no longer returns 500: read the run-photo rows with `UPDLOCK` (or retry once on SQL error 547), so the delete either removes the new row or the upload is refused (404, the run is gone).
-- **L177:** a test that a second `DELETE /api/me` while the first is in flight gets 429, or remove "1 at a time" from the policy and the contract; the engineer picks the smaller one and says which.
-- **L171:** one measurement, not a fix: export an account seeded near the caps (50 cars, one with 2,000 records and 5,000 readings) on LocalDB and report time, peak memory and file size in the handoff. A fix becomes a new ticket only if it takes over 10 seconds or 500 MB.
-- **L143, L161, L170 (`scripts/cleanup-test-users.sql`):** add rules for `not1-…` and `acc1-…`, and tighten the loose `%` rules on reserved domains; keep the domain guard and the dry-run default. Do not run it on the dev DB (the owner's call, L72).
-- Tests for each change; `dotnet test` passes.
-
-*Frontend (frontend-engineer, builds against the backend part):*
-- **L155:** send the client's local `today` on every call that now takes it (as the dashboard already does).
-- **L162:** after the export download, check that the file parses as JSON before saving it; a cut-off file shows the export error instead of saving.
-- **L174:** on any 401 with a token, clear the cached user (`USER_KEY`) as well as the token (`api.ts:412-414`), as `logout()` does.
-- **L145:** the empty Year option on `/reports` gets an accessible label ("No year"; Hebrew by the Hebrew review).
-- **L146:** on `/checklists`, the row Edit and Delete buttons align with the row edge.
-- **L150, L151:** in a reminder row the car link stays visible while the snooze choices are open; at 390px with a long car name Snooze stays on the row (the name truncates with an ellipsis and keeps its full text for screen readers).
-- **L153:** the "Show archived" checkbox and the Tires nav link reach a 44px tap target.
-- **L156:** rename the UndoBar prop `taskId` to a neutral name.
-- **L159:** English shows "License" (the API value stays `Licence`).
-- **L169:** one shared file-download helper for Settings and Reports.
-- **L179:** the busy (`aria-disabled`) danger button meets 3:1 contrast against its background in both themes while still looking busy.
-- **L180:** the delete-account panel gets the same background, border and spacing as the app's other inline panels.
-- **L181:** "Your account was deleted." on `/login` uses the app's notice style (`role="status"`), not plain text.
-- **Smoke:** L142 (mocked 409 on Remove photo while the photo exists), L147 ("Last run on" after deleting the latest run; focus after a failed CSV export), L158 (a non-date Documents error clears on edit), L160 (a browser time zone far from UTC via Playwright `timezoneId`, such as `Pacific/Kiritimati` and `Pacific/Pago_Pago`; snooze then Mark done; `documentGone` from a second tab; the 51st document's message, mocked), L167 (a real car cap: a fresh user gets 50 cars through the API, the 51st through the UI shows the cap message, then the user is deleted with `DELETE /api/me`), L175 (`.filter(Boolean)` on the cleanup tokens), L176 (`unroute` after the mocked DELETE), L178 (a file's signed URL works before the delete and is 404 after).
-- en and he for every new or changed string; Hebrew review of those strings.
+*Frontend (frontend-engineer):*
+- **Icons:** PNG icons drawn from the dial mark in `client/public/favicon.svg`: 192 and 512 px with `purpose: "any"`, a 512 px `purpose: "maskable"` with the mark inside the central 80% safe zone on a full-bleed `--cluster` background, and a 180 px `apple-touch-icon` linked from `client/index.html`. Render them once (for example with the installed Playwright) and commit the PNGs; no new dependency. Keep `favicon.svg` as the tab icon.
+- **Manifest** (`client/vite.config.ts`): add `id: "/"`, `start_url: "/"`, `scope: "/"` and the new icons; keep `name`, `short_name`, `display: "standalone"`, `theme_color` and `background_color` matching `docs/design.md`.
+- **Fonts offline:** Workbox `runtimeCaching` for `https://fonts.googleapis.com` (StaleWhileRevalidate) and `https://fonts.gstatic.com` (CacheFirst, about one year, a small entry cap, opaque responses allowed), so the Noto Sans and Noto Sans Hebrew files loaded on one online visit are used offline.
+- **API never cached:** the service worker must not cache or serve `/api/...` (`navigateFallbackDenylist: [/^\/api\//]` and no runtime rule for it), so offline API calls fail into the existing error states, never stale data.
+- **Smoke step `pwa-install`** against the production build (`vite build`, then `vite preview`, which reuses the `/api` proxy), not the dev server (the service worker stays off in dev, as today).
 
 **Acceptance criteria**
-1. [BE] Task, checklist and reminder statuses use the `today` the client sends (tested with a `today` one day off UTC each way); a `today` two days off is a 400; no `today` uses UTC; `DateRules.ClientToday` is the only today check left.
-2. [BE+FE] With the browser in a UTC+14 and a UTC-11 time zone, a task or document due today shows the same status on the car page, the dashboard and the Reminders card (smoke).
-3. [BE] The legacy edit path refuses the 5,001st reading with the cap code (test).
-4. [BE] A run-photo upload racing an account delete never produces a 500 (test); the per-user "1 at a time" delete limit is tested or removed from the contract.
-5. [BE] The handoff reports the near-cap export's time, memory and size; the cleanup script has the new rules and still refuses non-test domains (dry run shown in the handoff, never run for real).
-6. [FE] A cut-off export file is not saved and shows the export error (mocked); after a 401, localStorage has neither the token nor the cached user.
-7. [FE] The UI fixes L145, L146, L150, L151, L153, L156, L159, L169, L179, L180 and L181 are visible in the browser in English and Hebrew (RTL), at 390px with no horizontal overflow, with 44px tap targets, in light and dark themes (QA screenshots).
-8. [FE] The smoke steps listed above exist and pass; the existing empty, error and loading states on the touched screens are unchanged.
-9. [BE+FE] `dotnet test`, build, lint and smoke `SMOKE_ALL=1` pass in all 4 setups, each run alone.
+1. [FE] The built manifest lists 192 and 512 `any` PNG icons and a 512 `maskable` PNG, with `id`, `start_url` and `scope` `/` and `display` `standalone`; every icon URL returns 200 as `image/png` at its declared pixel size (smoke `pwa-install`).
+2. [FE] On the production build in Chrome, the CDP call `Page.getInstallabilityErrors` returns no errors, and after one reload the service worker controls the page; checked at desktop width and at 390px.
+3. [FE] After one online visit, with the browser set offline and the page reloaded, the app shell loads and `document.fonts.check('16px "Noto Sans"')` and the same for Noto Sans Hebrew are true, in English and in Hebrew (RTL); QA screenshots of both.
+4. [FE] Offline, an API call (for example the dashboard) shows the existing error state with its Retry, never cached data, and no request under `/api/` is answered by the service worker (checked in the smoke step).
+5. [FE] QA screenshots show the 512 maskable icon cropped to a circle and to a rounded square with the whole dial mark visible, and the 192 icon on light and dark backgrounds; the `apple-touch-icon` link resolves.
+6. [FE] Smoke `SMOKE_ALL=1` passes in all 4 setups, each run alone; lint and build are clean; the dev server on 5173 keeps working (no service worker in dev).
 
-**Out of scope:** new features (a list of snoozed items to undo, a car delete, the orphan sweep, a grace period on delete); NOT-2 email; PWA icons; streaming the export per car; running the cleanup script on the dev DB.
+**Empty, error and loading states:** no new screens. The existing error states are what users see offline (AC4); OFF-1 changes that for odometer entry.
 
-**Open questions:** none block the ticket. Still waiting on the owner: the email service for NOT-2.
+**Out of scope:** offline odometer entry and any API caching (OFF-1); an in-app "Install app" button or install prompt; push notifications; self-hosting the fonts; a Hebrew name or description in the manifest (the name OnlyCars is the same in both languages); phone navigation changes (NAV-1); the real iPhone install (the owner's, added to "Waiting on the owner" when PWA-1 lands).
+
+**Open questions:** none block the ticket. Optional for the owner: do you want an in-app "Install app" button (Chrome's own install menu works without one)? Still waiting on the owner: the email service for NOT-2.
 
 ---
 
 ### Later
 - **NOT-2:** email when a task, checklist or document is due (spec 9 bullet 1), using NOT-1's reminders, `Notification.SentAt` to avoid duplicate sends and an `Email` `NotificationRule`. Needs the owner's email provider, sender address and credentials (user-secrets).
+- **OFF-1:** quick odometer entry queued while offline and sent when back online (spec 12). Next after PWA-1.
+- **NAV-1 (designer proposal):** at 390px the Hebrew header wraps to three rows; a phone bottom tab bar or a "More" menu for the less-used pages. A small FE ticket after OFF-1, with a design note in `docs/design.md` first.
+- **Small UX (designer proposals, next LOW-n or a UX ticket):** "3 of 5 checked" progress on the checklist run page; a one-line value statement on the login page (en and he, with Hebrew review).
 - **Predicted due date** from `AvgKmPerDay` (spec 2.3, optional).
 - **Orphan sweep:** delete R2 prefixes `users/{id}/` whose user no longer exists (test users removed by `scripts/cleanup-test-users.sql`, and any storage failure ACC-2 logs; the fix for L172).
 - **Snoozed list:** see and undo earlier snoozes, not only the latest (from L149).
 - **Car delete** (not asked for; cars are archived): if ever added, it must delete run-photo rows first and `Notifications WHERE VehicleId` in code, as the account delete does.
-- **PWA-1:** 192 and 512 px PNG icons and a maskable icon, a checked install on Android Chrome and desktop Chrome; the iPhone check goes to the owner.
-- **OFF-1:** quick odometer entry queued while offline and sent when back online.
 
 ## Changed since last audit
-- **Signed off:** ACC-2 (delete my account from Settings with the password; uncommitted in the working tree), with smoke in 4 setups and browser QA in desktop-light-en and mobile-dark-he 390px.
-- **Status changes:** spec 12 "Per-user data isolation, data export and delete-account" Partial to Done; spec 12 "Receipt image storage with size limits" Partial to Done (its last gap was deleting the files with the account). Counts: Done 44 to 46, Partial 5 to 3, Missing 2, Deferred 6.
-- **Backlog:** L135 and L168 closed by ACC-2; new Lows L172 to L181.
-- **New decisions** (`docs/decisions.md`, 2026-10-24): "ACC-2 sign-off".
-- **Next ticket:** LOW-8 (L141 to L181), written in full above. NOT-2 stays blocked on the owner's email provider.
+- **Signed off:** LOW-8 (LOW-8a committed as eb201e4, LOW-8b uncommitted in the working tree): the client's today on every status endpoint, so dates agree around midnight in every time zone, plus the Lows from LOW-6 QA to ACC-2. Smoke 141 of 141 in 4 setups.
+- **Approved by the owner:** the client redesign, "the glovebox service book" (18156cd, `docs/design.md`).
+- **Status changes:** none. Counts unchanged: Done 46, Partial 3, Missing 2, Deferred 6.
+- **Backlog:** L141 to L181 closed (L141, L149, L152, L163, L164, L166 and L172 as accepted; L146 and L153 by the redesign); L144 and L148 stay with the owner; new Lows L182 to L187.
+- **New decisions** (`docs/decisions.md`, 2026-10-24): "LOW-8 sign-off", "Driver's license wording".
+- **Next ticket:** PWA-1 (icons, verified install, fonts offline), written in full above. NAV-1 and the small UX proposals are under "Later". NOT-2 stays blocked on the owner's email provider.
