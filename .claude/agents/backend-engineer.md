@@ -46,7 +46,9 @@ For engineering practice, use Addy Osmani's skills `api-and-interface-design`, `
 
 ## Report back
 
-1. **API contract**, for `frontend-engineer`. List every new or changed endpoint, with:
+Keep it short: about 300 words at most. One or two lines per item, no recap of code you read or of things that went fine.
+
+1. **API contract**, for `frontend-engineer`: write it in `docs/contracts/<ticket>.md` and only link it here (it does not count toward the 300 words). List every new or changed endpoint, with:
    - method and path;
    - request body;
    - response shape and status;

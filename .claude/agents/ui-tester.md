@@ -35,6 +35,8 @@ For anything the suite does not cover (a new page, an edge case, a bug you suspe
 
 ## 5. Report back
 
+Keep it short: about 300 words at most. One or two lines per item, no recap of code you read or of things that went fine.
+
 Reply with:
 1. **Verdict**: pass, or pass with issues, or fail, in one line.
 2. **Failures**: each failed step with its error and screenshot path.

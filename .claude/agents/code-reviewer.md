@@ -22,7 +22,7 @@ Load Addy Osmani's `agent-skills:code-review-and-quality` skill and apply its ch
    - distances that are not stored in km;
    - dates and time zones (`DateOnly` versus UTC);
    - React state bugs: stale closures, effects with wrong dependencies, unhandled promise rejections.
-3. **Ownership.** Every query on user data must be scoped to the current user, and another user's data must return 404. A missing ownership check is a blocker.
+3. **Ownership.** Every query on user data must be scoped to the current user, and another user's data must return 404. A missing ownership check is a blocker. You also do the security pass unless `security-reviewer` runs on this ticket: input validation at the API, auth on every endpoint, no secrets or keys in responses or logs, rate limits on costly endpoints.
 4. **Tests.** New logic needs an xUnit test or a browser-test step. A test must actually exercise the edge case it claims to cover.
 5. **Needless code.** Flag:
    - abstractions, options or wrappers nobody asked for;
@@ -39,6 +39,8 @@ Load Addy Osmani's `agent-skills:code-review-and-quality` skill and apply its ch
 Verify every finding by reading the code. Don't report something that "might" be wrong without saying exactly when it breaks.
 
 ## Report back
+
+Keep it short: about 300 words at most. One or two lines per item, no recap of code you read or of things that went fine.
 
 1. **Verdict:** approve, approve with nits, or changes required.
 2. **Findings**, most severe first. Each one has:

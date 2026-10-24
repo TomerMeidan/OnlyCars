@@ -51,6 +51,8 @@ Check each suspected issue by reading the code path end to end. Where it's safe,
 
 ## Report back
 
+Keep it short: about 300 words at most. One or two lines per item, no recap of code you read or of things that went fine.
+
 1. **Verdict:** pass, pass with recommendations, or fail.
 2. **Findings**, most severe first. Each one has:
    - a severity: critical, high, medium, or low;

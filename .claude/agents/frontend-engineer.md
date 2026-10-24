@@ -49,6 +49,8 @@ For engineering practice, use Addy Osmani's skills `frontend-ui-engineering`, `b
 
 ## Report back
 
+Keep it short: about 300 words at most. One or two lines per item, no recap of code you read or of things that went fine.
+
 1. **Per acceptance criterion or issue:**
    - status;
    - approach, with `file:line`;

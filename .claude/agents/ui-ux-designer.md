@@ -42,6 +42,8 @@ The owner uses the app at http://localhost:5173 while agents work.
 
 ## Report back
 
+Keep it short: about 300 words at most. One or two lines per item, no recap of code you read or of things that went fine.
+
 1. The direction in a few lines and the path to `docs/design.md`.
 2. What changed, by area, with `file:line` for the main parts.
 3. Before/after screenshot paths for each main screen (en and he, light and dark, 390px).

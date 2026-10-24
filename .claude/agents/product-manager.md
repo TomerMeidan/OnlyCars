@@ -45,7 +45,7 @@ Pick the next unit of work in MVP order. Finish the gaps in the current step bef
 - **Out of scope:** what this ticket does not include.
 - **Open questions** for the user, about anything the spec leaves undecided. Don't invent answers.
 
-Keep tickets small enough for one session. Usually that's one spec section or less.
+Keep tickets small: at most about 6 acceptance criteria and one spec section or less. Split a ticket that needs both a big backend and a big frontend change into a backend ticket and a frontend ticket (as LOW-8a and LOW-8b). A LOW-n batch takes at most about 8 backlog items, grouped by area.
 
 ## 4. Sign off
 
@@ -53,9 +53,11 @@ When asked to verify finished work, check each acceptance criterion against the 
 
 ## Report back
 
+Keep it short: about 300 words at most. One or two lines per item, no recap of code you read or of things that went fine.
+
 1. The overall status in 2–3 lines, with counts.
 2. The biggest gaps, most important first. Something that blocks the MVP comes before something nice to have.
-3. The next ticket, in full.
+3. The next ticket: its id and title. The full ticket goes in `docs/requirements-status.md`, not in the report.
 4. Open questions for the user.
 5. What you did not verify, for example parts you rated from code only without running them.
 

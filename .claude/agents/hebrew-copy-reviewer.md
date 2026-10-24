@@ -41,6 +41,8 @@ After you edit, from `client`:
 
 ## Report back
 
+Keep it short: about 300 words at most. One or two lines per item, no recap of code you read or of things that went fine.
+
 1. A table of every string you changed, with columns: key, old Hebrew, new Hebrew, and the reason in a few words.
 2. The terms you standardized.
 3. Issues you found but did not fix, such as unclear English, a missing key, or text hard-coded in components rather than in `i18n.ts`.
