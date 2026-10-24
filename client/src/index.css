@@ -59,7 +59,9 @@ header {
   align-items: center;
   flex-wrap: wrap; /* at 390px the nav takes its own lines rather than breaking words */
   column-gap: 1.5rem;
-  padding: 0.25rem 1rem;
+  /* the safe areas are 0 except on a notched phone (viewport-fit=cover in index.html) */
+  padding-block: max(0.25rem, env(safe-area-inset-top)) 0.25rem;
+  padding-inline: max(1rem, env(safe-area-inset-left), env(safe-area-inset-right));
   background: var(--cluster);
   color: var(--cluster-ink);
   border-block-end: 3px solid var(--amber);
@@ -81,6 +83,55 @@ nav a:hover { color: var(--cluster-ink); }
 nav a[aria-current='page'] { color: var(--cluster-ink); border-block-end-color: var(--amber); }
 header button.link { color: var(--cluster-muted); text-decoration: none; }
 header button.link:hover { color: var(--cluster-ink); }
+
+/* NAV-1, below 40em signed in: the page links are a tab bar on the cluster fixed to the bottom, its amber rule on top.
+   viewport-fit=cover (index.html) puts the page under the iPhone home indicator, so the bar pads it and main leaves room for both. */
+:root:has(.tabs) { --tabs: calc(3rem + 3px + env(safe-area-inset-bottom)); scroll-padding-block-end: calc(var(--tabs) + 1rem); }
+header:has(.tabs) + main { padding-block-end: calc(3rem + var(--tabs)); }
+.tabs {
+  position: fixed;
+  inset-inline: 0;
+  inset-block-end: 0;
+  z-index: 1;
+  flex-wrap: nowrap;
+  column-gap: 0;
+  padding-block-end: env(safe-area-inset-bottom);
+  padding-inline: env(safe-area-inset-left) env(safe-area-inset-right);
+  background: var(--cluster);
+  border-block-start: 3px solid var(--amber);
+  white-space: normal; /* a long label wraps between words (two lines) rather than being cut */
+  overflow-wrap: normal;
+  font: 500 condensed 0.95rem/1.2 var(--sans); /* condensed like the brand, so five labels fit at 360px */
+}
+.tabs > a, .tabs > button { flex: 1 1 0; min-inline-size: 0; min-height: 3rem; justify-content: center; text-align: center; padding: 0.25rem 0.125rem; }
+.tabs :focus-visible { outline-offset: -3px; } /* inside the item, so the screen edge doesn't cut the ring */
+.tabs > button, .tabs > button:is(:hover, :active) {
+  background: none;
+  border: none;
+  border-block-end: 2px solid transparent;
+  border-radius: 0;
+  box-shadow: none;
+  transform: none;
+  font: inherit;
+  color: var(--cluster-muted);
+}
+.tabs > button:hover, .tabs > button[aria-expanded='true'] { color: var(--cluster-ink); }
+.tabs > button[aria-current='page'] { color: var(--cluster-ink); border-block-end-color: var(--amber); }
+/* More's menu: above the bar at the inline end, under More; one 44px row per item */
+.more-menu {
+  position: absolute;
+  inset-block-end: 100%;
+  inset-inline-end: 0;
+  min-inline-size: 12rem;
+  display: grid;
+  padding: 0.25rem 1rem 0.5rem;
+  background: var(--cluster);
+  border-block-start: 3px solid var(--amber);
+  border-inline-start: 3px solid var(--amber);
+  border-start-start-radius: var(--r-control);
+  font: 400 normal 0.95rem/1.55 var(--sans); /* reading width, as the header nav */
+}
+.more-menu > a, .more-menu > button { justify-content: start; }
 
 main {
   max-width: 42rem;
@@ -467,7 +518,7 @@ details > summary { padding-block: 0.625rem; cursor: pointer; }
   :root, :root[data-theme] { color-scheme: light; --bg: #fff; --surface: #fff; --sunken: #fff; --ink: #000; --cluster: #fff; --cluster-ink: #000; --cluster-muted: #000; }
   header, .filters, main button { display: none; }
   .print-only { display: block; }
-  main { max-width: none; padding: 0; }
+  main, header:has(.tabs) + main { max-width: none; padding: 0; }
   .card { padding: 0; border: none; break-inside: avoid; }
   .report a { text-decoration: none; min-height: 0; }
   .month-chart span, .category-chart span { print-color-adjust: exact; }

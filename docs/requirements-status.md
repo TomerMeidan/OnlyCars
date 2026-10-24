@@ -1,7 +1,7 @@
 # OnlyCars: Requirements Status
 
-**Audit date:** 2026-10-24 (thirty-seventh audit, short sign-off of OFF-1; OFF-1 is uncommitted in the working tree)
-**Overall:** MVP steps 1 to 4 are complete. Step 5 is done except reminder emails (NOT-2), which wait for the owner's email provider. OFF-1 is signed off: spec 12 "offline odometer entry" is Done, so spec 12 is complete. Next: NAV-1 (phone navigation). No deployment tickets until the owner asks.
+**Audit date:** 2026-10-24 (thirty-eighth audit, short sign-off of NAV-1; NAV-1 is uncommitted in the working tree)
+**Overall:** MVP steps 1 to 4 are complete. Step 5 is done except reminder emails (NOT-2), which wait for the owner's email provider. Spec 12 is complete. NAV-1 (phone bottom tab bar and More menu) is signed off. Next: LOW-9 (Lows L182 to L196). No deployment tickets until the owner asks.
 
 | Status | Count |
 |---|---|
@@ -12,9 +12,9 @@
 | Deferred | 6 |
 | **Total** | **57** |
 
-How this was checked (thirty-seventh audit, short sign-off of OFF-1 per decisions.md "Faster pipeline (owner)"; I re-ran no test suites and no browser scripts):
-- Reported by other agents, not re-run by me: `dotnet test` 729 of 729; smoke `SMOKE_ALL=1` 143 of 143 per setup before the fix round, and all 4 setups (572 of 572 steps) after it; code review approve; security pass; Hebrew review; browser QA in desktop-light-en km and 390px mobile-dark-he miles.
-- Not tested by anyone: the second-tab `storage` update (L192); the offline language switch (L189); a real phone losing signal.
+How this was checked (thirty-eighth audit, short sign-off of NAV-1 per decisions.md "Faster pipeline (owner)"; I re-ran no test suites and no browser scripts):
+- Reported by other agents, not re-run by me: smoke `SMOKE_ALL=1` all 4 setups (576 of 576 steps) after the fix round; code review (one Medium and one Low fixed); browser QA at 360 and 390px in en light and he dark, keyboard, Esc, outside tap, logout confirm with a queued reading, 390x400, landscape and desktop.
+- Not tested by anyone: a real iPhone (safe area, installed standalone, on-screen keyboard), Firefox and Safari, a real Android Back button (L197, L198); the second-tab `storage` update (L192).
 - The notes from earlier audits are in git history.
 
 ## 1. Vehicles
@@ -165,7 +165,7 @@ How this was checked (thirty-seventh audit, short sign-off of OFF-1 per decision
 | Deploy gate | **SEC-1 signed off.** Nothing else blocks a first deploy except the owner's Azure account. The owner said not to deploy yet (decisions.md, 2026-10-15, "When to deploy"), so no deployment tickets are queued. |
 | 3. Service history with costs | **Complete. MVP3-A, MVP3-B, MVP3-C, MVP3-D and FILE-2 (attachments) are signed off.** Files: receipt photos and PDFs added to a saved service, opened and deleted from its row, opened from `/history`. Working end to end in EN and HE: the service history on `/cars/:id`, recording a past service (date, odometer, shop or DIY, cost, notes, several tasks, parts and labour) with the date-order rules, editing everything on a record (shop, cost, notes, items, date, odometer and tasks, with the car's odometer and the tasks' last done following), deleting any record, and a `/history` page that filters and searches all cars. LOW-1 (the first Low batch) is signed off too. |
 | 4. Dashboard with due/overdue status | **Complete. MVP4-A and LOW-2 are signed off; "Start a checklist" came with MVP5-B.** The dashboard on `/`: overdue and due-soon counts, this month's spend linking to `/history`, and per-car cards with the next 3 tasks, one-tap Mark done with Undo, quick odometer entry and Start a checklist, in EN and HE. |
-| 5. Checklists, tires, reports, notifications | **All but email. Spec 12's delete-account is done too (ACC-2). Checklists are complete: MVP5-A, MVP5-B, MVP5-C and FILE-3 (photos on runs) are signed off. Tires are done: MVP5-D (sets, mounts, swap, km per set, storage notes) and MVP5-E (pressure, tread depth, rotations) are signed off. LOW-3, LOW-4 and LOW-5 are signed off. Reports are done: RPT-1 (cost per car, category, month and year, cost per km, TCO), RPT-2 (charts) and RPT-3 (CSV and PDF export) are signed off. The browser QA catch-up over MVP5-C to RPT-3 passed.** LOW-6, LOW-7, LOW-8, PWA-1 and OFF-1 are signed off. NOT-1 (in-app reminders: car documents, the Reminders card with snooze, lead days in Settings) is signed off. The client redesign ("the glovebox service book", 18156cd) is approved by the owner. Remaining: reminder emails (spec 9 bullet 1, NOT-2), waiting for the owner's email provider. OFF-1 (offline odometer entry) is signed off. While NOT-2 waits: NAV-1 (phone navigation) is next. |
+| 5. Checklists, tires, reports, notifications | **All but email. Spec 12's delete-account is done too (ACC-2). Checklists are complete: MVP5-A, MVP5-B, MVP5-C and FILE-3 (photos on runs) are signed off. Tires are done: MVP5-D (sets, mounts, swap, km per set, storage notes) and MVP5-E (pressure, tread depth, rotations) are signed off. LOW-3, LOW-4 and LOW-5 are signed off. Reports are done: RPT-1 (cost per car, category, month and year, cost per km, TCO), RPT-2 (charts) and RPT-3 (CSV and PDF export) are signed off. The browser QA catch-up over MVP5-C to RPT-3 passed.** LOW-6, LOW-7, LOW-8, PWA-1 and OFF-1 are signed off. NOT-1 (in-app reminders: car documents, the Reminders card with snooze, lead days in Settings) is signed off. The client redesign ("the glovebox service book", 18156cd) is approved by the owner. Remaining: reminder emails (spec 9 bullet 1, NOT-2), waiting for the owner's email provider. OFF-1 (offline odometer entry) and NAV-1 (phone navigation) are signed off. While NOT-2 waits: LOW-9 is next. |
 
 ## Ticket queue
 
@@ -183,10 +183,20 @@ How this was checked (thirty-seventh audit, short sign-off of OFF-1 per decision
 | - | Client redesign, "the glovebox service book" (`docs/design.md`) | FE | **Approved by the owner**, committed 18156cd |
 | 10 | PWA-1: app icons, a verified install, fonts cached for offline (spec 12) | FE | **Signed off** 2026-10-24 |
 | 11 | OFF-1: offline odometer entry that syncs later (spec 12) | small BE, then FE | **Signed off** 2026-10-24 |
-| 12 | NAV-1: phone navigation (bottom tab bar and "More" menu) | FE | **Next** (written below); no owner input needed |
+| 12 | NAV-1: phone navigation (bottom tab bar and "More" menu) | FE | **Signed off** 2026-10-24 |
+| 13 | LOW-9: Lows L182 to L196 (cleanup script, odometer id, offline messages) | small BE, then FE | **Next** (written below); no owner input needed |
 | - | NOT-2: email when due | BE, then FE | **Blocked:** needs the owner's email provider, sender address and credentials. Goes next as soon as the owner answers. |
 
 ## Signed-off tickets
+- **NAV-1 (uncommitted in the working tree): signed off 2026-10-24.** Short sign-off under "Faster pipeline (owner)"; I re-ran no suites. No status change (spec 12 "Mobile-first responsive UI" was already Done); the designer's phone-header proposal is closed.
+  - Reported evidence: smoke `SMOKE_ALL=1` all 4 setups, 576 of 576 steps (incl. `phone-nav`); code review; browser QA at 360 and 390px in en light and he dark, 390x400, landscape and desktop.
+  - AC1 [FE] pass: one-row header; five tabs at 44px with full labels (new short keys `tabHistory` and `more`); `aria-current` on the current tab, and on More for Reports and Settings.
+  - AC2 [FE] pass: More with `aria-expanded` (and `aria-controls` only while open); closes on Esc with focus back, an outside tap, choosing an item, a tab tap and Back; keyboard order in RTL; the language switch and the OFF-1 logout confirm as before.
+  - AC3 [FE] pass: bottom padding with the safe-area inset; the last control on every checked page is above the bar, also at 390x400; hidden when printing.
+  - AC4, AC5 [FE] pass: desktop and logged-out unchanged; tokens, light and dark, reduced motion, no sideways scroll at 360 and 390.
+  - AC6 [FE] pass: `phone-nav` smoke step; all 4 setups; lint and build clean.
+  - Fix round: the menu stayed open after a tab tap or Back (Medium); crossing 40em reopened it (Low); both font families now load on the first visit, so the service worker caches the Hebrew font offline even in English (`client/index.html`); a race in the `checklist-run` smoke step.
+  - Accepted (decisions.md, "NAV-1 sign-off"): the Hebrew short labels היסטוריה and עוד without a separate Hebrew review. The new Lows are L197 and L198.
 - **OFF-1 (uncommitted in the working tree): signed off 2026-10-24.** Short sign-off under "Faster pipeline (owner)"; I re-ran no suites. Spec 12 "Offline-tolerant odometer entry (sync later)" Missing to Done.
   - Reported evidence: `dotnet test` 729 of 729; smoke `SMOKE_ALL=1` 143 of 143 per setup, and all 4 setups (572 of 572 steps) after the fix round; code review approve; security pass; Hebrew review (6 wording changes, for example "discard" is מחיקה and "offline" is בלי אינטרנט; English "Discard" became "Delete"); browser QA pass in desktop-light-en km and 390px mobile-dark-he miles (miles sent as km, a 401 keeps the queue, a second user isolated, the logout confirm).
   - AC1 [BE] pass: a repeated `clientRequestId` returns the existing reading with 200 and no new row, also after an edit and before the date-order and cap checks; the same id on another vehicle is independent; the race gives one row; no id behaves as before; the migration applies.
@@ -384,7 +394,7 @@ How this was checked (thirty-seventh audit, short sign-off of OFF-1 per decision
 
 ## Low issues backlog
 
-Every Low finding from QA and review lands here (decisions.md, "Faster pipeline (owner)"). They are fixed together in a batch ticket LOW-n about every 3 tickets. LOW-1 closed L1 to L12, LOW-2 L13 to L26, LOW-3 L27 to L65, LOW-4 L66 to L86, LOW-5 L87 to L106 (L98 closed as not reproduced), LOW-6 L114 to L140 (L120 closed by L119, L128 closed as accepted; L124 was closed by FILE-2's cleanup script), LOW-7 L107 to L113; ACC-1's caps closed L154; ACC-2 closed L135 and L168; LOW-8 closed L141 to L181 except L144 and L148 (L141, L149, L152, L163, L164, L166 and L172 as accepted, decisions.md "LOW-8 sign-off"; L146 and L153 by the redesign); those rows are in git history. Open (L144, L148, L72, L105 and L134 are the owner's; L182 to L190 wait for the next LOW-n):
+Every Low finding from QA and review lands here (decisions.md, "Faster pipeline (owner)"). They are fixed together in a batch ticket LOW-n about every 3 tickets. LOW-1 closed L1 to L12, LOW-2 L13 to L26, LOW-3 L27 to L65, LOW-4 L66 to L86, LOW-5 L87 to L106 (L98 closed as not reproduced), LOW-6 L114 to L140 (L120 closed by L119, L128 closed as accepted; L124 was closed by FILE-2's cleanup script), LOW-7 L107 to L113; ACC-1's caps closed L154; ACC-2 closed L135 and L168; LOW-8 closed L141 to L181 except L144 and L148 (L141, L149, L152, L163, L164, L166 and L172 as accepted, decisions.md "LOW-8 sign-off"; L146 and L153 by the redesign); those rows are in git history. Open (L144, L148, L72, L105 and L134 are the owner's; L182 to L185, L189 and L191 to L196 are in LOW-9; L186 to L188, L190, L192, L197 and L198 wait for a later LOW-n):
 
 | # | From | Issue | Area |
 |---|---|---|---|
@@ -407,39 +417,43 @@ Every Low finding from QA and review lands here (decisions.md, "Faster pipeline 
 | L194 | OFF-1 review | An all-zero GUID is accepted as `clientRequestId`, so every such reading on a car would count as "the same". Reject `Guid.Empty` with 400. | BE, odometer |
 | L195 | OFF-1 housekeeping | Test user `off1-1660725773@example.com` is left in the dev DB and `scripts/cleanup-test-users.sql` has no `off1-<10 digits>` rule. Add one. | Script |
 | L196 | OFF-1 | L189 (the offline language switch) is still open; with OFF-1 the app is used offline more, so take it in the next LOW-n. | FE, settings |
+| L197 | NAV-1 QA | Not tried on a real iPhone: the bar above the home indicator (safe area), the installed app (standalone), and a field focused with the real on-screen keyboard. Needs a real device; added to the owner's iPhone check. | Owner or a device |
+| L198 | NAV-1 QA | Not tried in Firefox or Safari, nor with a real Android Back button (QA used the browser's Back). | FE, browsers |
 | L190 | PWA-1 review | Smoke's SIGINT cleanup path (stopping the preview server on Ctrl+C) is untested, and the full smoke was not re-run after `preview.unref()` (only a setup check). | Smoke |
 
 ## Next ticket
 
-### NAV-1: phone navigation (bottom tab bar and "More" menu)
+### LOW-9: Lows L182 to L196 (cleanup script, odometer id, offline messages)
 
-**Goal:** As a user on my phone, I reach any page with one thumb from a bar at the bottom, and the header no longer fills a third of the screen.
+**Goal:** As a user, when I am offline the app tells me so in plain words, and nothing the test scripts do can touch a real account or leave odd data behind.
 
-**Spec:** 12, "Mobile-first responsive UI" (already Done; this is a usability fix from the designer: at 390px the Hebrew header wraps to three rows). No status change; done when AC1 to AC6 pass.
+**Spec:** no status change (12 "Non-functional" and housekeeping). Done when AC1 to AC6 pass. Batch rules, "Leaner pipeline (owner)": no fix round, only blockers are fixed, other findings go back to the Low backlog. Security review: yes (the cleanup script deletes accounts). Hebrew review: yes (new offline strings).
 
-**Who:** frontend-engineer only (no API change, no contract). A short design note in `docs/design.md` ("Phone navigation") first. No new dependency; icons, if any, are inline SVG like the brand dial. Hebrew review for the new strings. No security review (no auth, storage or data change).
+**Binding decisions:** "Leaner pipeline (owner)", "Offline odometer entry, OFF-1" (only the dashboard quick entry works offline; every other form needs a connection), "LOW-9 choices", and the smoke rule in "FILE-3 sign-off".
 
-**Binding decisions:** "Client redesign" (design tokens, `NavLink` `aria-current`, WCAG AA), "Offline odometer entry, OFF-1" and "OFF-1 sign-off" (Logout with readings waiting still asks to confirm), "Phone navigation, NAV-1" (the choices below), "Leaner pipeline (owner)", and the smoke rule in "FILE-3 sign-off".
+**Scope, Backend (backend-engineer, first; no new endpoint, so no contract file):**
+- L194: `POST /api/vehicles/{id}/odometer` rejects a `clientRequestId` equal to the all-zero GUID with 400 (the same validation error shape as other field errors). L193: a repeated create returns `valueKm` in the same JSON shape as the first create (`12345`, not `12345.00`).
+- L183: attachment saves map only the lock conflict to 409; any other save error stays 500 (`AttachmentFiles`).
+- L182, L184, L195: `scripts/cleanup-test-users.sql`: move any test or script that uses `x.com`, `x.io`, `test.com`, `test.dev`, `t.dev` or `t.io` to a `.test` domain, then drop those six from the allow-list; tighten the loose `%` prefixes on `onlycars.test` to exact shapes; add an `off1-<10 digits>@example.com` rule.
 
-**Scope (frontend-engineer):**
-- `client/src/App.tsx` header and `client/src/index.css`. Below 40em (the breakpoint `index.css` already uses), when logged in: the header keeps only the brand (a link to `/`); a bar fixed to the bottom of the screen has five items: Dashboard (`/`), Service history (`/history`), Checklists (`/checklists`), Tires (`/tires`) and More. More opens a menu with Reports (`/reports`), Settings (`/settings`), the language switch and Log out.
-- Short tab labels where the full one doesn't fit (new keys in `en` and `he`, for example "History" and היסטוריה); every item shows its text, an icon is optional.
-- From 40em up, and when logged out at any width: the header as today, no bottom bar.
+**Scope, Frontend (frontend-engineer):**
+- L191: when the dashboard load gets no response, show a translated "You are offline" message with Retry instead of "Something went wrong" (en and he).
+- L189, L196: offline, the language switch shows one translated message ("You are offline. The language was not changed.") and the language stays as it was; no second identical error.
+- L185: the smoke `login-page` first-load focus check waits for the navigation before reading focus.
 
 **Acceptance criteria**
-1. [FE] At 390px, logged in, in en and he: the header is one row; the bottom bar shows the five items in one row, each at least 44px tall, labels not cut off; the current page is marked with `aria-current="page"` (two cues, as in `docs/design.md`), and More is marked when the page is Reports or Settings. Every page in the app is reachable in at most two taps.
-2. [FE] More is a button with `aria-expanded` and `aria-controls`; its menu opens above the bar, closes on Esc (focus back on More), on a tap outside and after choosing an item; the keyboard reaches every item in order (RTL in Hebrew). The language switch and Log out behave as today, including the OFF-1 confirm when readings are waiting to be sent.
-3. [FE] Nothing is hidden behind the bar: the page gets bottom padding for the bar plus `env(safe-area-inset-bottom)` (iPhone home indicator); the last form button, Undo, the offline entry panel and error messages on every page can be scrolled into view above it; a focused field is not covered. The bar is hidden when printing (the existing print styles).
-4. [FE] From 40em up, the header and its nav are exactly as today (the desktop smoke screenshots look the same); logged out, there is no bottom bar at any width.
-5. [FE] On the design tokens (the bar on `--cluster`, the current item in `--cluster-ink` with the amber mark, as the header does), light and dark at WCAG AA, reduced motion respected; no sideways scrolling at 360 and 390px; works installed as a PWA (standalone) and in the browser.
-6. [FE] Smoke: the existing navigation steps pass at both widths; a new step `phone-nav` at 390px in en and he checks the header height (one row), the five items, More by keyboard (open, Esc, focus back) and that the last button on `/settings` is clickable above the bar. `SMOKE_ALL=1` passes in all 4 setups, each run alone; lint and build clean; the dev server on 5173 keeps working.
+1. [BE] The all-zero GUID as `clientRequestId` gives 400 and no row; a repeated create returns the same `valueKm` JSON as the first; a test for each.
+2. [BE] A non-lock save error on an attachment returns 500, a lock conflict still 409; a test for each.
+3. [BE] The cleanup script matches no address on the six real domains and no `onlycars.test` address outside the listed shapes; it matches `off1-1660725773@example.com`; the script's rule tests pass, and no agent test or script still creates users on the six domains.
+4. [FE] Offline (Playwright `setOffline`), the dashboard shows the offline message with Retry in en and he (RTL, 390px); Retry loads the page once back online; a server error (500) still shows the generic message.
+5. [FE] Offline, the language switch leaves the language unchanged and shows exactly one translated message, in en and he; online it works as today.
+6. [BE+FE] Smoke steps for AC4 and AC5; the `login-page` focus check passes in all 4 setups, each run alone (`SMOKE_ALL=1`); `dotnet test`, lint and build clean; the dev servers on 5150 and 5173 keep working.
 
-**Empty, error and loading states:** no data is loaded by the bar. While the user is loading (first paint), no bar, as with the header nav today. The language switch's busy and error behaviour stays as today (its offline error is L189, not this ticket).
+**Empty, error and loading states:** covered in AC4 and AC5; no new screens.
 
-**Out of scope:** desktop navigation changes; a side drawer or hamburger menu; badges or counts on the tabs (for example due tasks); hiding the bar on scroll; swipe gestures; the offline language switch (L189, L196); new pages.
+**Out of scope:** keeping a language change locally while offline; offline support for other forms; L186 (a page open across midnight), L187 and L190 (smoke housekeeping), L188 (icon tile), L192 (second-tab test), L197 and L198 (devices and browsers); the "Later" UX items.
 
-**Open questions:** none block the ticket; the tab choice, the 40em breakpoint and "More" holding Reports, Settings, the language switch and Log out are delegated in decisions.md ("Phone navigation, NAV-1"). The owner may reorder the tabs after using it. Still waiting on the owner: the email service for NOT-2.
-
+**Open questions:** none; the offline language behaviour is delegated in decisions.md ("LOW-9 choices"). Still waiting on the owner: the email service for NOT-2.
 
 ---
 
@@ -452,8 +466,8 @@ Every Low finding from QA and review lands here (decisions.md, "Faster pipeline 
 - **Car delete** (not asked for; cars are archived): if ever added, it must delete run-photo rows first and `Notifications WHERE VehicleId` in code, as the account delete does.
 
 ## Changed since last audit
-- **Signed off:** OFF-1 (uncommitted in the working tree): the dashboard's quick odometer entry works offline and is sent later, with no doubled readings. 729 backend tests; smoke in 4 setups.
-- **Status changes:** spec 12 "Offline-tolerant odometer entry (sync later)" Missing to Done. Counts: Done 48, Partial 2, Missing 1, Deferred 6.
-- **Backlog:** new Lows L191 to L196.
-- **New decisions** (`docs/decisions.md`, 2026-10-24): "OFF-1 sign-off", "Phone navigation, NAV-1".
-- **Next ticket:** NAV-1 (phone bottom tab bar and "More" menu), written in full above. NOT-2 stays blocked on the owner's email provider.
+- **Signed off:** NAV-1 (uncommitted in the working tree): on a phone, a bottom tab bar with a More menu; the header is one row. Smoke 576 of 576 steps in 4 setups. The designer's phone-header proposal is closed.
+- **Status changes:** none (spec 12 "Mobile-first responsive UI" was already Done). Counts unchanged: Done 48, Partial 2, Missing 1, Deferred 6.
+- **Backlog:** new Lows L197 (real iPhone) and L198 (Firefox, Safari, Android Back).
+- **New decisions** (`docs/decisions.md`, 2026-10-24): "NAV-1 sign-off", "LOW-9 choices".
+- **Next ticket:** LOW-9 (Lows L182 to L196), written in full above. NOT-2 stays blocked on the owner's email provider.

@@ -20,6 +20,13 @@ assert.equal(toCsv([['a;b', ' =1', ' +1', '　-1', '\x01@a', '＝1', '＋1', '�
 const ats = new Map() // one function per path, so unroute(at(x)) finds the route(at(x))
 const at = (end) => ats.get(end) ?? ats.set(end, (u) => u.pathname.endsWith(end)).get(end)
 const pathOf = (x) => new URL(x.url()).pathname
+// NAV-1: below 40em Reports, Settings, the language switch and Log out are in the More menu: open it if it is there and closed.
+// Waits for More at a phone width (it renders just after a resize); signed out there is none.
+const more = async (p) => {
+  const b = p.locator('header .tabs > button')
+  if (p.viewportSize().width <= 640) await b.waitFor({ timeout: 3000 }).catch(() => {})
+  if (await b.isVisible() && (await b.getAttribute('aria-expanded')) !== 'true') await b.click()
+}
 const BASE = process.env.BASE_URL ?? 'http://localhost:5173'
 const OUT = process.env.OUT_DIR ?? 'ui-tests/out'
 mkdirSync(OUT, { recursive: true })
@@ -2125,6 +2132,7 @@ for (const s of setups) {
   const savedShown = () => page.locator('main [role=status]', { hasText: SE.saved }).waitFor({ timeout: 3000 })
   const dirIs = (d) => page.waitForFunction((d) => document.documentElement.dir === d, d, { timeout: 3000 })
   const openSettings = async () => {
+    await more(page)
     await page.click('header a[href="/settings"]')
     await radio('theme', 'System').waitFor()
     await arrivedAt(SE.settings)
@@ -2156,7 +2164,9 @@ for (const s of setups) {
     if (ratio(l.ink, l.surface) < 4.5) throw new Error(`${forced} text contrast ${ratio(l.ink, l.surface).toFixed(2)}:1`)
     if ((await page.locator('main fieldset > legend').count()) !== 3) throw new Error('radio groups without fieldset and legend')
     for (const label of await page.locator('main label').all()) await tall(label, `"${await label.textContent()}"`)
+    await more(page)
     await tall(page.locator('header a[href="/settings"]'), 'Settings link')
+    await page.keyboard.press('Escape')
     await noOverflow(`settings at 390px, ${forced}`)
     await sweep('settings page')
   })
@@ -2172,19 +2182,23 @@ for (const s of setups) {
     await sweep('settings page in the other language')
     // The header switch saves the language too.
     res = putSettings()
+    await more(page)
     await page.click('header nav button.link >> nth=0')
     if ((await res).request().postDataJSON().locale !== own) throw new Error('header switch did not save the language')
     await dirIs(ownDir)
     if (!(await radio('locale', own).isChecked())) throw new Error(`${own} not checked after the header switch`)
     // Signed out: no Settings link, /settings goes to the login page, and the switch saves nothing.
+    await more(page)
     await page.click('header nav button.link >> nth=1')
     await page.locator('input[name=email]').waitFor()
     if (await page.locator('header a[href="/settings"]').count()) throw new Error('Settings link while signed out')
+    if (await page.locator('.tabs').count()) throw new Error('NAV-1: a tab bar while signed out')
     await page.goto(`${BASE}/settings`)
     await page.waitForURL('**/login')
     let puts = 0
     const count = (r) => r.method() === 'PUT' && puts++
     page.on('request', count)
+    await more(page)
     await page.click('header nav button.link >> nth=0')
     await dirIs(otherDir)
     page.off('request', count)
@@ -2438,6 +2452,7 @@ for (const s of setups) {
     await radio('theme', 'Dark').click()
     await page.locator('fieldset:has(input[name=theme]) [role=alert]').waitFor()
     await page.route('**/api/me/settings', fail, { times: 1 })
+    await more(page)
     await page.click('header nav button.link >> nth=0')
     await page.locator('main > p[role=alert]').waitFor()
     if ((await alerts().count()) !== 1) throw new Error(`${await alerts().count()} alerts after the header switch failed`)
@@ -3543,7 +3558,8 @@ for (const s of setups) {
     const [dateBox, odoBox] = await Promise.all([0, 1].map((i) => runForm.locator('> label').nth(i).boundingBox()))
     if (s.viewport.width >= 600 ? Math.abs(dateBox.y - odoBox.y) > 1 || odoBox.x === dateBox.x : odoBox.y < dateBox.y + dateBox.height) throw new Error(`Date ${JSON.stringify(dateBox)}, Odometer ${JSON.stringify(odoBox)}`)
     await page.setViewportSize({ width: 390, height: 844 })
-    const [date390, odo390] = await Promise.all([0, 1].map((i) => runForm.locator('> label').nth(i).boundingBox()))
+    // In one read: the header turns into the tab bar just after the resize (NAV-1), moving both labels.
+    const [date390, odo390] = await runForm.locator('> label').evaluateAll((ls) => ls.slice(0, 2).map((l) => l.getBoundingClientRect().toJSON()))
     if (odo390.y < date390.y + date390.height) throw new Error('Date and Odometer side by side at 390px')
     await noOverflow('the run form')
     await sweep('the run form')
@@ -4743,6 +4759,7 @@ for (const s of setups) {
   let ly, rpA, rpV, rpN
   await step('reports-empty', async () => {
     // Criterion 7: no priced records says so and links to the cars; the year defaults to the local one.
+    await more(page)
     await page.click('header nav button.link >> nth=1')
     await page.locator('input[name=email]').waitFor()
     await page.goto(`${BASE}/register`)
@@ -4750,6 +4767,7 @@ for (const s of setups) {
     await page.fill('input[name=password]', 'Passw0rd!')
     await page.click('form button:not(.link)')
     await page.locator('a[href="/cars/new"]').waitFor()
+    await more(page)
     await page.click('header a[href="/reports"]')
     await arrivedAt(RP.title)
     await page.getByText(RP.empty, { exact: true }).waitFor()
@@ -5832,9 +5850,9 @@ for (const s of setups) {
       if (!(await pp.evaluate(() => navigator.serviceWorker.controller))) throw new Error('no service worker controls the page after a reload')
       const { installabilityErrors } = await (await pctx.newCDPSession(pp)).send('Page.getInstallabilityErrors')
       if (installabilityErrors.length) throw new Error(`installability: ${JSON.stringify(installabilityErrors)}`)
-      // Both fonts were used online (the language switch shows the other script), so the service worker has them.
+      // Both fonts are fetched on load in either language, though a phone keeps the other script in More (NAV-1), so the service worker has them.
       await pp.waitForFunction(async () => (await Promise.all(['google-fonts-css', 'google-fonts-files']
-        .map(async (c) => (await (await caches.open(c)).keys()).length))).every(Boolean), null, { timeout: 10000 })
+        .map(async (c) => (await (await caches.open(c)).keys()).length))).every((n, i) => n >= i + 1), null, { timeout: 10000 })
         .catch(() => { throw new Error('the Google Fonts were not cached') })
       await pp.locator('.cars > li').first().waitFor()
       // AC3: offline, the shell loads and both fonts load from the cache. check() alone is true when no face exists, so load() first.
@@ -6059,6 +6077,7 @@ for (const s of setups) {
       if (await queueCard().count() || posts.length !== before) throw new Error('another user saw or sent the queue')
       const others = await pp.evaluate((id) => Object.keys(localStorage).filter((k) => k.endsWith(id)), U.user.id)
       if (others.length) throw new Error(`another user's login left ${others}`)
+      await more(pp)
       await pp.locator('header nav button.link').last().click() // V has nothing queued: no confirm
       await logIn(U)
 
@@ -6072,10 +6091,12 @@ for (const s of setups) {
       await queueOnline(15000)
       let asked
       pp.once('dialog', (d) => { asked = d.message(); d.dismiss() })
+      await more(pp)
       await pp.locator('header nav button.link').last().click()
       if (plain(asked ?? '') !== OF.logout) throw new Error(`logout asked "${asked}"`)
       if (!(await card().count())) throw new Error('Cancel logged out')
       pp.once('dialog', (d) => d.accept())
+      await more(pp)
       await pp.locator('header nav button.link').last().click()
       await pp.locator('input[name=email]').waitFor()
       const leftover = () => pp.evaluate((id) => Object.keys(localStorage).filter((k) => k.endsWith(id)), U.user.id)
@@ -6109,13 +6130,115 @@ for (const s of setups) {
     }
     if (failure) throw failure
   })
+  // NAV-1: the phone tab bar and More menu at 390px (the desktop setups narrow for it), in this setup's language.
+  await step('phone-nav', async () => {
+    await page.setViewportSize({ width: 390, height: 844 })
+    try {
+      await page.click('header a.brand')
+      await arrivedAt(T.dashboard)
+      const h = await heightOf(page.locator('header'))
+      if (h > 60) throw new Error(`header is ${h}px tall, not one row`)
+      const items = page.locator('.tabs > a, .tabs > button')
+      const boxes = await items.evaluateAll((els) => els.map((el) => {
+        const r = el.getBoundingClientRect()
+        return { text: el.textContent, top: r.top, left: r.left, h: r.height, cut: el.scrollWidth > el.clientWidth || el.scrollHeight > el.clientHeight }
+      }))
+      const want = he ? ['לוח בקרה', 'היסטוריה', 'רשימות בדיקה', 'צמיגים', 'עוד'] : ['Dashboard', 'History', 'Checklists', 'Tires', 'More']
+      if (JSON.stringify(boxes.map((b) => b.text)) !== JSON.stringify(want)) throw new Error(`tabs ${JSON.stringify(boxes.map((b) => b.text))}`)
+      const bad = boxes.filter((b) => b.h < 44 || b.cut || b.top !== boxes[0].top)
+      if (bad.length) throw new Error(`tabs under 44px, cut off or not in one row: ${JSON.stringify(bad)}`)
+      if (boxes.some((b, i) => i && (he ? b.left > boxes[i - 1].left : b.left < boxes[i - 1].left))) throw new Error('tabs not in reading order')
+      if ((await page.locator('.tabs > a[href="/"]').getAttribute('aria-current')) !== 'page') throw new Error('Dashboard tab not marked current')
+      // More by keyboard: open, Tab through the menu in order, Esc closes it with focus back on More.
+      const moreBtn = page.locator('.tabs > button')
+      const menu = page.locator('#more-menu')
+      await moreBtn.focus()
+      await page.keyboard.press('Enter')
+      await menu.waitFor()
+      if ((await moreBtn.getAttribute('aria-expanded')) !== 'true') throw new Error('More not expanded')
+      await page.screenshot({ path: `${OUT}/${s.name}-phone-nav-more.png` })
+      const order = []
+      for (let i = 0; i < 4; i++) {
+        await page.keyboard.press('Tab')
+        order.push(await page.evaluate(() => document.activeElement.closest('#more-menu') && (document.activeElement.getAttribute('href') ?? document.activeElement.textContent)))
+      }
+      const wantOrder = ['/reports', '/settings', he ? 'English' : 'עברית', he ? 'התנתקות' : 'Log out']
+      if (JSON.stringify(order) !== JSON.stringify(wantOrder)) throw new Error(`menu order ${JSON.stringify(order)}`)
+      await page.keyboard.press('Escape')
+      await menu.waitFor({ state: 'detached' })
+      await focusIs('.tabs > button', 'focus after Esc')
+      // A tap outside closes it; choosing an item closes it, and More is lit on Settings.
+      await moreBtn.click()
+      await menu.waitFor()
+      await page.locator('main h1').click()
+      await menu.waitFor({ state: 'detached' })
+      // Closed, More points at no menu; a tab, Back and a trip past 40em and back each close it.
+      const closed = async (what) => {
+        await menu.waitFor({ state: 'detached' })
+        const a = await moreBtn.evaluate((b) => [b.getAttribute('aria-expanded'), b.getAttribute('aria-controls')])
+        if (a[0] !== 'false' || a[1] !== null) throw new Error(`More after ${what}: aria-expanded ${a[0]}, aria-controls ${a[1]}`)
+      }
+      await moreBtn.click()
+      await page.click('.tabs > a[href="/history"]')
+      await page.waitForURL('**/history')
+      await closed('a tab')
+      await moreBtn.click()
+      await menu.waitFor()
+      await page.goBack()
+      await page.waitForURL((u) => u.pathname === '/')
+      await closed('Back')
+      await moreBtn.click()
+      await menu.waitFor()
+      await page.setViewportSize({ width: 1280, height: 800 })
+      await page.locator('.tabs').waitFor({ state: 'detached' })
+      await page.setViewportSize({ width: 390, height: 844 })
+      await closed('1280px and back')
+      await more(page)
+      await page.click('#more-menu a[href="/settings"]')
+      await menu.waitFor({ state: 'detached' })
+      await page.waitForURL('**/settings')
+      await page.locator('main button.danger').last().waitFor()
+      if ((await moreBtn.getAttribute('aria-current')) !== 'page') throw new Error('More not marked current on Settings')
+      // Nothing behind the bar: at the bottom of /settings the last button is above it and takes the tap.
+      await page.evaluate(() => scrollTo(0, document.documentElement.scrollHeight))
+      const last = await page.evaluate(() => {
+        const b = [...document.querySelectorAll('main button')].filter((el) => el.checkVisibility()).at(-1)
+        const r = b.getBoundingClientRect()
+        return { bottom: r.bottom, bar: document.querySelector('.tabs').getBoundingClientRect().top, hit: b.contains(document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2)) }
+      })
+      if (last.bottom > last.bar || !last.hit) throw new Error(`last button behind the bar: ${JSON.stringify(last)}`)
+      // A field reached by Tab while it is behind the bar scrolls above it (scroll-padding).
+      const field = await page.evaluate(() => {
+        const els = [...document.querySelectorAll('main :is(a, button, input, select)')].filter((el) => el.checkVisibility())
+        const [prev, el] = els.slice(-2)
+        prev.focus({ preventScroll: true })
+        scrollBy(0, el.getBoundingClientRect().bottom - innerHeight)
+        el.dataset.target = '1'
+        return el.outerHTML.slice(0, 60)
+      })
+      await page.keyboard.press('Tab')
+      await focusIs('[data-target]', `Tab to ${field}`)
+      const covered = await page.evaluate(() => document.activeElement.getBoundingClientRect().bottom - document.querySelector('.tabs').getBoundingClientRect().top)
+      if (covered > 0) throw new Error(`focused ${field} is ${covered}px behind the bar`)
+      await noOverflow('the tab bar')
+      await page.setViewportSize({ width: 360, height: 780 })
+      await noOverflow('the tab bar at 360px')
+      await sweep('the page with the tab bar at 360px')
+    } finally {
+      await page.setViewportSize(s.viewport)
+    }
+    // From 40em up the header is as before: no bar.
+    if (s.viewport.width > 640) await page.locator('.tabs').waitFor({ state: 'detached', timeout: 3000 })
+  })
   await step('switch-language', async () => {
     const before = await page.getAttribute('html', 'dir')
+    await more(page)
     await page.click('header nav button.link >> nth=0')
     const after = await page.getAttribute('html', 'dir')
     if (before === after) throw new Error(`dir stayed "${after}"`)
   })
   await step('logout', async () => {
+    await more(page)
     await page.click('header nav button.link >> nth=1')
     await page.locator('input[name=email]').waitFor()
   })

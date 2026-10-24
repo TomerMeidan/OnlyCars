@@ -9,6 +9,9 @@ const en = {
   login: 'Log in',
   register: 'Create account',
   logout: 'Log out',
+  // NAV-1: the phone tab bar; the other tabs reuse dashboard, checklists and tires.
+  tabHistory: 'History',
+  more: 'More',
   email: 'Email',
   password: 'Password',
   noAccount: "Don't have an account?",
@@ -710,6 +713,8 @@ const he: typeof en = {
   login: 'התחברות',
   register: 'יצירת חשבון',
   logout: 'התנתקות',
+  tabHistory: 'היסטוריה',
+  more: 'עוד',
   email: 'אימייל',
   password: 'סיסמה',
   noAccount: 'אין לך חשבון?',
