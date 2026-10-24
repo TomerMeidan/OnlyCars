@@ -1,19 +1,19 @@
 # OnlyCars: Requirements Status
 
-**Audit date:** 2026-10-24 (thirty-ninth audit, short sign-off of LOW-9; LOW-9 is uncommitted in the working tree)
-**Overall:** MVP steps 1 to 4 are complete. Step 5 is done except reminder emails (NOT-2), which wait for the owner's email provider. Spec 12 is complete. LOW-9 (Lows L182 to L196) is signed off. Next: PRED-1 (predicted due date, spec 2 optional). NOT-2 still waits for the email provider. No deployment tickets until the owner asks.
+**Audit date:** 2026-10-24 (fortieth audit, short sign-off of PRED-1; PRED-1 is uncommitted in the working tree)
+**Overall:** MVP steps 1 to 4 are complete. Step 5 is done except reminder emails (NOT-2), which wait for the owner's email provider. Spec 2 and spec 12 are complete. PRED-1 (predicted due date) is signed off. Nothing required is open except NOT-2; the rest is deferred optional items and the owner's own checks. The owner picks the next work (options under "Next ticket").
 
 | Status | Count |
 |---|---|
-| Done | 48 |
+| Done | 49 |
 | API only | 0 |
-| Partial | 2 |
+| Partial | 1 |
 | Missing | 1 |
 | Deferred | 6 |
 | **Total** | **57** |
 
-How this was checked (thirty-ninth audit, short sign-off of LOW-9 per decisions.md "Faster pipeline (owner)"; I re-ran no test suites and no browser scripts):
-- Reported by other agents, not re-run by me: `dotnet test` 737 of 737; smoke `SMOKE_ALL=1` 144 of 144 in all 4 setups, twice; code review (approve, no High or Medium); security pass; Hebrew review (one optional wording applied); browser QA pass.
+How this was checked (fortieth audit, short sign-off of PRED-1 per decisions.md "Faster pipeline (owner)"; I re-ran no test suites and no browser scripts):
+- Reported by other agents, not re-run by me: `dotnet test` 753 of 753; smoke `SMOKE_ALL=1` 145 of 145 in all 4 setups, twice (engineer and QA); code review (approve, no High or Medium); Hebrew review (one optional wording applied after the smoke runs; the smoke string was synced but smoke was not re-run); browser QA pass (every rule case by hand, dashboard at 360 and 390px, a long Hebrew date fits).
 - Not tested by anyone: a real iPhone (safe area, installed standalone, on-screen keyboard), Firefox and Safari, a real Android Back button (L197, L198); the cleanup script on the real dev DB (proven on throwaway copies only, by design).
 - The notes from earlier audits are in git history.
 
@@ -32,7 +32,7 @@ How this was checked (thirty-ninth audit, short sign-off of LOW-9 per decisions.
 |---|---|---|---|
 | Manual odometer updates (quick-entry button on the dashboard) | **Done** | Quick entry on the car page (`CarPage.tsx:50`) and on every active dashboard card (`CarsPage.tsx:136-139`), with the date-order rules and the correction checkbox (`OdometerService.cs`, `OdometerServiceTests.cs`). After a save the card's odometer, statuses and the summary counts reload (smoke `dashboard-quick-odometer`). | Nothing. Quick entry always saves today; backdating goes through Edit, accepted. |
 | Auto-log the odometer whenever a service is recorded | **Done** | Every reset logs a `Source = Service` reading linked to its record (`MaintenanceTaskService.cs:99`). A recorded service (MVP3-A, `CreateRecordAsync`, `:167`) logs one at its own date and odometer, with the date-order rules and `confirmCorrection`; voiding removes it (`:248`). Tests: `ServiceRecordTests.cs`, `ServiceHistoryTests.cs` (221 total). Browser: smoke `record-service`, `record-service-backdated` and `undo-service-from-history` in both setups; `qamvp3a-mobile-light-en-mi-10-order-error.png` shows the Service readings in the odometer history. | Nothing. |
-| Optional: estimated average km/day, used to predict when tasks come due | **Partial** | `AvgKmPerDay` is computed (`OdometerService.cs:239-254`, test at `OdometerServiceTests.cs:91`) and shown on the card (`CarsPage.tsx:50-52`). | Nothing uses it for predictions yet. PRED-1 (next ticket) adds a predicted due date to tasks on the car page and the dashboard. |
+| Optional: estimated average km/day, used to predict when tasks come due | **Done** | PRED-1: `TaskStatusCalculator.PredictDueDate` (`src/OnlyCars.Application/Maintenance/TaskStatusCalculator.cs:54-65`) fills `MaintenanceTaskDto.PredictedDueDate` (`MaintenanceDtos.cs:25`) on the car's tasks and the dashboard, contract `docs/contracts/PRED-1.md`; tests `tests/OnlyCars.Tests/PredictedDueDateTests.cs` and `TaskStatusCalculatorTests.cs`. UI: "Around <date>" (`Predicted`, `client/src/pages/TasksSection.tsx:77`, used at `:418` and `CarsPage.tsx:237`) and one "Dates based on N km a day" hint per task section (`TasksSection.tsx:264-266`); en and he (`i18n.ts:54-55,762-763`). Browser: smoke step `predicted-due` (`client/ui-tests/smoke.mjs:3067`) in all 4 setups, reported. | Nothing for this bullet. |
 | Unit setting (km/miles), with the currency set per user | **Done** | Currency: chosen at sign-up (`AuthPage.tsx`, `AuthService.cs`) and changeable on `/settings` (SET-1). Distance unit (SET-2): `PUT /api/me/settings` takes `distanceUnit` (`Km`/`Mi`), 400 `settings.invalidDistanceUnit` (`SettingsTests.cs`, contract `docs/contracts/SET-2.md`, verified live with curl). The client converts in one module, `client/src/units.ts` (1 mi = 1.609344 km, whole miles on display, whole km on input, caps rounded down, unchanged values send their stored km back), tested by `client/ui-tests/units.test.mjs` (6 tests). The car list, car form, car page, history, tasks, templates and error messages all use it. Settings has a fourth radio group. Browser: smoke `settings-unit-miles` and `settings-unit-errors` in both setups, `qa-set2.mjs` (`mobile-dark-he-unit-miles-car.png`, `qaset2-mobile-dark-he-02-settings-mi.png`). | Nothing. Remaining miles can be 1 off the shown numbers, and the Hebrew "קילומטראז׳" label stays in miles; both accepted (decisions.md, "SET-2 QA notes"). |
 
 ## 3. Maintenance Task Definitions
@@ -185,10 +185,17 @@ How this was checked (thirty-ninth audit, short sign-off of LOW-9 per decisions.
 | 11 | OFF-1: offline odometer entry that syncs later (spec 12) | small BE, then FE | **Signed off** 2026-10-24 |
 | 12 | NAV-1: phone navigation (bottom tab bar and "More" menu) | FE | **Signed off** 2026-10-24 |
 | 13 | LOW-9: Lows L182 to L196 (cleanup script, odometer id, offline messages) | small BE, then FE | **Signed off** 2026-10-24 |
-| 14 | PRED-1: predicted due date from average km a day (spec 2, optional) | BE, then FE | **Next** (written below); no owner input needed |
+| 14 | PRED-1: predicted due date from average km a day (spec 2, optional) | BE, then FE | **Signed off** 2026-10-24 |
+| - | Next | - | **The owner chooses** (options under "Next ticket") |
 | - | NOT-2: email when due | BE, then FE | **Blocked:** needs the owner's email provider, sender address and credentials. Goes next as soon as the owner answers. |
 
 ## Signed-off tickets
+- **PRED-1 (uncommitted in the working tree): signed off 2026-10-24.** Short sign-off under "Faster pipeline (owner)"; I re-ran no suites. Spec 2 "average km/day, used to predict when tasks come due" goes from Partial to Done.
+  - Reported evidence: `dotnet test` 753 of 753; smoke `SMOKE_ALL=1` 145 of 145 in all 4 setups, twice; code review approve (no High or Medium); Hebrew review fine; browser QA no bugs.
+  - AC1, AC2 [BE] pass: one rule function `TaskStatusCalculator.PredictDueDate` with tests for each rule (`PredictedDueDateTests.cs`); the field on both endpoints and in `docs/contracts/PRED-1.md`.
+  - AC3 to AC5 [FE] pass: "Around <date>" on the car page and dashboard rows, nothing when null; en and he, km and miles; fits at 360 and 390px; updates after a quick entry and Mark done.
+  - AC6 [BE+FE] pass: smoke step `predicted-due` in all 4 setups. Caveat: the final Hebrew wording ("התאריכים מחושבים לפי ממוצע…") came after the last smoke run; the smoke string was synced, not re-run.
+  - Accepted (decisions.md, "PRED-1 sign-off"): one hint per task section rather than per task. The new Lows are L205 to L208.
 - **LOW-9 (uncommitted in the working tree): signed off 2026-10-24.** Short sign-off under "Faster pipeline (owner)"; I re-ran no suites. Closes L182 to L185, L189 and L191 to L196 (L192 by the new second-tab smoke step). No requirement status changes.
   - Reported evidence: `dotnet test` 737 of 737; smoke `SMOKE_ALL=1` 144 of 144 in all 4 setups, twice; code review approve (no High or Medium); security pass; Hebrew review fine; browser QA pass.
   - AC1 [BE] pass: an all-zero `clientRequestId` gives 400 `odometer.invalidClientRequestId`; reading DTOs return `valueKm` without trailing zeros on the first and the repeated create.
@@ -424,39 +431,20 @@ Every Low finding from QA and review lands here (decisions.md, "Faster pipeline 
 | L202 | LOW-9 review | The second-tab smoke step waits up to 3 s for a `storage` event; watch it for flakiness. | Smoke |
 | L203 | LOW-9 security | `scripts/cleanup-test-users.sql` checks for LocalDB but not the database name. A plain `DB_NAME()` check would also block the throwaway-copy tests, so it needs an allow-list of names. | Script |
 | L204 | LOW-9 housekeeping | 22 test users on the six domains removed from the cleanup script in L182 remain in the dev DB; the script no longer matches them. The owner may delete them by hand (CHECKLIST.md, "Waiting on the owner"). | Dev DB (owner) |
+| L205 | PRED-1 QA | Dashboard Mark done spans grid rows 1 and 2 only (`index.css:436`), so on a task with a predicted date the button is centred on the first two lines. `span 3` would add an empty row on tasks without a date; needs another layout fix. | FE, dashboard |
+| L206 | PRED-1 review | `TaskStatusCalculatorTests.UsesTheGivenToday` duplicates a test in `PredictedDueDateTests`; keep one. | Tests |
+| L207 | PRED-1 review | `PredictionMaxDays` is declared after the method that uses it (`TaskStatusCalculator.cs:65`); move it up with the other fields. | BE, style |
+| L208 | PRED-1 QA | Keyboard focus around the new "Around <date>" text and hint was not checked. | FE, a11y |
 
 ## Next ticket
 
-### PRED-1: predicted due date from average km a day (spec 2, optional)
+No required work is open except NOT-2, which is blocked on the owner's email provider. Everything else left in the spec is deferred optional (spec 11) or a check only the owner can do. No ticket is written until the owner picks one of these:
 
-**Goal:** As a user, I see roughly when each distance-based task will come due ("Around 12 Mar 2027"), so I can plan a service before it turns Due soon.
+1. **LOW-10:** the agent-fixable Lows (L186 to L188, L190, L198 to L203, L205 to L208), at most about 8, grouped by area: car-page offline Retry, clearing the offline message, odometer error `previousKm`/`nextKm` zeros, the dashboard Mark done layout, test and style tidy-ups.
+2. **UX-1:** "3 of 5 checked" progress on the checklist run page and a one-line value statement on the login page (en and he). Small and seen every day.
+3. **Fuel log** (spec 11, optional): the largest user-facing gap left. Needs the owner to confirm it is wanted and a few rules (full-tank only or partial fills; l/100 km, km/l or mpg).
 
-**Spec:** 2 "Optional: estimated average km/day, used to predict when tasks come due", Partial to Done when AC1 to AC6 pass. Security review: no. Hebrew review: yes (new strings).
-
-**Binding decisions:** "Predicted due date, PRED-1" (the rules below), "Task status rules, MVP2-B", "Distance unit rules, SET-2", the client `today` from LOW-8 (`docs/contracts/LOW-8.md`), "Leaner pipeline (owner)".
-
-**Scope, Backend (backend-engineer, first; contract `docs/contracts/PRED-1.md`; no migration):**
-- `MaintenanceTaskDto` gains `predictedDueDate` (date or null), computed on read in one place next to `TaskStatusCalculator`, using `Vehicle.AvgKmPerDay` and the request's `today`.
-- Returned by `GET /api/vehicles/{vehicleId}/tasks` and on the tasks in `GET /api/dashboard`. Status, remaining values and sort order do not change. Checklists and `/api/reminders` are not touched.
-
-**Scope, Frontend (frontend-engineer):**
-- Car page task row and dashboard card task rows: "Around <date>" (he: "בערך ב־<date>") in the user's date format when `predictedDueDate` is set; nothing when null. On the car page, a hint "Based on N km a day" (miles when the user uses miles).
-
-**Acceptance criteria**
-1. [BE] Tests for each rule in "Predicted due date, PRED-1": km only; km and days (the earlier date wins); no average or 0 gives null; Overdue or disabled gives null; 0 km remaining gives `today`; beyond 2 years gives null; the client `today` is used.
-2. [BE] Both endpoints return the field; the contract file lists it; existing tests pass unchanged.
-3. [FE] The car page shows "Around <date>" and the hint on tasks that have a date, and nothing on the others; en and he, RTL, miles and km.
-4. [FE] Dashboard task rows show it without overflow at 390px in he dark and en light; a long Hebrew date wraps cleanly.
-5. [FE] After a quick odometer entry or Mark done, the dates update without a reload; loading and error states stay as today.
-6. [BE+FE] A smoke step for AC3 to AC5 in all 4 setups (`SMOKE_ALL=1`); `dotnet test`, lint and build clean; dev servers on 5150 and 5173 keep working.
-
-**Empty, error and loading states:** a car with no average (one reading) shows no dates and no hint; otherwise as today.
-
-**Out of scope:** predictions for checklists, documents or reminders; a "due around" sort or filter; email (NOT-2); changing how `AvgKmPerDay` is computed.
-
-**Open questions:** none; the rules are delegated in decisions.md ("Predicted due date, PRED-1"). Still waiting on the owner: the email service for NOT-2.
-
----
+The orphan R2 sweep (L172) can join option 1 if storage cleanup matters more than UX.
 
 ### Later
 - **NOT-2:** email when a task, checklist or document is due (spec 9 bullet 1), using NOT-1's reminders, `Notification.SentAt` to avoid duplicate sends and an `Email` `NotificationRule`. Needs the owner's email provider, sender address and credentials (user-secrets).
@@ -466,8 +454,8 @@ Every Low finding from QA and review lands here (decisions.md, "Faster pipeline 
 - **Car delete** (not asked for; cars are archived): if ever added, it must delete run-photo rows first and `Notifications WHERE VehicleId` in code, as the account delete does.
 
 ## Changed since last audit
-- **Signed off:** LOW-9 (uncommitted in the working tree): "You are offline" messages on the dashboard and the language switch, the all-zero odometer id refused, attachment 409 only on a lock conflict, a safer cleanup script. Smoke 144 of 144 in 4 setups, twice.
-- **Status changes:** none. Counts unchanged: Done 48, Partial 2, Missing 1, Deferred 6.
-- **Backlog:** closed L182 to L185, L189, L191 to L196; new L199 to L204 (L204, 22 dev-DB users on the removed domains, is the owner's).
-- **New decisions** (`docs/decisions.md`, 2026-10-24): "LOW-9 sign-off", "Predicted due date, PRED-1".
-- **Next ticket:** PRED-1 (predicted due date, spec 2 optional), written in full above. Chosen over the other Later items because it is the only one that closes a spec row. NOT-2 stays blocked on the owner's email provider.
+- **Signed off:** PRED-1 (uncommitted in the working tree): "Around <date>" on distance-based tasks on the car page and dashboard, with one "Dates based on N km a day" hint per section. Smoke 145 of 145 in 4 setups, twice.
+- **Status changes:** spec 2 "average km/day, used to predict when tasks come due" Partial to Done. Counts: Done 49, Partial 1, Missing 1, Deferred 6.
+- **Backlog:** new L205 to L208.
+- **New decisions** (`docs/decisions.md`, 2026-10-24): "PRED-1 sign-off".
+- **Next ticket:** none written. NOT-2 stays blocked; the owner chooses between LOW-10, UX-1 and a fuel log.

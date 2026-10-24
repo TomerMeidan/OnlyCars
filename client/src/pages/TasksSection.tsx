@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type FormEvent, type Keyb
 import { Trans, useTranslation } from 'react-i18next'
 import { useAuth, useDistance } from '../auth'
 import { api, ApiError, byUrgency, localToday, taskCategories, type MaintenanceTask, type TaskCategory, type TaskStatus, type TaskTemplate, type Vehicle } from '../api'
-import { errorMessage } from '../i18n'
+import { errorMessage, fmtDate } from '../i18n'
 import { splitDays, unitDays, type Unit } from '../units'
 import { noItems, useItemErrors } from '../useItemErrors'
 import { useRow } from '../useRow'
@@ -73,6 +73,17 @@ export function Remaining({ km, days }: { km: number | null; days: number | null
   return <Trans i18nKey={late ? 'overdueBy' : 'left'} components={{ x: <span>{list}</span> }} />
 }
 
+// PRED-1: "Around 27 Nov 2026" on a task the server gives a predicted date; nothing otherwise.
+export function Predicted({ date }: { date: string | null }) {
+  const { i18n } = useTranslation()
+  if (!date) return null
+  return (
+    <p className="muted predicted">
+      <Trans i18nKey="around" values={{ date: fmtDate(date, i18n.resolvedLanguage) }} components={{ d: <time dateTime={date} /> }} />
+    </p>
+  )
+}
+
 // "Marked as done." and Undo on a task's row, on the car page and the dashboard; also "Snoozed until" on the dashboard's Reminders.
 export function UndoBar({ id, busy, onClick, message, label }: { id: string; busy: boolean; onClick: MouseEventHandler<HTMLButtonElement>; message?: string; label?: string }) {
   const { t } = useTranslation()
@@ -97,6 +108,7 @@ export function TasksSection({ car, undo, setUndo, onOdometerChanged }: {
   onOdometerChanged: () => void
 }) {
   const { t, i18n } = useTranslation()
+  const d = useDistance()
   const [tasks, setTasks] = useState<MaintenanceTask[] | null>(null)
   const [templates, setTemplates] = useState<TaskTemplate[]>([])
   const [error, setError] = useState<unknown>(null)
@@ -248,6 +260,12 @@ export function TasksSection({ car, undo, setUndo, onOdometerChanged }: {
           ))}
         </ul>
       )}
+      {/* Names the average the "Around" dates use (decisions.md, PRED-1). */}
+      {car.avgKmPerDay != null && sorted?.some((x) => x.predictedDueDate) && (
+        <p className="muted predicted-basis">
+          <Trans i18nKey="basedOnPerDay" values={{ ...d.vars, value: d.perDay(car.avgKmPerDay) }} components={{ n: <bdi /> }} />
+        </p>
+      )}
     </section>
   )
 }
@@ -397,6 +415,7 @@ function TaskRow({ task, url, currentKm, readOnly, onSaved, onDeleted, onReset, 
         {!task.isEnabled && <span className="badge">{t('disabled')}</span>}
       </div>
       {task.status && <Due name={name} progress={task.progress!} km={task.remainingKm} days={task.remainingDays} />}
+      <Predicted date={task.predictedDueDate} />
       <p className="muted"><Interval km={task.intervalKm} days={task.intervalDays} /></p>
       <p className="muted">
         {/* LastDoneDate is a calendar date; format it in UTC so the viewer's time zone can't shift the day. */}

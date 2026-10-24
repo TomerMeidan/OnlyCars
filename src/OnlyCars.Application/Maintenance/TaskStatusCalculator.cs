@@ -47,6 +47,23 @@ public static class TaskStatusCalculator
         return new TaskStatusResult(status, remainingKm, remainingDays, progress);
     }
 
+    /// <summary>
+    /// PRED-1 in decisions.md: today + ceil(remaining km / km a day), or the time due date when earlier; null when disabled,
+    /// Overdue, without IntervalKm, without an average above 0, or more than 730 days out.
+    /// </summary>
+    public static DateOnly? PredictDueDate(TaskStatusResult s, decimal? avgKmPerDay, DateOnly today)
+    {
+        if (s.Status is null or DueStatus.Overdue || s.RemainingKm is not { } km || avgKmPerDay is not > 0)
+        {
+            return null;
+        }
+
+        var days = Math.Min(Math.Ceiling(km / avgKmPerDay.Value), s.RemainingDays ?? decimal.MaxValue);
+        return days > PredictionMaxDays ? null : today.AddDays((int)days);
+    }
+
+    private const int PredictionMaxDays = 730;
+
     private static DueStatus StatusOf(decimal remaining, int interval, int dueSoonPercent) =>
         remaining < 0 ? DueStatus.Overdue
         : remaining * 100 <= (decimal)interval * dueSoonPercent ? DueStatus.DueSoon

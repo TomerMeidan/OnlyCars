@@ -3064,6 +3064,74 @@ for (const s of setups) {
     await page.reload()
     await dashCar().waitFor()
   })
+  await step('predicted-due', async () => {
+    // PRED-1 AC3-AC5: "Around <date>" on tasks with a predicted date, the car page's hint, both following a quick entry and Mark done without a reload.
+    const today = await localDate()
+    const plus = (n) => new Date(Date.parse(today) + n * 864e5).toISOString().slice(0, 10)
+    const P = he
+      ? { around: (x) => `בערך ב־${x}`, hint: (v, u) => `התאריכים מחושבים לפי ממוצע של ${v} ${u} ליום`, km: 'ק״מ', mi: 'מייל' }
+      : { around: (x) => `Around ${x}`, hint: (v, u) => `Dates based on ${v} ${u} a day`, km: 'km', mi: 'mi' }
+    const fmt = (iso) => page.evaluate(([d, l]) => new Date(d).toLocaleDateString(l, { dateStyle: 'medium', timeZone: 'UTC' }), [iso, s.lng])
+    const id = (await apiCall('POST', '/vehicles', { nickname: 'Pred car', initialOdometerKm: 50000, readingDate: plus(-100) })).id
+    const task = (name, intervalKm, intervalDays, lastKm) =>
+      apiCall('POST', `/vehicles/${id}/tasks`, { name, category: 'Other', intervalKm, intervalDays, dueSoonPercent: 10, lastDoneOdometerKm: lastKm, lastDoneDate: plus(-100) })
+    await task('Oil', 5000, null, 49000) // 1,000 km left after the 53,000 reading: 34 days at 30 km a day
+    await task('Belt', 100000, null, 50000) // more than 2 years out: no date
+    await task('Wipers', null, 365, 50000) // time only: no date
+    const card = page.locator('.cars > li').filter({ has: page.getByRole('link', { name: 'Pred car', exact: true }) })
+    const row = (loc, name) => loc.locator('.tasks > li').filter({ has: page.locator('.name', { hasText: new RegExp(`^${name}$`) }) })
+    const dates = (loc) => loc.locator('.predicted').allTextContents().then((x) => x.map(plain))
+    // One reading, no average: no dates, no hint.
+    await page.goto(`${BASE}/cars/${id}`)
+    await row(page, 'Oil').waitFor()
+    if ((await page.locator('.predicted, .predicted-basis').count())) throw new Error('a date or hint without an average')
+    await page.click('header a.brand')
+    await card.waitFor()
+    await page.evaluate(() => { window.noReload = true })
+    if ((await dates(card)).length) throw new Error('a dashboard date without an average')
+    // A quick entry sets the average (30 km a day): the Oil row gets its date, the others none.
+    await card.locator('.quick input[type=number]').fill('53000')
+    await card.locator('.quick button').click()
+    const want = P.around(await fmt(plus(34)))
+    await page.waitForFunction(([id, w]) => [...document.querySelectorAll(`.cars > li[data-id="${id}"] .predicted`)].some((p) => p.textContent.replace(/[⁦-⁩]/g, '').replace(/\s+/g, ' ').trim() === w), [id, want], { timeout: 5000 })
+      .catch(async () => { throw new Error(`after the quick entry: ${JSON.stringify(await dates(card))}, want "${want}"`) })
+    if (JSON.stringify(await dates(card)) !== JSON.stringify([want])) throw new Error(`dashboard dates ${JSON.stringify(await dates(card))}`)
+    // AC4: beside Mark done without overlapping it, no overflow.
+    const hit = await row(card, 'Oil').evaluate((li) => {
+      const a = li.querySelector('.predicted').getBoundingClientRect(), b = li.querySelector('button.done').getBoundingClientRect()
+      return a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom
+    })
+    if (hit) throw new Error('the date overlaps Mark done')
+    await noOverflow('a predicted date on the dashboard')
+    // Mark done: 5,000 km left, 167 days.
+    await row(card, 'Oil').locator('button.done').click()
+    const want2 = P.around(await fmt(plus(167)))
+    await page.waitForFunction(([id, w]) => [...document.querySelectorAll(`.cars > li[data-id="${id}"] .predicted`)].some((p) => p.textContent.replace(/[⁦-⁩]/g, '').replace(/\s+/g, ' ').trim() === w), [id, want2], { timeout: 5000 })
+      .catch(async () => { throw new Error(`after Mark done: ${JSON.stringify(await dates(card))}, want "${want2}"`) })
+    if (!(await page.evaluate(() => window.noReload))) throw new Error('the page reloaded')
+    await page.screenshot({ path: `${OUT}/${s.name}-predicted-dashboard.png`, fullPage: true })
+    // Car page: the date on Oil only, and the hint with the average.
+    await card.getByRole('link', { name: 'Pred car', exact: true }).click()
+    await arrivedAt('Pred car')
+    await row(page, 'Oil').locator('.predicted').waitFor()
+    if (plain(await row(page, 'Oil').locator('.predicted').textContent()) !== want2) throw new Error('car page date')
+    if ((await page.locator('main .tasks .predicted').count()) !== 1) throw new Error('a date on a task without one')
+    const hint = async () => plain(await page.locator('.predicted-basis').textContent())
+    if ((await hint()) !== P.hint((30).toLocaleString(s.lng, { minimumFractionDigits: 1 }), P.km)) throw new Error(`hint "${await hint()}"`)
+    await noOverflow('the hint on the car page')
+    await page.screenshot({ path: `${OUT}/${s.name}-predicted-car.png`, fullPage: true })
+    // Miles: the hint in miles, the date unchanged.
+    await unitIs('Mi')
+    await page.goto(`${BASE}/cars/${id}`)
+    await page.locator('.predicted-basis').waitFor()
+    if ((await hint()) !== P.hint((18.6).toLocaleString(s.lng, { minimumFractionDigits: 1 }), P.mi)) throw new Error(`miles hint "${await hint()}"`)
+    if (plain(await row(page, 'Oil').locator('.predicted').textContent()) !== want2) throw new Error('date changed with the unit')
+    await page.screenshot({ path: `${OUT}/${s.name}-predicted-car-miles.png`, fullPage: true })
+    await unitIs('Km')
+    await apiCall('POST', `/vehicles/${id}/archive`)
+    await page.click('header a.brand')
+    await dashCar().waitFor()
+  })
   await step('dashboard-edit-link-size', async () => {
     // LOW-7 L113: the car card's Edit link is at least 44 by 44px at 390px.
     await page.setViewportSize({ width: 390, height: 844 })

@@ -83,6 +83,8 @@ export interface MaintenanceTask {
   remainingKm: number | null
   remainingDays: number | null
   progress: number | null
+  // PRED-1: roughly when it comes due at the car's average km a day (decisions.md); null when there is no such estimate.
+  predictedDueDate: string | null
 }
 
 export type TaskStatus = 'Ok' | 'DueSoon' | 'Overdue'

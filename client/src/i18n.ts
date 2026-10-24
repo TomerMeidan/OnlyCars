@@ -51,6 +51,8 @@ const en = {
   distance: { Km: 'km', Mi: 'mi' },
   distances: { Km: 'km', Mi: 'miles' },
   perDay: '{{value}} {{distUnit}}/day',
+  around: 'Around <d>{{date}}</d>',
+  basedOnPerDay: 'Dates based on <n>{{value}}</n> {{distUnit}} a day',
   updateOdometer: 'Update',
   confirmCorrection: 'This is a correction, save anyway',
   // OFF-1: readings entered offline on the dashboard.
@@ -757,6 +759,8 @@ const he: typeof en = {
   distance: { Km: 'ק״מ', Mi: 'מייל' },
   distances: { Km: 'ק״מ', Mi: 'מיילים' },
   perDay: '{{value}} {{distUnit}} ליום',
+  around: 'בערך ב־<d>{{date}}</d>',
+  basedOnPerDay: 'התאריכים מחושבים לפי ממוצע של <n>{{value}}</n> {{distUnit}} ליום',
   updateOdometer: 'עדכון',
   confirmCorrection: 'זה תיקון, לשמור בכל זאת',
   queueTitle: 'קריאות לשליחה',

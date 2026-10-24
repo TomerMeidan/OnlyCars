@@ -8,7 +8,7 @@ import { usePage } from '../usePage'
 import { useRow } from '../useRow'
 import { discard, enqueue, MAX_QUEUE, newRequestId, readQueue, saveAsCorrection, saveCars, savedCars, sendQueue, useQueue, type Queued } from '../offline'
 import { RemindersCard } from './RemindersCard'
-import { Remaining, StatusBadge, UndoBar, type TaskUndo } from './TasksSection'
+import { Predicted, Remaining, StatusBadge, UndoBar, type TaskUndo } from './TasksSection'
 
 // The dashboard on `/`: the summary, the reminders, then one card per active car in the server's urgency order, then archived cars if shown.
 export default function CarsPage() {
@@ -234,6 +234,7 @@ function DashTask({ task, onReset, onUndo }: { task: DashboardTask; onReset: () 
         <StatusBadge status={task.status} />
       </div>
       <p><Remaining km={task.remainingKm} days={task.remainingDays} /></p>
+      <Predicted date={task.predictedDueDate} />
       <button className="done" aria-label={t('markDoneTask', { name: task.name })} disabled={busy} onClick={(e) => run(onReset, e.currentTarget)}>{t('markDone')}</button>
       {onUndo && <UndoBar id={task.id} busy={busy} onClick={(e) => run(onUndo, e.currentTarget)} />}
       {error != null && <p className="error" role="alert">{errorMessage(error)}</p>}

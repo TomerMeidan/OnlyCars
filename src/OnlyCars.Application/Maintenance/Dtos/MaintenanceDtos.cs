@@ -5,7 +5,7 @@ namespace OnlyCars.Application.Maintenance.Dtos;
 
 public record TaskTemplateDto(Guid Id, string Key, string Name, TaskCategory Category, int? DefaultIntervalKm, int? DefaultIntervalDays);
 
-// Status, Remaining* and Progress are computed on read (TaskStatusCalculator) and are all null for a disabled task.
+// Status, Remaining*, Progress and PredictedDueDate are computed on read (TaskStatusCalculator) and are all null for a disabled task.
 public record MaintenanceTaskDto(
     Guid Id,
     Guid VehicleId,
@@ -21,7 +21,8 @@ public record MaintenanceTaskDto(
     DueStatus? Status,
     decimal? RemainingKm,
     int? RemainingDays,
-    double? Progress);
+    double? Progress,
+    DateOnly? PredictedDueDate);
 
 // Category is a string so an unknown value gets task.invalidCategory instead of a model-binding 400.
 // LastDone* are nullable only so a missing value gets a coded error instead of 0 / 0001-01-01.

@@ -109,4 +109,69 @@ public class TaskStatusCalculatorTests
 
         Assert.Equal(new TaskStatusResult(null, null, null, null), r);
     }
+
+    // PRED-1: the car is at currentKm, the task was done at 0 km today - daysAgo.
+    private static DateOnly? Predict(int? km, int? days, decimal currentKm, decimal? avg, int daysAgo = 0, bool enabled = true) =>
+        TaskStatusCalculator.PredictDueDate(TaskStatusCalculator.Compute(Task(km, days, daysAgo: daysAgo, enabled: enabled), currentKm, Today),
+            avg, Today);
+
+    [Theory]
+    [InlineData(1_000, 40, 225)]  // 9,000 / 40 = 225 days
+    [InlineData(1_000, 70, 129)]  // 9,000 / 70 = 128.57, rounded up
+    [InlineData(10_000, 40, 0)]   // 0 km remaining gives today
+    public void KmOnly_IsTodayPlusRemainingKmOverAverage_RoundedUp(int currentKm, double avg, int expectedDays)
+    {
+        var r = Predict(10_000, null, currentKm, (decimal)avg);
+
+        Assert.Equal(Today.AddDays(expectedDays), r);
+    }
+
+    [Theory]
+    [InlineData(7_300, 730)]  // exactly 730 days: kept
+    [InlineData(7_301, null)] // 730.1 rounds up to 731: null
+    public void BeyondTwoYears_IsNull(int intervalKm, int? expectedDays)
+    {
+        Assert.Equal(expectedDays is { } d ? Today.AddDays(d) : null, Predict(intervalKm, null, 0, 10m));
+    }
+
+    [Fact]
+    public void KmAndDays_TheEarlierDateWins()
+    {
+        // km: 9,000 / 40 = 225 days; time: 365 - 300 = 65 days left.
+        Assert.Equal(Today.AddDays(65), Predict(10_000, 365, 1_000, 40m, daysAgo: 300));
+        // km: 9,000 / 100 = 90 days; time: 365 days left.
+        Assert.Equal(Today.AddDays(90), Predict(10_000, 365, 1_000, 100m));
+    }
+
+    [Fact]
+    public void KmBeyondTwoYears_ButTimeSooner_GivesTheTimeDate()
+    {
+        Assert.Equal(Today.AddDays(30), Predict(10_000, 365, 0, 1m, daysAgo: 335));
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData(0)]
+    public void NoAverageOrZero_IsNull(int? avg)
+    {
+        Assert.Null(Predict(10_000, 365, 1_000, avg));
+    }
+
+    [Fact]
+    public void Overdue_Disabled_OrNoKmInterval_IsNull()
+    {
+        Assert.Null(Predict(10_000, null, 10_001, 40m));                // km overdue
+        Assert.Null(Predict(10_000, 365, 1_000, 40m, daysAgo: 366));    // time overdue, km fine
+        Assert.Null(Predict(10_000, 365, 1_000, 40m, enabled: false));
+        Assert.Null(Predict(null, 365, 1_000, 40m));                    // time-only task
+    }
+
+    [Fact]
+    public void UsesTheGivenToday()
+    {
+        var other = Today.AddDays(1);
+        var s = TaskStatusCalculator.Compute(Task(10_000, null), 1_000, other);
+
+        Assert.Equal(other.AddDays(225), TaskStatusCalculator.PredictDueDate(s, 40m, other));
+    }
 }

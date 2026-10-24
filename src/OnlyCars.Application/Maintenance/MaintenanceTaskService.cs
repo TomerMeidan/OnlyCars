@@ -830,6 +830,7 @@ public partial class MaintenanceTaskService(IAppDbContext db, VehicleService veh
     {
         var s = TaskStatusCalculator.Compute(t, vehicle.CurrentOdometerKm, today);
         return new(t.Id, t.VehicleId, t.TemplateId, t.Name, t.Category, t.IntervalKm, t.IntervalDays, t.DueSoonPercent,
-            t.IsEnabled, t.LastDoneOdometerKm, t.LastDoneDate, s.Status, s.RemainingKm, s.RemainingDays, s.Progress);
+            t.IsEnabled, t.LastDoneOdometerKm, t.LastDoneDate, s.Status, s.RemainingKm, s.RemainingDays, s.Progress,
+            TaskStatusCalculator.PredictDueDate(s, vehicle.AvgKmPerDay, today));
     }
 }
