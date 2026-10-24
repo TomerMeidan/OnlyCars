@@ -1,7 +1,10 @@
 // UI smoke run: walks the main flows in two setups and prints a JSON report.
 // Usage (API + Vite must be running): node ui-tests/smoke.mjs
 import { chromium } from 'playwright'
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { execFileSync, spawn } from 'node:child_process'
 import assert from 'node:assert/strict'
 import { toCsv } from '../src/csv.ts'
 
@@ -31,6 +34,22 @@ if (process.env.SMOKE_ALL) setups.push(
   { name: 'desktop-dark-he', viewport: { width: 1280, height: 800 }, colorScheme: 'dark', lng: 'he' },
   { name: 'mobile-light-en', viewport: { width: 390, height: 844 }, colorScheme: 'light', lng: 'en', isMobile: true, hasTouch: true },
 )
+
+// PWA-1: a fresh production build served by vite preview (it reuses the /api proxy), for the pwa-install step.
+const PREVIEW = 'http://localhost:4173'
+const vite = ['node_modules/vite/bin/vite.js']
+execFileSync(process.execPath, [...vite, 'build', '--logLevel', 'error'], { stdio: 'inherit' })
+const answers = () => fetch(PREVIEW).then((r) => r.ok, () => false)
+// An orphan from an earlier run would answer in place of this build (--strictPort makes ours exit).
+if (await answers()) throw new Error(`${PREVIEW} is already in use: stop that process first`)
+const preview = spawn(process.execPath, [...vite, 'preview', '--port', '4173', '--strictPort'], { stdio: 'ignore' })
+// On Windows the child outlives Node: kill it on every exit, a throw and Ctrl-C included. unref: it must not keep Node alive.
+preview.unref()
+process.on('exit', () => preview.kill())
+process.on('SIGINT', () => process.exit(130))
+let up = false
+for (let i = 0; i < 50 && preview.exitCode === null && !(up = await answers()); i++) await new Promise((r) => setTimeout(r, 200))
+if (preview.exitCode !== null || !up) throw new Error(`vite preview did not start on ${PREVIEW} (exit code ${preview.exitCode})`)
 
 const browser = await chromium.launch({ channel: 'chrome' })
 const report = []
@@ -5776,6 +5795,77 @@ for (const s of setups) {
     // The three forced 400s.
     run.badResponses.splice(bad, Infinity, ...run.badResponses.slice(bad).filter((r) => !r.startsWith('400 POST')))
     run.consoleErrors.splice(logged, Infinity, ...run.consoleErrors.slice(logged).filter((e) => !e.includes('status of 400')))
+  })
+  // PWA-1: the production build (vite preview, same /api proxy), as only it has the service worker.
+  await step('pwa-install', async () => {
+    // AC6: no service worker on the dev server.
+    if ((await page.evaluate(() => navigator.serviceWorker.getRegistrations())).length) throw new Error('a service worker on the dev server')
+    // AC1: the manifest, and every icon a PNG at its declared size.
+    const m = await (await page.request.get(`${PREVIEW}/manifest.webmanifest`)).json()
+    for (const k of ['id', 'start_url', 'scope']) if (m[k] !== '/') throw new Error(`manifest ${k} "${m[k]}"`)
+    if (m.display !== 'standalone') throw new Error(`display "${m.display}"`)
+    const icons = m.icons.map((i) => `${i.sizes} ${i.type} ${i.purpose}`).join(', ')
+    if (icons !== '192x192 image/png any, 512x512 image/png any, 512x512 image/png maskable') throw new Error(`icons: ${icons}`)
+    const png = async (src, size) => {
+      const r = await page.request.get(new URL(src, `${PREVIEW}/`).href)
+      const b = await r.body()
+      if (r.status() !== 200 || r.headers()['content-type'] !== 'image/png') throw new Error(`${src}: ${r.status()} ${r.headers()['content-type']}`)
+      if (`${b.readUInt32BE(16)}x${b.readUInt32BE(20)}` !== size) throw new Error(`${src} is ${b.readUInt32BE(16)}x${b.readUInt32BE(20)}, want ${size}`)
+    }
+    for (const i of m.icons) await png(i.src, i.sizes)
+    // This setup's user, language and theme, signed in on the preview origin.
+    const stored = await page.evaluate(() => ['token', 'user', 'i18nextLng'].map((k) => [k, localStorage.getItem(k)]))
+    // A profile on disk: Chrome reports "in-incognito" for a plain test context, which can never install.
+    const profile = mkdtempSync(join(tmpdir(), 'onlycars-pwa-'))
+    let pctx
+    try {
+      pctx = await chromium.launchPersistentContext(profile, { channel: 'chrome', timezoneId: process.env.UI_TZ, viewport: s.viewport, colorScheme: s.colorScheme, isMobile: s.isMobile, hasTouch: s.hasTouch })
+      await pctx.addInitScript((kv) => kv.forEach(([k, v]) => v !== null && localStorage.setItem(k, v)), stored)
+      const pp = pctx.pages()[0] ?? await pctx.newPage()
+      const fromSw = []
+      pp.on('response', (r) => pathOf(r).startsWith('/api/') && r.fromServiceWorker() && fromSw.push(pathOf(r)))
+      await pp.goto(`${PREVIEW}/`)
+      await png(await pp.locator('link[rel=apple-touch-icon]').getAttribute('href'), '180x180')
+      // AC2: after one reload the service worker controls the page, and Chrome reports nothing against installing it.
+      await pp.evaluate(() => navigator.serviceWorker.ready)
+      await pp.reload()
+      if (!(await pp.evaluate(() => navigator.serviceWorker.controller))) throw new Error('no service worker controls the page after a reload')
+      const { installabilityErrors } = await (await pctx.newCDPSession(pp)).send('Page.getInstallabilityErrors')
+      if (installabilityErrors.length) throw new Error(`installability: ${JSON.stringify(installabilityErrors)}`)
+      // Both fonts were used online (the language switch shows the other script), so the service worker has them.
+      await pp.waitForFunction(async () => (await Promise.all(['google-fonts-css', 'google-fonts-files']
+        .map(async (c) => (await (await caches.open(c)).keys()).length))).every(Boolean), null, { timeout: 10000 })
+        .catch(() => { throw new Error('the Google Fonts were not cached') })
+      await pp.locator('.cars > li').first().waitFor()
+      // AC3: offline, the shell loads and both fonts load from the cache. check() alone is true when no face exists, so load() first.
+      await pctx.setOffline(true)
+      await pp.reload()
+      await pp.locator('header a.brand').waitFor()
+      const fonts = await pp.evaluate(() => Promise.all([['Noto Sans', 'a'], ['Noto Sans Hebrew', 'א']].map(async ([f, ch]) =>
+        `${f}: ${(await document.fonts.load(`16px "${f}"`, ch).catch(() => [])).length > 0 && document.fonts.check(`16px "${f}"`, ch)}`)))
+      if (fonts.some((f) => f.endsWith('false'))) throw new Error(`offline fonts ${fonts.join(', ')}`)
+      // AC4: the dashboard's own error with Retry, not cached data.
+      const alert = pp.locator('main > .row [role=alert]')
+      await alert.waitFor()
+      if (plain(await alert.textContent()) !== HS.generic) throw new Error(`offline error "${await alert.textContent()}"`)
+      await pp.getByRole('button', { name: HS.retry, exact: true }).waitFor()
+      if (await pp.locator('.cars > li').count()) throw new Error('cars shown offline')
+      await pp.screenshot({ path: `${OUT}/${s.name}-pwa-offline.png`, fullPage: true })
+      // Online again: the API answers from the network.
+      await pctx.setOffline(false)
+      await pp.getByRole('button', { name: HS.retry, exact: true }).click()
+      await pp.locator('.cars > li').first().waitFor()
+      if (fromSw.length) throw new Error(`answered by the service worker: ${fromSw.join(', ')}`)
+      // AC5: the maskable icon cut to a circle and a rounded square (the dial whole in both), the 192 icon on light and dark.
+      const tile = (bg, src, radius) => `<div style="background:${bg};padding:16px"><img src="${PREVIEW}/${src}" width="160" height="160" style="display:block;border-radius:${radius}"></div>`
+      await pp.setContent(`<body style="margin:0;display:flex;flex-wrap:wrap">${tile('#fff', 'icon-maskable-512.png', '50%')}${tile('#fff', 'icon-maskable-512.png', '22%')}`
+        + `${tile('#e6e9e3', 'icon-192.png', '0')}${tile('#0c1215', 'icon-192.png', '0')}${tile('#fff', 'apple-touch-icon.png', '22%')}</body>`)
+      await pp.waitForFunction(() => [...document.images].every((i) => i.complete && i.naturalWidth))
+      await pp.screenshot({ path: `${OUT}/${s.name}-pwa-icons.png` })
+    } finally {
+      await pctx?.close()
+      rmSync(profile, { recursive: true, force: true, maxRetries: 5 })
+    }
   })
   await step('switch-language', async () => {
     const before = await page.getAttribute('html', 'dir')

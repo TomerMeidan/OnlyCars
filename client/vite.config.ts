@@ -8,16 +8,37 @@ export default defineConfig({
     VitePWA({
       registerType: 'autoUpdate',
       manifest: {
+        id: '/',
+        start_url: '/',
+        scope: '/',
         name: 'OnlyCars',
         short_name: 'OnlyCars',
         theme_color: '#0F1A1F',
         background_color: '#E6E9E3',
         display: 'standalone',
-        icons: [{ src: 'favicon.svg', sizes: 'any', type: 'image/svg+xml' }],
+        // Rendered from favicon.svg by scripts/icons.mjs.
+        icons: [
+          { src: 'icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+          { src: 'icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+          { src: 'icon-maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+        ],
+      },
+      workbox: {
+        // The API is never cached or answered by the service worker: offline calls fail into the error states, never stale data.
+        navigateFallbackDenylist: [/^\/api\//],
+        // Google Fonts from one online visit, so an installed app opens offline with its own fonts.
+        runtimeCaching: [
+          { urlPattern: ({ url }) => url.origin === 'https://fonts.googleapis.com', handler: 'StaleWhileRevalidate', options: { cacheName: 'google-fonts-css' } },
+          {
+            urlPattern: ({ url }) => url.origin === 'https://fonts.gstatic.com',
+            handler: 'CacheFirst',
+            options: { cacheName: 'google-fonts-files', expiration: { maxEntries: 30, maxAgeSeconds: 365 * 24 * 60 * 60 }, cacheableResponse: { statuses: [0, 200] } },
+          },
+        ],
       },
     }),
   ],
-  // Same-origin /api in dev, so no CORS or hardcoded API URL in the client.
+  // Same-origin /api in dev (and in vite preview, which reuses this proxy), so no CORS or hardcoded API URL in the client.
   server: { proxy: { '/api': 'http://localhost:5150' } },
   // shortcut: one bundle (~500 kB, ~150 kB gzip) passed Vite's 500 kB default with FILE-1; split pages with lazy() when it nears 600 kB.
   build: { chunkSizeWarningLimit: 600 },

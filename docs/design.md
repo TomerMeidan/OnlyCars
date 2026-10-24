@@ -67,6 +67,7 @@ Amber on the light surface is 2.0:1, so amber is never used for text or a ring o
 ## Components
 
 - **Header / navigation**: the dark cluster strip with a 3px amber rule under it. The brand is a dial mark (inline SVG, also the favicon) and "OnlyCars" in condensed 800. Nav links are `--cluster-muted`, without underline; the current page (`aria-current="page"` from `NavLink`) is lit in `--cluster-ink` with a 2px amber underline (two cues, not just color). The language switch and Log out sit in the same row. At 390px the nav wraps to its own lines. Every item is 44px tall.
+- **App icons** (PWA-1): the dial mark from `favicon.svg`, rendered to PNG by `node scripts/icons.mjs` (from `client/`; rerun after a favicon change): 192 and 512 px as the favicon (rounded `--cluster` tile); the 512 maskable and the 180 `apple-touch-icon` full bleed on `--cluster`, the maskable mark at 0.8 scale inside the 80% safe circle.
 - **Buttons**
   - Primary (default `button`, `.button`): amber fill, `--on-amber` text, 650 weight, 2px darker lower edge, presses down 1px.
   - Secondary (`.add`, `.add-file`, `.more`, `.mount`, `.move`, picker rows): surface fill, `--field` border, ink text; hover goes sunken with an ink border. Use it for actions that open a form rather than save one, so a section has at most one amber button at rest.
