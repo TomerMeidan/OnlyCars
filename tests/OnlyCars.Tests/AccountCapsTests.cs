@@ -117,4 +117,20 @@ public class AccountCapsTests
         // A run without an odometer adds no reading, so it is still allowed.
         await checklists.CreateRunAsync(userId, checklist.Id, new CreateChecklistRunRequest(Today, null, null, answers));
     }
+    [Fact]
+    public async Task Readings_LegacyRecordWithoutItsReading_MovingItIsRefusedAtTheCap_OtherEditsStillSave()
+    {
+        // Seeded records have no Service reading (legacy); the second one is not voided.
+        var (car, _) = await SeedCarAsync(2, OdometerReading.MaxPerVehicle);
+        var record = await db.ServiceRecords.SingleAsync(r => r.VehicleId == car && !r.IsVoided);
+
+        await AssertCapAsync("odometer.tooMany", 5000, () => tasks.UpdateRecordAsync(userId, car, record.Id,
+            new UpdateServiceRecordRequest(null, null, null, null, Date: Today)));
+        db.ChangeTracker.Clear();
+        Assert.Equal(5000, await db.OdometerReadings.CountAsync());
+        Assert.Equal(Today.AddDays(-1), (await db.ServiceRecords.SingleAsync(r => r.Id == record.Id)).Date);
+
+        // An edit that doesn't move it re-creates no reading.
+        await tasks.UpdateRecordAsync(userId, car, record.Id, new UpdateServiceRecordRequest("Shop", null, null, null));
+    }
 }

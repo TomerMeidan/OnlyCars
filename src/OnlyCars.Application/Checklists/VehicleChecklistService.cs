@@ -19,26 +19,24 @@ public class VehicleChecklistService(IAppDbContext db, VehicleService vehicleSer
     private readonly AttachmentFiles attachmentFiles = new(db, vehicleService, storageOptions);
 
     // shortcut: no GET /api/vehicle-checklists/{id}; the run page loads this whole list, fine at a few checklists per car, add it if lists grow.
-    public async Task<List<VehicleChecklistDto>> ListAsync(Guid userId, Guid vehicleId, CancellationToken ct = default)
+    public async Task<List<VehicleChecklistDto>> ListAsync(Guid userId, Guid vehicleId, DateOnly? today = null, CancellationToken ct = default)
     {
         await vehicleService.FindOwnedAsync(userId, vehicleId, ct);
-        return await QueryAsync(db, c => c.VehicleId == vehicleId, ct);
+        var day = ClientToday(today);
+        return await QueryAsync(db, c => c.VehicleId == vehicleId, day, ct);
     }
 
     /// <summary>The last run starts at the client's today and the car's current odometer, like a new task's last done.</summary>
-    public async Task<VehicleChecklistDto> AttachAsync(Guid userId, Guid vehicleId, AttachChecklistRequest request, CancellationToken ct = default)
+    public async Task<VehicleChecklistDto> AttachAsync(Guid userId, Guid vehicleId, AttachChecklistRequest request, DateOnly? today = null,
+        CancellationToken ct = default)
     {
         var vehicle = await vehicleService.FindOwnedAsync(userId, vehicleId, ct);
         EnsureActive(vehicle);
         ValidateIntervals(request.IntervalKm, request.IntervalDays);
 
         // The client sends its local date; one day of slack either way, as for Mark done.
-        var today = TodayUtc();
-        var date = request.Date ?? today;
-        if (Math.Abs(date.DayNumber - today.DayNumber) > 1)
-        {
-            throw new ValidationFailedException("vehicleChecklist.invalidDate", "The date must be today.");
-        }
+        var day = ClientToday(today);
+        var date = ClientToday(request.Date ?? day);
 
         var templateId = request.TemplateId ?? Guid.Empty;
         if (!await db.ChecklistTemplates.AnyAsync(t => t.Id == templateId && t.UserId == userId, ct))
@@ -78,14 +76,16 @@ public class VehicleChecklistService(IAppDbContext db, VehicleService vehicleSer
             throw;
         }
 
-        return await DtoAsync(checklist.Id, ct);
+        return await DtoAsync(checklist.Id, day, ct);
     }
 
     private static ConflictException Duplicate() => new("vehicleChecklist.duplicate", "This checklist is already on this car.");
 
-    public async Task<VehicleChecklistDto> UpdateAsync(Guid userId, Guid id, UpdateVehicleChecklistRequest request, CancellationToken ct = default)
+    public async Task<VehicleChecklistDto> UpdateAsync(Guid userId, Guid id, UpdateVehicleChecklistRequest request, DateOnly? today = null,
+        CancellationToken ct = default)
     {
         var checklist = await FindOwnedAsync(userId, id, ct);
+        var day = ClientToday(today);
         ValidateIntervals(request.IntervalKm, request.IntervalDays);
 
         checklist.IntervalKm = request.IntervalKm;
@@ -94,7 +94,7 @@ public class VehicleChecklistService(IAppDbContext db, VehicleService vehicleSer
         checklist.UpdatedAt = DateTimeOffset.UtcNow;
 
         await db.SaveChangesAsync(ct);
-        return await DtoAsync(checklist.Id, ct);
+        return await DtoAsync(checklist.Id, day, ct);
     }
 
     public async Task DeleteAsync(Guid userId, Guid id, CancellationToken ct = default)
@@ -132,17 +132,18 @@ public class VehicleChecklistService(IAppDbContext db, VehicleService vehicleSer
     /// One run item per current template item, flagged by the server rules; an entered odometer is logged as a Checklist reading under
     /// the date-order rules. The last run moves only when the run is at least as recent. Every check runs before anything changes.
     /// </summary>
-    public async Task<CreateChecklistRunResponse> CreateRunAsync(Guid userId, Guid id, CreateChecklistRunRequest request, CancellationToken ct = default)
+    public async Task<CreateChecklistRunResponse> CreateRunAsync(Guid userId, Guid id, CreateChecklistRunRequest request, DateOnly? today = null,
+        CancellationToken ct = default)
     {
         var checklist = await FindOwnedAsync(userId, id, ct, withTemplateItems: true);
+        var day = ClientToday(today);
         var vehicle = checklist.Vehicle!;
         EnsureActive(vehicle);
 
         // Same one day of slack as readings and service records: the client sends its local date.
-        var today = TodayUtc();
-        var runAt = request.RunAt ?? today;
+        var runAt = request.RunAt ?? day;
         DateRules.RejectTooEarly(runAt);
-        if (runAt > today.AddDays(1))
+        if (runAt > TodayUtc().AddDays(1))
         {
             throw new ValidationFailedException("checklistRun.futureDate", "The run date can't be in the future.");
         }
@@ -194,7 +195,7 @@ public class VehicleChecklistService(IAppDbContext db, VehicleService vehicleSer
         }
 
         await db.SaveChangesAsync(ct);
-        return new(ToDto(run, new Dictionary<Guid, Guid>(), userId, vehicle.Id), await DtoAsync(checklist.Id, ct));
+        return new(ToDto(run, new Dictionary<Guid, Guid>(), userId, vehicle.Id), await DtoAsync(checklist.Id, day, ct));
     }
 
     /// <summary>
@@ -293,7 +294,7 @@ public class VehicleChecklistService(IAppDbContext db, VehicleService vehicleSer
     /// ties by name. Shared with the dashboard.
     /// </summary>
     internal static async Task<List<VehicleChecklistDto>> QueryAsync(IAppDbContext db, Expression<Func<VehicleChecklist, bool>> filter,
-        CancellationToken ct)
+        DateOnly today, CancellationToken ct)
     {
         var rows = await db.VehicleChecklists.Where(filter)
             .Select(c => new
@@ -307,7 +308,6 @@ public class VehicleChecklistService(IAppDbContext db, VehicleService vehicleSer
             })
             .ToListAsync(ct);
 
-        var today = TodayUtc();
         return rows.Select(r => ToDto(r.Checklist, r.Name, r.ItemCount, r.RunCount, r.LatestRunDate, r.CurrentOdometerKm, today))
             .OrderBy(c => c.Status is null)
             .ThenByDescending(c => c.Status)
@@ -316,7 +316,7 @@ public class VehicleChecklistService(IAppDbContext db, VehicleService vehicleSer
             .ToList();
     }
 
-    private async Task<VehicleChecklistDto> DtoAsync(Guid id, CancellationToken ct) => (await QueryAsync(db, c => c.Id == id, ct)).Single();
+    private async Task<VehicleChecklistDto> DtoAsync(Guid id, DateOnly today, CancellationToken ct) => (await QueryAsync(db, c => c.Id == id, today, ct)).Single();
 
     // Scoped through the car's owner, so another user's attachment is simply not found.
     private async Task<VehicleChecklist> FindOwnedAsync(Guid userId, Guid id, CancellationToken ct, bool withTemplateItems = false)
@@ -398,6 +398,9 @@ public class VehicleChecklistService(IAppDbContext db, VehicleService vehicleSer
     }
 
     private static DateOnly TodayUtc() => DateOnly.FromDateTime(DateTime.UtcNow);
+
+    // The status day of every checklist endpoint (L155), with the attach date's code, which the client already shows.
+    private static DateOnly ClientToday(DateOnly? today) => DateRules.ClientToday(today, "vehicleChecklist.invalidDate");
 
     private static VehicleChecklistDto ToDto(VehicleChecklist c, string name, int itemCount, int runCount, DateOnly? latestRunDate,
         decimal currentKm, DateOnly today)

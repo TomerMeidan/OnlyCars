@@ -14,16 +14,17 @@ namespace OnlyCars.Api.Controllers;
 public class VehicleChecklistsController(VehicleChecklistService checklistService) : ControllerBase
 {
     [HttpGet("vehicles/{vehicleId:guid}/checklists")]
-    public async Task<ActionResult<List<VehicleChecklistDto>>> List(Guid vehicleId, CancellationToken ct) =>
-        Ok(await checklistService.ListAsync(User.GetUserId(), vehicleId, ct));
+    public async Task<ActionResult<List<VehicleChecklistDto>>> List(Guid vehicleId, [FromQuery] DateOnly? today, CancellationToken ct) =>
+        Ok(await checklistService.ListAsync(User.GetUserId(), vehicleId, today, ct));
 
     [HttpPost("vehicles/{vehicleId:guid}/checklists")]
-    public async Task<ActionResult<VehicleChecklistDto>> Attach(Guid vehicleId, AttachChecklistRequest request, CancellationToken ct) =>
-        StatusCode(StatusCodes.Status201Created, await checklistService.AttachAsync(User.GetUserId(), vehicleId, request, ct));
+    public async Task<ActionResult<VehicleChecklistDto>> Attach(Guid vehicleId, AttachChecklistRequest request, [FromQuery] DateOnly? today,
+        CancellationToken ct) =>
+        StatusCode(StatusCodes.Status201Created, await checklistService.AttachAsync(User.GetUserId(), vehicleId, request, today, ct));
 
     [HttpPut("vehicle-checklists/{id:guid}")]
-    public async Task<ActionResult<VehicleChecklistDto>> Update(Guid id, UpdateVehicleChecklistRequest request, CancellationToken ct) =>
-        Ok(await checklistService.UpdateAsync(User.GetUserId(), id, request, ct));
+    public async Task<ActionResult<VehicleChecklistDto>> Update(Guid id, UpdateVehicleChecklistRequest request, [FromQuery] DateOnly? today, CancellationToken ct) =>
+        Ok(await checklistService.UpdateAsync(User.GetUserId(), id, request, today, ct));
 
     [HttpDelete("vehicle-checklists/{id:guid}")]
     public async Task<IActionResult> Delete(Guid id, CancellationToken ct)
@@ -37,8 +38,9 @@ public class VehicleChecklistsController(VehicleChecklistService checklistServic
         Ok(await checklistService.ListRunsAsync(User.GetUserId(), id, ct));
 
     [HttpPost("vehicle-checklists/{id:guid}/runs")]
-    public async Task<ActionResult<CreateChecklistRunResponse>> CreateRun(Guid id, CreateChecklistRunRequest request, CancellationToken ct) =>
-        StatusCode(StatusCodes.Status201Created, await checklistService.CreateRunAsync(User.GetUserId(), id, request, ct));
+    public async Task<ActionResult<CreateChecklistRunResponse>> CreateRun(Guid id, CreateChecklistRunRequest request, [FromQuery] DateOnly? today,
+        CancellationToken ct) =>
+        StatusCode(StatusCodes.Status201Created, await checklistService.CreateRunAsync(User.GetUserId(), id, request, today, ct));
 
     [HttpDelete("checklist-runs/{id:guid}")]
     public async Task<IActionResult> DeleteRun(Guid id, CancellationToken ct)

@@ -23,9 +23,10 @@ public partial class MaintenanceTaskService(IAppDbContext db, VehicleService veh
         return templates.Select(t => new TaskTemplateDto(t.Id, t.Key, t.Name, t.Category, t.DefaultIntervalKm, t.DefaultIntervalDays)).ToList();
     }
 
-    public async Task<List<MaintenanceTaskDto>> ListAsync(Guid userId, Guid vehicleId, CancellationToken ct = default)
+    public async Task<List<MaintenanceTaskDto>> ListAsync(Guid userId, Guid vehicleId, DateOnly? today = null, CancellationToken ct = default)
     {
         var vehicle = await vehicleService.FindOwnedAsync(userId, vehicleId, ct);
+        var day = ClientToday(today);
 
         // The client sorts by urgency, then by name with a culture-aware compare in the UI language.
         var tasks = await db.MaintenanceTasks
@@ -34,13 +35,14 @@ public partial class MaintenanceTaskService(IAppDbContext db, VehicleService veh
             .ThenBy(t => t.Name)
             .ToListAsync(ct);
 
-        var today = TodayUtc();
-        return tasks.Select(t => ToDto(t, vehicle, today)).ToList();
+        return tasks.Select(t => ToDto(t, vehicle, day)).ToList();
     }
 
-    public async Task<MaintenanceTaskDto> CreateAsync(Guid userId, Guid vehicleId, CreateMaintenanceTaskRequest request, CancellationToken ct = default)
+    public async Task<MaintenanceTaskDto> CreateAsync(Guid userId, Guid vehicleId, CreateMaintenanceTaskRequest request, DateOnly? today = null,
+        CancellationToken ct = default)
     {
         var vehicle = await vehicleService.FindOwnedAsync(userId, vehicleId, ct);
+        var day = ClientToday(today);
         var (name, category) = Validate(vehicle, request.Name, request.Category, request.IntervalKm, request.IntervalDays,
             request.DueSoonPercent, request.LastDoneOdometerKm, request.LastDoneDate);
 
@@ -64,12 +66,14 @@ public partial class MaintenanceTaskService(IAppDbContext db, VehicleService veh
         db.MaintenanceTasks.Add(task);
 
         await db.SaveChangesAsync(ct);
-        return ToDto(task, vehicle, TodayUtc());
+        return ToDto(task, vehicle, day);
     }
 
-    public async Task<MaintenanceTaskDto> UpdateAsync(Guid userId, Guid vehicleId, Guid taskId, UpdateMaintenanceTaskRequest request, CancellationToken ct = default)
+    public async Task<MaintenanceTaskDto> UpdateAsync(Guid userId, Guid vehicleId, Guid taskId, UpdateMaintenanceTaskRequest request,
+        DateOnly? today = null, CancellationToken ct = default)
     {
         var vehicle = await vehicleService.FindOwnedAsync(userId, vehicleId, ct);
+        var day = ClientToday(today);
         var task = await FindAsync(vehicle.Id, taskId, ct);
         var (name, category) = Validate(vehicle, request.Name, request.Category, request.IntervalKm, request.IntervalDays,
             request.DueSoonPercent, request.LastDoneOdometerKm, request.LastDoneDate, task);
@@ -85,7 +89,7 @@ public partial class MaintenanceTaskService(IAppDbContext db, VehicleService veh
         task.UpdatedAt = DateTimeOffset.UtcNow;
 
         await db.SaveChangesAsync(ct);
-        return ToDto(task, vehicle, TodayUtc());
+        return ToDto(task, vehicle, day);
     }
 
     public async Task DeleteAsync(Guid userId, Guid vehicleId, Guid taskId, CancellationToken ct = default)
@@ -103,18 +107,15 @@ public partial class MaintenanceTaskService(IAppDbContext db, VehicleService veh
     /// Mark as done at the car's current odometer: one record, one join row holding the task's old LastDone* (for undo),
     /// the task's LastDone* moved forward, and a Service reading linked to the record. One SaveChanges.
     /// </summary>
-    public async Task<ResetTaskResponse> ResetAsync(Guid userId, Guid vehicleId, Guid taskId, ResetTaskRequest? request, CancellationToken ct = default)
+    public async Task<ResetTaskResponse> ResetAsync(Guid userId, Guid vehicleId, Guid taskId, ResetTaskRequest? request, DateOnly? today = null,
+        CancellationToken ct = default)
     {
         var vehicle = await vehicleService.FindOwnedAsync(userId, vehicleId, ct);
         var task = await FindAsync(vehicle.Id, taskId, ct);
 
         // The client sends its local date; one day of slack either way covers every time zone.
-        var today = TodayUtc();
-        var date = request?.Date ?? today;
-        if (Math.Abs(date.DayNumber - today.DayNumber) > 1)
-        {
-            throw new ValidationFailedException("serviceRecord.invalidDate", "The date must be today.");
-        }
+        var day = ClientToday(today);
+        var date = ClientToday(request?.Date ?? day);
 
         var cost = request?.Cost;
         ValidateCost(cost);
@@ -150,7 +151,7 @@ public partial class MaintenanceTaskService(IAppDbContext db, VehicleService veh
         LogServiceReading(vehicle, readings, ServiceReading(record));
 
         await db.SaveChangesAsync(ct);
-        return new(record.Id, ToDto(task, vehicle, today));
+        return new(record.Id, ToDto(task, vehicle, day));
     }
 
     // Voided records count. shortcut: two simultaneous creates at the cap can both pass; harmless, add a lock if the limit ever matters.
@@ -244,19 +245,13 @@ public partial class MaintenanceTaskService(IAppDbContext db, VehicleService veh
     }
 
     /// <summary>
-    /// Statuses of the enabled tasks of the caller's active cars (server UTC date, as on GET .../tasks), and the month's spend
+    /// Statuses of the enabled tasks of the caller's active cars (the client's today, as on GET .../tasks), and the month's spend
     /// with the same filter as the history search from the first of the month to <paramref name="today"/>, and each active car's enabled
     /// checklists and open to-do counts. Six queries.
     /// </summary>
     public async Task<DashboardDto> DashboardAsync(Guid userId, DateOnly? today, CancellationToken ct = default)
     {
-        var utcToday = TodayUtc();
-        // The client sends its local date; it only picks the spend month, with the same slack as reset.
-        var localToday = today ?? utcToday;
-        if (Math.Abs(localToday.DayNumber - utcToday.DayNumber) > 1)
-        {
-            throw new ValidationFailedException("dashboard.invalidDate", "The date must be today.");
-        }
+        var localToday = DateRules.ClientToday(today, "dashboard.invalidDate");
 
         var monthStart = new DateOnly(localToday.Year, localToday.Month, 1);
         var month = db.ServiceRecords.Where(r => r.Vehicle!.UserId == userId && !r.IsVoided && r.Date >= monthStart && r.Date <= localToday);
@@ -268,13 +263,13 @@ public partial class MaintenanceTaskService(IAppDbContext db, VehicleService veh
             .Where(t => t.Vehicle!.UserId == userId && !t.Vehicle.IsArchived && t.IsEnabled)
             .ToListAsync(ct)).ToLookup(t => t.VehicleId);
         var checklists = (await VehicleChecklistService.QueryAsync(db,
-            c => c.Vehicle!.UserId == userId && !c.Vehicle.IsArchived && c.IsEnabled, ct)).ToLookup(c => c.VehicleId);
+            c => c.Vehicle!.UserId == userId && !c.Vehicle.IsArchived && c.IsEnabled, localToday, ct)).ToLookup(c => c.VehicleId);
         var openIssues = await db.Issues.Where(i => i.Vehicle!.UserId == userId && !i.Vehicle.IsArchived && i.Status == IssueStatus.Open)
             .GroupBy(i => i.VehicleId).Select(g => new { g.Key, Count = g.Count() }).ToDictionaryAsync(g => g.Key, g => g.Count, ct);
 
         var cards = vehicles.Select(v =>
             {
-                var list = tasks[v.Id].Select(t => ToDto(t, v, utcToday))
+                var list = tasks[v.Id].Select(t => ToDto(t, v, localToday))
                     .OrderByDescending(t => t.Status).ThenByDescending(t => t.Progress).ThenBy(t => t.Name, StringComparer.InvariantCulture)
                     .ToList();
                 return new DashboardVehicleDto(v.Id, v.Nickname, v.Make, v.Model, v.Year, v.CurrentOdometerKm,
@@ -297,14 +292,14 @@ public partial class MaintenanceTaskService(IAppDbContext db, VehicleService veh
     /// rules. Every check runs before anything changes; one SaveChanges.
     /// </summary>
     public async Task<CreateServiceRecordResponse> CreateRecordAsync(Guid userId, Guid vehicleId, CreateServiceRecordRequest request,
-        CancellationToken ct = default)
+        DateOnly? today = null, CancellationToken ct = default)
     {
         var vehicle = await vehicleService.FindOwnedAsync(userId, vehicleId, ct);
+        var day = ClientToday(today);
 
         // Same one day of slack as readings and resets: the client sends its local date.
-        var today = TodayUtc();
-        var date = request.Date ?? today;
-        if (date > today.AddDays(1))
+        var date = request.Date ?? day;
+        if (date > TodayUtc().AddDays(1))
         {
             throw new ValidationFailedException("serviceRecord.futureDate", "The service date can't be in the future.");
         }
@@ -361,7 +356,7 @@ public partial class MaintenanceTaskService(IAppDbContext db, VehicleService veh
         LogServiceReading(vehicle, readings, reading);
 
         await db.SaveChangesAsync(ct);
-        return new(ToDto(record, userId), linked.Select(t => ToDto(t, vehicle, today)).ToList());
+        return new(ToDto(record, userId), linked.Select(t => ToDto(t, vehicle, day)).ToList());
     }
 
     // Matched in memory against this car's tasks, so another car's (or user's) task id is not found; duplicates are ignored.
@@ -377,9 +372,10 @@ public partial class MaintenanceTaskService(IAppDbContext db, VehicleService veh
     /// before anything changes; one SaveChanges. Returns the record and every task of the car.
     /// </summary>
     public async Task<CreateServiceRecordResponse> UpdateRecordAsync(Guid userId, Guid vehicleId, Guid recordId, UpdateServiceRecordRequest request,
-        CancellationToken ct = default)
+        DateOnly? today = null, CancellationToken ct = default)
     {
         var vehicle = await vehicleService.FindOwnedAsync(userId, vehicleId, ct);
+        var day = ClientToday(today);
         var record = await db.ServiceRecords
             .Include(r => r.Tasks).ThenInclude(j => j.MaintenanceTask)
             .Include(r => r.Items)
@@ -393,11 +389,10 @@ public partial class MaintenanceTaskService(IAppDbContext db, VehicleService veh
             throw new ConflictException("serviceRecord.alreadyVoided", "This service record is deleted.");
         }
 
-        var today = TodayUtc();
         var oldKey = (record.Date, record.OdometerKm);
         var newKey = (Date: request.Date ?? record.Date, Km: request.OdometerKm ?? record.OdometerKm);
         var moved = newKey != oldKey;
-        if (moved && newKey.Date > today.AddDays(1))
+        if (moved && newKey.Date > TodayUtc().AddDays(1))
         {
             throw new ValidationFailedException("serviceRecord.futureDate", "The service date can't be in the future.");
         }
@@ -409,7 +404,7 @@ public partial class MaintenanceTaskService(IAppDbContext db, VehicleService veh
         var carTasks = await db.MaintenanceTasks.Where(t => t.VehicleId == vehicle.Id).ToListAsync(ct);
         var wanted = request.TaskIds is null ? null : Resolve(carTasks, request.TaskIds);
         var response = () => new CreateServiceRecordResponse(ToDto(record, userId),
-            carTasks.OrderByDescending(t => t.IsEnabled).ThenBy(t => t.Name).Select(t => ToDto(t, vehicle, today)).ToList());
+            carTasks.OrderByDescending(t => t.IsEnabled).ThenBy(t => t.Name).Select(t => ToDto(t, vehicle, day)).ToList());
 
         // A no-op edit doesn't save, so UpdatedAt (the concurrency token) doesn't move and a void right after still succeeds (L70).
         if (!moved && (shop, totalCost, notes) == (record.ShopName, record.TotalCost, record.Notes)
@@ -423,6 +418,12 @@ public partial class MaintenanceTaskService(IAppDbContext db, VehicleService veh
         var reading = readings.FirstOrDefault(r => r.ServiceRecordId == record.Id);
         if (moved)
         {
+            // A legacy record without its reading gets a new one below, so it counts toward the cap (L165).
+            if (reading is null)
+            {
+                OdometerService.EnsureRoom(readings);
+            }
+
             // Validate excludes the reading itself, so the record never collides with its own old value.
             OdometerService.Validate(readings, reading ?? new OdometerReading(), newKey.Km, newKey.Date, request.ConfirmCorrection);
         }
@@ -530,9 +531,10 @@ public partial class MaintenanceTaskService(IAppDbContext db, VehicleService veh
     /// points at) and the latest remaining non-voided linked record. Other tasks (a later record or a manual edit) are left alone. The
     /// record's reading is removed (kept as a manual reading if it's the car's only one). One SaveChanges.
     /// </summary>
-    public async Task<List<MaintenanceTaskDto>> VoidAsync(Guid userId, Guid vehicleId, Guid recordId, CancellationToken ct = default)
+    public async Task<List<MaintenanceTaskDto>> VoidAsync(Guid userId, Guid vehicleId, Guid recordId, DateOnly? today = null, CancellationToken ct = default)
     {
         var vehicle = await vehicleService.FindOwnedAsync(userId, vehicleId, ct);
+        var day = ClientToday(today);
         var record = await db.ServiceRecords.Include(r => r.Tasks)
             .FirstOrDefaultAsync(r => r.Id == recordId && r.VehicleId == vehicle.Id, ct)
             ?? throw new NotFoundException(nameof(ServiceRecord), recordId);
@@ -585,8 +587,7 @@ public partial class MaintenanceTaskService(IAppDbContext db, VehicleService veh
 
         await attachmentFiles.DeleteObjectsAsync(attachments, AttachmentFiles.ServiceRecordPrefix(userId, vehicle.Id, record.Id));
 
-        var today = TodayUtc();
-        return tasks.Select(t => ToDto(t, vehicle, today)).ToList();
+        return tasks.Select(t => ToDto(t, vehicle, day)).ToList();
     }
 
     /// <summary>
@@ -821,6 +822,9 @@ public partial class MaintenanceTaskService(IAppDbContext db, VehicleService veh
     }
 
     private static DateOnly TodayUtc() => DateOnly.FromDateTime(DateTime.UtcNow);
+
+    // The status day of every task endpoint (L155), with Mark done's date code, which the client already shows.
+    private static DateOnly ClientToday(DateOnly? today) => DateRules.ClientToday(today, "serviceRecord.invalidDate");
 
     private static MaintenanceTaskDto ToDto(MaintenanceTask t, Vehicle vehicle, DateOnly today)
     {

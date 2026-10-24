@@ -19,16 +19,18 @@ public class MaintenanceTasksController(MaintenanceTaskService taskService) : Co
         Ok(await taskService.TemplatesAsync(ct));
 
     [HttpGet("vehicles/{vehicleId:guid}/tasks")]
-    public async Task<ActionResult<List<MaintenanceTaskDto>>> List(Guid vehicleId, CancellationToken ct) =>
-        Ok(await taskService.ListAsync(User.GetUserId(), vehicleId, ct));
+    public async Task<ActionResult<List<MaintenanceTaskDto>>> List(Guid vehicleId, [FromQuery] DateOnly? today, CancellationToken ct) =>
+        Ok(await taskService.ListAsync(User.GetUserId(), vehicleId, today, ct));
 
     [HttpPost("vehicles/{vehicleId:guid}/tasks")]
-    public async Task<ActionResult<MaintenanceTaskDto>> Create(Guid vehicleId, CreateMaintenanceTaskRequest request, CancellationToken ct) =>
-        StatusCode(StatusCodes.Status201Created, await taskService.CreateAsync(User.GetUserId(), vehicleId, request, ct));
+    public async Task<ActionResult<MaintenanceTaskDto>> Create(Guid vehicleId, CreateMaintenanceTaskRequest request, [FromQuery] DateOnly? today,
+        CancellationToken ct) =>
+        StatusCode(StatusCodes.Status201Created, await taskService.CreateAsync(User.GetUserId(), vehicleId, request, today, ct));
 
     [HttpPut("vehicles/{vehicleId:guid}/tasks/{taskId:guid}")]
-    public async Task<ActionResult<MaintenanceTaskDto>> Update(Guid vehicleId, Guid taskId, UpdateMaintenanceTaskRequest request, CancellationToken ct) =>
-        Ok(await taskService.UpdateAsync(User.GetUserId(), vehicleId, taskId, request, ct));
+    public async Task<ActionResult<MaintenanceTaskDto>> Update(Guid vehicleId, Guid taskId, UpdateMaintenanceTaskRequest request,
+        [FromQuery] DateOnly? today, CancellationToken ct) =>
+        Ok(await taskService.UpdateAsync(User.GetUserId(), vehicleId, taskId, request, today, ct));
 
     [HttpDelete("vehicles/{vehicleId:guid}/tasks/{taskId:guid}")]
     public async Task<IActionResult> Delete(Guid vehicleId, Guid taskId, CancellationToken ct)
@@ -39,8 +41,8 @@ public class MaintenanceTasksController(MaintenanceTaskService taskService) : Co
 
     [HttpPost("vehicles/{vehicleId:guid}/tasks/{taskId:guid}/reset")]
     public async Task<ActionResult<ResetTaskResponse>> Reset(Guid vehicleId, Guid taskId,
-        [FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Allow)] ResetTaskRequest? request, CancellationToken ct) =>
-        StatusCode(StatusCodes.Status201Created, await taskService.ResetAsync(User.GetUserId(), vehicleId, taskId, request, ct));
+        [FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Allow)] ResetTaskRequest? request, [FromQuery] DateOnly? today, CancellationToken ct) =>
+        StatusCode(StatusCodes.Status201Created, await taskService.ResetAsync(User.GetUserId(), vehicleId, taskId, request, today, ct));
 
     [HttpGet("vehicles/{vehicleId:guid}/service-records")]
     public async Task<ActionResult<List<ServiceRecordDto>>> Records(Guid vehicleId, CancellationToken ct) =>
@@ -56,16 +58,18 @@ public class MaintenanceTasksController(MaintenanceTaskService taskService) : Co
         Ok(await taskService.DashboardAsync(User.GetUserId(), today, ct));
 
     [HttpPost("vehicles/{vehicleId:guid}/service-records")]
-    public async Task<ActionResult<CreateServiceRecordResponse>> CreateRecord(Guid vehicleId, CreateServiceRecordRequest request, CancellationToken ct) =>
-        StatusCode(StatusCodes.Status201Created, await taskService.CreateRecordAsync(User.GetUserId(), vehicleId, request, ct));
+    public async Task<ActionResult<CreateServiceRecordResponse>> CreateRecord(Guid vehicleId, CreateServiceRecordRequest request,
+        [FromQuery] DateOnly? today, CancellationToken ct) =>
+        StatusCode(StatusCodes.Status201Created, await taskService.CreateRecordAsync(User.GetUserId(), vehicleId, request, today, ct));
 
     [HttpPut("vehicles/{vehicleId:guid}/service-records/{recordId:guid}")]
-    public async Task<ActionResult<CreateServiceRecordResponse>> UpdateRecord(Guid vehicleId, Guid recordId, UpdateServiceRecordRequest request, CancellationToken ct) =>
-        Ok(await taskService.UpdateRecordAsync(User.GetUserId(), vehicleId, recordId, request, ct));
+    public async Task<ActionResult<CreateServiceRecordResponse>> UpdateRecord(Guid vehicleId, Guid recordId, UpdateServiceRecordRequest request,
+        [FromQuery] DateOnly? today, CancellationToken ct) =>
+        Ok(await taskService.UpdateRecordAsync(User.GetUserId(), vehicleId, recordId, request, today, ct));
 
     [HttpPost("vehicles/{vehicleId:guid}/service-records/{recordId:guid}/void")]
-    public async Task<ActionResult<List<MaintenanceTaskDto>>> Void(Guid vehicleId, Guid recordId, CancellationToken ct) =>
-        Ok(await taskService.VoidAsync(User.GetUserId(), vehicleId, recordId, ct));
+    public async Task<ActionResult<List<MaintenanceTaskDto>>> Void(Guid vehicleId, Guid recordId, [FromQuery] DateOnly? today, CancellationToken ct) =>
+        Ok(await taskService.VoidAsync(User.GetUserId(), vehicleId, recordId, today, ct));
 
     /// <summary>Multipart with one file field <c>file</c>: JPEG, PNG, WebP or PDF by content, up to 10 MB. Shares the photo's upload limit.</summary>
     [HttpPost("vehicles/{vehicleId:guid}/service-records/{recordId:guid}/attachments")]

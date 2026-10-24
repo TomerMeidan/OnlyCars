@@ -47,7 +47,7 @@ public record UpdateMaintenanceTaskRequest(
     bool? IsEnabled,
     int? DueSoonPercent = null);
 
-// Every field is optional: no date means UTC today; no cost or notes saves null.
+// Every field is optional: no date means the ?today= query (else UTC today); no cost or notes saves null.
 public record ResetTaskRequest(DateOnly? Date = null, decimal? Cost = null, string? Notes = null);
 
 public record ResetTaskResponse(Guid ServiceRecordId, MaintenanceTaskDto Task);
@@ -75,7 +75,7 @@ public record ServiceItemRequest(string? Description, string? Brand, string? Par
 public record UpdateServiceRecordRequest(string? ShopName, decimal? TotalCost, string? Notes, List<ServiceItemRequest>? Items,
     DateOnly? Date = null, decimal? OdometerKm = null, List<Guid>? TaskIds = null, bool ConfirmCorrection = false);
 
-// Date and OdometerKm are nullable only so a missing value gets a coded error (a missing date means UTC today, as for readings).
+// Date and OdometerKm are nullable only so a missing value gets a coded error (a missing date means the ?today= query, else UTC today).
 public record CreateServiceRecordRequest(
     DateOnly? Date,
     decimal? OdometerKm,

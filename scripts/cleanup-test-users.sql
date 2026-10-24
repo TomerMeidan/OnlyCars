@@ -16,6 +16,7 @@
 :on error exit
 SET NOCOUNT ON;
 SET XACT_ABORT ON;
+SET QUOTED_IDENTIFIER ON; -- sqlcmd defaults it OFF, and deletes on tables with filtered indexes then fail (Msg 1934)
 
 IF CONVERT(nvarchar(128), SERVERPROPERTY('InstanceName')) NOT LIKE 'LOCALDB#%' OR SERVERPROPERTY('InstanceName') IS NULL
     THROW 50000, 'Refusing to run: this script is for the local LocalDB dev database only.', 1;
@@ -29,7 +30,7 @@ DECLARE @D5 varchar(25) = REPLICATE('[0-9]', 5);
 DECLARE @D4 varchar(20) = REPLICATE('[0-9]', 4);
 DECLARE @A4 varchar(40) = REPLICATE('[a-z0-9]', 4);
 DECLARE @Hex8 varchar(64) = REPLICATE('[0-9a-f]', 8);
-DECLARE @Rules TABLE (Name varchar(40) PRIMARY KEY, Pattern varchar(200) NOT NULL);
+DECLARE @Rules TABLE (Name varchar(40) NOT NULL, Pattern varchar(200) NOT NULL, PRIMARY KEY (Name, Pattern)); -- a rule may have several exact shapes
 INSERT INTO @Rules VALUES
     -- Also matches the RPT smoke users ui-rpt-<setup>-<ms> and ui-rptdbg-<ms> (L97).
     ('smoke ui-<setup>-<ms>',        'ui-[a-z]%-' + @D13 + '@onlycars.test'),
@@ -45,11 +46,12 @@ INSERT INTO @Rules VALUES
     ('agent rpt1-a-<9 digits>',      'rpt1-a-' + @D9 + '@example.com'),
     ('agent rpt1-b-<9 digits>',      'rpt1-b-' + @D9 + '@example.com'),
     ('agent probe-rpt-<ms>',         'probe-rpt-' + @D13 + '@onlycars.test'),
-    ('agent file1-<word>-<s>',       'file1-[a-z]%-' + @D10 + '@example.test'),
+    ('agent file1-<word>-<s>',       'file1-check-' + @D10 + '@example.test'), -- the words the FILE-1 agent used
+    ('agent file1-<word>-<s>',       'file1-other-' + @D10 + '@example.test'),
+    ('agent file1-<word>-<s>',       'file1-probe-' + @D10 + '@example.test'),
     ('agent be-file1-fix<n>-<s>',    'be-file1-fix%-' + @D10 + '@onlycars.test'),
     ('agent file2-<ms>',             'file2-' + @D13 + '@example.test'),
     ('agent file3-<ms>',             'file3-' + @D13 + '@example.test'),
-    ('old qa+<run>-<ms>',            'qa+[a-z0-9]%-' + @D13 + '@example.com'),
     ('old dbg-<ms> onlycars.test',   'dbg-' + @D13 + '@onlycars.test'),
     ('old dbg<ms> x.com',            'dbg' + @D13 + '@x.com'),
     ('old dbg<ms> x.io',             'dbg' + @D13 + '@x.io'),
@@ -63,9 +65,6 @@ INSERT INTO @Rules VALUES
     ('qa extra-<lang>-<ms>',         'extra-[a-z][a-z]-' + @D13 + '@onlycars.test'),
     ('qa look-<lang>-<ms>',          'look-[a-z][a-z]-' + @D13 + '@onlycars.test'),
     ('qa d-/m-<ms>',                 '[dm]-' + @D13 + '@onlycars.test'),
-    ('agent mvp<n><x>- example.com', 'mvp[0-9][a-z]-%' + @D4 + '@example.com'), -- mvp<n><x>-[<tag>-]<4+ digits>
-    ('agent mvp<n><x>- example.test','mvp[0-9][a-z]-%' + @D4 + '@example.test'),
-    ('agent mvp<n><x>- x.test',      'mvp[0-9][a-z]-%' + @D4 + '@x.test'),
     ('agent mvp3a-<4> test.dev',     'mvp3a-' + @D4 + '@test.dev'), -- test.dev is registrable: the exact shape only
     ('agent mvp<n><x>-<5> test.local','mvp[0-9][a-z]-' + @D5 + '@test.local'),
     ('agent omvp<n><x>-<5>',         'omvp[0-9][a-z]-' + @D5 + '@x.test'),
@@ -91,7 +90,30 @@ INSERT INTO @Rules VALUES
     ('agent tires-o-<4 digits>',     'tires-o-' + @D4 + '@x.test'),
     ('agent tok<5 digits>',          'tok' + @D5 + '@x.test'),
     ('agent split<4 digits>',        'split' + @D4 + '@test.com'),
-    ('agent split<5 digits>',        'split' + @D5 + '@test.com');
+    ('agent split<5 digits>',        'split' + @D5 + '@test.com'),
+    -- L161, L170 (LOW-8): the NOT-1 smoke users and the ACC-1 agent users.
+    ('smoke not1-<setup>-<ms>',      'not1-[a-z]%-' + @D13 + '@onlycars.test'),
+    ('agent acc1-<ms>',              'acc1-' + @D13 + '@onlycars.test');
+
+-- L143 (LOW-8): the loose rules on reserved domains, as exact shapes taken from the QA scripts in the git history and the dev DB.
+-- The smoke setups (desktop|mobile)-(light|dark)-(en|he), with the -km/-mi unit tails browser QA added.
+DECLARE @Setups TABLE (S varchar(30) PRIMARY KEY);
+INSERT INTO @Setups SELECT d + '-' + c + '-' + l + u FROM (VALUES ('desktop'), ('mobile')) a(d) CROSS JOIN (VALUES ('light'), ('dark')) b(c)
+    CROSS JOIN (VALUES ('en'), ('he')) e(l) CROSS JOIN (VALUES (''), ('-km'), ('-mi')) f(u);
+-- qa+<tag>-<setup>-<ms>, or qa+<tag>-[<word>-]<ms> for the one-off runs.
+INSERT INTO @Rules SELECT 'old qa+<tag>-[<what>-]<ms>', 'qa+' + m + '-' + @D13 + '@example.com' FROM (
+    SELECT t + '-' + S FROM @Setups CROSS JOIN (VALUES ('low[0-9]'), ('mvp[0-9][a-z]'), ('sec[0-9]'), ('set[0-9]')) x(t)
+    UNION SELECT t + '-' + l FROM (VALUES ('low[0-9]off'), ('mvp[0-9][a-z]x'), ('mvp[0-9][a-z]-lo')) x(t) CROSS JOIN (VALUES ('en'), ('he')) y(l)
+    UNION SELECT m FROM (VALUES ('mvp[0-9][a-z]'), ('mvp[0-9][a-z]zoom'), ('mvp[0-9][a-z]-api'), ('mvp[0-9][a-z]-more'), ('mvp[0-9][a-z]-zoom'),
+        ('mvp[0-9][a-z]-logout'), ('mvp[0-9][a-z]-probe'), ('set[0-9]-flash-light'), ('set[0-9]-flash-dark'), ('dbg'), ('void'), ('void[0-9]'),
+        ('never'), ('nobody')) x(m)
+) shapes(m);
+INSERT INTO @Rules VALUES ('qa qa+low7-<5 digits>', 'qa+low7-' + @D5 + '@example.com'); -- L148
+-- mvp<n><x>-[<tag>-]<4, 5, 9 or 10 digits>, and mvp3d-o<s>; a free-text tag (like tommy-2024) never matches.
+INSERT INTO @Rules SELECT 'agent mvp<n><x>-[<tag>-]<digits>', 'mvp[0-9][a-z]-' + t + n + '@' + d
+    FROM (VALUES (''), ('[a-z]-'), ('be-'), ('big-'), ('other-')) x(t) CROSS JOIN (VALUES (@D4), (@D5), (@D9), (@D10)) y(n)
+    CROSS JOIN (VALUES ('example.com'), ('example.test'), ('x.test')) z(d)
+    UNION SELECT 'agent mvp<n><x>-[<tag>-]<digits>', 'mvp[0-9][a-z]-o' + @D10 + '@example.com';
 
 -- Self-check: none of these may ever match (the owner's accounts and near misses of each rule).
 DECLARE @MustNotMatch TABLE (Email nvarchar(256));
@@ -120,7 +142,21 @@ INSERT INTO @MustNotMatch VALUES ('tommymeidan@gmail.com'), ('tomboi@gmail.com')
     ('mvp2c-123@x.test'), ('mvp2-12345@x.test'), ('mvp3a-51634@test.dev'), ('mvp3a-x-5163@test.dev'), ('mvp3b-5163@test.dev'),
     ('mvp3a-tommy-2024@test.dev'), ('pm123456789@t.io'), ('pm1792133549@t.com'), ('d-179209862627@onlycars.test'),
     ('m-1792098626274@example.com'), ('sec1-tommy-2024@example.com'), ('sec1-123456@example.com'), ('sec1dev-1547@example.com'),
-    ('sec1rev179200672@example.com'), ('sec12-12345@example.com');
+    ('sec1rev179200672@example.com'), ('sec12-12345@example.com'),
+    -- LOW-8 near misses: the tightened mvp rules and the new not1/acc1 rules.
+    ('mvp1a-tommy-2024@example.com'), ('mvp1a-tommy-2024@example.test'), ('mvp1a-tommy-2024@x.test'), ('mvp1a-123@example.com'),
+    ('not1-179209862627@onlycars.test'), ('not1-desktop-light-en-179209862627@onlycars.test'),
+    ('not1-desktop-light-en-1792098626274@gmail.com'), ('not1-desktop-1792098626274@example.com'),
+    ('acc1-179232710335@onlycars.test'), ('acc1-1792327103357@gmail.com'), ('acc1-tommy-1792327103357@onlycars.test'),
+    ('acc1-1792327103357@example.com'),
+    -- L143 near misses: the exact qa+, file1 and mvp shapes.
+    ('qa+tommy-1792098626274@example.com'), ('qa+low1-tommy-1792098626274@example.com'), ('qa+low1-desktop-light-fr-1792098626274@example.com'),
+    ('qa+mvp3a-desktop-light-en-179209862627@example.com'), ('qa+mvp3a-desktop-light-en-1792098626274@gmail.com'),
+    ('qa+mvp3a-tablet-light-en-1792098626274@example.com'), ('qa+mvp5b-tommy-1792098626274@example.com'), ('qa+dbg-179209862627@example.com'),
+    ('qa+set1-flash-blue-1792098626274@example.com'), ('qa+low7-1234@example.com'), ('qa+low7-12345@gmail.com'),
+    ('file1-tommy-1792257093@example.test'), ('file1-check-1792257093@example.com'), ('mvp1a-tommy-12345@example.com'),
+    ('mvp1a-ab-12345@example.com'), ('mvp1a-123456@example.com'), ('mvp1a-12345678@example.test'), ('mvp3d-x1792257093@example.com'),
+    ('mvp1a-other-123@example.test'), ('mvp1a-12345@gmail.com');
 IF EXISTS (SELECT 1 FROM @MustNotMatch m JOIN @Rules r ON m.Email LIKE r.Pattern
            WHERE m.Email NOT LIKE '%[^a-z0-9+-]%@%' AND m.Email NOT LIKE '%@%@%')
     THROW 50001, 'Self-check failed: a rule matches an address it must never match.', 1;
@@ -140,7 +176,7 @@ IF EXISTS (SELECT 1 FROM @Targets WHERE SUBSTRING(Email, CHARINDEX('@', Email) +
 IF EXISTS (SELECT 1 FROM @Targets WHERE Email IN ('tommymeidan@gmail.com', 'tomboi@gmail.com'))
     THROW 50002, 'Self-check failed: an owner account matched.', 1;
 
-SELECT r.Name AS RuleName, COUNT(t.Id) AS UsersMatched FROM @Rules r LEFT JOIN @Targets t ON t.RuleName = r.Name GROUP BY r.Name ORDER BY r.Name;
+SELECT r.Name AS RuleName, COUNT(t.Id) AS UsersMatched FROM (SELECT DISTINCT Name FROM @Rules) r LEFT JOIN @Targets t ON t.RuleName = r.Name GROUP BY r.Name ORDER BY r.Name;
 SELECT COUNT(*) AS UsersMatched, (SELECT COUNT(*) FROM Users) AS UsersInDatabase FROM @Targets;
 SELECT Email FROM @Targets ORDER BY Email;
 -- rules:end

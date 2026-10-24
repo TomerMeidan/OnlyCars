@@ -14,6 +14,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -24,8 +25,10 @@ using OnlyCars.Api.Controllers;
 using OnlyCars.Application.Account;
 using OnlyCars.Application.Auth;
 using OnlyCars.Application.Auth.Dtos;
+using OnlyCars.Application.Checklists;
 using OnlyCars.Application.Common;
 using OnlyCars.Application.Common.Exceptions;
+using OnlyCars.Application.Vehicles;
 using OnlyCars.Domain.Entities;
 using OnlyCars.Infrastructure.Auth;
 using OnlyCars.Infrastructure.Persistence;
@@ -147,6 +150,79 @@ public class AccountDeleteSqlTests : IAsyncLifetime
         Assert.Equal(LogLevel.Warning, Assert.Single(logger.Lines).Level);
         var again = await AccountDeleteTests.Auth(db).RegisterAsync(new RegisterRequest("mine@onlycars.test", "another-password"));
         Assert.NotEqual(mine, again.User.Id);
+    }
+
+    // Holds a command matching the text until released (a NonQuery one after it ran, a reader one before); Reached completes when one arrives. Fires once.
+    private sealed class Gate(string text, bool nonQuery) : DbCommandInterceptor
+    {
+        public TaskCompletionSource Reached { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource Release { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public Func<Task>? OnReached { get; init; }
+
+        private async Task WaitAsync(System.Data.Common.DbCommand command)
+        {
+            if (command.CommandText.Contains(text) && Reached.TrySetResult())
+            {
+                if (OnReached is not null)
+                {
+                    await OnReached();
+                }
+                await Release.Task.WaitAsync(TimeSpan.FromSeconds(30));
+            }
+        }
+
+        public override async ValueTask<int> NonQueryExecutedAsync(System.Data.Common.DbCommand command, CommandExecutedEventData eventData,
+            int result, CancellationToken cancellationToken = default)
+        {
+            if (nonQuery)
+            {
+                await WaitAsync(command);
+            }
+
+            return result;
+        }
+
+        public override async ValueTask<InterceptionResult<System.Data.Common.DbDataReader>> ReaderExecutingAsync(System.Data.Common.DbCommand command,
+            CommandEventData eventData, InterceptionResult<System.Data.Common.DbDataReader> result, CancellationToken cancellationToken = default)
+        {
+            if (!nonQuery)
+            {
+                await WaitAsync(command);
+            }
+
+            return result;
+        }
+    }
+
+    // An upload has read the run and is saving its photo when the delete has done each step (L173): the save waits for the commit,
+    // then fails as a run deleted during an upload (409 concurrency.conflict); the delete never fails.
+    [Theory]
+    [InlineData("FROM [ChecklistRuns]")]
+    [InlineData("FROM [Attachments]")]
+    [InlineData("FROM [Users]")]
+    public async Task L173_ARunPhotoSavedMidDelete_Is409_AndTheDeleteGoesThrough(string step)
+    {
+        await SeedMineAsync();
+        var runId = await db.ChecklistRuns.Where(r => r.VehicleChecklist!.Vehicle!.UserId == mine).Select(r => r.Id).SingleAsync();
+        var connection = db.Database.GetConnectionString()!;
+
+        // The upload stops just before its save; the delete lets it go right after the step, then gives it a second to reach the locks.
+        var save = new Gate("INSERT INTO [Attachments]", nonQuery: false);
+        var deleteStep = new Gate(step, nonQuery: true) { OnReached = async () => { save.Release.TrySetResult(); await Task.Delay(1000); } };
+        deleteStep.Release.SetResult();
+        await using var uploading = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>().UseSqlServer(connection).AddInterceptors(save).Options);
+        var uploads = new VehicleService(uploading, new FakeFileStorage());
+        var upload = new VehicleChecklistService(uploading, uploads).AddRunAttachmentAsync(mine, runId, AttachmentTests.Webp(), "late.webp");
+        await save.Reached.Task.WaitAsync(TimeSpan.FromSeconds(30));
+        await using var deleting = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>().UseSqlServer(connection).AddInterceptors(deleteStep).Options);
+
+        await new AccountService(deleting, AccountDeleteTests.Auth(deleting), storage, logger).DeleteAsync(mine, Password);
+
+        Assert.True(deleteStep.Reached.Task.IsCompleted);
+        await Assert.ThrowsAsync<DbUpdateConcurrencyException>(() => upload.WaitAsync(TimeSpan.FromSeconds(30)));
+        Assert.False(await db.Users.AnyAsync(u => u.Id == mine));
+        Assert.Equal(0, await db.Attachments.CountAsync());
+        Assert.Equal([$"users/{mine}/"], storage.DeletedPrefixes);
     }
 }
 
@@ -293,6 +369,10 @@ public class AccountDeleteTests
 
     private static readonly JwtOptions Jwt = new() { Issuer = "test", Audience = "test", SigningKey = new string('k', 64) };
 
+    // Set by a test to hold DELETE /me open; inFlight completes once a held request is inside the endpoint.
+    private TaskCompletionSource? hold;
+    private readonly TaskCompletionSource inFlight = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
     // The real JWT validation with the deleted-user check, the real limiter and the real order, around stand-in endpoints.
     private async Task<(WebApplication App, HttpClient Client)> StartAsync()
     {
@@ -316,7 +396,15 @@ public class AccountDeleteTests
         app.UseRequestLimits("test");
         app.UseAuthorization();
         app.MapGet("/me", () => "ok").RequireAuthorization();
-        app.MapDelete("/me", () => "ok").RequireAuthorization().RequireRateLimiting(RequestLimits.AccountDeletePolicy);
+        app.MapDelete("/me", async () =>
+        {
+            if (hold is { } h)
+            {
+                inFlight.TrySetResult();
+                await h.Task;
+            }
+            return "ok";
+        }).RequireAuthorization().RequireRateLimiting(RequestLimits.AccountDeletePolicy);
         await app.StartAsync();
         return (app, new HttpClient { BaseAddress = new Uri(app.Urls.First()) });
     }
@@ -365,5 +453,32 @@ public class AccountDeleteTests
         Assert.Equal("http.429", JsonDocument.Parse(await rejected.Content.ReadAsStringAsync()).RootElement.GetProperty("code").GetString());
         // The limit is per user and per endpoint: reading still works.
         Assert.Equal(HttpStatusCode.OK, (await SendAsync(client, HttpMethod.Get, token)).StatusCode);
+    }
+
+    [Fact]
+    public async Task L177_ASecondDeleteWhileTheFirstIsInFlight_Is429()
+    {
+        var (app, client) = await StartAsync();
+        await using var _ = app;
+        var token = new JwtTokenService(Options.Create(Jwt)).CreateToken(user).Token;
+        hold = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var first = SendAsync(client, HttpMethod.Delete, token);
+        HttpResponseMessage second;
+        try
+        {
+            await inFlight.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            // Times out instead of hanging if a regression lets the second request in to wait on hold too.
+            second = await SendAsync(client, HttpMethod.Delete, token).WaitAsync(TimeSpan.FromSeconds(10));
+        }
+        finally
+        {
+            hold.SetResult();
+        }
+
+        Assert.Equal(HttpStatusCode.TooManyRequests, second.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await first).StatusCode);
+        // Once the first is done, the next one goes through.
+        Assert.Equal(HttpStatusCode.OK, (await SendAsync(client, HttpMethod.Delete, token)).StatusCode);
     }
 }

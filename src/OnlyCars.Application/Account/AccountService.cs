@@ -28,7 +28,13 @@ public class AccountService(IAppDbContext db, AuthService auth, IFileStorage? st
 
         await using (var transaction = await db.Database.BeginTransactionAsync(ct))
         {
-            // Run photos first: their ChecklistRunId is NoAction, so the user's cascade would stop at them.
+            // X-locks the user's runs first, so a racing run-photo save waits for the commit, then fails its run key or token: 409 (L173).
+            // A save that inserted its row before blocking deadlocks with the deletes below; it, not the delete, is the victim (also 409).
+            // The pool resets the priority when the connection is reused.
+            await db.Database.ExecuteSqlRawAsync("SET DEADLOCK_PRIORITY HIGH", ct);
+            await db.ChecklistRuns.Where(r => r.VehicleChecklist!.Vehicle!.UserId == userId)
+                .ExecuteUpdateAsync(s => s.SetProperty(r => r.UpdatedAt, DateTimeOffset.UtcNow), ct);
+            // Run photos next: their ChecklistRunId is NoAction, so the user's cascade would stop at them.
             await db.Attachments.Where(a => a.ChecklistRun!.VehicleChecklist!.Vehicle!.UserId == userId).ExecuteDeleteAsync(ct);
             await db.Users.Where(u => u.Id == userId).ExecuteDeleteAsync(ct);
             await transaction.CommitAsync(ct);

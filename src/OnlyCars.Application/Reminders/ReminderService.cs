@@ -16,19 +16,18 @@ public class ReminderService(IAppDbContext db)
     private static readonly int[] SnoozeDays = [1, 7, 30];
 
     /// <summary>
-    /// Due tasks and checklists (the car page's status, server UTC date) and expiring documents (client's today, user's lead days)
+    /// Due tasks and checklists (the car page's status) and expiring documents (user's lead days), all on the client's today,
     /// of active cars, minus snoozed ones; most severe first, then fewest days left (none last), car nickname, name.
     /// </summary>
     public async Task<RemindersDto> GetAsync(Guid userId, DateOnly? today, CancellationToken ct = default)
     {
         var day = DateRules.ClientToday(today, InvalidDate);
-        var utcToday = DateOnly.FromDateTime(DateTime.UtcNow);
         var leadDays = await LeadDaysAsync(db, userId, ct);
 
         var cars = await db.Vehicles.Where(v => v.UserId == userId && !v.IsArchived).ToDictionaryAsync(v => v.Id, ct);
         var tasks = await db.MaintenanceTasks.Where(t => t.Vehicle!.UserId == userId && !t.Vehicle.IsArchived && t.IsEnabled).ToListAsync(ct);
         var checklists = await VehicleChecklistService.QueryAsync(db,
-            c => c.Vehicle!.UserId == userId && !c.Vehicle.IsArchived && c.IsEnabled, ct);
+            c => c.Vehicle!.UserId == userId && !c.Vehicle.IsArchived && c.IsEnabled, day, ct);
         var documents = await db.VehicleDocuments.Where(d => d.Vehicle!.UserId == userId && !d.Vehicle.IsArchived).ToListAsync(ct);
         var snoozed = (await db.Notifications.Where(n => n.UserId == userId && n.SnoozedUntil > day)
             .Select(n => new { n.Kind, n.RefId }).ToListAsync(ct)).Select(n => (n.Kind, n.RefId)).ToHashSet();
@@ -42,7 +41,7 @@ public class ReminderService(IAppDbContext db)
                 continue;
             }
 
-            var s = TaskStatusCalculator.Compute(t, car.CurrentOdometerKm, utcToday);
+            var s = TaskStatusCalculator.Compute(t, car.CurrentOdometerKm, day);
             if (s.Status is DueStatus.DueSoon or DueStatus.Overdue)
             {
                 due.Add(new(NotificationKind.Task, t.Id, car.Id, car.Nickname, t.Name, null, s.Status.ToString()!, null, s.RemainingKm, s.RemainingDays));

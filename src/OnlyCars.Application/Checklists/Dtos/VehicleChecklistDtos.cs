@@ -41,7 +41,7 @@ public record ChecklistRunDto(Guid Id, Guid VehicleChecklistId, DateOnly RunAt, 
 
 public record ChecklistRunItemRequest(Guid? TemplateItemId, bool? BoolValue, decimal? NumberValue, string? TextValue, bool IsFlagged = false);
 
-// Items must be exactly the template's current items, in any order. A null RunAt is UTC today; a null OdometerKm logs no reading.
+// Items must be exactly the template's current items, in any order. A null RunAt is the ?today= query, else UTC today; a null OdometerKm logs no reading.
 public record CreateChecklistRunRequest(DateOnly? RunAt, decimal? OdometerKm, string? Notes, List<ChecklistRunItemRequest?>? Items,
     bool ConfirmCorrection = false);
 

@@ -96,7 +96,9 @@ public class AttachmentFiles(IAppDbContext db, VehicleService vehicleService, IO
             await vehicleService.DeleteQuietlyAsync(key);
             // A run deleted meanwhile fails the new row's foreign key before the token check: the same 409 concurrency.conflict.
             // (Service records are voided, not deleted, so theirs is always the token check.)
-            if (e is DbUpdateException and not DbUpdateConcurrencyException && parent is ChecklistRun
+            // A save that lost a deadlock (to the account delete, L173; it comes wrapped by the execution strategy) is a conflict too.
+            if (e is InvalidOperationException { InnerException: DbUpdateException }
+                || e is DbUpdateException and not DbUpdateConcurrencyException && parent is ChecklistRun
                 && !await db.ChecklistRuns.AnyAsync(r => r.Id == parent.Id, CancellationToken.None))
             {
                 throw new DbUpdateConcurrencyException("The parent was deleted during the upload.", e);
