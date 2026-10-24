@@ -52,19 +52,54 @@ public sealed class R2FileStorage(IAmazonS3 s3, string bucket) : IFileStorage
     public static bool IsUserPrefix(string? prefix) =>
         prefix is { Length: 43 } && Guid.TryParseExact(prefix[6..42], "D", out var id) && prefix == $"users/{id}/";
 
-    public async Task DeletePrefixAsync(string prefix, CancellationToken ct = default)
+    private static void RequireUserPrefix(string prefix)
     {
         if (!IsUserPrefix(prefix))
         {
-            throw new ArgumentException("Only a users/{guid}/ prefix can be deleted.", nameof(prefix));
+            throw new ArgumentException("Only a users/{guid}/ prefix is allowed.", nameof(prefix));
         }
+    }
 
-        // A list page holds at most 1,000 keys, the DeleteObjects limit, so each page is one batch.
-        var list = new ListObjectsV2Request { BucketName = bucket, Prefix = prefix };
+    private async IAsyncEnumerable<ListObjectsV2Response> PagesAsync(ListObjectsV2Request list,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct)
+    {
         ListObjectsV2Response page;
         do
         {
             page = await s3.ListObjectsV2Async(list, ct);
+            yield return page;
+            list.ContinuationToken = page.NextContinuationToken;
+        } while (page.IsTruncated == true);
+    }
+
+    public async Task<IReadOnlyList<string>> ListUserPrefixesAsync(CancellationToken ct = default)
+    {
+        var prefixes = new List<string>();
+        await foreach (var page in PagesAsync(new ListObjectsV2Request { BucketName = bucket, Prefix = "users/", Delimiter = "/" }, ct))
+        {
+            prefixes.AddRange(page.CommonPrefixes?.Where(IsUserPrefix) ?? []);
+        }
+        return prefixes;
+    }
+
+    public async Task<int> CountObjectsAsync(string prefix, CancellationToken ct = default)
+    {
+        RequireUserPrefix(prefix);
+        var count = 0;
+        await foreach (var page in PagesAsync(new ListObjectsV2Request { BucketName = bucket, Prefix = prefix }, ct))
+        {
+            count += page.S3Objects?.Count ?? 0;
+        }
+        return count;
+    }
+
+    public async Task DeletePrefixAsync(string prefix, CancellationToken ct = default)
+    {
+        RequireUserPrefix(prefix);
+
+        // A list page holds at most 1,000 keys, the DeleteObjects limit, so each page is one batch.
+        await foreach (var page in PagesAsync(new ListObjectsV2Request { BucketName = bucket, Prefix = prefix }, ct))
+        {
             if (page.S3Objects is { Count: > 0 } objects)
             {
                 var deleted = await s3.DeleteObjectsAsync(new DeleteObjectsRequest
@@ -78,8 +113,7 @@ public sealed class R2FileStorage(IAmazonS3 s3, string bucket) : IFileStorage
                     throw new IOException($"{errors.Count} objects under the prefix were not deleted.");
                 }
             }
-            list.ContinuationToken = page.NextContinuationToken;
-        } while (page.IsTruncated == true);
+        }
     }
 
     public string GetSignedUrl(string key, TimeSpan validFor, string? contentType = null, string? contentDisposition = null)

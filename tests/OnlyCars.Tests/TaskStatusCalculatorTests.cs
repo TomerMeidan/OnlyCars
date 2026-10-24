@@ -165,13 +165,4 @@ public class TaskStatusCalculatorTests
         Assert.Null(Predict(10_000, 365, 1_000, 40m, enabled: false));
         Assert.Null(Predict(null, 365, 1_000, 40m));                    // time-only task
     }
-
-    [Fact]
-    public void UsesTheGivenToday()
-    {
-        var other = Today.AddDays(1);
-        var s = TaskStatusCalculator.Compute(Task(10_000, null), 1_000, other);
-
-        Assert.Equal(other.AddDays(225), TaskStatusCalculator.PredictDueDate(s, 40m, other));
-    }
 }

@@ -9,6 +9,7 @@ public record TaskStatusResult(DueStatus? Status, decimal? RemainingKm, int? Rem
 public static class TaskStatusCalculator
 {
     private static readonly TaskStatusResult None = new(null, null, null, null);
+    private const int PredictionMaxDays = 730;
 
     public static TaskStatusResult Compute(MaintenanceTask task, decimal currentOdometerKm, DateOnly today) =>
         Compute(task.IsEnabled, task.IntervalKm, task.IntervalDays, task.DueSoonPercent, task.LastDoneOdometerKm, task.LastDoneDate,
@@ -61,8 +62,6 @@ public static class TaskStatusCalculator
         var days = Math.Min(Math.Ceiling(km / avgKmPerDay.Value), s.RemainingDays ?? decimal.MaxValue);
         return days > PredictionMaxDays ? null : today.AddDays((int)days);
     }
-
-    private const int PredictionMaxDays = 730;
 
     private static DueStatus StatusOf(decimal remaining, int interval, int dueSoonPercent) =>
         remaining < 0 ? DueStatus.Overdue

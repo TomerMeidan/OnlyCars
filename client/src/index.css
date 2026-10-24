@@ -434,6 +434,7 @@ h2 a { margin-block: calc((1lh - 2.75rem) / 2); text-decoration-thickness: 2px; 
 .counts > [class^='status-'] { color: var(--status); }
 .dash-tasks > li { grid-template-columns: 1fr auto; column-gap: 0.75rem; align-items: center; }
 .dash-tasks > li > button.done { grid-column: 2; grid-row: 1 / span 2; padding-inline: 0.75rem; }
+.dash-tasks > li:has(> .predicted) > button.done { grid-row: 1 / span 3; } /* L205: centred on the date line too; no empty row without one */
 .dash-tasks > li > .undo, .dash-tasks > li > .error { grid-column: 1 / -1; }
 /* A long name wraps beside its status badge instead of pushing the badge to the next line. */
 .dash-tasks .task-head { flex-wrap: nowrap; align-items: baseline; }

@@ -295,12 +295,14 @@ public class AccountDeleteTests
     {
         private readonly Queue<ListObjectsV2Response> pages = new(pages);
         public List<string?> ListTokens { get; } = [];
+        public List<ListObjectsV2Request> Requests { get; } = [];
         public List<List<string>> DeletedBatches { get; } = [];
         public List<DeleteError> DeleteErrors { get; } = [];
 
         public override Task<ListObjectsV2Response> ListObjectsV2Async(ListObjectsV2Request request, CancellationToken cancellationToken = default)
         {
             ListTokens.Add(request.ContinuationToken);
+            Requests.Add(new ListObjectsV2Request { Prefix = request.Prefix, Delimiter = request.Delimiter });
             return Task.FromResult(pages.Dequeue());
         }
 
@@ -338,6 +340,29 @@ public class AccountDeleteTests
         s3.DeleteErrors.Add(new DeleteError { Key = Prefix + "a.jpg", Code = "AccessDenied" });
 
         await Assert.ThrowsAsync<IOException>(() => new R2FileStorage(s3, "bucket").DeletePrefixAsync(Prefix));
+    }
+
+    [Fact]
+    public async Task Low10_ListUserPrefixes_ReadsEveryPageWithDelimiter_KeepsOnlyUsersGuid()
+    {
+        var s3 = new PagedS3(
+            new ListObjectsV2Response { CommonPrefixes = [Prefix, "users/x/"], IsTruncated = true, NextContinuationToken = "page-2" },
+            new ListObjectsV2Response { CommonPrefixes = ["users/0F8FAD5B-D9CB-469F-A165-70867728950E/", "users/7c9e6679-7425-40de-944b-e07fc1f90ae7/"] });
+
+        var prefixes = await new R2FileStorage(s3, "bucket").ListUserPrefixesAsync();
+
+        Assert.Equal([Prefix, "users/7c9e6679-7425-40de-944b-e07fc1f90ae7/"], prefixes);
+        Assert.Equal([null, "page-2"], s3.ListTokens);
+        Assert.All(s3.Requests, r => Assert.Equal(("users/", "/"), (r.Prefix, r.Delimiter)));
+    }
+
+    [Fact]
+    public async Task Low10_CountObjects_CountsEveryPage_AndRefusesOtherPrefixes()
+    {
+        var r2 = new R2FileStorage(new PagedS3(Page("page-2", "a.jpg", "b.jpg"), Page(null, "c.jpg")), "bucket");
+
+        Assert.Equal(3, await r2.CountObjectsAsync(Prefix));
+        await Assert.ThrowsAsync<ArgumentException>(() => r2.CountObjectsAsync("users/"));
     }
 
     [Theory]

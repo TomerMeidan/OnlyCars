@@ -3110,6 +3110,43 @@ for (const s of setups) {
       .catch(async () => { throw new Error(`after Mark done: ${JSON.stringify(await dates(card))}, want "${want2}"`) })
     if (!(await page.evaluate(() => window.noReload))) throw new Error('the page reloaded')
     await page.screenshot({ path: `${OUT}/${s.name}-predicted-dashboard.png`, fullPage: true })
+    // LOW-10 AC6 (L205): Mark done centred on the whole task, with a date (Oil, which now has Undo) and without (Belt, Wipers);
+    // a task without a date keeps its two rows; Undo spans the row.
+    const layout = (name) => row(card, name).evaluate((li) => {
+      const box = (el) => el.getBoundingClientRect()
+      const parts = [...li.children].filter((c) => !c.matches('button.done, .undo, .error')).map(box)
+      const top = Math.min(...parts.map((r) => r.top)), bottom = Math.max(...parts.map((r) => r.bottom)), b = box(li.querySelector('button.done'))
+      const cs = getComputedStyle(li), undo = li.querySelector('.undo')
+      return { off: Math.abs((b.top + b.bottom - top - bottom) / 2), rows: cs.gridTemplateRows.split(' ').length - (undo ? 1 : 0),
+        undoShort: undo ? box(li).width - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight) - box(undo).width : 0 }
+    })
+    for (const w of [...new Set([s.viewport.width, 390, 360])]) {
+      await page.setViewportSize({ width: w, height: s.viewport.height })
+      for (const [name, rows] of [['Oil', 3], ['Belt', 2], ['Wipers', 2]]) {
+        const l = await layout(name)
+        if (l.off > 1.5 || l.rows !== rows || l.undoShort > 1) throw new Error(`${name} at ${w}px: ${JSON.stringify(l)}, want ${rows} rows`)
+      }
+      await noOverflow(`dashboard task rows at ${w}px`)
+      await page.screenshot({ path: `${OUT}/${s.name}-mark-done-centred-${w}.png`, fullPage: true })
+    }
+    await page.setViewportSize(s.viewport)
+    // L208: the date text takes no focus, Tab goes through the row's controls in DOM order, and each shows its focus ring.
+    const keyPath = async (li, what) => {
+      const focusable = await page.locator('.predicted, .predicted-basis').evaluateAll((ps) => ps.some((p) => p.tabIndex >= 0 || p.querySelector('a, button, input, select, textarea, [tabindex]')))
+      if (focusable) throw new Error(`${what}: the date text is focusable`)
+      const n = await li.evaluate((el) => [...el.querySelectorAll('a[href], button:not([disabled]), input, select, textarea, [tabindex]')].filter((x) => x.tabIndex >= 0).map((x, i) => (x.dataset.k = i)).length)
+      await li.locator('[data-k="0"]').focus()
+      await page.keyboard.press('Shift+Tab')
+      for (let i = 0; i < n; i++) {
+        await page.keyboard.press('Tab')
+        const f = await page.evaluate(() => {
+          const a = document.activeElement, cs = getComputedStyle(a)
+          return { k: a.dataset.k, html: a.outerHTML.slice(0, 80), ring: a.matches(':focus-visible') && cs.outlineStyle !== 'none' && parseFloat(cs.outlineWidth) >= 2 }
+        })
+        if (f.k !== String(i) || !f.ring) throw new Error(`${what}: Tab ${i + 1} is on ${f.html} (ring ${f.ring})`)
+      }
+    }
+    await keyPath(row(card, 'Oil'), 'dashboard row')
     // Car page: the date on Oil only, and the hint with the average.
     await card.getByRole('link', { name: 'Pred car', exact: true }).click()
     await arrivedAt('Pred car')
@@ -3119,6 +3156,7 @@ for (const s of setups) {
     const hint = async () => plain(await page.locator('.predicted-basis').textContent())
     if ((await hint()) !== P.hint((30).toLocaleString(s.lng, { minimumFractionDigits: 1 }), P.km)) throw new Error(`hint "${await hint()}"`)
     await noOverflow('the hint on the car page')
+    await keyPath(row(page, 'Oil'), 'car page row')
     await page.screenshot({ path: `${OUT}/${s.name}-predicted-car.png`, fullPage: true })
     // Miles: the hint in miles, the date unchanged.
     await unitIs('Mi')
@@ -3129,6 +3167,43 @@ for (const s of setups) {
     await page.screenshot({ path: `${OUT}/${s.name}-predicted-car-miles.png`, fullPage: true })
     await unitIs('Km')
     await apiCall('POST', `/vehicles/${id}/archive`)
+    await page.click('header a.brand')
+    await dashCar().waitFor()
+  })
+  await step('car-page-offline', async () => {
+    // LOW-10 AC4 (L199): offline, the car page shows the offline message with Retry (at 390px, RTL in Hebrew); back online it loads by itself.
+    const offlineMsg = inBlock('offline', 'noConnection')
+    const alert = page.locator('main > .row > p[role=alert]')
+    const retry = page.locator('main > .row > button', { hasText: key('retry') })
+    await page.setViewportSize({ width: 390, height: 844 })
+    await page.evaluate(() => { window.noReload = true })
+    const url = new URL(await dashCar().getByRole('link', { name: 'Dash car', exact: true }).getAttribute('href'), BASE).href
+    await ctx.setOffline(true)
+    try {
+      await dashCar().getByRole('link', { name: 'Dash car', exact: true }).click()
+      await alert.waitFor()
+      if (plain(await alert.textContent()) !== offlineMsg) throw new Error(`offline car page "${await alert.textContent()}"`)
+      if (plain(await page.locator('main h1').textContent()) !== key('car')) throw new Error(`h1 "${await page.locator('main h1').textContent()}"`)
+      await titleIs(key('car'))
+      await noOverflow('the offline car page')
+      await tall(retry, 'Retry')
+      await page.screenshot({ path: `${OUT}/${s.name}-car-offline-390.png`, fullPage: true })
+      // Retry while still offline: the message again, focus kept on Retry.
+      await retry.click()
+      await page.waitForFunction(() => !document.querySelector('main > .row > button[aria-disabled=true]'), null, { timeout: 3000 })
+      if (plain(await alert.textContent()) !== offlineMsg) throw new Error('no offline message after Retry')
+      await focusIs('main > .row > button', 'Retry after an offline retry')
+    } finally {
+      await ctx.setOffline(false)
+    }
+    // Back online: the car loads in place, without a reload or a navigation.
+    await page.locator('main .reading').waitFor({ timeout: 5000 })
+    if (plain(await page.locator('main h1').textContent()) !== 'Dash car') throw new Error('car not loaded after online')
+    if (await alert.count()) throw new Error('the offline message stayed')
+    if (page.url() !== url || !(await page.evaluate(() => window.noReload))) throw new Error(`reloaded or moved to ${page.url()}`)
+    await focusIs('main h1', 'the h1 after the car loaded')
+    await page.screenshot({ path: `${OUT}/${s.name}-car-online-390.png`, fullPage: true })
+    await page.setViewportSize(s.viewport)
     await page.click('header a.brand')
     await dashCar().waitFor()
   })
@@ -6330,8 +6405,22 @@ for (const s of setups) {
       await ctx.setOffline(false)
       page.off('request', onPut)
     }
+    // LOW-10 AC5 (L200): back online, the message goes by itself.
+    const langAlert = page.locator('main > p[role=alert]')
+    await langAlert.waitFor({ state: 'detached', timeout: 3000 }).catch(() => { throw new Error('the offline language message stayed after online') })
+    // And the next successful switch clears it: navigator.onLine faked false (no `online` event follows), then the real value again.
+    await page.evaluate(() => Object.defineProperty(navigator, 'onLine', { get: () => false, configurable: true }))
+    try {
+      await more(page)
+      await page.click('header nav button.link >> nth=0')
+      await langAlert.waitFor()
+    } finally {
+      await page.evaluate(() => delete navigator.onLine)
+    }
+    if (!(await page.evaluate(() => navigator.onLine))) throw new Error('navigator.onLine still faked')
     await more(page)
     await page.click('header nav button.link >> nth=0')
+    await langAlert.waitFor({ state: 'detached', timeout: 3000 }).catch(() => { throw new Error('the offline language message stayed after a successful switch') })
     const after = await page.getAttribute('html', 'dir')
     if (before === after) throw new Error(`dir stayed "${after}"`)
   })

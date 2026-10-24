@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, type ReactNode } from 'react'
+import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { api, applyTheme, cachedUser, getToken, Offline, setToken, USER_KEY, type AuthResponse, type User } from './api'
 import i18n, { toLocale } from './i18n'
@@ -23,6 +23,13 @@ const AuthContext = createContext<AuthState>(null!)
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(cachedUser)
   const [settingsError, setSettingsError] = useState<AuthState['settingsError']>(null)
+
+  // L200: back online, the header's "You are offline" language message no longer holds.
+  useEffect(() => {
+    const clear = () => setSettingsError((e) => (e?.at.startsWith('header@') && e.err instanceof Offline ? null : e))
+    addEventListener('online', clear)
+    return () => removeEventListener('online', clear)
+  }, [])
 
   // Signed in, the account's language and theme win.
   function show(u: User) {

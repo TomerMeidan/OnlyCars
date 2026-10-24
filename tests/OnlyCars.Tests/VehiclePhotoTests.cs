@@ -71,6 +71,32 @@ public class FakeFileStorage : IFileStorage
         return Task.CompletedTask;
     }
 
+    /// <summary>Runs when the prefixes are listed, so a test can change the database mid-sweep.</summary>
+    public Func<Task>? OnList { get; set; }
+
+    // Unfiltered, unlike R2: the sweep must skip what isn't users/{guid}/ by itself.
+    public async Task<IReadOnlyList<string>> ListUserPrefixesAsync(CancellationToken ct = default)
+    {
+        if (OnList is { } onList)
+        {
+            await onList();
+        }
+
+        lock (Objects)
+        {
+            return Objects.Keys.Where(k => k.StartsWith("users/", StringComparison.Ordinal) && k.IndexOf('/', 6) > 0)
+                .Select(k => k[..(k.IndexOf('/', 6) + 1)]).Distinct().ToList();
+        }
+    }
+
+    public Task<int> CountObjectsAsync(string prefix, CancellationToken ct = default)
+    {
+        lock (Objects)
+        {
+            return Task.FromResult(Objects.Keys.Count(k => k.StartsWith(prefix, StringComparison.Ordinal)));
+        }
+    }
+
     public Task DeleteAsync(string key, CancellationToken ct = default)
     {
         if (FailDeletes)

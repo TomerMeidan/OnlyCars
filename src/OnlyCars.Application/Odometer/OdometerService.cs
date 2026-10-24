@@ -180,20 +180,20 @@ public class OdometerService(IAppDbContext db, VehicleService vehicleService)
         if (previous is not null && valueKm < previous.ValueKm)
         {
             throw new ValidationFailedException("odometer.lowerThanPrevious",
-                $"New reading ({valueKm} km) is lower than the reading before it ({previous.ValueKm} km). " +
+                $"New reading ({valueKm} km) is lower than the reading before it ({Trim(previous.ValueKm)} km). " +
                 "Resubmit with confirmCorrection=true if this is an intentional correction.")
             {
-                Extensions = { ["previousKm"] = previous.ValueKm }
+                Extensions = { ["previousKm"] = Trim(previous.ValueKm) }
             };
         }
 
         if (next is not null && valueKm > next.ValueKm)
         {
             throw new ValidationFailedException("odometer.higherThanNext",
-                $"New reading ({valueKm} km) is higher than the reading after it ({next.ValueKm} km). " +
+                $"New reading ({valueKm} km) is higher than the reading after it ({Trim(next.ValueKm)} km). " +
                 "Resubmit with confirmCorrection=true if this is an intentional correction.")
             {
-                Extensions = { ["nextKm"] = next.ValueKm }
+                Extensions = { ["nextKm"] = Trim(next.ValueKm) }
             };
         }
     }
@@ -254,7 +254,9 @@ public class OdometerService(IAppDbContext db, VehicleService vehicleService)
         }
     }
 
-    // Drops the column's trailing zeros, so a saved reading has the JSON shape of the value as sent: 12345, not 12345.00 (L193).
     private static OdometerReadingDto ToDto(OdometerReading r) =>
-        new(r.Id, r.VehicleId, r.ValueKm / 1.0000000000000000000000000000m, r.ReadingDate, r.Source);
+        new(r.Id, r.VehicleId, Trim(r.ValueKm), r.ReadingDate, r.Source);
+
+    // Drops the column's trailing zeros, so JSON shows 12345, not 12345.00, like the value as sent (L193, L201).
+    private static decimal Trim(decimal km) => km / 1.0000000000000000000000000000m;
 }

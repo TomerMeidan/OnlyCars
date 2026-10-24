@@ -5,10 +5,14 @@ using Microsoft.IdentityModel.Tokens;
 using OnlyCars.Api.Common;
 using OnlyCars.Api.Middleware;
 using OnlyCars.Application;
+using OnlyCars.Application.Common;
 using OnlyCars.Infrastructure;
 using OnlyCars.Infrastructure.Auth;
+using OnlyCars.Infrastructure.Storage;
 
-var builder = WebApplication.CreateBuilder(args);
+// The owner's storage cleanup (LOW-10). Its options are not configuration, so they don't reach the builder.
+var sweepOrphans = args is ["sweep-orphans", ..];
+var builder = WebApplication.CreateBuilder(sweepOrphans ? [] : args);
 
 const string ClientCorsPolicy = "ClientCors";
 
@@ -65,6 +69,17 @@ builder.Services.AddCors(options =>
 });
 
 var app = builder.Build();
+
+if (sweepOrphans)
+{
+    using var scope = app.Services.CreateScope();
+    // Names only, never credentials: the ratio guard can't catch a database that partly matches the bucket.
+    var sql = new Microsoft.Data.SqlClient.SqlConnectionStringBuilder(builder.Configuration.GetConnectionString("Default"));
+    Console.WriteLine($"Bucket '{builder.Configuration["R2:BucketName"]}', database '{sql.InitialCatalog}' on '{sql.DataSource}'.");
+    Environment.ExitCode = await OrphanSweep.RunAsync(scope.ServiceProvider.GetService<IFileStorage>(),
+        scope.ServiceProvider.GetRequiredService<IAppDbContext>(), args[1..], Console.Out);
+    return;
+}
 
 app.UseNoSniff();
 app.UseExceptionHandler(_ => { });

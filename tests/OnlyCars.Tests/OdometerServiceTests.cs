@@ -98,6 +98,21 @@ public class OdometerServiceTests
         Assert.Equal(10000, (await CarAsync(car)).CurrentOdometerKm);
     }
 
+    [Theory]
+    [InlineData("12345.00", "12345")]
+    [InlineData("12345.50", "12345.5")]
+    public async Task OrderErrors_ReturnKmWithoutTrailingZeros(string stored, string expected)
+    {
+        // The column is decimal(12,2): SQL Server hands back 12345.00 for 12345 (L201).
+        var car = await CreateCarAsync(decimal.Parse(stored, System.Globalization.CultureInfo.InvariantCulture));
+
+        var lower = await Assert.ThrowsAsync<ValidationFailedException>(() => AddAsync(car, 1, daysAgo: 0));
+        var higher = await Assert.ThrowsAsync<ValidationFailedException>(() => AddAsync(car, 99_999, daysAgo: 5));
+
+        Assert.Equal(expected, ((decimal)lower.Extensions["previousKm"]!).ToString(System.Globalization.CultureInfo.InvariantCulture));
+        Assert.Equal(expected, ((decimal)higher.Extensions["nextKm"]!).ToString(System.Globalization.CultureInfo.InvariantCulture));
+    }
+
     [Fact]
     public async Task Add_FutureDate_ThrowsFutureDate_EvenWithConfirmation_ButTomorrowIsAllowed()
     {

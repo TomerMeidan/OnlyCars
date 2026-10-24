@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link, useParams } from 'react-router-dom'
-import { api, carNotFound, isGuid, isOrderError, localToday, runReturn, type OdometerReading, type Vehicle } from '../api'
+import { api, carNotFound, isGuid, isOrderError, localToday, Offline, runReturn, type OdometerReading, type Vehicle } from '../api'
 import { errorMessage } from '../i18n'
 import { useDistance } from '../auth'
 import { usePage } from '../usePage'
@@ -39,6 +39,8 @@ export default function CarPage() {
       ([v, r]) => {
         setCar(v)
         setReadings(r)
+        // Only the offline state recovers: another error stays, also when an overlapping load succeeds (StrictMode loads twice).
+        setError((e: unknown) => (e instanceof Offline ? null : e))
       },
       (err) => {
         focusAfterLoad.current = null
@@ -52,8 +54,21 @@ export default function CarPage() {
     if (!badId) load()
   }, [id]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // The error page sets its own title.
-  usePage(car?.nickname)
+  // L199: offline, the page says so with Retry, as the dashboard does, and loads again by itself once the connection is back.
+  const offline = error instanceof Offline
+  const [retrying, setRetrying] = useState(false)
+  const retry = () => {
+    setRetrying(true)
+    load().finally(() => setRetrying(false))
+  }
+  useEffect(() => {
+    if (!offline) return
+    addEventListener('online', retry)
+    return () => removeEventListener('online', retry)
+  }, [offline]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // The error pages set their own title; undefined while offline, so the car's h1 takes focus once it loads.
+  usePage(offline ? undefined : car?.nickname)
 
   useEffect(() => {
     const f = focusAfterLoad.current
@@ -69,6 +84,7 @@ export default function CarPage() {
 
   const back = <Link to="/" className="back"><span>{t('backToCars')}</span></Link>
 
+  if (offline) return <CarOffline error={error} retrying={retrying} onRetry={retry} />
   if (error != null) return <CarError error={error} />
   if (!car || !readings) return <p className="muted" role="status">{t('loading')}</p>
 
@@ -155,6 +171,22 @@ export function CarError({ error, onRetry, retrying }: { error: unknown; onRetry
       <Link to="/" className="back"><span>{t('backToCars')}</span></Link>
       <div role="alert"><h1 className="error" tabIndex={-1}>{message}</h1></div>
       {onRetry && <div className="actions"><button aria-disabled={retrying} onClick={() => !retrying && onRetry()}>{t('retry')}</button></div>}
+    </>
+  )
+}
+
+// L199: offline, as on the dashboard: the page's own h1, then the message with Retry (aria-disabled, so it keeps focus while it retries).
+function CarOffline({ error, onRetry, retrying }: { error: unknown; onRetry: () => void; retrying: boolean }) {
+  const { t } = useTranslation()
+  usePage(t('car'))
+  return (
+    <>
+      <Link to="/" className="back"><span>{t('backToCars')}</span></Link>
+      <h1 tabIndex={-1}>{t('car')}</h1>
+      <div className="row">
+        <p className="error" role="alert">{errorMessage(error)}</p>
+        <button aria-disabled={retrying} onClick={() => !retrying && onRetry()}>{t('retry')}</button>
+      </div>
     </>
   )
 }
