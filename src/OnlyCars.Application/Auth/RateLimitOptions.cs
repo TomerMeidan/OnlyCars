@@ -21,6 +21,10 @@ public class RateLimitOptions
     public int ExportPermitLimit { get; set; } = 5;
     public int ExportWindowSeconds { get; set; } = 10 * 60;
 
+    /// <summary>Account delete tries per signed-in user per window (ACC-2), right or wrong password; at most 1 runs at once per user.</summary>
+    public int AccountDeletePermitLimit { get; set; } = 5;
+    public int AccountDeleteWindowSeconds { get; set; } = 10 * 60;
+
     /// <summary>Failed logins per normalized email per window; a success does not count.</summary>
     public int FailedLoginLimit { get; set; } = 10;
     public int FailedLoginWindowSeconds { get; set; } = 15 * 60;

@@ -7,6 +7,9 @@ public interface IFileStorage
 
     Task DeleteAsync(string key, CancellationToken ct = default);
 
+    /// <summary>Deletes every object under <paramref name="prefix"/>, which must be exactly <c>users/{guid}/</c> (ACC-2); anything else throws <see cref="ArgumentException"/>.</summary>
+    Task DeletePrefixAsync(string prefix, CancellationToken ct = default);
+
     /// <summary>
     /// A GET URL for <paramref name="key"/> that expires after <paramref name="validFor"/>; computed locally, no network call.
     /// When given, the response carries <paramref name="contentType"/> and <paramref name="contentDisposition"/> as its headers.

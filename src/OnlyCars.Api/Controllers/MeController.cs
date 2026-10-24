@@ -9,6 +9,7 @@ using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Net.Http.Headers;
 using OnlyCars.Api.Common;
 using OnlyCars.Application.Account;
+using OnlyCars.Application.Account.Dtos;
 using OnlyCars.Application.Auth;
 using OnlyCars.Application.Auth.Dtos;
 
@@ -17,7 +18,7 @@ namespace OnlyCars.Api.Controllers;
 [ApiController]
 [Authorize]
 [Route("api/me")]
-public class MeController(AuthService authService, ExportService exportService) : ControllerBase
+public class MeController(AuthService authService, ExportService exportService, AccountService accountService) : ControllerBase
 {
     // The API's names (camelCase, enum names), indented, with Hebrew written as is rather than \u escapes.
     public static readonly JsonSerializerOptions ExportJson = new(JsonSerializerDefaults.Web)
@@ -30,6 +31,15 @@ public class MeController(AuthService authService, ExportService exportService) 
     [HttpGet]
     public async Task<ActionResult<UserDto>> Get(CancellationToken ct) =>
         Ok(await authService.GetMeAsync(User.GetUserId(), ct));
+
+    /// <summary>Deletes the account and everything it owns for good (ACC-2); the password confirms it.</summary>
+    [HttpDelete]
+    [EnableRateLimiting(RequestLimits.AccountDeletePolicy)]
+    public async Task<IActionResult> Delete(DeleteAccountRequest request, CancellationToken ct)
+    {
+        await accountService.DeleteAsync(User.GetUserId(), request.Password, ct);
+        return NoContent();
+    }
 
     [HttpPut("settings")]
     public async Task<ActionResult<UserDto>> UpdateSettings(UpdateSettingsRequest request, CancellationToken ct) =>

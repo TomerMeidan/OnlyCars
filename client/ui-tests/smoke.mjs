@@ -5233,10 +5233,12 @@ for (const s of setups) {
     const missing = codes.filter((c) => { const [g, k] = c.split('.'); return !new RegExp(`\\n    ${g}: \\{((?!\\n    \\}).)*\\n      ${k}: `, 's').test(errorsSrc) })
     if (missing.length) throw new Error(`no ${s.lng} message for ${missing}`)
   })
+  let not1Auth
   await step('reminders-no-cars', async () => {
     const auth = await (await page.request.post(`${BASE}/api/auth/register`, {
       data: { email: `not1-${s.name}-${Date.now()}@onlycars.test`, password: 'Passw0rd!', locale: he ? 'He' : 'En', currency: 'ILS' },
     })).json()
+    not1Auth = auth // ACC-2 deletes this user at the end (it holds the Cap car, L168)
     if (auth.user.reminderLeadDays !== 30) throw new Error(`reminderLeadDays ${auth.user.reminderLeadDays}`)
     await page.evaluate(([token, user]) => { localStorage.setItem('token', token); localStorage.setItem('user', JSON.stringify(user)) }, [auth.token, auth.user])
     await page.goto(`${BASE}/`)
@@ -5557,7 +5559,8 @@ for (const s of setups) {
     if (plain(await alert.textContent()) !== `${XD.failed} ${HS.generic}`) throw new Error(`500 error "${await alert.textContent()}"`)
     if (plain(await sec.locator('[role=status]').textContent())) throw new Error('Downloaded still shown after a failure')
     if (downloads !== before) throw new Error('a failed export downloaded a file')
-    if ((await sec.getByRole('button').count()) !== 1) throw new Error('a second button in Your data after the error')
+    // ACC-2's Delete my account (the aria-expanded opener) also lives here; only Export may be a plain button.
+    if ((await sec.locator('button:not([aria-expanded])').count()) !== 1) throw new Error('a second button in Your data after the error')
     await focusIs('main section[aria-labelledby=your-data] button.stack', 'Export after the error')
     const retried = page.waitForEvent('download', { timeout: 15000 })
     await page.keyboard.press('Enter')
@@ -5570,7 +5573,7 @@ for (const s of setups) {
     await btn.click()
     await alert.waitFor()
     if (plain(await alert.textContent()) !== `${XD.failed} ${XD.rate}`) throw new Error(`429 error "${await alert.textContent()}"`)
-    if ((await sec.getByRole('button').count()) !== 1) throw new Error('a Retry after the 429')
+    if ((await sec.locator('button:not([aria-expanded])').count()) !== 1) throw new Error('a Retry after the 429')
     await focusIs('main section[aria-labelledby=your-data] button.stack', 'Export after the 429')
     await at390('settings with the export error', 'export-data-390')
     // Leaving the page mid-export aborts the request and downloads nothing.
@@ -5628,6 +5631,119 @@ for (const s of setups) {
   await step('logout', async () => {
     await page.click('header nav button.link >> nth=1')
     await page.locator('input[name=email]').waitFor()
+  })
+  // ACC-2: delete my account, as this setup's first user (its car, service files and run photos go too). These steps come last:
+  // nothing after them needs a user. The server allows 5 tries per 10 minutes per user: these make 2 real ones.
+  const DA = { open: key('deleteAccount'), confirm: key('deleteAccountConfirm'), busy: key('deleteAccountBusy'), wrong: key('deleteAccountWrongPassword'),
+    required: key('deleteAccountPasswordRequired'), failed: key('deleteAccountFailed'), rate: key('deleteAccountTooMany'), done: key('accountDeleted'),
+    warning: key('deleteAccountWarning'), exportFirst: key('deleteAccountExportFirst'), loginWrong: inBlock('auth', 'invalidCredentials') }
+  const daSec = page.locator('main section[aria-labelledby=your-data]')
+  const daOpener = daSec.getByRole('button', { name: DA.open, exact: true })
+  const daPanel = daSec.locator('form[aria-labelledby=delete-account-title]')
+  const daPassword = daPanel.locator('input[name=password]')
+  const daConfirm = daPanel.locator('button.danger')
+  const daAlert = daPanel.locator('[role=alert]')
+  // Only the DELETE; the page's GET /me goes through.
+  const onDelete = (fn) => page.route('**/api/me', (r) => (r.request().method() === 'DELETE' ? fn(r) : r.fallback()), { times: 1 })
+  const daIs = async (want, what) => { await daAlert.waitFor(); if (plain(await daAlert.textContent()) !== want) throw new Error(`${what} "${await daAlert.textContent()}"`) }
+  const daForgetFrom = (bad, logged) => {
+    run.badResponses.splice(bad, Infinity, ...run.badResponses.slice(bad).filter((r) => !/^(400|429|401) (DELETE|POST) .*\/api\/(me|auth\/login)$/.test(r)))
+    run.consoleErrors.splice(logged, Infinity, ...run.consoleErrors.slice(logged).filter((e) => !/status of (400|401|429)|ERR_FAILED/.test(e)))
+  }
+  await step('delete-account-errors', async () => {
+    const [bad, logged] = [run.badResponses.length, run.consoleErrors.length]
+    await page.fill('input[name=email]', registered.user.email)
+    await page.fill('input[name=password]', 'Passw0rd!')
+    await page.click('form button:not(.link)')
+    await page.locator('a[href="/cars/new"]').waitFor()
+    if ((await page.getAttribute('html', 'lang')) !== s.lng) throw new Error(`signed in with lang ${await page.getAttribute('html', 'lang')}`)
+    await openSettings()
+    // Closed, below Export. Opening focuses the panel's heading; it says it can't be undone and points to Export.
+    if ((await daOpener.getAttribute('aria-expanded')) !== 'false') throw new Error('opener not aria-expanded=false')
+    await daOpener.click()
+    await focusIs('#delete-account-title', 'the panel heading on open')
+    if ((await daOpener.getAttribute('aria-expanded')) !== 'true') throw new Error('opener not aria-expanded=true')
+    const text = plain(await daPanel.textContent())
+    if (!text.includes(DA.warning) || !text.includes(DA.exportFirst)) throw new Error(`panel text "${text}"`)
+    if ((await daPassword.getAttribute('autocomplete')) !== 'current-password') throw new Error('password autocomplete')
+    // Escape and Cancel close it, clear the password and focus Delete my account.
+    await daPassword.fill('typed')
+    await page.keyboard.press('Escape')
+    await daPanel.waitFor({ state: 'detached' })
+    await focusIs('main section[aria-labelledby=your-data] > .actions > button.danger', 'opener after Escape')
+    await page.keyboard.press('Enter')
+    if ((await daPassword.inputValue()) !== '') throw new Error('password kept after Escape')
+    await daPassword.fill('typed')
+    await daPanel.getByRole('button', { name: key('cancel'), exact: true }).click()
+    await daPanel.waitFor({ state: 'detached' })
+    await focusIs('main section[aria-labelledby=your-data] > .actions > button.danger', 'opener after Cancel')
+    await daOpener.click()
+    if ((await daPassword.inputValue()) !== '') throw new Error('password kept after Cancel')
+    // Password errors stay in the field: a mocked empty-password 400, then a real wrong password (the account still works).
+    await daPassword.fill(' ')
+    await onDelete((r) => r.fulfill({ status: 400, contentType: 'application/problem+json', body: JSON.stringify({ status: 400, code: 'auth.credentialsRequired' }) }))
+    await daConfirm.click()
+    await daIs(DA.required, 'empty password')
+    await focusIs('form[aria-labelledby=delete-account-title] input[name=password][aria-invalid=true]', 'password after credentialsRequired')
+    await daPassword.fill('Wr0ngPassword!')
+    await page.keyboard.press('Enter')
+    await daIs(DA.wrong, 'wrong password')
+    await focusIs('form[aria-labelledby=delete-account-title] input[name=password][aria-invalid=true]', 'password after a wrong password')
+    if ((await daPassword.getAttribute('aria-describedby')) !== 'delete-account-error') throw new Error('password not described by its error')
+    await apiCall('GET', '/me')
+    // A 429 and a network failure: their own messages, focus on the message; Delete is the retry. No password error marks.
+    await onDelete((r) => r.fulfill({ status: 429, contentType: 'application/problem+json', headers: { 'Retry-After': '600' }, body: JSON.stringify({ status: 429, code: 'http.429' }) }))
+    await daConfirm.click()
+    await daIs(`${DA.failed} ${DA.rate}`, '429')
+    await focusIs('#delete-account-error', 'the 429 message')
+    if (await daPassword.getAttribute('aria-invalid')) throw new Error('password marked invalid after a 429')
+    await at390('the delete-account panel with an error', 'delete-account-390')
+    await onDelete((r) => r.abort())
+    await daConfirm.click()
+    await daIs(`${DA.failed} ${RS.generic}`, 'network failure')
+    await focusIs('#delete-account-error', 'the network failure message')
+    await apiCall('GET', '/me')
+    daForgetFrom(bad, logged)
+  })
+  await step('delete-account', async () => {
+    const [bad, logged] = [run.badResponses.length, run.consoleErrors.length]
+    if (!(await daPanel.count())) { await openSettings(); await daOpener.click() }
+    // Through a slow route: busy keeps the width, a second Enter sends nothing; then 204 signs out to /login with the note.
+    let sent = 0
+    const count = (r) => r.url().endsWith('/api/me') && r.method() === 'DELETE' && sent++
+    page.on('request', count)
+    await onDelete(async (r) => { await page.waitForTimeout(700); await r.fallback() })
+    const width = (await daConfirm.boundingBox()).width
+    await daPassword.fill('Passw0rd!')
+    await page.keyboard.press('Enter')
+    await daConfirm.filter({ hasText: DA.busy }).waitFor({ timeout: 3000 })
+    if ((await daConfirm.getAttribute('aria-disabled')) !== 'true') throw new Error('not aria-disabled while busy')
+    if ((await daConfirm.boundingBox()).width !== width) throw new Error(`width ${width} became ${(await daConfirm.boundingBox()).width}`)
+    await page.keyboard.press('Enter')
+    await page.waitForURL('**/login')
+    page.off('request', count)
+    if (sent !== 1) throw new Error(`${sent} DELETE /api/me requests`)
+    const note = page.locator('main [role=status]#account-deleted')
+    if (plain(await note.textContent()) !== DA.done) throw new Error(`note "${await note.textContent()}"`)
+    await focusIs('main h1[aria-describedby=account-deleted]', 'h1 with the note on /login')
+    await titleIs(T.login)
+    if (await page.evaluate(() => localStorage.getItem('token') ?? localStorage.getItem('user'))) throw new Error('token or user left in storage')
+    // The old password no longer logs in; the note doesn't come back.
+    await page.fill('input[name=email]', registered.user.email)
+    await page.fill('input[name=password]', 'Passw0rd!')
+    await page.click('form button:not(.link)')
+    await page.locator('main [role=alert]').filter({ hasText: DA.loginWrong }).waitFor()
+    await page.reload()
+    await page.locator('input[name=email]').waitFor()
+    if (await note.count()) throw new Error('the note came back after a reload')
+    // The same email registers again; that user and the NOT-1 user (its Cap car, L168) are deleted through the API, as the UI does.
+    const again = await page.request.post(`${BASE}/api/auth/register`, { data: { email: registered.user.email, password: 'Passw0rd!' } })
+    if (!again.ok()) throw new Error(`register again: ${again.status()}`)
+    for (const token of [(await again.json()).token, not1Auth?.token]) {
+      const r = await page.request.delete(`${BASE}/api/me`, { headers: { Authorization: `Bearer ${token}` }, data: { password: 'Passw0rd!' } })
+      if (r.status() !== 204) throw new Error(`cleanup delete: ${r.status()}`)
+    }
+    daForgetFrom(bad, logged)
   })
 
   report.push(run)

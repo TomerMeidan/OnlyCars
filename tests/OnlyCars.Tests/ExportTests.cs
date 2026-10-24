@@ -31,8 +31,11 @@ public class ExportTests
     private readonly Guid userId = Guid.NewGuid();
     private readonly Guid otherUserId = Guid.NewGuid();
 
+    private Task<Dictionary<string, Guid>> SeedAsync(Guid owner, string tag) => SeedAsync(db, owner, tag);
+
     // One of everything (criterion 1); every free-text value carries the tag, so another user's data is easy to search for.
-    private async Task<Dictionary<string, Guid>> SeedAsync(Guid owner, string tag)
+    // Also seeds ACC-2's delete test on LocalDB.
+    internal static async Task<Dictionary<string, Guid>> SeedAsync(AppDbContext db, Guid owner, string tag)
     {
         var ids = new Dictionary<string, Guid>();
         Guid Id(string name) => ids[name] = Guid.NewGuid();
@@ -42,10 +45,11 @@ public class ExportTests
             CreatedAt = DateTimeOffset.UtcNow.AddDays(-2) };
         var archived = new Vehicle { Id = Id("archived"), UserId = owner, Nickname = $"Old-{tag}", IsArchived = true,
             ArchivedAt = DateTimeOffset.UtcNow, CurrentOdometerKm = 200_000, CreatedAt = DateTimeOffset.UtcNow.AddDays(-1) };
-        var template = new TaskTemplate { Key = $"oil-{tag}", Name = "Oil change", Category = TaskCategory.Oil };
+        var template = new TaskTemplate { Key = $"oil-{tag}", Name = "Oil change", Category = TaskCategory.Oil, DefaultIntervalKm = 10_000 };
         var task = new MaintenanceTask { Id = Id("task"), VehicleId = car.Id, Template = template, Name = $"Oil-{tag}", Category = TaskCategory.Oil,
             IntervalKm = 10_000, LastDoneOdometerKm = 60_000, LastDoneDate = Day };
-        var offTask = new MaintenanceTask { Id = Id("offTask"), VehicleId = car.Id, Name = $"Off-{tag}", IsEnabled = false, LastDoneDate = Day };
+        var offTask = new MaintenanceTask { Id = Id("offTask"), VehicleId = car.Id, Name = $"Off-{tag}", IntervalDays = 365, IsEnabled = false,
+            LastDoneDate = Day };
         var record = new ServiceRecord { Id = Id("record"), VehicleId = car.Id, Date = Day, OdometerKm = 60_000, ShopName = $"Shop-{tag}",
             TotalCost = 450.5m, Notes = $"Notes-{tag}" };
         var voided = new ServiceRecord { Id = Id("voided"), VehicleId = car.Id, Date = Day.AddDays(1), OdometerKm = 60_100, IsVoided = true };
@@ -257,7 +261,7 @@ public class ExportTests
         await SeedAsync(userId, "mine");
         var auth = new AuthService(db, new PasswordHasher<User>(), new FakeJwtTokenService(), new MemoryCache(new MemoryCacheOptions()),
             Options.Create(new RateLimitOptions()));
-        var controller = new MeController(auth, new ExportService(db))
+        var controller = new MeController(auth, new ExportService(db), new AccountService(db, auth))
         {
             ControllerContext = new ControllerContext
             {

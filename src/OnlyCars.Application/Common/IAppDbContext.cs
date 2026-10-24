@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using OnlyCars.Domain.Entities;
 
 namespace OnlyCars.Application.Common;
@@ -32,6 +33,8 @@ public interface IAppDbContext
     DbSet<VehicleDocument> VehicleDocuments { get; }
     DbSet<NotificationRule> NotificationRules { get; }
     DbSet<Notification> Notifications { get; }
+
+    DatabaseFacade Database { get; }
 
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 }

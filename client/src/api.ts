@@ -445,6 +445,9 @@ export const fileError = (file: File, types = photoTypes) =>
   : file.type && file.type !== 'application/octet-stream' && !types.split(',').includes(file.type) ? new ApiError(400, { code: 'file.unsupportedType' }, 'Bad Request')
   : null
 
+// ACC-2: set just before the sign-out after a deleted account, so the login page shows its note once.
+export const accountDeleted = { current: false }
+
 // Where the run page sends the user back to: the checklist whose Run button gets focus, and after a Save the flagged count and the run (for Add photos).
 export type RunReturn = { ran: string; flagged?: number; run?: string }
 // A Save that goes back in history can't carry state, so it leaves its RunReturn here for the car page (which clears it, also when it fails to load).

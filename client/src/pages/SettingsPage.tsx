@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useLocation } from 'react-router-dom'
-import { api, ApiError, apiResponse, currencies, limit, type User } from '../api'
+import { accountDeleted, api, ApiError, apiResponse, currencies, limit, type User } from '../api'
 import { useAuth } from '../auth'
 import { errorMessage } from '../i18n'
 import { usePage } from '../usePage'
@@ -10,7 +10,7 @@ type Field = 'locale' | 'theme' | 'currency' | 'distanceUnit' | 'reminderLeadDay
 
 export default function SettingsPage() {
   const { t, i18n } = useTranslation()
-  const { user, saveSettings, settingsError, storeUser } = useAuth()
+  const { user, saveSettings, settingsError, storeUser, logout } = useAuth()
   // One save at a time, page-wide. Controls stay focusable (aria-disabled), so focus isn't dropped to <body> while saving.
   const [busy, setBusy] = useState(false)
   const saveStarted = useRef(false)
@@ -70,6 +70,41 @@ export default function SettingsPage() {
       exportButton.current?.focus() // pressing Export again is the retry
     }
   }
+
+  // ACC-2: delete the account. null is closed; the panel opens on its heading, and Cancel or Escape go back to the opener.
+  const [del, setDel] = useState<{ busy?: boolean; error?: unknown } | null>(null)
+  const deleteButton = useRef<HTMLButtonElement>(null)
+  const delHeading = useRef<HTMLHeadingElement>(null)
+  const delPassword = useRef<HTMLInputElement>(null)
+  const delAlert = useRef<HTMLParagraphElement>(null)
+  const delOpen = del != null
+  const delCode = del?.error instanceof ApiError ? del.error.problem.code : undefined
+  const badPassword = delCode === 'auth.invalidCredentials' || delCode === 'auth.credentialsRequired'
+  useEffect(() => { if (delOpen) delHeading.current?.focus() }, [delOpen])
+  // A password error keeps the user in the field; any other goes to its message, and Delete is the retry.
+  useEffect(() => { if (del?.error != null) (badPassword ? delPassword : delAlert).current?.focus() }, [del?.error, badPassword])
+  function closeDelete() {
+    if (del?.busy) return
+    setDel(null) // unmounts the panel, which clears the password
+    deleteButton.current?.focus()
+  }
+  async function deleteAccount(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault()
+    if (del?.busy) return // aria-disabled, so a second Enter lands here
+    const password = new FormData(e.currentTarget).get('password')
+    setDel({ busy: true })
+    try {
+      await api('/me', 'DELETE', { password })
+      accountDeleted.current = true
+      logout() // the signed-out routes send /settings to /login
+    } catch (error) {
+      setDel({ error })
+    }
+  }
+  const delMessage = del?.error == null ? null
+    : delCode === 'auth.invalidCredentials' ? t('deleteAccountWrongPassword')
+    : delCode === 'auth.credentialsRequired' ? t('deleteAccountPasswordRequired')
+    : `${t('deleteAccountFailed')} ${del.error instanceof ApiError && del.error.status === 429 ? t('deleteAccountTooMany') : errorMessage(del.error)}`
 
   const errorFor = (field: Field) =>
     settingsError?.at === at(field) && <p className="error" role="alert">{errorMessage(settingsError.err)}</p>
@@ -143,6 +178,31 @@ export default function SettingsPage() {
           <p className="error" role="alert">
             {t('exportDataFailed')} {exp.error instanceof ApiError && exp.error.status === 429 ? t('exportTooMany') : errorMessage(exp.error)}
           </p>
+        )}
+        <div className="actions">
+          <button type="button" className="danger" ref={deleteButton} aria-expanded={delOpen} onClick={() => (del ? closeDelete() : setDel({}))}>
+            {t('deleteAccount')}
+          </button>
+        </div>
+        {del && (
+          <form className="inline-form" aria-labelledby="delete-account-title" onSubmit={deleteAccount}
+            onKeyDown={(e) => e.key === 'Escape' && closeDelete()}>
+            <h3 id="delete-account-title" tabIndex={-1} ref={delHeading}>{t('deleteAccountTitle')}</h3>
+            <p>{t('deleteAccountWarning')}</p>
+            <p>{t('deleteAccountExportFirst')}</p>
+            <label>
+              {t('password')}
+              <input ref={delPassword} name="password" type="password" autoComplete="current-password" required
+                aria-invalid={badPassword || undefined} aria-describedby={badPassword ? 'delete-account-error' : undefined} />
+            </label>
+            {delMessage && <p id="delete-account-error" className="error" role="alert" tabIndex={-1} ref={delAlert}>{delMessage}</p>}
+            <div className="actions">
+              <button className="danger stack" aria-disabled={!!del.busy} data-alt={t(del.busy ? 'deleteAccountConfirm' : 'deleteAccountBusy')}>
+                <span>{t(del.busy ? 'deleteAccountBusy' : 'deleteAccountConfirm')}</span>
+              </button>
+              <button type="button" className="link" aria-disabled={!!del.busy} onClick={closeDelete}>{t('cancel')}</button>
+            </div>
+          </form>
         )}
       </section>
     </div>

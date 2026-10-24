@@ -98,28 +98,38 @@ public class AuthService(
 
         // Keyed on the account when there is one: the database matches look-alike emails (e.g. fullwidth letters) that
         // the normalized string doesn't, and they must share one counter (decisions.md, SEC-1 F2).
-        // shortcut: failed-login counters live in this process's memory (reset on restart, not shared between instances),
-        // fine for one App Service instance; move them to Redis or SQL if the API scales out.
-        var (counter, attempt) = user is null
-            ? TakeAttempt("login-failures:email:" + email, CacheItemPriority.Normal)
-            : TakeAttempt("login-failures:user:" + user.Id, CacheItemPriority.NeverRemove);
-        if (attempt > limits.Value.FailedLoginLimit)
+        if (user is null)
         {
-            Interlocked.Decrement(ref counter.Count);
-            var retryAfter = (int)Math.Ceiling((counter.ResetsAt - DateTimeOffset.UtcNow).TotalSeconds);
-            throw new TooManyRequestsException("auth.tooManyAttempts", "Too many failed sign-in attempts. Try again later.",
-                Math.Max(retryAfter, 1));
-        }
-
-        // Unknown email and wrong password take the same path: one verification, the same exception.
-        var result = passwordHasher.VerifyHashedPassword(user ?? DummyUser, user?.PasswordHash ?? DummyHash, request.Password);
-        if (user is null || result == PasswordVerificationResult.Failed)
-        {
+            TakeAttempt("login-failures:email:" + email, CacheItemPriority.Normal);
+            // Unknown email and wrong password take the same path: one verification, the same exception.
+            passwordHasher.VerifyHashedPassword(DummyUser, DummyHash, request.Password);
             throw InvalidCredentials(); // the attempt taken above stays counted
         }
 
-        Interlocked.Decrement(ref counter.Count); // a success gives its attempt back
+        if (!VerifyPassword(user, request.Password))
+        {
+            throw InvalidCredentials();
+        }
+
         return BuildResponse(user, await ReminderService.LeadDaysAsync(db, user.Id, ct));
+    }
+
+    /// <summary>
+    /// A known user's password check under that user's login-failure lockout, shared by login and account delete (ACC-2):
+    /// a failure counts toward it, a success gives its attempt back, and over the limit it throws 429 <c>auth.tooManyAttempts</c>.
+    /// </summary>
+    public bool VerifyPassword(User user, string password)
+    {
+        // shortcut: failed-login counters live in this process's memory (reset on restart, not shared between instances),
+        // fine for one App Service instance; move them to Redis or SQL if the API scales out.
+        var counter = TakeAttempt("login-failures:user:" + user.Id, CacheItemPriority.NeverRemove);
+        if (passwordHasher.VerifyHashedPassword(user, user.PasswordHash, password) == PasswordVerificationResult.Failed)
+        {
+            return false; // the attempt taken stays counted
+        }
+
+        Interlocked.Decrement(ref counter.Count);
+        return true;
     }
 
     public async Task<UserDto> GetMeAsync(Guid userId, CancellationToken ct = default) =>
@@ -207,12 +217,12 @@ public class AuthService(
     private static UnauthorizedException InvalidCredentials() => new("auth.invalidCredentials", "Invalid email or password.");
 
     /// <summary>
-    /// Counts this attempt before the password is verified, so parallel requests can't all pass the limit check
+    /// Counts this attempt before the password is verified (429 over the limit), so parallel requests can't all pass the limit check
     /// during the slow hash (SEC-1 F3). The lock makes get-or-create atomic; IMemoryCache.GetOrCreate isn't.
     /// Account counters are NeverRemove so a flood of unknown-email counters can't evict them, and they fail closed
     /// when the size-capped cache is too full to store them (SEC-1 N1); unknown-email counters just go uncounted then.
     /// </summary>
-    private (FailedLogins Counter, int Attempt) TakeAttempt(string key, CacheItemPriority priority)
+    private FailedLogins TakeAttempt(string key, CacheItemPriority priority)
     {
         FailedLogins counter;
         bool stored;
@@ -229,11 +239,15 @@ public class AuthService(
             // GetOrCreate returns a counter it didn't store when the cache is full.
             stored = cache.TryGetValue(key, out FailedLogins? cached) && ReferenceEquals(cached, counter);
         }
-        if (!stored && priority == CacheItemPriority.NeverRemove)
+        var attempt = !stored && priority == CacheItemPriority.NeverRemove ? int.MaxValue : Interlocked.Increment(ref counter.Count);
+        if (attempt > limits.Value.FailedLoginLimit)
         {
-            return (counter, int.MaxValue);
+            Interlocked.Decrement(ref counter.Count);
+            var retryAfter = (int)Math.Ceiling((counter.ResetsAt - DateTimeOffset.UtcNow).TotalSeconds);
+            throw new TooManyRequestsException("auth.tooManyAttempts", "Too many failed sign-in attempts. Try again later.",
+                Math.Max(retryAfter, 1));
         }
-        return (counter, Interlocked.Increment(ref counter.Count));
+        return counter;
     }
 
     private static readonly object CounterLock = new();

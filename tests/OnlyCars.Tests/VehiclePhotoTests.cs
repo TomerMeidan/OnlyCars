@@ -50,6 +50,27 @@ public class FakeFileStorage : IFileStorage
         }
     }
 
+    public List<string> DeletedPrefixes { get; } = [];
+
+    public Task DeletePrefixAsync(string prefix, CancellationToken ct = default)
+    {
+        if (FailDeletes)
+        {
+            throw new IOException("storage down");
+        }
+
+        lock (Objects)
+        {
+            DeletedPrefixes.Add(prefix);
+            foreach (var key in Objects.Keys.Where(k => k.StartsWith(prefix, StringComparison.Ordinal)).ToList())
+            {
+                Objects.Remove(key);
+            }
+        }
+
+        return Task.CompletedTask;
+    }
+
     public Task DeleteAsync(string key, CancellationToken ct = default)
     {
         if (FailDeletes)

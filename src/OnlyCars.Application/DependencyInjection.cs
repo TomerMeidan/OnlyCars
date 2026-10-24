@@ -35,6 +35,7 @@ public static class DependencyInjection
         services.AddScoped<VehicleDocumentService>();
         services.AddScoped<ReminderService>();
         services.AddScoped<ExportService>();
+        services.AddScoped<AccountService>();
 
         return services;
     }

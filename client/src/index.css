@@ -191,6 +191,7 @@ button.link {
 .inline-form > p, .inline-form > label.inline { flex-basis: 100%; }
 .inline-form > label.wide { flex-basis: 100%; }
 .inline-form > .pair { flex: 1 1 14rem; display: flex; align-items: end; gap: 0.5rem; }
+.inline-form > h3 { flex-basis: 100%; margin: 0; font-size: 1.05rem; } /* ACC-2: the delete-account panel's heading */
 .pair > label { flex: 1; }
 button.danger { background: var(--danger); border-color: var(--danger); color: #fff; }
 

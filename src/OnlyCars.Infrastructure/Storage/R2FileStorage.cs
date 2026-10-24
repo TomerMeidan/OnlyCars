@@ -48,6 +48,40 @@ public sealed class R2FileStorage(IAmazonS3 s3, string bucket) : IFileStorage
     public async Task DeleteAsync(string key, CancellationToken ct = default) =>
         await s3.DeleteObjectAsync(bucket, key, ct);
 
+    /// <summary>True only for <c>users/{guid}/</c> written as the app writes it (lowercase, with hyphens), so a bug can never empty the bucket.</summary>
+    public static bool IsUserPrefix(string? prefix) =>
+        prefix is { Length: 43 } && Guid.TryParseExact(prefix[6..42], "D", out var id) && prefix == $"users/{id}/";
+
+    public async Task DeletePrefixAsync(string prefix, CancellationToken ct = default)
+    {
+        if (!IsUserPrefix(prefix))
+        {
+            throw new ArgumentException("Only a users/{guid}/ prefix can be deleted.", nameof(prefix));
+        }
+
+        // A list page holds at most 1,000 keys, the DeleteObjects limit, so each page is one batch.
+        var list = new ListObjectsV2Request { BucketName = bucket, Prefix = prefix };
+        ListObjectsV2Response page;
+        do
+        {
+            page = await s3.ListObjectsV2Async(list, ct);
+            if (page.S3Objects is { Count: > 0 } objects)
+            {
+                var deleted = await s3.DeleteObjectsAsync(new DeleteObjectsRequest
+                {
+                    BucketName = bucket,
+                    Objects = objects.Select(o => new KeyVersion { Key = o.Key }).ToList(),
+                    Quiet = true
+                }, ct);
+                if (deleted.DeleteErrors is { Count: > 0 } errors)
+                {
+                    throw new IOException($"{errors.Count} objects under the prefix were not deleted.");
+                }
+            }
+            list.ContinuationToken = page.NextContinuationToken;
+        } while (page.IsTruncated == true);
+    }
+
     public string GetSignedUrl(string key, TimeSpan validFor, string? contentType = null, string? contentDisposition = null)
     {
         var request = new GetPreSignedUrlRequest

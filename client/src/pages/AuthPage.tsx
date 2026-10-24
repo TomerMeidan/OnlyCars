@@ -1,9 +1,9 @@
-import { useState, type FormEvent } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { errorMessage } from '../i18n'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../auth'
-import { currencies } from '../api'
+import { accountDeleted, currencies } from '../api'
 import { usePage } from '../usePage'
 
 export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
@@ -16,6 +16,9 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
   const [error, setError] = useState<unknown>(null)
   const [busy, setBusy] = useState(false)
   usePage(t(mode))
+  // Read once and cleared, so the note doesn't come back on a later visit.
+  const [deleted] = useState(() => accountDeleted.current)
+  useEffect(() => { accountDeleted.current = false }, [])
 
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault()
@@ -32,7 +35,9 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
 
   return (
     <form className="card narrow" onSubmit={submit}>
-      <h1 tabIndex={-1}>{t(mode)}</h1>
+      {/* Focus lands on the h1 after the redirect, so it carries the note too. */}
+      <h1 tabIndex={-1} aria-describedby={deleted ? 'account-deleted' : undefined}>{t(mode)}</h1>
+      {deleted && <p id="account-deleted" role="status">{t('accountDeleted')}</p>}
       <p className="intro">{t('intro')}</p>
       <label>
         {t('email')}
