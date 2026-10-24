@@ -96,8 +96,8 @@ public class AttachmentFiles(IAppDbContext db, VehicleService vehicleService, IO
             await vehicleService.DeleteQuietlyAsync(key);
             // A run deleted meanwhile fails the new row's foreign key before the token check: the same 409 concurrency.conflict.
             // (Service records are voided, not deleted, so theirs is always the token check.)
-            // A save that lost a deadlock (to the account delete, L173; it comes wrapped by the execution strategy) is a conflict too.
-            if (e is InvalidOperationException { InnerException: DbUpdateException }
+            // A save that lost a deadlock (to the account delete, L173) is a conflict too; any other save error stays a 500 (L183).
+            if (IsLockConflict(e)
                 || e is DbUpdateException and not DbUpdateConcurrencyException && parent is ChecklistRun
                 && !await db.ChecklistRuns.AnyAsync(r => r.Id == parent.Id, CancellationToken.None))
             {
@@ -107,6 +107,11 @@ public class AttachmentFiles(IAppDbContext db, VehicleService vehicleService, IO
             throw;
         }
     }
+
+    /// <summary>SQL Server 1205 (deadlock victim) or 1222 (lock time-out) at the root of the save error, however EF wrapped it.</summary>
+    // The number is read by name so Application needs no SqlClient reference.
+    private static bool IsLockConflict(Exception e) =>
+        e.GetBaseException() is System.Data.Common.DbException sql && sql.GetType().GetProperty("Number")?.GetValue(sql) is 1205 or 1222;
 
     /// <summary>Every stored attachment of the user, through either parent (deleted parents' rows go with them, so every row counts).</summary>
     private Task<long> UsedBytesAsync(Guid userId, CancellationToken ct) =>

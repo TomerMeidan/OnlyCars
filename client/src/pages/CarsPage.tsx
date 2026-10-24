@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type FormEvent } from 're
 import { useTranslation } from 'react-i18next'
 import { errorMessage, fmtDate, money } from '../i18n'
 import { Link } from 'react-router-dom'
-import { api, ApiError, byUrgency, isOrderError, localToday, runPath, type Dashboard, type DashboardTask, type Vehicle, type VehicleChecklist } from '../api'
+import { api, ApiError, byUrgency, isOrderError, Offline, localToday, runPath, type Dashboard, type DashboardTask, type Vehicle, type VehicleChecklist } from '../api'
 import { useAuth, useDistance } from '../auth'
 import { usePage } from '../usePage'
 import { useRow } from '../useRow'
@@ -318,7 +318,7 @@ export function OdometerQuickEntry({ car, onSaved, queue }: { car: Pick<Vehicle,
     // A ticked box that is hidden again must not confirm a later reading. The id makes a resend after a lost reply harmless (OFF-1).
     const body = { valueKm: d.toKm(Number(value), car.currentOdometerKm), readingDate: localToday(), confirmCorrection: needsConfirm && confirmCorrection, clientRequestId: newRequestId() }
     try {
-      if (queue && !navigator.onLine) throw new TypeError('offline')
+      if (queue && !navigator.onLine) throw new Offline()
       await api(`/vehicles/${car.id}/odometer`, 'POST', body)
       cleared()
       onSaved()

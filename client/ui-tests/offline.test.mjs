@@ -120,3 +120,14 @@ test('login keeps only this user\'s data, its car list for 30 days and all its q
   assert.deepEqual(readQueue('u'), [])
   assert.equal(savedCars('u'), null)
 })
+
+test('no response offline is an Offline error (its own message); online it stays fetch\'s TypeError', async () => {
+  reset()
+  const { api, Offline } = await import('../src/api.ts')
+  online = false
+  answers = ['drop']
+  await assert.rejects(api('/me/settings', 'PUT', {}), Offline)
+  online = true
+  answers = ['drop']
+  await assert.rejects(api('/me/settings', 'PUT', {}), (e) => e instanceof TypeError && !(e instanceof Offline))
+})

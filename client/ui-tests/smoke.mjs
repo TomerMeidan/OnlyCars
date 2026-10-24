@@ -142,8 +142,10 @@ for (const s of setups) {
     await page.goto(`${BASE}/login`)
     await page.locator('input[name=email]').waitFor()
     await titleIs(T.login)
-    // The first load keeps the browser's default focus.
-    if (await page.evaluate(() => document.activeElement !== document.body)) throw new Error(`first load moved focus to ${await active()}`)
+    // The first load keeps the browser's default focus. A navigation just after it destroys the context (L185): wait for it, then read again.
+    const moved = () => page.evaluate(() => document.activeElement !== document.body)
+    if (await moved().catch(async () => { await page.waitForLoadState('load'); await page.locator('input[name=email]').waitFor(); return moved() }))
+      throw new Error(`first load moved focus to ${await active()}`)
   })
   let currencyOptions, defaultCurrency, registered
   await step('register', async () => {
@@ -5848,7 +5850,10 @@ for (const s of setups) {
       await pp.evaluate(() => navigator.serviceWorker.ready)
       await pp.reload()
       if (!(await pp.evaluate(() => navigator.serviceWorker.controller))) throw new Error('no service worker controls the page after a reload')
-      const { installabilityErrors } = await (await pctx.newCDPSession(pp)).send('Page.getInstallabilityErrors')
+      // Detached after: while attached, setOffline leaves navigator.onLine true, which the offline message (AC4) depends on.
+      const cdp = await pctx.newCDPSession(pp)
+      const { installabilityErrors } = await cdp.send('Page.getInstallabilityErrors')
+      await cdp.detach()
       if (installabilityErrors.length) throw new Error(`installability: ${JSON.stringify(installabilityErrors)}`)
       // Both fonts are fetched on load in either language, though a phone keeps the other script in More (NAV-1), so the service worker has them.
       await pp.waitForFunction(async () => (await Promise.all(['google-fonts-css', 'google-fonts-files']
@@ -5862,10 +5867,10 @@ for (const s of setups) {
       const fonts = await pp.evaluate(() => Promise.all([['Noto Sans', 'a'], ['Noto Sans Hebrew', 'א']].map(async ([f, ch]) =>
         `${f}: ${(await document.fonts.load(`16px "${f}"`, ch).catch(() => [])).length > 0 && document.fonts.check(`16px "${f}"`, ch)}`)))
       if (fonts.some((f) => f.endsWith('false'))) throw new Error(`offline fonts ${fonts.join(', ')}`)
-      // AC4: the dashboard's own error with Retry, not cached data.
+      // AC4: the dashboard's own error with Retry, not cached data; it says the browser is offline (LOW-9, L191).
       const alert = pp.locator('main > .row [role=alert]')
       await alert.waitFor()
-      if (plain(await alert.textContent()) !== HS.generic) throw new Error(`offline error "${await alert.textContent()}"`)
+      if (plain(await alert.textContent()) !== inBlock('offline', 'noConnection')) throw new Error(`offline error "${await alert.textContent()}"`)
       await pp.getByRole('button', { name: HS.retry, exact: true }).waitFor()
       if (await pp.locator('.cars > li').count()) throw new Error('cars shown offline')
       await pp.screenshot({ path: `${OUT}/${s.name}-pwa-offline.png`, fullPage: true })
@@ -5973,8 +5978,12 @@ for (const s of setups) {
       if (await textOf(prow.locator('.pending')) !== OF.waiting('12,345')) throw new Error('the reading did not survive the reload')
       await enter(prow, 12400)
       await prow.locator('.pending li').nth(1).waitFor()
-      await enter(prow, 5000) // lower than the others: the server refuses it later
-      await prow.locator('.pending li').nth(2).waitFor()
+      // L192: a second tab queues the third (lower than the others: the server refuses it later); this tab shows it from the storage event.
+      const tab2 = await pctx.newPage()
+      await tab2.goto(`${PREVIEW}/`)
+      await enter(tab2.locator(`section.offline li[data-id="${carId}"]`), 5000)
+      await prow.locator('.pending li').nth(2).waitFor({ timeout: 3000 })
+      await tab2.close()
       // A full queue refuses the 21st with a message (20 stand-ins, then the real 3 put back).
       const real = await pp.evaluate((k) => localStorage.getItem(k), `odometerQueue:${U.user.id}`)
       await pp.evaluate(([k, v]) => localStorage.setItem(k, JSON.stringify(Array(20).fill(JSON.parse(v)[0]))), [`odometerQueue:${U.user.id}`, real])
@@ -6232,6 +6241,27 @@ for (const s of setups) {
   })
   await step('switch-language', async () => {
     const before = await page.getAttribute('html', 'dir')
+    // LOW-9 (L189): offline, the language stays and exactly one message says why; nothing is sent.
+    const puts = []
+    const onPut = (r) => pathOf(r) === '/api/me/settings' && puts.push(r)
+    page.on('request', onPut)
+    await ctx.setOffline(true)
+    try {
+      await more(page)
+      await page.click('header nav button.link >> nth=0')
+      const alerts = page.locator('main [role=alert]')
+      await alerts.first().waitFor()
+      await page.waitForTimeout(300)
+      const texts = (await alerts.allTextContents()).map(plain)
+      if (texts.join('|') !== inBlock('offline', 'language')) throw new Error(`offline alerts ${JSON.stringify(texts)}`)
+      if ((await page.getAttribute('html', 'dir')) !== before || (await page.getAttribute('html', 'lang')) !== s.lng) throw new Error('offline switch changed the language')
+      if (puts.length) throw new Error('a settings save was sent offline')
+      await noOverflow('the offline language message')
+      await page.screenshot({ path: `${OUT}/${s.name}-language-offline.png`, fullPage: true })
+    } finally {
+      await ctx.setOffline(false)
+      page.off('request', onPut)
+    }
     await more(page)
     await page.click('header nav button.link >> nth=0')
     const after = await page.getAttribute('html', 'dir')

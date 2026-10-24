@@ -1,7 +1,7 @@
 # OnlyCars: Requirements Status
 
-**Audit date:** 2026-10-24 (thirty-eighth audit, short sign-off of NAV-1; NAV-1 is uncommitted in the working tree)
-**Overall:** MVP steps 1 to 4 are complete. Step 5 is done except reminder emails (NOT-2), which wait for the owner's email provider. Spec 12 is complete. NAV-1 (phone bottom tab bar and More menu) is signed off. Next: LOW-9 (Lows L182 to L196). No deployment tickets until the owner asks.
+**Audit date:** 2026-10-24 (thirty-ninth audit, short sign-off of LOW-9; LOW-9 is uncommitted in the working tree)
+**Overall:** MVP steps 1 to 4 are complete. Step 5 is done except reminder emails (NOT-2), which wait for the owner's email provider. Spec 12 is complete. LOW-9 (Lows L182 to L196) is signed off. Next: PRED-1 (predicted due date, spec 2 optional). NOT-2 still waits for the email provider. No deployment tickets until the owner asks.
 
 | Status | Count |
 |---|---|
@@ -12,9 +12,9 @@
 | Deferred | 6 |
 | **Total** | **57** |
 
-How this was checked (thirty-eighth audit, short sign-off of NAV-1 per decisions.md "Faster pipeline (owner)"; I re-ran no test suites and no browser scripts):
-- Reported by other agents, not re-run by me: smoke `SMOKE_ALL=1` all 4 setups (576 of 576 steps) after the fix round; code review (one Medium and one Low fixed); browser QA at 360 and 390px in en light and he dark, keyboard, Esc, outside tap, logout confirm with a queued reading, 390x400, landscape and desktop.
-- Not tested by anyone: a real iPhone (safe area, installed standalone, on-screen keyboard), Firefox and Safari, a real Android Back button (L197, L198); the second-tab `storage` update (L192).
+How this was checked (thirty-ninth audit, short sign-off of LOW-9 per decisions.md "Faster pipeline (owner)"; I re-ran no test suites and no browser scripts):
+- Reported by other agents, not re-run by me: `dotnet test` 737 of 737; smoke `SMOKE_ALL=1` 144 of 144 in all 4 setups, twice; code review (approve, no High or Medium); security pass; Hebrew review (one optional wording applied); browser QA pass.
+- Not tested by anyone: a real iPhone (safe area, installed standalone, on-screen keyboard), Firefox and Safari, a real Android Back button (L197, L198); the cleanup script on the real dev DB (proven on throwaway copies only, by design).
 - The notes from earlier audits are in git history.
 
 ## 1. Vehicles
@@ -32,7 +32,7 @@ How this was checked (thirty-eighth audit, short sign-off of NAV-1 per decisions
 |---|---|---|---|
 | Manual odometer updates (quick-entry button on the dashboard) | **Done** | Quick entry on the car page (`CarPage.tsx:50`) and on every active dashboard card (`CarsPage.tsx:136-139`), with the date-order rules and the correction checkbox (`OdometerService.cs`, `OdometerServiceTests.cs`). After a save the card's odometer, statuses and the summary counts reload (smoke `dashboard-quick-odometer`). | Nothing. Quick entry always saves today; backdating goes through Edit, accepted. |
 | Auto-log the odometer whenever a service is recorded | **Done** | Every reset logs a `Source = Service` reading linked to its record (`MaintenanceTaskService.cs:99`). A recorded service (MVP3-A, `CreateRecordAsync`, `:167`) logs one at its own date and odometer, with the date-order rules and `confirmCorrection`; voiding removes it (`:248`). Tests: `ServiceRecordTests.cs`, `ServiceHistoryTests.cs` (221 total). Browser: smoke `record-service`, `record-service-backdated` and `undo-service-from-history` in both setups; `qamvp3a-mobile-light-en-mi-10-order-error.png` shows the Service readings in the odometer history. | Nothing. |
-| Optional: estimated average km/day, used to predict when tasks come due | **Partial** | `AvgKmPerDay` is computed (`OdometerService.cs:72-99`, test at `OdometerServiceTests.cs:91`) and shown on the card (`CarsPage.tsx:50-52`). | Nothing uses it for predictions yet. Tasks exist now, but a predicted due date is out of MVP2-B (decisions.md); it comes later (optional, after MVP4-A). |
+| Optional: estimated average km/day, used to predict when tasks come due | **Partial** | `AvgKmPerDay` is computed (`OdometerService.cs:239-254`, test at `OdometerServiceTests.cs:91`) and shown on the card (`CarsPage.tsx:50-52`). | Nothing uses it for predictions yet. PRED-1 (next ticket) adds a predicted due date to tasks on the car page and the dashboard. |
 | Unit setting (km/miles), with the currency set per user | **Done** | Currency: chosen at sign-up (`AuthPage.tsx`, `AuthService.cs`) and changeable on `/settings` (SET-1). Distance unit (SET-2): `PUT /api/me/settings` takes `distanceUnit` (`Km`/`Mi`), 400 `settings.invalidDistanceUnit` (`SettingsTests.cs`, contract `docs/contracts/SET-2.md`, verified live with curl). The client converts in one module, `client/src/units.ts` (1 mi = 1.609344 km, whole miles on display, whole km on input, caps rounded down, unchanged values send their stored km back), tested by `client/ui-tests/units.test.mjs` (6 tests). The car list, car form, car page, history, tasks, templates and error messages all use it. Settings has a fourth radio group. Browser: smoke `settings-unit-miles` and `settings-unit-errors` in both setups, `qa-set2.mjs` (`mobile-dark-he-unit-miles-car.png`, `qaset2-mobile-dark-he-02-settings-mi.png`). | Nothing. Remaining miles can be 1 off the shown numbers, and the Hebrew "קילומטראז׳" label stays in miles; both accepted (decisions.md, "SET-2 QA notes"). |
 
 ## 3. Maintenance Task Definitions
@@ -165,7 +165,7 @@ How this was checked (thirty-eighth audit, short sign-off of NAV-1 per decisions
 | Deploy gate | **SEC-1 signed off.** Nothing else blocks a first deploy except the owner's Azure account. The owner said not to deploy yet (decisions.md, 2026-10-15, "When to deploy"), so no deployment tickets are queued. |
 | 3. Service history with costs | **Complete. MVP3-A, MVP3-B, MVP3-C, MVP3-D and FILE-2 (attachments) are signed off.** Files: receipt photos and PDFs added to a saved service, opened and deleted from its row, opened from `/history`. Working end to end in EN and HE: the service history on `/cars/:id`, recording a past service (date, odometer, shop or DIY, cost, notes, several tasks, parts and labour) with the date-order rules, editing everything on a record (shop, cost, notes, items, date, odometer and tasks, with the car's odometer and the tasks' last done following), deleting any record, and a `/history` page that filters and searches all cars. LOW-1 (the first Low batch) is signed off too. |
 | 4. Dashboard with due/overdue status | **Complete. MVP4-A and LOW-2 are signed off; "Start a checklist" came with MVP5-B.** The dashboard on `/`: overdue and due-soon counts, this month's spend linking to `/history`, and per-car cards with the next 3 tasks, one-tap Mark done with Undo, quick odometer entry and Start a checklist, in EN and HE. |
-| 5. Checklists, tires, reports, notifications | **All but email. Spec 12's delete-account is done too (ACC-2). Checklists are complete: MVP5-A, MVP5-B, MVP5-C and FILE-3 (photos on runs) are signed off. Tires are done: MVP5-D (sets, mounts, swap, km per set, storage notes) and MVP5-E (pressure, tread depth, rotations) are signed off. LOW-3, LOW-4 and LOW-5 are signed off. Reports are done: RPT-1 (cost per car, category, month and year, cost per km, TCO), RPT-2 (charts) and RPT-3 (CSV and PDF export) are signed off. The browser QA catch-up over MVP5-C to RPT-3 passed.** LOW-6, LOW-7, LOW-8, PWA-1 and OFF-1 are signed off. NOT-1 (in-app reminders: car documents, the Reminders card with snooze, lead days in Settings) is signed off. The client redesign ("the glovebox service book", 18156cd) is approved by the owner. Remaining: reminder emails (spec 9 bullet 1, NOT-2), waiting for the owner's email provider. OFF-1 (offline odometer entry) and NAV-1 (phone navigation) are signed off. While NOT-2 waits: LOW-9 is next. |
+| 5. Checklists, tires, reports, notifications | **All but email. Spec 12's delete-account is done too (ACC-2). Checklists are complete: MVP5-A, MVP5-B, MVP5-C and FILE-3 (photos on runs) are signed off. Tires are done: MVP5-D (sets, mounts, swap, km per set, storage notes) and MVP5-E (pressure, tread depth, rotations) are signed off. LOW-3, LOW-4 and LOW-5 are signed off. Reports are done: RPT-1 (cost per car, category, month and year, cost per km, TCO), RPT-2 (charts) and RPT-3 (CSV and PDF export) are signed off. The browser QA catch-up over MVP5-C to RPT-3 passed.** LOW-6, LOW-7, LOW-8, PWA-1 and OFF-1 are signed off. NOT-1 (in-app reminders: car documents, the Reminders card with snooze, lead days in Settings) is signed off. The client redesign ("the glovebox service book", 18156cd) is approved by the owner. Remaining: reminder emails (spec 9 bullet 1, NOT-2), waiting for the owner's email provider. OFF-1 (offline odometer entry), NAV-1 (phone navigation) and LOW-9 are signed off. While NOT-2 waits: PRED-1 (predicted due date, spec 2 optional) is next. |
 
 ## Ticket queue
 
@@ -184,10 +184,19 @@ How this was checked (thirty-eighth audit, short sign-off of NAV-1 per decisions
 | 10 | PWA-1: app icons, a verified install, fonts cached for offline (spec 12) | FE | **Signed off** 2026-10-24 |
 | 11 | OFF-1: offline odometer entry that syncs later (spec 12) | small BE, then FE | **Signed off** 2026-10-24 |
 | 12 | NAV-1: phone navigation (bottom tab bar and "More" menu) | FE | **Signed off** 2026-10-24 |
-| 13 | LOW-9: Lows L182 to L196 (cleanup script, odometer id, offline messages) | small BE, then FE | **Next** (written below); no owner input needed |
+| 13 | LOW-9: Lows L182 to L196 (cleanup script, odometer id, offline messages) | small BE, then FE | **Signed off** 2026-10-24 |
+| 14 | PRED-1: predicted due date from average km a day (spec 2, optional) | BE, then FE | **Next** (written below); no owner input needed |
 | - | NOT-2: email when due | BE, then FE | **Blocked:** needs the owner's email provider, sender address and credentials. Goes next as soon as the owner answers. |
 
 ## Signed-off tickets
+- **LOW-9 (uncommitted in the working tree): signed off 2026-10-24.** Short sign-off under "Faster pipeline (owner)"; I re-ran no suites. Closes L182 to L185, L189 and L191 to L196 (L192 by the new second-tab smoke step). No requirement status changes.
+  - Reported evidence: `dotnet test` 737 of 737; smoke `SMOKE_ALL=1` 144 of 144 in all 4 setups, twice; code review approve (no High or Medium); security pass; Hebrew review fine; browser QA pass.
+  - AC1 [BE] pass: an all-zero `clientRequestId` gives 400 `odometer.invalidClientRequestId`; reading DTOs return `valueKm` without trailing zeros on the first and the repeated create.
+  - AC2 [BE] pass: only SQL errors 1205 and 1222 on an attachment save map to 409; other save errors stay 500.
+  - AC3 [BE] pass: `scripts/cleanup-test-users.sql` no longer matches the six real domains, has exact shapes on `onlycars.test`, an `off1-` rule, a must-match list and new stop checks; proven on throwaway DBs only.
+  - AC4, AC5 [FE] pass: "You are offline" when the browser is offline (a 500 keeps the generic message); offline, one message for the language switch and the language stays; en and he.
+  - AC6 [BE+FE] pass: smoke steps; the `login-page` focus flake fixed; a second-tab test added.
+  - Accepted (decisions.md, "LOW-9 sign-off"): the Hebrew wording "ולהזין מחדש" in `odometer.invalidClientRequestId`; the 22 dev-DB users on the removed domains stay for the owner (L204). The new Lows are L199 to L204.
 - **NAV-1 (uncommitted in the working tree): signed off 2026-10-24.** Short sign-off under "Faster pipeline (owner)"; I re-ran no suites. No status change (spec 12 "Mobile-first responsive UI" was already Done); the designer's phone-header proposal is closed.
   - Reported evidence: smoke `SMOKE_ALL=1` all 4 setups, 576 of 576 steps (incl. `phone-nav`); code review; browser QA at 360 and 390px in en light and he dark, 390x400, landscape and desktop.
   - AC1 [FE] pass: one-row header; five tabs at 44px with full labels (new short keys `tabHistory` and `more`); `aria-current` on the current tab, and on More for Reports and Settings.
@@ -394,7 +403,7 @@ How this was checked (thirty-eighth audit, short sign-off of NAV-1 per decisions
 
 ## Low issues backlog
 
-Every Low finding from QA and review lands here (decisions.md, "Faster pipeline (owner)"). They are fixed together in a batch ticket LOW-n about every 3 tickets. LOW-1 closed L1 to L12, LOW-2 L13 to L26, LOW-3 L27 to L65, LOW-4 L66 to L86, LOW-5 L87 to L106 (L98 closed as not reproduced), LOW-6 L114 to L140 (L120 closed by L119, L128 closed as accepted; L124 was closed by FILE-2's cleanup script), LOW-7 L107 to L113; ACC-1's caps closed L154; ACC-2 closed L135 and L168; LOW-8 closed L141 to L181 except L144 and L148 (L141, L149, L152, L163, L164, L166 and L172 as accepted, decisions.md "LOW-8 sign-off"; L146 and L153 by the redesign); those rows are in git history. Open (L144, L148, L72, L105 and L134 are the owner's; L182 to L185, L189 and L191 to L196 are in LOW-9; L186 to L188, L190, L192, L197 and L198 wait for a later LOW-n):
+Every Low finding from QA and review lands here (decisions.md, "Faster pipeline (owner)"). They are fixed together in a batch ticket LOW-n about every 3 tickets. LOW-1 closed L1 to L12, LOW-2 L13 to L26, LOW-3 L27 to L65, LOW-4 L66 to L86, LOW-5 L87 to L106 (L98 closed as not reproduced), LOW-6 L114 to L140 (L120 closed by L119, L128 closed as accepted; L124 was closed by FILE-2's cleanup script), LOW-7 L107 to L113; ACC-1's caps closed L154; ACC-2 closed L135 and L168; LOW-8 closed L141 to L181 except L144 and L148 (L141, L149, L152, L163, L164, L166 and L172 as accepted, decisions.md "LOW-8 sign-off"; L146 and L153 by the redesign); LOW-9 closed L182 to L185 and L189, L191 to L196 (L192 by the new second-tab smoke step); those rows are in git history. Open (L144, L148, L72, L105, L134 and L204 are the owner's; L186 to L188, L190 and L197 to L203 wait for a later LOW-n):
 
 | # | From | Issue | Area |
 |---|---|---|---|
@@ -403,71 +412,62 @@ Every Low finding from QA and review lands here (decisions.md, "Faster pipeline 
 | L148 | LOW-7 QA | The dev DB has new test users `qa-low7-…` and `qa+low7-…`; the cleanup script's rules cover them (joins L72, the owner's run). | Dev DB (owner) |
 | L105 | RPT-3 | Nobody has opened the exported CSV in real Excel (Hebrew, the BOM, `;` locales) or used the real print dialog and "Save as PDF". No agent can; the owner checks once (CHECKLIST.md, "Waiting on the owner"). | Owner |
 | L72 | LOW-3 housekeeping | The local dev DB has leftover test users. `scripts/cleanup-test-users.sql` covers them (RPT prefixes added in LOW-5) but was never run; the owner decides (CHECKLIST.md, "Waiting on the owner"). | Dev DB (owner) |
-| L182 | LOW-8a security | The cleanup script's test-domain allow-list includes real registrable domains (`x.com`, `x.io`, `test.com`, `test.dev`, `t.dev`, `t.io`); only the exact shapes protect real accounts there. Move agent tests to `.test` domains and drop those from the list. | Script, tests |
-| L183 | LOW-8a review | Since L173, any transient save error on an attachment (for example a timeout) shows the 409 "reload" message instead of a 500 (`AttachmentFiles`). Map only the lock conflict to 409. | BE, files |
-| L184 | LOW-8a review | The `%` rules on `onlycars.test` stay loose (`ui-`, `qa-`, `qa3-`, `shot-`, `not1-`, `be-file1-fix`). Safe because the domain is reserved; tighten when next touched. | Script |
-| L185 | LOW-8b QA | The smoke `login-page` first-load focus check flaked once ("Execution context was destroyed", `smoke.mjs` about line 120). Wait for the navigation before reading focus. | Smoke |
 | L186 | LOW-8b QA | Not tested: a page left open across midnight without navigating (does the status update, or does it keep yesterday's `today` until a reload). | FE, dates |
 | L187 | LOW-8b QA | Smoke leaves the NOT-1 time-zone cars in the dev DB until its user is deleted at the end; a run that stops early leaves them. | Smoke |
 | L188 | PWA-1 QA | The 192 and 512 `any` icons' dark tile almost disappears on dark backgrounds (launchers, dark taskbars); only the dial shows. A thin light rim or a lighter tile would fix it. | FE, icons |
-| L189 | PWA-1 QA | Offline, the language switch fails (the settings save) and adds a second identical "Something went wrong" message. Existing behaviour; show one message only, and consider keeping the language locally while offline. | FE, settings |
-| L191 | OFF-1 QA | Offline, the dashboard error says "Something went wrong" instead of saying you are offline. Show a translated "You are offline" message when the request got no response. | FE, dashboard |
-| L192 | OFF-1 review | The second-tab `storage` event update (one tab queues, the other shows it) has no test. | FE tests |
-| L193 | OFF-1 review | A repeated create returns `valueKm` as `12345.00`, the first create `12345`. Return the same shape both times. | BE, odometer |
-| L194 | OFF-1 review | An all-zero GUID is accepted as `clientRequestId`, so every such reading on a car would count as "the same". Reject `Guid.Empty` with 400. | BE, odometer |
-| L195 | OFF-1 housekeeping | Test user `off1-1660725773@example.com` is left in the dev DB and `scripts/cleanup-test-users.sql` has no `off1-<10 digits>` rule. Add one. | Script |
-| L196 | OFF-1 | L189 (the offline language switch) is still open; with OFF-1 the app is used offline more, so take it in the next LOW-n. | FE, settings |
 | L197 | NAV-1 QA | Not tried on a real iPhone: the bar above the home indicator (safe area), the installed app (standalone), and a field focused with the real on-screen keyboard. Needs a real device; added to the owner's iPhone check. | Owner or a device |
 | L198 | NAV-1 QA | Not tried in Firefox or Safari, nor with a real Android Back button (QA used the browser's Back). | FE, browsers |
 | L190 | PWA-1 review | Smoke's SIGINT cleanup path (stopping the preview server on Ctrl+C) is untested, and the full smoke was not re-run after `preview.unref()` (only a setup check). | Smoke |
+| L199 | LOW-9 QA | Offline, the car page shows the offline message as its h1 with no Retry, and keeps it after the connection is back until you navigate. Give it the dashboard's offline message with Retry (or reload on `online`). | FE, car page |
+| L200 | LOW-9 QA | The offline language message stays at the top after the connection is back. Clear it on `online` or on the next successful switch. | FE, settings |
+| L201 | LOW-9 review | `previousKm` and `nextKm` in odometer error responses still have trailing zeros (`12345.00`); L193 fixed only the reading DTOs. | BE, odometer |
+| L202 | LOW-9 review | The second-tab smoke step waits up to 3 s for a `storage` event; watch it for flakiness. | Smoke |
+| L203 | LOW-9 security | `scripts/cleanup-test-users.sql` checks for LocalDB but not the database name. A plain `DB_NAME()` check would also block the throwaway-copy tests, so it needs an allow-list of names. | Script |
+| L204 | LOW-9 housekeeping | 22 test users on the six domains removed from the cleanup script in L182 remain in the dev DB; the script no longer matches them. The owner may delete them by hand (CHECKLIST.md, "Waiting on the owner"). | Dev DB (owner) |
 
 ## Next ticket
 
-### LOW-9: Lows L182 to L196 (cleanup script, odometer id, offline messages)
+### PRED-1: predicted due date from average km a day (spec 2, optional)
 
-**Goal:** As a user, when I am offline the app tells me so in plain words, and nothing the test scripts do can touch a real account or leave odd data behind.
+**Goal:** As a user, I see roughly when each distance-based task will come due ("Around 12 Mar 2027"), so I can plan a service before it turns Due soon.
 
-**Spec:** no status change (12 "Non-functional" and housekeeping). Done when AC1 to AC6 pass. Batch rules, "Leaner pipeline (owner)": no fix round, only blockers are fixed, other findings go back to the Low backlog. Security review: yes (the cleanup script deletes accounts). Hebrew review: yes (new offline strings).
+**Spec:** 2 "Optional: estimated average km/day, used to predict when tasks come due", Partial to Done when AC1 to AC6 pass. Security review: no. Hebrew review: yes (new strings).
 
-**Binding decisions:** "Leaner pipeline (owner)", "Offline odometer entry, OFF-1" (only the dashboard quick entry works offline; every other form needs a connection), "LOW-9 choices", and the smoke rule in "FILE-3 sign-off".
+**Binding decisions:** "Predicted due date, PRED-1" (the rules below), "Task status rules, MVP2-B", "Distance unit rules, SET-2", the client `today` from LOW-8 (`docs/contracts/LOW-8.md`), "Leaner pipeline (owner)".
 
-**Scope, Backend (backend-engineer, first; no new endpoint, so no contract file):**
-- L194: `POST /api/vehicles/{id}/odometer` rejects a `clientRequestId` equal to the all-zero GUID with 400 (the same validation error shape as other field errors). L193: a repeated create returns `valueKm` in the same JSON shape as the first create (`12345`, not `12345.00`).
-- L183: attachment saves map only the lock conflict to 409; any other save error stays 500 (`AttachmentFiles`).
-- L182, L184, L195: `scripts/cleanup-test-users.sql`: move any test or script that uses `x.com`, `x.io`, `test.com`, `test.dev`, `t.dev` or `t.io` to a `.test` domain, then drop those six from the allow-list; tighten the loose `%` prefixes on `onlycars.test` to exact shapes; add an `off1-<10 digits>@example.com` rule.
+**Scope, Backend (backend-engineer, first; contract `docs/contracts/PRED-1.md`; no migration):**
+- `MaintenanceTaskDto` gains `predictedDueDate` (date or null), computed on read in one place next to `TaskStatusCalculator`, using `Vehicle.AvgKmPerDay` and the request's `today`.
+- Returned by `GET /api/vehicles/{vehicleId}/tasks` and on the tasks in `GET /api/dashboard`. Status, remaining values and sort order do not change. Checklists and `/api/reminders` are not touched.
 
 **Scope, Frontend (frontend-engineer):**
-- L191: when the dashboard load gets no response, show a translated "You are offline" message with Retry instead of "Something went wrong" (en and he).
-- L189, L196: offline, the language switch shows one translated message ("You are offline. The language was not changed.") and the language stays as it was; no second identical error.
-- L185: the smoke `login-page` first-load focus check waits for the navigation before reading focus.
+- Car page task row and dashboard card task rows: "Around <date>" (he: "בערך ב־<date>") in the user's date format when `predictedDueDate` is set; nothing when null. On the car page, a hint "Based on N km a day" (miles when the user uses miles).
 
 **Acceptance criteria**
-1. [BE] The all-zero GUID as `clientRequestId` gives 400 and no row; a repeated create returns the same `valueKm` JSON as the first; a test for each.
-2. [BE] A non-lock save error on an attachment returns 500, a lock conflict still 409; a test for each.
-3. [BE] The cleanup script matches no address on the six real domains and no `onlycars.test` address outside the listed shapes; it matches `off1-1660725773@example.com`; the script's rule tests pass, and no agent test or script still creates users on the six domains.
-4. [FE] Offline (Playwright `setOffline`), the dashboard shows the offline message with Retry in en and he (RTL, 390px); Retry loads the page once back online; a server error (500) still shows the generic message.
-5. [FE] Offline, the language switch leaves the language unchanged and shows exactly one translated message, in en and he; online it works as today.
-6. [BE+FE] Smoke steps for AC4 and AC5; the `login-page` focus check passes in all 4 setups, each run alone (`SMOKE_ALL=1`); `dotnet test`, lint and build clean; the dev servers on 5150 and 5173 keep working.
+1. [BE] Tests for each rule in "Predicted due date, PRED-1": km only; km and days (the earlier date wins); no average or 0 gives null; Overdue or disabled gives null; 0 km remaining gives `today`; beyond 2 years gives null; the client `today` is used.
+2. [BE] Both endpoints return the field; the contract file lists it; existing tests pass unchanged.
+3. [FE] The car page shows "Around <date>" and the hint on tasks that have a date, and nothing on the others; en and he, RTL, miles and km.
+4. [FE] Dashboard task rows show it without overflow at 390px in he dark and en light; a long Hebrew date wraps cleanly.
+5. [FE] After a quick odometer entry or Mark done, the dates update without a reload; loading and error states stay as today.
+6. [BE+FE] A smoke step for AC3 to AC5 in all 4 setups (`SMOKE_ALL=1`); `dotnet test`, lint and build clean; dev servers on 5150 and 5173 keep working.
 
-**Empty, error and loading states:** covered in AC4 and AC5; no new screens.
+**Empty, error and loading states:** a car with no average (one reading) shows no dates and no hint; otherwise as today.
 
-**Out of scope:** keeping a language change locally while offline; offline support for other forms; L186 (a page open across midnight), L187 and L190 (smoke housekeeping), L188 (icon tile), L192 (second-tab test), L197 and L198 (devices and browsers); the "Later" UX items.
+**Out of scope:** predictions for checklists, documents or reminders; a "due around" sort or filter; email (NOT-2); changing how `AvgKmPerDay` is computed.
 
-**Open questions:** none; the offline language behaviour is delegated in decisions.md ("LOW-9 choices"). Still waiting on the owner: the email service for NOT-2.
+**Open questions:** none; the rules are delegated in decisions.md ("Predicted due date, PRED-1"). Still waiting on the owner: the email service for NOT-2.
 
 ---
 
 ### Later
 - **NOT-2:** email when a task, checklist or document is due (spec 9 bullet 1), using NOT-1's reminders, `Notification.SentAt` to avoid duplicate sends and an `Email` `NotificationRule`. Needs the owner's email provider, sender address and credentials (user-secrets).
 - **Small UX (designer proposals, next LOW-n or a UX ticket):** "3 of 5 checked" progress on the checklist run page; a one-line value statement on the login page (en and he, with Hebrew review).
-- **Predicted due date** from `AvgKmPerDay` (spec 2.3, optional).
 - **Orphan sweep:** delete R2 prefixes `users/{id}/` whose user no longer exists (test users removed by `scripts/cleanup-test-users.sql`, and any storage failure ACC-2 logs; the fix for L172).
 - **Snoozed list:** see and undo earlier snoozes, not only the latest (from L149).
 - **Car delete** (not asked for; cars are archived): if ever added, it must delete run-photo rows first and `Notifications WHERE VehicleId` in code, as the account delete does.
 
 ## Changed since last audit
-- **Signed off:** NAV-1 (uncommitted in the working tree): on a phone, a bottom tab bar with a More menu; the header is one row. Smoke 576 of 576 steps in 4 setups. The designer's phone-header proposal is closed.
-- **Status changes:** none (spec 12 "Mobile-first responsive UI" was already Done). Counts unchanged: Done 48, Partial 2, Missing 1, Deferred 6.
-- **Backlog:** new Lows L197 (real iPhone) and L198 (Firefox, Safari, Android Back).
-- **New decisions** (`docs/decisions.md`, 2026-10-24): "NAV-1 sign-off", "LOW-9 choices".
-- **Next ticket:** LOW-9 (Lows L182 to L196), written in full above. NOT-2 stays blocked on the owner's email provider.
+- **Signed off:** LOW-9 (uncommitted in the working tree): "You are offline" messages on the dashboard and the language switch, the all-zero odometer id refused, attachment 409 only on a lock conflict, a safer cleanup script. Smoke 144 of 144 in 4 setups, twice.
+- **Status changes:** none. Counts unchanged: Done 48, Partial 2, Missing 1, Deferred 6.
+- **Backlog:** closed L182 to L185, L189, L191 to L196; new L199 to L204 (L204, 22 dev-DB users on the removed domains, is the owner's).
+- **New decisions** (`docs/decisions.md`, 2026-10-24): "LOW-9 sign-off", "Predicted due date, PRED-1".
+- **Next ticket:** PRED-1 (predicted due date, spec 2 optional), written in full above. Chosen over the other Later items because it is the only one that closes a spec row. NOT-2 stays blocked on the owner's email provider.

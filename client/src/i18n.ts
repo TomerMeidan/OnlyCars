@@ -1,7 +1,7 @@
 import i18n from 'i18next'
 import LanguageDetector from 'i18next-browser-languagedetector'
 import { initReactI18next } from 'react-i18next'
-import { ApiError, cachedUser, type User } from './api'
+import { ApiError, cachedUser, Offline, type User } from './api'
 import { distance } from './units'
 
 const en = {
@@ -538,6 +538,7 @@ const en = {
       onlyReading: "This is the car's only reading, so it can't be deleted. Edit it instead.",
       notManual: "This reading comes from another record and can't be changed here.",
       tooMany: 'A car can have up to {{max, number}} odometer readings.',
+      invalidClientRequestId: "This reading can't be sent. Delete it and enter it again.",
     },
     // Not API codes (OFF-1): the order errors on a queued reading, which has no box to tick; and a full queue.
     queued: {
@@ -545,6 +546,8 @@ const en = {
       higherThanNext: 'This reading is higher than the reading after it ({{next, number}} {{distUnit}}). If it is a correction, save it as one.',
     },
     offline: {
+      noConnection: 'You are offline. Check the connection and try again.',
+      language: 'You are offline. The language was not changed.',
       queueFull: 'Up to {{max, number}} readings can wait to be sent. Send or delete some first.',
     },
     odometerReading: {
@@ -1225,12 +1228,15 @@ const he: typeof en = {
       onlyReading: 'זו הקריאה היחידה של הרכב, ולכן אי אפשר למחוק אותה. אפשר לערוך אותה.',
       notManual: 'הקריאה הזו מגיעה מרשומה אחרת, ואי אפשר לשנות אותה כאן.',
       tooMany: 'אפשר להוסיף לרכב עד ⁦{{max, number}}⁩ קריאות קילומטראז׳.',
+      invalidClientRequestId: 'אי אפשר לשלוח את הקריאה הזו. יש למחוק אותה ולהזין מחדש.',
     },
     queued: {
       lowerThanPrevious: 'הקריאה נמוכה מהקריאה שלפניה (⁦{{previous, number}}⁩ {{distUnit}}). אם זה תיקון, אפשר לשמור אותה כתיקון.',
       higherThanNext: 'הקריאה גבוהה מהקריאה שאחריה (⁦{{next, number}}⁩ {{distUnit}}). אם זה תיקון, אפשר לשמור אותה כתיקון.',
     },
     offline: {
+      noConnection: 'אין חיבור לאינטרנט. יש לבדוק את החיבור ולנסות שוב.',
+      language: 'אין חיבור לאינטרנט. השפה לא שונתה.',
       queueFull: 'אפשר להשאיר עד ⁦{{max, number}}⁩ קריאות בהמתנה לשליחה. יש לשלוח או למחוק חלק מהן קודם.',
     },
     odometerReading: {
@@ -1413,6 +1419,7 @@ i18n.on('languageChanged', applyDir)
 // Translated text for any thrown error: known API codes get their own message, everything else the generic one. `n` overrides the item number (its row now).
 // `code` replaces the problem's code as the text's key (a caller's own wording for it), keeping the problem's values.
 export function errorMessage(err: unknown, n?: number, code?: string) {
+  if (err instanceof Offline) return i18n.t('errors.offline.noConnection')
   const problem = err instanceof ApiError ? err.problem : {}
   // Distance errors show only where a car is, never on Settings mid-save, so the saved unit is the one on screen.
   // shortcut: reads the unit from localStorage, so a unit changed in another tab shows here before this tab re-renders; read it from the auth context if that matters.

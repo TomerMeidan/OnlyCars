@@ -376,6 +376,9 @@ export class ApiError extends Error {
   }
 }
 
+// LOW-9: no response while the browser is offline, so the message can say so. A TypeError like fetch's own, so it still counts as no response.
+export class Offline extends TypeError {}
+
 const TOKEN_KEY = 'token'
 export const getToken = () => localStorage.getItem(TOKEN_KEY)
 export const setToken = (t: string | null) =>
@@ -409,7 +412,7 @@ export async function apiResponse(path: string, method = 'GET', body?: unknown, 
     },
     body: body === undefined ? undefined : form ? body : JSON.stringify(body),
     signal,
-  })
+  }).catch((err) => { throw navigator.onLine || err?.name === 'AbortError' ? err : new Offline() })
   if (res.status === 401 && token) {
     setToken(null)
     localStorage.removeItem(USER_KEY) // as logout() does, so another device's 401 leaves no cached user behind

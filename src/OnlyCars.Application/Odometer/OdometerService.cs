@@ -31,6 +31,12 @@ public class OdometerService(IAppDbContext db, VehicleService vehicleService)
     public async Task<OdometerReadingDto> AddAsync(Guid userId, Guid vehicleId, AddOdometerReadingRequest request, CancellationToken ct = default)
     {
         var vehicle = await vehicleService.FindOwnedAsync(userId, vehicleId, ct);
+        // An all-zero id would make every such reading on the car "the same" one (L194).
+        if (request.ClientRequestId == Guid.Empty)
+        {
+            throw new ValidationFailedException("odometer.invalidClientRequestId", "The client request id can't be all zeros.");
+        }
+
         // A resend after a lost reply returns the saved reading as it is now, before the cap and date-order checks.
         if (request.ClientRequestId is { } requestId && await FindByRequestIdAsync(vehicle.Id, requestId, ct) is { } sent)
         {
@@ -248,5 +254,7 @@ public class OdometerService(IAppDbContext db, VehicleService vehicleService)
         }
     }
 
-    private static OdometerReadingDto ToDto(OdometerReading r) => new(r.Id, r.VehicleId, r.ValueKm, r.ReadingDate, r.Source);
+    // Drops the column's trailing zeros, so a saved reading has the JSON shape of the value as sent: 12345, not 12345.00 (L193).
+    private static OdometerReadingDto ToDto(OdometerReading r) =>
+        new(r.Id, r.VehicleId, r.ValueKm / 1.0000000000000000000000000000m, r.ReadingDate, r.Source);
 }

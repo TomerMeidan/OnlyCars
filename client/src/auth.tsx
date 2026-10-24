@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import { api, applyTheme, cachedUser, getToken, setToken, USER_KEY, type AuthResponse, type User } from './api'
+import { api, applyTheme, cachedUser, getToken, Offline, setToken, USER_KEY, type AuthResponse, type User } from './api'
 import i18n, { toLocale } from './i18n'
 import { clearOffline, pruneOffline } from './offline'
 import { distance } from './units'
@@ -47,9 +47,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const saveSettings: AuthState['saveSettings'] = async (patch, at) => {
     const old = user!
     setSettingsError(null)
-    show({ ...old, ...patch })
     const token = getToken()
     try {
+      if (!navigator.onLine) throw new Offline() // before show(): a value that can't be saved never flashes up (LOW-9)
+      show({ ...old, ...patch })
       const saved = await api<User>('/me/settings', 'PUT', patch)
       // Logged out (or in as someone else) meanwhile: storing it would bring back a user without a token.
       if (getToken() !== token) return false

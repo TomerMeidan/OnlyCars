@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link, Navigate, NavLink, Route, Routes, useLocation } from 'react-router-dom'
+import { Offline } from './api'
 import { useAuth } from './auth'
 import { errorMessage, toLocale } from './i18n'
 import { readQueue, sendQueue } from './offline'
@@ -138,7 +139,8 @@ export default function App() {
         )}
       </header>
       <main>
-        {settingsError?.at === at && <p className="error" role="alert">{errorMessage(settingsError.err)}</p>}
+        {/* Only the language switch saves from the header. */}
+        {settingsError?.at === at && <p className="error" role="alert">{settingsError.err instanceof Offline ? t('errors.offline.language') : errorMessage(settingsError.err)}</p>}
         {user ? (
           <Routes>
             <Route path="/" element={<CarsPage />} />

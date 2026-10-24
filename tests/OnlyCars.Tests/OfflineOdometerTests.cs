@@ -171,4 +171,42 @@ public class OfflineOdometerTests : IAsyncLifetime
         Assert.Equal(2, await CountAsync(car));
         Assert.Equal(10500, (await new VehicleService(Context()).GetAsync(me, car)).CurrentOdometerKm);
     }
+
+    // LOW-9 L193: the repeat comes back from the decimal(12,2) column as 12345.00 unless the DTO drops the zeros.
+    [Theory]
+    [InlineData("12345", "12345")]
+    [InlineData("12345.5", "12345.5")]
+    [InlineData("12345.50", "12345.5")]
+    public async Task L193_ARepeatedCreate_ReturnsValueKm_InTheSameJsonShape_AsTheFirst(string sent, string json)
+    {
+        var car = await CarAsync(me);
+        var id = Guid.NewGuid();
+        var km = decimal.Parse(sent, System.Globalization.CultureInfo.InvariantCulture);
+
+        var first = await Odometer(db).AddAsync(me, car, Request(km, id));
+        var again = await Odometer(Context()).AddAsync(me, car, Request(km, id));
+
+        Assert.Equal(first.Id, again.Id);
+        Assert.Equal(json, System.Text.Json.JsonSerializer.Serialize(first.ValueKm));
+        Assert.Equal(json, System.Text.Json.JsonSerializer.Serialize(again.ValueKm));
+        Assert.Equal(json, System.Text.Json.JsonSerializer.Serialize((await Odometer(Context()).HistoryAsync(me, car))[0].ValueKm));
+    }
+
+    // LOW-9 L194: the all-zero id would make every such reading "the same"; 400 before anything is saved, also on a second try.
+    [Fact]
+    public async Task L194_TheAllZeroClientRequestId_IsRejected_AndSavesNoRow()
+    {
+        var car = await CarAsync(me);
+
+        for (var i = 0; i < 2; i++)
+        {
+            var error = await Assert.ThrowsAsync<ValidationFailedException>(() => Odometer(Context()).AddAsync(me, car, Request(10500, Guid.Empty)));
+            Assert.Equal("odometer.invalidClientRequestId", error.Code);
+        }
+
+        Assert.Equal(1, await CountAsync(car));
+        // Another user's car stays a 404 first, as for every other check.
+        var others = await CarAsync(other);
+        await Assert.ThrowsAsync<NotFoundException>(() => Odometer(Context()).AddAsync(me, others, Request(10500, Guid.Empty)));
+    }
 }

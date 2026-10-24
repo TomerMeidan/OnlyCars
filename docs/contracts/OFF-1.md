@@ -1,6 +1,6 @@
 # API contract: OFF-1, idempotent odometer add (offline queue)
 
-Published by backend-engineer. One endpoint changes; no new error codes; reading DTOs and the export are unchanged.
+Published by backend-engineer. One endpoint changes; reading DTOs and the export are unchanged. LOW-9 added `odometer.invalidClientRequestId` (L194) and the trailing-zero rule for `valueKm` (L193).
 
 ## `POST /api/vehicles/{vehicleId}/odometer`
 
@@ -34,6 +34,7 @@ Errors (unchanged, only reached when the id is new for this car):
 | 400 | `odometer.futureDate` | |
 | 400 | `odometer.tooMany` | `max` (5000) |
 | 400 | `http.400` | `errors.clientRequestId` when it is not a GUID |
+| 400 | `odometer.invalidClientRequestId` | none; the all-zero GUID (LOW-9, L194), checked after ownership and before step 2, nothing saved |
 | 401 | | not signed in / token of a deleted user |
 | 404 | `vehicle.notFound` | unknown or another user's car |
 | 429 | `http.429` | app-wide per-user rate limit |
@@ -48,10 +49,17 @@ POST /api/vehicles/103668c9-584d-4e20-9a34-f650c067426d/odometer
 200 {"id":"9c90250d-d022-475c-812b-590526078f10","vehicleId":"103668c9-584d-4e20-9a34-f650c067426d","valueKm":12345,"readingDate":"2026-10-24","source":"Manual"}
 
 Same body again, and again with "valueKm":100 (would be lowerThanPrevious):
-200 {"id":"9c90250d-d022-475c-812b-590526078f10","vehicleId":"103668c9-584d-4e20-9a34-f650c067426d","valueKm":12345.00,"readingDate":"2026-10-24","source":"Manual"}
+200 {"id":"9c90250d-d022-475c-812b-590526078f10","vehicleId":"103668c9-584d-4e20-9a34-f650c067426d","valueKm":12345,"readingDate":"2026-10-24","source":"Manual"}
 
 {"valueKm":100,"readingDate":"2026-10-24","clientRequestId":"0b5e9a2d-1111-4c7e-8b1a-2e5f6a7b8c9d"}
 400 {"title":"Validation failed","status":400,"code":"odometer.lowerThanPrevious","previousKm":12345.00,...}
 ```
 
-`12345` vs `12345.00` is the same JSON number (a fresh reading vs one read back from the database); compare numerically.
+Since LOW-9 (L193) every reading DTO drops trailing zeros: `valueKm` is `12345` both on the first create and on a repeat (`12345.5`, never `12345.50`). Error extensions such as `previousKm` still come from the column (`12345.00`); compare numerically.
+
+LOW-9 example (curl on 5150, 2026-10-24):
+
+```
+{"valueKm":12400,"readingDate":"2026-10-24","clientRequestId":"00000000-0000-0000-0000-000000000000"}
+400 {"title":"Validation failed","status":400,"detail":"The client request id can't be all zeros.","code":"odometer.invalidClientRequestId"}
+```
