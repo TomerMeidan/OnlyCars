@@ -65,7 +65,7 @@ export default function CarPage() {
     if (!offline) return
     addEventListener('online', retry)
     return () => removeEventListener('online', retry)
-  }, [offline]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [offline, id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // The error pages set their own title; undefined while offline, so the car's h1 takes focus once it loads.
   usePage(offline ? undefined : car?.nickname)

@@ -30,6 +30,7 @@ public static class OrphanSweep
         }
         catch (Exception e) when (e is not OperationCanceledException)
         {
+            // e.Message is printed here and below because the sweep writes to the owner's own console, not to app logs (L210).
             return Fail(output, $"storage can't be listed ({e.GetType().Name}: {e.Message}).");
         }
 

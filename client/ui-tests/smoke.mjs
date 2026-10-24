@@ -5726,13 +5726,14 @@ for (const s of setups) {
   // and a document deleted in a second tab. As the NOT-1 user, in a new context with that time zone.
   for (const timezoneId of ['Pacific/Kiritimati', 'Pacific/Pago_Pago']) await step(`time-zone-${timezoneId.split('/')[1]}`, async () => {
     const tz = await browser.newContext({ timezoneId, viewport: s.viewport, colorScheme: s.colorScheme, isMobile: s.isMobile, hasTouch: s.hasTouch })
+    let car // L187: archived in the finally, so a failed step leaves no time-zone car on the user's dashboard (there is no car delete)
     try {
       const p = await tz.newPage()
       p.on('pageerror', (e) => run.consoleErrors.push(`${timezoneId}: ${e}`))
       await p.goto(`${BASE}/login`)
       const today = await p.evaluate(() => new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10))
       const day = (n) => new Date(Date.parse(today) + n * 86_400_000).toISOString().slice(0, 10)
-      const car = await apiCall('POST', '/vehicles', { nickname: `TZ ${timezoneId.split('/')[1]}`, initialOdometerKm: 1000, readingDate: day(-40) })
+      car = await apiCall('POST', '/vehicles', { nickname: `TZ ${timezoneId.split('/')[1]}`, initialOdometerKm: 1000, readingDate: day(-40) })
       const task = (name, last) => apiCall('POST', `/vehicles/${car.id}/tasks`, { name, category: 'Other', intervalKm: null, intervalDays: 30, dueSoonPercent: 10, lastDoneOdometerKm: 1000, lastDoneDate: last })
       const [dueToday, dueYesterday] = [await task('Due today', day(-30)), await task('Due yesterday', day(-31))]
       const doc = await apiCall('POST', `/vehicles/${car.id}/documents?today=${today}`, { type: 'Inspection', expiryDate: today, cost: null, notes: null })
@@ -5788,9 +5789,10 @@ for (const s of setups) {
       await p.locator('section[aria-labelledby=documents] > p[role=status]', { hasText: key('documentGone') }).waitFor()
       if (await p.locator(`.documents > li[data-id="${doc.id}"]`).count()) throw new Error('the deleted document is still listed')
       await p.waitForFunction(() => document.activeElement?.matches('section[aria-labelledby=documents] button.add'), null, { timeout: 3000 })
-      await apiCall('POST', `/vehicles/${car.id}/archive`)
     } finally {
       await tz.close()
+      // a failed clean-up must not hide the step's own error
+      if (car) await apiCall('POST', `/vehicles/${car.id}/archive`).catch((e) => console.warn('tz archive', e))
     }
   })
   // ACC-1: Export my data on Settings. The server allows 5 exports per 10 minutes per user: this step makes 3 real ones.
@@ -6125,7 +6127,8 @@ for (const s of setups) {
       const tab2 = await pctx.newPage()
       await tab2.goto(`${PREVIEW}/`)
       await enter(tab2.locator(`section.offline li[data-id="${carId}"]`), 5000)
-      await prow.locator('.pending li').nth(2).waitFor({ timeout: 3000 })
+      // L202: waits for the storage event's change itself (up to the default 30 s), not a fixed window.
+      await pp.waitForFunction((id) => document.querySelectorAll(`section.offline li[data-id="${id}"] .pending li`).length === 3, carId)
       await tab2.close()
       // A full queue refuses the 21st with a message (20 stand-ins, then the real 3 put back).
       const real = await pp.evaluate((k) => localStorage.getItem(k), `odometerQueue:${U.user.id}`)

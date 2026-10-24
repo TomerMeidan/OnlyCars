@@ -1,7 +1,7 @@
 -- L72 (LOW-4): one-off cleanup of the test users that browser tests, scripts and agents created on the LOCAL dev database.
 -- Not part of the app and not a migration. Deleting a user cascades to all of their data in the database.
 -- Stored files are NOT deleted: R2 keeps each deleted user's objects under users/{id}/ (car photo, receipts, run photos) until an orphan
--- sweep exists. The dry run lists the target user ids; keep that list if those prefixes should be removed from the bucket by hand.
+-- sweep runs: afterwards, sweep-orphans in src/OnlyCars.Api removes them (docs/CHECKLIST.md).
 --
 -- Only machine-generated emails match: one tight LIKE per prefix and domain (the rules below), and the local part may hold
 -- only a-z, 0-9, '+' and '-'. The self-check refuses to run if any rule matches the owner's accounts or a near miss,
@@ -11,6 +11,7 @@
 --   sqlcmd -S "(localdb)\mssqllocaldb" -d OnlyCars -E -b -i scripts/cleanup-test-users.sql -v DryRun=1
 -- Delete for real (the owner decides):
 --   sqlcmd -S "(localdb)\mssqllocaldb" -d OnlyCars -E -b -i scripts/cleanup-test-users.sql -v DryRun=0
+-- To test the script, run it on a throwaway copy named OnlyCarsCleanupTest or OnlyCarsCleanupTest2 (the L203 allow-list below).
 -- Without -v DryRun=... sqlcmd stops with "'DryRun' scripting variable not defined".
 
 :on error exit
@@ -20,6 +21,10 @@ SET QUOTED_IDENTIFIER ON; -- sqlcmd defaults it OFF, and deletes on tables with 
 
 IF CONVERT(nvarchar(128), SERVERPROPERTY('InstanceName')) NOT LIKE 'LOCALDB#%' OR SERVERPROPERTY('InstanceName') IS NULL
     THROW 50000, 'Refusing to run: this script is for the local LocalDB dev database only.', 1;
+
+-- L203: only the dev DB (appsettings.json) and the throwaway copies this script is tested on; add a name here to allow it.
+IF DB_NAME() NOT IN (N'OnlyCars', N'OnlyCarsCleanupTest', N'OnlyCarsCleanupTest2')
+    THROW 50000, 'Refusing to run: the database is not OnlyCars or one of this script''s throwaway test copies; nothing deleted.', 1;
 
 -- rules:start (read-only from here to rules:end)
 DECLARE @D13 varchar(65) = REPLICATE('[0-9]', 13); -- a Date.now() in ms

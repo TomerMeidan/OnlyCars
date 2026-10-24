@@ -108,7 +108,7 @@ public class OrphanSweepTests
     public async Task DatabaseUnreachable_Stops_DeletesNothing()
     {
         Seed();
-        await db.DisposeAsync();
+        await db.DisposeAsync(); // a disposed context stands in for an unreachable database
 
         Assert.Equal(1, await RunAsync("--delete", "--force"));
 

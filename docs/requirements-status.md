@@ -1,7 +1,7 @@
 # OnlyCars: Requirements Status
 
-**Audit date:** 2026-10-25 (forty-first audit, short sign-off of LOW-10; LOW-10 is uncommitted in the working tree)
-**Overall:** MVP steps 1 to 4 are complete. Step 5 is done except reminder emails (NOT-2), which wait for the owner's email provider. Spec 2 and spec 12 are complete. LOW-10 (offline car page, odometer error zeros, Mark done layout, the orphan R2 sweep) is signed off; no requirement status changes. Next is LOW-11, the remaining Lows, because NOT-2, UX-1 and the fuel log all wait for the owner.
+**Audit date:** 2026-10-25 (forty-second audit, short sign-off of LOW-11; LOW-11 is uncommitted in the working tree)
+**Overall:** MVP steps 1 to 4 are complete. Step 5 is done except reminder emails (NOT-2), which wait for the owner's email provider. Spec 2 and spec 12 are complete. LOW-11 (smoke clean-up and flakiness, dark-background icons, the cleanup script's database allow-list, tidy-ups) is signed off; no requirement status changes. **The pipeline is parked:** NOT-2, UX-1 and the fuel log all wait for the owner, and the Lows left that need no owner input (L186, L198, L213) are too few for a batch.
 
 | Status | Count |
 |---|---|
@@ -12,8 +12,9 @@
 | Deferred | 6 |
 | **Total** | **57** |
 
-How this was checked (forty-first audit, short sign-off of LOW-10 per decisions.md "Faster pipeline (owner)"; I re-ran no test suites and no browser scripts):
-- Reported by other agents, not re-run by me: `dotnet test` 771 of 771, build and lint clean; smoke `SMOKE_ALL=1` 146 of 146 in all 4 setups; code review approve; security review pass (no High; one Medium fixed in the main session, see LOW-10 below); browser QA pass on every LOW-10 check (L199, L200, L201, L205, L208).
+How this was checked (forty-second audit, short sign-off of LOW-11 per decisions.md "Faster pipeline (owner)"; I re-ran no test suites and no browser scripts):
+- Reported by other agents, not re-run by me: `dotnet test` 771 of 771; lint and build clean; smoke `SMOKE_ALL=1` 146 of 146 in all 4 setups, twice in a row, with `UI_TZ=UTC` (see L213); code review approve, no High or Medium (its two Lows fixed in the main session); targeted browser QA pass.
+- Read by me: the allow-list at `scripts/cleanup-test-users.sql:25-27`.
 - Not run by anyone, by design: `sweep-orphans` against R2 (only the owner runs it); its paging over `CommonPrefixes` is tested only with a mocked S3 client (L212).
 - Not tested by anyone: a real iPhone (safe area, installed standalone, on-screen keyboard), Firefox and Safari, a real Android Back button (L197, L198); the cleanup script on the real dev DB (proven on throwaway copies only, by design).
 - The notes from earlier audits are in git history.
@@ -166,7 +167,7 @@ How this was checked (forty-first audit, short sign-off of LOW-10 per decisions.
 | Deploy gate | **SEC-1 signed off.** Nothing else blocks a first deploy except the owner's Azure account. The owner said not to deploy yet (decisions.md, 2026-10-15, "When to deploy"), so no deployment tickets are queued. |
 | 3. Service history with costs | **Complete. MVP3-A, MVP3-B, MVP3-C, MVP3-D and FILE-2 (attachments) are signed off.** Files: receipt photos and PDFs added to a saved service, opened and deleted from its row, opened from `/history`. Working end to end in EN and HE: the service history on `/cars/:id`, recording a past service (date, odometer, shop or DIY, cost, notes, several tasks, parts and labour) with the date-order rules, editing everything on a record (shop, cost, notes, items, date, odometer and tasks, with the car's odometer and the tasks' last done following), deleting any record, and a `/history` page that filters and searches all cars. LOW-1 (the first Low batch) is signed off too. |
 | 4. Dashboard with due/overdue status | **Complete. MVP4-A and LOW-2 are signed off; "Start a checklist" came with MVP5-B.** The dashboard on `/`: overdue and due-soon counts, this month's spend linking to `/history`, and per-car cards with the next 3 tasks, one-tap Mark done with Undo, quick odometer entry and Start a checklist, in EN and HE. |
-| 5. Checklists, tires, reports, notifications | **All but email. Spec 12's delete-account is done too (ACC-2). Checklists are complete: MVP5-A, MVP5-B, MVP5-C and FILE-3 (photos on runs) are signed off. Tires are done: MVP5-D (sets, mounts, swap, km per set, storage notes) and MVP5-E (pressure, tread depth, rotations) are signed off. LOW-3, LOW-4 and LOW-5 are signed off. Reports are done: RPT-1 (cost per car, category, month and year, cost per km, TCO), RPT-2 (charts) and RPT-3 (CSV and PDF export) are signed off. The browser QA catch-up over MVP5-C to RPT-3 passed.** LOW-6, LOW-7, LOW-8, PWA-1 and OFF-1 are signed off. NOT-1 (in-app reminders: car documents, the Reminders card with snooze, lead days in Settings) is signed off. The client redesign ("the glovebox service book", 18156cd) is approved by the owner. Remaining: reminder emails (spec 9 bullet 1, NOT-2), waiting for the owner's email provider. OFF-1 (offline odometer entry), NAV-1 (phone navigation) and LOW-9, PRED-1 (predicted due date, spec 2 optional) and LOW-10 are signed off. While NOT-2 waits: LOW-11 (remaining Lows) is next. |
+| 5. Checklists, tires, reports, notifications | **All but email. Spec 12's delete-account is done too (ACC-2). Checklists are complete: MVP5-A, MVP5-B, MVP5-C and FILE-3 (photos on runs) are signed off. Tires are done: MVP5-D (sets, mounts, swap, km per set, storage notes) and MVP5-E (pressure, tread depth, rotations) are signed off. LOW-3, LOW-4 and LOW-5 are signed off. Reports are done: RPT-1 (cost per car, category, month and year, cost per km, TCO), RPT-2 (charts) and RPT-3 (CSV and PDF export) are signed off. The browser QA catch-up over MVP5-C to RPT-3 passed.** LOW-6, LOW-7, LOW-8, PWA-1 and OFF-1 are signed off. NOT-1 (in-app reminders: car documents, the Reminders card with snooze, lead days in Settings) is signed off. The client redesign ("the glovebox service book", 18156cd) is approved by the owner. Remaining: reminder emails (spec 9 bullet 1, NOT-2), waiting for the owner's email provider. OFF-1 (offline odometer entry), NAV-1 (phone navigation) and LOW-9, PRED-1 (predicted due date, spec 2 optional) and LOW-10 are signed off. LOW-11 is signed off too. The pipeline is parked until the owner answers (NOT-2, UX-1 or the fuel log). |
 
 ## Ticket queue
 
@@ -188,10 +189,19 @@ How this was checked (forty-first audit, short sign-off of LOW-10 per decisions.
 | 13 | LOW-9: Lows L182 to L196 (cleanup script, odometer id, offline messages) | small BE, then FE | **Signed off** 2026-10-24 |
 | 14 | PRED-1: predicted due date from average km a day (spec 2, optional) | BE, then FE | **Signed off** 2026-10-24 |
 | 15 | LOW-10: Lows L199 to L201, L205 to L208, and the orphan R2 sweep | small BE, then FE | **Signed off** 2026-10-25 |
-| 16 | LOW-11: Lows L187, L188, L190, L202, L203, L209 to L211 (smoke, icons, cleanup script, tidy-ups) | small BE, then FE | **Ready**, the only option that needs no owner input (ticket under "Next ticket") |
+| 16 | LOW-11: Lows L187, L188, L190, L202, L203, L209 to L211 (smoke, icons, cleanup script, tidy-ups) | small BE, then FE | **Signed off** 2026-10-25 |
 | - | NOT-2: email when due | BE, then FE | **Blocked:** needs the owner's email provider, sender address and credentials. Goes next as soon as the owner answers. |
 
 ## Signed-off tickets
+- **LOW-11 (uncommitted in the working tree): signed off 2026-10-25.** Short sign-off under "Faster pipeline (owner)"; I re-ran no suites. Closes L187, L188, L190, L202, L203, L209, L210, L211. No requirement status changes.
+  - Reported evidence: `dotnet test` 771 of 771; lint and build clean; smoke `SMOKE_ALL=1` 146 of 146 in all 4 setups twice in a row with `UI_TZ=UTC`, no second-tab flake; code review approve, no High or Medium; targeted browser QA pass.
+  - AC1 [BE] pass: `cleanup-test-users.sql:25-27` refuses any `DB_NAME()` outside `OnlyCars`, `OnlyCarsCleanupTest`, `OnlyCarsCleanupTest2`; proven on throwaway DBs only (`OnlyCarsCleanupTest` works, `OnlyCarsCleanupNotListed` refused with nothing deleted). The header names the allowed copies and points to `sweep-orphans` (review Low, fixed).
+  - AC2 [BE] pass: the L210 and L211 comments (`OrphanSweep.cs`, `OrphanSweepTests.cs`); 771 of 771, no behavior change.
+  - AC3 [FE] pass: the `CarPage.tsx` `online` listener depends on `[offline, id]`; QA checked offline to online with an id change in all 4 setups.
+  - AC4 [FE] pass: the 192 and 512 icons show on black, #1e1e1e and white (QA screenshots); no installability errors.
+  - AC5 [FE] pass with a limit: Ctrl+C during `pwa-install` exits 130 and nothing listens on 4173 afterwards (no fix needed). A run stopped in the time-zone step leaves 0 active time-zone cars: they are archived in a `finally` (with a `.catch`, review Low fixed), not deleted, because there is no car delete API; the user's delete at the end of the run removes them. Ctrl+C skips that `finally`, so a Ctrl+C in that step can still leave active cars until the user is deleted (accepted, decisions.md "LOW-11 sign-off").
+  - AC6 [FE] pass with `UI_TZ=UTC`. Without it, a run between local and UTC midnight fails 3 steps: a smoke bug, not an app bug (L213).
+
 - **LOW-10 (uncommitted in the working tree): signed off 2026-10-25.** Short sign-off under "Faster pipeline (owner)"; I re-ran no suites. Closes L199, L200, L201, L205, L206, L207, L208 and the orphan sweep (the fix for L172). No requirement status changes.
   - Reported evidence: `dotnet test` 771 of 771, build and lint clean; smoke `SMOKE_ALL=1` 146 of 146 in all 4 setups; code review approve; security pass, no High; browser QA pass on L199, L200, L201, L205 and L208 (`client/ui-tests/low10-odo.mjs` for L201).
   - AC1 [BE] pass: `previousKm` and `nextKm` without trailing zeros (`OdometerService.cs`, `OdometerServiceTests.cs`, contract `docs/contracts/LOW-10.md`); L206 and L207 done (`TaskStatusCalculator.cs`, `TaskStatusCalculatorTests.cs`).
@@ -419,7 +429,7 @@ How this was checked (forty-first audit, short sign-off of LOW-10 per decisions.
 
 ## Low issues backlog
 
-Every Low finding from QA and review lands here (decisions.md, "Faster pipeline (owner)"). They are fixed together in a batch ticket LOW-n about every 3 tickets. LOW-1 closed L1 to L12, LOW-2 L13 to L26, LOW-3 L27 to L65, LOW-4 L66 to L86, LOW-5 L87 to L106 (L98 closed as not reproduced), LOW-6 L114 to L140 (L120 closed by L119, L128 closed as accepted; L124 was closed by FILE-2's cleanup script), LOW-7 L107 to L113; ACC-1's caps closed L154; ACC-2 closed L135 and L168; LOW-8 closed L141 to L181 except L144 and L148 (L141, L149, L152, L163, L164, L166 and L172 as accepted, decisions.md "LOW-8 sign-off"; L146 and L153 by the redesign); LOW-9 closed L182 to L185 and L189, L191 to L196 (L192 by the new second-tab smoke step); LOW-10 closed L199 to L201 and L205 to L208; those rows are in git history. Open (L144, L148, L72, L105, L134, L197 and L204 are the owner's; L212 can only show in the owner's run against R2; the rest wait for a later LOW-n):
+Every Low finding from QA and review lands here (decisions.md, "Faster pipeline (owner)"). They are fixed together in a batch ticket LOW-n about every 3 tickets. LOW-1 closed L1 to L12, LOW-2 L13 to L26, LOW-3 L27 to L65, LOW-4 L66 to L86, LOW-5 L87 to L106 (L98 closed as not reproduced), LOW-6 L114 to L140 (L120 closed by L119, L128 closed as accepted; L124 was closed by FILE-2's cleanup script), LOW-7 L107 to L113; ACC-1's caps closed L154; ACC-2 closed L135 and L168; LOW-8 closed L141 to L181 except L144 and L148 (L141, L149, L152, L163, L164, L166 and L172 as accepted, decisions.md "LOW-8 sign-off"; L146 and L153 by the redesign); LOW-9 closed L182 to L185 and L189, L191 to L196 (L192 by the new second-tab smoke step); LOW-10 closed L199 to L201 and L205 to L208; LOW-11 closed L187, L188, L190, L202, L203 and L209 to L211; those rows are in git history. Open (L144, L148, L72, L105, L134, L197 and L204 are the owner's; L212 can only show in the owner's run against R2; L186, L198 and L213 join the LOW-n after the next owner-chosen ticket):
 
 | # | From | Issue | Area |
 |---|---|---|---|
@@ -429,54 +439,19 @@ Every Low finding from QA and review lands here (decisions.md, "Faster pipeline 
 | L105 | RPT-3 | Nobody has opened the exported CSV in real Excel (Hebrew, the BOM, `;` locales) or used the real print dialog and "Save as PDF". No agent can; the owner checks once (CHECKLIST.md, "Waiting on the owner"). | Owner |
 | L72 | LOW-3 housekeeping | The local dev DB has leftover test users. `scripts/cleanup-test-users.sql` covers them (RPT prefixes added in LOW-5) but was never run; the owner decides (CHECKLIST.md, "Waiting on the owner"). | Dev DB (owner) |
 | L186 | LOW-8b QA | Not tested: a page left open across midnight without navigating (does the status update, or does it keep yesterday's `today` until a reload). | FE, dates |
-| L187 | LOW-8b QA | Smoke leaves the NOT-1 time-zone cars in the dev DB until its user is deleted at the end; a run that stops early leaves them. | Smoke |
-| L188 | PWA-1 QA | The 192 and 512 `any` icons' dark tile almost disappears on dark backgrounds (launchers, dark taskbars); only the dial shows. A thin light rim or a lighter tile would fix it. | FE, icons |
 | L197 | NAV-1 QA | Not tried on a real iPhone: the bar above the home indicator (safe area), the installed app (standalone), and a field focused with the real on-screen keyboard. Needs a real device; added to the owner's iPhone check. | Owner or a device |
 | L198 | NAV-1 QA | Not tried in Firefox or Safari, nor with a real Android Back button (QA used the browser's Back). | FE, browsers |
-| L190 | PWA-1 review | Smoke's SIGINT cleanup path (stopping the preview server on Ctrl+C) is untested, and the full smoke was not re-run after `preview.unref()` (only a setup check). | Smoke |
-| L202 | LOW-9 review | The second-tab smoke step waits up to 3 s for a `storage` event; watch it for flakiness. | Smoke |
-| L203 | LOW-9 security | `scripts/cleanup-test-users.sql` checks for LocalDB but not the database name. A plain `DB_NAME()` check would also block the throwaway-copy tests, so it needs an allow-list of names. | Script |
 | L204 | LOW-9 housekeeping | 22 test users on the six domains removed from the cleanup script in L182 remain in the dev DB; the script no longer matches them. The owner may delete them by hand (CHECKLIST.md, "Waiting on the owner"). | Dev DB (owner) |
-| L209 | LOW-10 review | `CarPage.tsx:64-67`: the `online` listener's deps are `[offline]`; they should be `[offline, id]`, or a car id that changes while offline reloads the old car. Unreachable today (no in-app link from one car page to another). | FE, car page |
-| L210 | LOW-10 review | `OrphanSweep.cs:33,43,70,91` print `e.Message`, while `AccountService.cs:59-60` logs only the exception type. Make them consistent, or add a one-line comment saying why (the sweep prints to the owner's own console, not to app logs). | BE, storage |
-| L211 | LOW-10 review | `OrphanSweepTests.cs:111` simulates "database unreachable" by disposing the context; add a one-line comment saying so. | Tests |
+| L213 | LOW-11 QA | `client/ui-tests/smoke.mjs` takes "today" from `toISOString().slice(0,10)` (UTC, 14 places) while the app uses the local date. Between local and UTC midnight `task-status-order`, `reset-task` and `delete-account` fail (143 of 146). Until fixed, runs in that window need `UI_TZ=UTC`. Test bug, not an app bug. | Smoke |
 | L212 | LOW-10 security | `R2FileStorage.ListUserPrefixesAsync` paging over `CommonPrefixes` (more than 1,000 prefixes) is tested only with a mocked S3 client, and no agent may run it against R2. It matters only once the bucket has more than 1,000 user prefixes. | Storage (owner) |
 
 ## Next ticket
 
-NOT-2 waits for the owner's email provider; UX-1 and the fuel log wait for the owner's choice (decisions.md, "LOW-10 scope"). LOW-11 is the only work that needs no owner input, so the pipeline starts it (decisions.md, "LOW-11 scope"). It is small; when the owner answers, NOT-2, UX-1 or the fuel log goes next.
+**None: the pipeline is parked** (decisions.md, "Pipeline parked after LOW-11"). Every required item but reminder emails is done. NOT-2 waits for the owner's email provider, sender address and credentials; UX-1 and the fuel log wait for the owner's choice. The open Lows that need no owner input are only L186 (needs a fake clock), L198 (needs Firefox, Safari or a real Android) and L213 (smoke's UTC dates, with the `UI_TZ=UTC` workaround). Three items don't make a useful batch, so they join the LOW-n after the next owner-chosen ticket. LOW-11's full ticket is in git history.
 
-### LOW-11: smoke clean-up and flakiness, dark-background icons, cleanup-script name check, LOW-10 tidy-ups
-
-**Goal:** Test runs leave nothing behind and don't flake, the app icon shows on dark launchers, and the cleanup script runs only on a database it was meant for.
-
-**Closes:** L187, L188, L190, L202, L203, L209, L210, L211. Left open: L186 and L198 (need a fake clock or other browsers; later), L212 and the owner's rows.
-
-**Scope, Backend (`backend-engineer`, first; no API change, so no contract):**
-- **L203:** `scripts/cleanup-test-users.sql` stops unless `DB_NAME()` is in an allow-list at the top of the script: `OnlyCars` (the dev DB in `appsettings.json`) and the throwaway-copy names its own tests use. Nothing else in the script changes.
-- **L210:** keep `e.Message` in `OrphanSweep.cs` (it prints to the owner's own console, not to app logs) and add the one-line why comment; `AccountService.cs` stays as it is.
-- **L211:** the one-line comment at `OrphanSweepTests.cs:111`.
-
-**Scope, Frontend (`frontend-engineer`, after BE):**
-- **L209:** the `online` listener in `CarPage.tsx:64-67` depends on `[offline, id]`.
-- **L188:** the 192 and 512 `any` icons get a thin light rim (or a lighter tile) so the tile shows on dark backgrounds, redrawn by `scripts/icons.mjs`. The maskable and apple-touch icons change only if they need the same fix.
-- **L187:** smoke removes the NOT-1 time-zone cars in the step that made them (in a `finally`), so a run that stops early leaves none behind.
-- **L190:** try smoke's SIGINT path once: start a `SMOKE_ALL=1` run, press Ctrl+C during `pwa-install`, and check that nothing listens on the preview port afterwards. Fix it if something does.
-- **L202:** the second-tab step waits for the change itself (`waitForFunction` on the other tab's text), not for a fixed 3 s window.
-
-**Acceptance criteria:**
-1. [BE] Run on a database not in the allow-list, `cleanup-test-users.sql` stops with a clear message and deletes nothing; on a throwaway copy in the list it works as before. Proven on throwaway databases only, never on the dev DB.
-2. [BE] The L210 and L211 comments are in; `dotnet test` all pass; no behavior change.
-3. [FE] The car page's `online` listener depends on `[offline, id]`; lint is clean; the car-page offline smoke step still passes in en and he at 390px.
-4. [FE] The new 192 and 512 icons are visible on black, on #1e1e1e and on white, checked by screenshot; the `pwa-install` smoke step still reports no installability errors.
-5. [FE] After a smoke run stopped by Ctrl+C during `pwa-install`, nothing listens on the preview port; after a run stopped in the NOT-1 time-zone step, its user has no time-zone cars left. Both are recorded in the QA notes.
-6. [FE] `SMOKE_ALL=1` passes in all 4 setups twice in a row, with no flake in the second-tab step.
-
-**Out of scope:** L186, L198, L212; the owner's rows (L72, L105, L134, L144, L148, L197, L204); any change to the sweep's behavior; NOT-2, UX-1 and the fuel log.
-
-**Open questions for the owner (none of them block LOW-11):**
-- What next: reminder emails (NOT-2, needs your email provider, sender address and credentials), UX-1 ("3 of 5 checked" on checklist runs and a login tagline), or the fuel log?
-- Fuel log, if you want it: full tanks only, or partial fills too? Consumption as L/100 km, km/L or mpg, or following the km/miles setting?
+Questions for the owner (any answer restarts the pipeline):
+- What next: reminder emails (NOT-2: which email provider, sender address, credentials into user-secrets), UX-1 ("3 of 5 checked" on checklist runs and a login tagline), or the fuel log?
+- Fuel log, if wanted: full tanks only, or partial fills too? Consumption as L/100 km, km/L or mpg, or following the km/miles setting?
 
 ### Later
 - **NOT-2:** email when a task, checklist or document is due (spec 9 bullet 1), using NOT-1's reminders, `Notification.SentAt` to avoid duplicate sends and an `Email` `NotificationRule`. Needs the owner's email provider, sender address and credentials (user-secrets).
@@ -487,8 +462,8 @@ NOT-2 waits for the owner's email provider; UX-1 and the fuel log wait for the o
 - **Car delete** (not asked for; cars are archived): if ever added, it must delete run-photo rows first and `Notifications WHERE VehicleId` in code, as the account delete does.
 
 ## Changed since last audit
-- **Signed off:** LOW-10 (uncommitted in the working tree): the car page's offline message with Retry and a reload on `online`, the language message clears, odometer errors without trailing zeros, Mark done centred on the dashboard, and the owner-only `sweep-orphans` command (with the bucket and database line added for the security Medium). Smoke 146 of 146 in 4 setups.
+- **Signed off:** LOW-11 (uncommitted in the working tree): the cleanup script's database allow-list, icons that show on dark backgrounds, smoke archives its time-zone cars in a `finally`, the second-tab step waits for the change, the car page's `online` listener follows the car id, two comments. Smoke 146 of 146 in 4 setups, twice.
 - **Status changes:** none. Counts unchanged: Done 49, Partial 1, Missing 1, Deferred 6.
-- **Backlog:** closed L199 to L201 and L205 to L208; new L209 to L212.
-- **Next ticket:** LOW-11 (L187, L188, L190, L202, L203, L209 to L211). NOT-2 stays blocked; UX-1 and the fuel log wait for the owner.
-- **New decisions** (`docs/decisions.md`, 2026-10-25): "LOW-10 sign-off" and "LOW-11 scope".
+- **Backlog:** closed L187, L188, L190, L202, L203, L209 to L211; new L213 (smoke's UTC "today").
+- **Next ticket:** none; the pipeline is parked until the owner chooses NOT-2, UX-1 or the fuel log.
+- **New decisions** (`docs/decisions.md`, 2026-10-25): "LOW-11 sign-off" and "Pipeline parked after LOW-11".
