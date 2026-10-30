@@ -13,6 +13,7 @@ export interface User {
   locale: 'En' | 'He'
   theme: 'Light' | 'Dark' | 'System'
   reminderLeadDays: number // NOT-1: days before a document's expiry that it shows as Expiring, 1 to 365
+  hasPassword?: boolean // false for an account made with Google; undefined in a user cached before Google sign-in
 }
 
 export interface AuthResponse {

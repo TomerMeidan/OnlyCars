@@ -20,6 +20,12 @@ public static class DependencyInjection
         services.Configure<JwtOptions>(configuration.GetSection(JwtOptions.SectionName));
         services.AddScoped<IJwtTokenService, JwtTokenService>();
 
+        // Not registered without a client id, so Google sign-in stays off (AuthService then gets null).
+        if (configuration[$"{GoogleOptions.SectionName}:ClientId"] is { Length: > 0 } googleClientId)
+        {
+            services.AddSingleton<IGoogleTokenValidator>(GoogleTokenValidator.Create(googleClientId));
+        }
+
         services.AddOptions<StorageOptions>().Bind(configuration.GetSection(StorageOptions.SectionName))
             .Validate(o => o.UserQuotaBytes > 0, "Storage:UserQuotaBytes must be positive.").ValidateOnStart();
 

@@ -2182,29 +2182,26 @@ for (const s of setups) {
     await page.locator('main h1', { hasText: he ? 'Settings' : 'הגדרות' }).waitFor()
     await noOverflow(`settings at 390px in the other language, ${forced}`)
     await sweep('settings page in the other language')
-    // The header switch saves the language too.
+    // Settings is the only language switch: the header has none.
+    await more(page)
+    if (await page.locator('header nav button', { hasText: /^(English|עברית)$/ }).count()) throw new Error('a language switch in the header')
+    await page.keyboard.press('Escape')
     res = putSettings()
-    await more(page)
-    await page.click('header nav button.link >> nth=0')
-    if ((await res).request().postDataJSON().locale !== own) throw new Error('header switch did not save the language')
+    await radio('locale', own).click()
+    if ((await res).request().postDataJSON().locale !== own) throw new Error('settings radio did not save the language back')
     await dirIs(ownDir)
-    if (!(await radio('locale', own).isChecked())) throw new Error(`${own} not checked after the header switch`)
-    // Signed out: no Settings link, /settings goes to the login page, and the switch saves nothing.
+    // Signed out: no Settings link and no header buttons, and /settings goes to the login page.
     await more(page)
-    await page.click('header nav button.link >> nth=1')
+    await page.click('header nav button.link')
     await page.locator('input[name=email]').waitFor()
     if (await page.locator('header a[href="/settings"]').count()) throw new Error('Settings link while signed out')
     if (await page.locator('.tabs').count()) throw new Error('NAV-1: a tab bar while signed out')
+    if (await page.locator('header button').count()) throw new Error('a header button while signed out')
     await page.goto(`${BASE}/settings`)
     await page.waitForURL('**/login')
-    let puts = 0
-    const count = (r) => r.method() === 'PUT' && puts++
-    page.on('request', count)
-    await more(page)
-    await page.click('header nav button.link >> nth=0')
+    // The other language signed out (the detector reads ?lng=), so the login below shows the saved one is applied.
+    await page.goto(`${BASE}/login?lng=${other.toLowerCase()}`)
     await dirIs(otherDir)
-    page.off('request', count)
-    if (puts) throw new Error('the signed-out switch sent a PUT')
     // Logging in applies the saved language and theme.
     await page.fill('input[name=email]', registered.user.email)
     await page.fill('input[name=password]', 'Passw0rd!')
@@ -2446,7 +2443,7 @@ for (const s of setups) {
   })
   await step('settings-unit-errors', async () => {
     await page.setViewportSize({ width: 390, height: 844 })
-    // SET-1 QA Low 2: each later settings action, on the page or with the header switch, clears every earlier error.
+    // SET-1 QA Low 2: each later settings action clears every earlier error.
     await openSettings()
     const alerts = () => page.locator('main [role=alert]')
     const fail = (r) => r.fulfill({ status: 500, contentType: 'application/json', body: '{}' })
@@ -2454,10 +2451,9 @@ for (const s of setups) {
     await radio('theme', 'Dark').click()
     await page.locator('fieldset:has(input[name=theme]) [role=alert]').waitFor()
     await page.route('**/api/me/settings', fail, { times: 1 })
-    await more(page)
-    await page.click('header nav button.link >> nth=0')
-    await page.locator('main > p[role=alert]').waitFor()
-    if ((await alerts().count()) !== 1) throw new Error(`${await alerts().count()} alerts after the header switch failed`)
+    await radio('locale', he ? 'En' : 'He').click()
+    await page.locator('fieldset:has(input[name=locale]) [role=alert]').waitFor()
+    if ((await alerts().count()) !== 1) throw new Error(`${await alerts().count()} alerts after the language save failed`)
     const res = putSettings()
     await radio('distanceUnit', 'Mi').click()
     await res
@@ -3543,7 +3539,7 @@ for (const s of setups) {
         hasRuns: 'כבר בוצעו בדיקות לפי הרשימה הזו, ולכן אי אפשר להסיר אותה. במקום זה אפשר להשבית אותה.', confirmRun: 'למחוק את הבדיקה הזו? גם קריאת הקילומטראז׳ שלה תימחק.',
         lower: 'הקריאה נמוכה מהקריאה שלפניה', start: 'ביצוע רשימת בדיקה', startOf: (n) => `ביצוע רשימת בדיקה: ${n}`,
         inUse: 'רשימת הבדיקה משויכת לרכב, ולכן אי אפשר למחוק אותה. יש להסיר אותה מהרכב קודם.',
-        item2: 'פריט 2: הערך לא מתאים לפריט.', changed: 'רשימת הבדיקה השתנתה מאז שנפתחה.', future: 'התאריך לא יכול להיות בעתיד.' }
+        item2: 'פריט 2: הערך לא מתאים לפריט.', changed: 'רשימת הבדיקה השתנתה מאז שנפתחה.', future: 'התאריך לא יכול להיות בעתיד.', progress: (n) => `נבדקו ${n} מתוך 3` }
     : { add: 'Add a checklist', none: 'No checklists on this car yet.', noTemplates: 'You have no checklists yet. Create one on the Checklists page.',
         allAttached: 'All your checklists are already on this car. Create another one.', manual: 'Manual only', ok: 'OK', off: 'Disabled',
         left: '5,000 km or 30 days left', notRun: 'Not run yet', runOf: (n) => `Run ${n}`, editOf: (n) => `Edit ${n}`, removeOf: (n) => `Remove ${n} from this car`,
@@ -3552,7 +3548,7 @@ for (const s of setups) {
         hasRuns: "This checklist has runs, so it can't be removed. Turn it off instead.", confirmRun: 'Delete this run? Its odometer reading is deleted with it.',
         lower: 'This reading is lower than the reading before it', start: 'Start a checklist', startOf: (n) => `Start a checklist: ${n}`,
         inUse: "This checklist is on a car, so it can't be deleted. Remove it from the car first.",
-        item2: "Item 2: This value doesn't fit the item.", changed: 'This checklist has changed since you opened it.', future: "The date can't be in the future." }
+        item2: "Item 2: This value doesn't fit the item.", changed: 'This checklist has changed since you opened it.', future: "The date can't be in the future.", progress: (n) => `${n} of 3 checked` }
   const ckSec = page.locator('section[aria-labelledby=checklists]')
   const ckRow = (name) => ckSec.locator('.car-checklists > li').filter({ has: page.locator('.name', { hasText: new RegExp(`^${name}$`) }) })
   const ckForm = ckSec.locator('form')
@@ -3638,6 +3634,10 @@ for (const s of setups) {
     await arrivedAt(CK.title('Monthly quick check', 'Dash car'))
     if ((await runForm.locator('input[name=runAt]').inputValue()) !== (await localDate())) throw new Error('date is not today')
     if ((await runForm.locator('input[name=odometerKm]').inputValue()) !== '') throw new Error('odometer prefilled')
+    // UX-1: the count of answered items follows the answers; a hand flag alone doesn't count.
+    const progress = runForm.locator('> p.run-progress')
+    const progressIs = async (n) => { if (plain(await progress.textContent()) !== CK.progress(n)) throw new Error(`progress "${await progress.textContent()}", want ${n}`) }
+    await progressIs(0)
     // Criterion 7: Not OK flags Lights; 1.8 flags Tire pressure as typed, with the reason tied to the field; Notes flagged by hand.
     const notOk = runItem(0).locator('input[type=radio]').nth(1)
     if (plain(await notOk.getAttribute('aria-label')) !== CK.field('Lights', CK.notOk)) throw new Error(`radio name "${await notOk.getAttribute('aria-label')}"`)
@@ -3654,10 +3654,13 @@ for (const s of setups) {
     await value.fill('2')
     if (await reason.count()) throw new Error('2.0 (the min) flagged')
     await value.fill('1.8')
-    await runItem(2).locator('textarea').fill('Scratch')
+    await progressIs(2)
     const hand = runItem(2).locator('input[type=checkbox]')
     if (plain(await hand.getAttribute('aria-label')) !== CK.field('Notes', CK.flag)) throw new Error('flag name')
     await hand.check()
+    await progressIs(2)
+    await runItem(2).locator('textarea').fill('Scratch')
+    await progressIs(3)
     await runForm.locator('textarea[name=notes]').fill('Before the trip')
     // A lower odometer asks for a correction under the field; everything typed stays.
     await runForm.locator('input[name=odometerKm]').fill('40000')
@@ -4905,7 +4908,7 @@ for (const s of setups) {
   await step('reports-empty', async () => {
     // Criterion 7: no priced records says so and links to the cars; the year defaults to the local one.
     await more(page)
-    await page.click('header nav button.link >> nth=1')
+    await page.click('header nav button.link')
     await page.locator('input[name=email]').waitFor()
     await page.goto(`${BASE}/register`)
     await page.fill('input[name=email]', `ui-rpt-${s.name}-${Date.now()}@onlycars.test`)
@@ -6313,11 +6316,11 @@ for (const s of setups) {
       if ((await moreBtn.getAttribute('aria-expanded')) !== 'true') throw new Error('More not expanded')
       await page.screenshot({ path: `${OUT}/${s.name}-phone-nav-more.png` })
       const order = []
-      for (let i = 0; i < 4; i++) {
+      for (let i = 0; i < 3; i++) {
         await page.keyboard.press('Tab')
         order.push(await page.evaluate(() => document.activeElement.closest('#more-menu') && (document.activeElement.getAttribute('href') ?? document.activeElement.textContent)))
       }
-      const wantOrder = ['/reports', '/settings', he ? 'English' : 'עברית', he ? 'התנתקות' : 'Log out']
+      const wantOrder = ['/reports', '/settings', he ? 'התנתקות' : 'Log out']
       if (JSON.stringify(order) !== JSON.stringify(wantOrder)) throw new Error(`menu order ${JSON.stringify(order)}`)
       await page.keyboard.press('Escape')
       await menu.waitFor({ state: 'detached' })
@@ -6385,51 +6388,9 @@ for (const s of setups) {
     // From 40em up the header is as before: no bar.
     if (s.viewport.width > 640) await page.locator('.tabs').waitFor({ state: 'detached', timeout: 3000 })
   })
-  await step('switch-language', async () => {
-    const before = await page.getAttribute('html', 'dir')
-    // LOW-9 (L189): offline, the language stays and exactly one message says why; nothing is sent.
-    const puts = []
-    const onPut = (r) => pathOf(r) === '/api/me/settings' && puts.push(r)
-    page.on('request', onPut)
-    await ctx.setOffline(true)
-    try {
-      await more(page)
-      await page.click('header nav button.link >> nth=0')
-      const alerts = page.locator('main [role=alert]')
-      await alerts.first().waitFor()
-      await page.waitForTimeout(300)
-      const texts = (await alerts.allTextContents()).map(plain)
-      if (texts.join('|') !== inBlock('offline', 'language')) throw new Error(`offline alerts ${JSON.stringify(texts)}`)
-      if ((await page.getAttribute('html', 'dir')) !== before || (await page.getAttribute('html', 'lang')) !== s.lng) throw new Error('offline switch changed the language')
-      if (puts.length) throw new Error('a settings save was sent offline')
-      await noOverflow('the offline language message')
-      await page.screenshot({ path: `${OUT}/${s.name}-language-offline.png`, fullPage: true })
-    } finally {
-      await ctx.setOffline(false)
-      page.off('request', onPut)
-    }
-    // LOW-10 AC5 (L200): back online, the message goes by itself.
-    const langAlert = page.locator('main > p[role=alert]')
-    await langAlert.waitFor({ state: 'detached', timeout: 3000 }).catch(() => { throw new Error('the offline language message stayed after online') })
-    // And the next successful switch clears it: navigator.onLine faked false (no `online` event follows), then the real value again.
-    await page.evaluate(() => Object.defineProperty(navigator, 'onLine', { get: () => false, configurable: true }))
-    try {
-      await more(page)
-      await page.click('header nav button.link >> nth=0')
-      await langAlert.waitFor()
-    } finally {
-      await page.evaluate(() => delete navigator.onLine)
-    }
-    if (!(await page.evaluate(() => navigator.onLine))) throw new Error('navigator.onLine still faked')
-    await more(page)
-    await page.click('header nav button.link >> nth=0')
-    await langAlert.waitFor({ state: 'detached', timeout: 3000 }).catch(() => { throw new Error('the offline language message stayed after a successful switch') })
-    const after = await page.getAttribute('html', 'dir')
-    if (before === after) throw new Error(`dir stayed "${after}"`)
-  })
   await step('logout', async () => {
     await more(page)
-    await page.click('header nav button.link >> nth=1')
+    await page.click('header nav button.link')
     await page.locator('input[name=email]').waitFor()
   })
   // ACC-2: delete my account, as this setup's first user (its car, service files and run photos go too). These steps come last:

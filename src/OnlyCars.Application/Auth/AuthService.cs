@@ -17,7 +17,8 @@ public class AuthService(
     IPasswordHasher<User> passwordHasher,
     IJwtTokenService jwtTokenService,
     IMemoryCache cache,
-    IOptions<RateLimitOptions> limits)
+    IOptions<RateLimitOptions> limits,
+    IGoogleTokenValidator? google = null)
 {
     public const int MinPasswordLength = 8;
     public const int MaxEmailLength = 256; // the Email column length
@@ -77,6 +78,92 @@ public class AuthService(
 
         return BuildResponse(user);
     }
+
+    /// <summary>
+    /// Google sign-in (owner, 2026-10-30): the account linked to this Google id; else a new account without a password.
+    /// An existing account with the email is never linked here: register doesn't verify emails, so its password may be
+    /// someone else's (account pre-hijacking, security review of GOOG-1).
+    /// </summary>
+    public async Task<AuthResponse> GoogleAsync(GoogleLoginRequest request, CancellationToken ct = default)
+    {
+        ValidateCurrency(request.Currency);
+        var locale = EnumRules.Parse<Locale>(request.Locale, "settings.invalidLocale");
+        var identity = await ValidateGoogleAsync(request.IdToken, ct);
+
+        var user = await db.Users.FirstOrDefaultAsync(u => u.GoogleSubject == identity.Subject, ct);
+        if (user is null)
+        {
+            // Only an address Google has verified becomes an account's email.
+            if (!identity.EmailVerified)
+            {
+                throw new ValidationFailedException("auth.googleEmailNotVerified", "The Google account's email is not verified.");
+            }
+
+            var email = identity.Email.Trim().ToLowerInvariant();
+            if (email.Length > MaxEmailLength)
+            {
+                throw GoogleFailed();
+            }
+
+            if (await db.Users.FirstOrDefaultAsync(u => u.Email == email, ct) is { } existing)
+            {
+                throw existing.GoogleSubject is null
+                    ? new ConflictException("auth.googleUsePassword", "This email has an account with a password. Log in with the password.")
+                    : new ConflictException("auth.googleAccountMismatch", "This email is linked to a different Google account.");
+            }
+
+            user = new User { Email = email, PasswordHash = string.Empty, GoogleSubject = identity.Subject, Locale = locale ?? Locale.En };
+            if (request.Currency is not null)
+            {
+                user.Currency = request.Currency;
+            }
+            db.Users.Add(user);
+
+            try
+            {
+                await db.SaveChangesAsync(ct);
+            }
+            catch (DbUpdateException)
+            {
+                // A simultaneous first sign-in with the same Google account won the unique index: use its account.
+                user = await db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.GoogleSubject == identity.Subject, ct);
+                if (user is null)
+                {
+                    throw;
+                }
+            }
+        }
+
+        return BuildResponse(user, await ReminderService.LeadDaysAsync(db, user.Id, ct));
+    }
+
+    /// <summary>Account delete for an account without a password (ACC-2): a Google sign-in as this user in the last 10 minutes.</summary>
+    public async Task ConfirmWithGoogleAsync(User user, string? idToken, CancellationToken ct)
+    {
+        var identity = await ValidateGoogleAsync(idToken, ct);
+        if (identity.Subject != user.GoogleSubject || identity.IssuedAt < DateTimeOffset.UtcNow.AddMinutes(-10))
+        {
+            throw GoogleFailed();
+        }
+    }
+
+    private async Task<GoogleIdentity> ValidateGoogleAsync(string? idToken, CancellationToken ct)
+    {
+        if (google is null)
+        {
+            throw new ValidationFailedException("auth.googleNotConfigured", "Google sign-in is not set up.");
+        }
+
+        // 400, not 401: a 401 signs the client out. A real ID token is about 1 KB.
+        if (string.IsNullOrEmpty(idToken) || idToken.Length > 8_000)
+        {
+            throw GoogleFailed();
+        }
+
+        return await google.ValidateAsync(idToken, ct) ?? throw GoogleFailed();
+    }
+
+    private static ValidationFailedException GoogleFailed() => new("auth.googleFailed", "The Google sign-in could not be verified.");
 
     private static ConflictException EmailTaken() => new("auth.emailTaken", "An account with this email already exists.");
 
@@ -212,7 +299,7 @@ public class AuthService(
     }
 
     private static UserDto ToDto(User user, int reminderLeadDays) =>
-        new(user.Id, user.Email, user.DistanceUnit, user.Currency, user.Locale, user.Theme, reminderLeadDays);
+        new(user.Id, user.Email, user.DistanceUnit, user.Currency, user.Locale, user.Theme, reminderLeadDays, user.PasswordHash != string.Empty);
 
     private static UnauthorizedException InvalidCredentials() => new("auth.invalidCredentials", "Invalid email or password.");
 

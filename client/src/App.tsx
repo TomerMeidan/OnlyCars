@@ -1,9 +1,7 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link, Navigate, NavLink, Route, Routes, useLocation } from 'react-router-dom'
-import { Offline } from './api'
 import { useAuth } from './auth'
-import { errorMessage, toLocale } from './i18n'
 import { readQueue, sendQueue } from './offline'
 import AuthPage from './pages/AuthPage'
 import CarPage from './pages/CarPage'
@@ -24,13 +22,10 @@ const onPhoneChange = (cb: () => void) => {
 }
 
 export default function App() {
-  const { t, i18n } = useTranslation()
-  const { user, logout, saveSettings, settingsError } = useAuth()
-  const otherLang = i18n.resolvedLanguage === 'he' ? 'en' : 'he'
+  const { t } = useTranslation()
+  const { user, logout } = useAuth()
   const location = useLocation()
-  // A failure is kept with the page it happened on, so navigating (or logging out) clears it.
-  const at = `header@${location.key}`
-  const [langBusy, setLangBusy] = useState(false)
+  const at = location.key
   const phone = useSyncExternalStore(onPhoneChange, () => phoneQuery.matches)
   const [moreOpen, setMoreOpen] = useState(false)
   const menu = useRef<HTMLDivElement>(null)
@@ -73,19 +68,6 @@ export default function App() {
   }, [userId])
   const confirmLogout = () => (!readQueue(userId!).length || confirm(t('logoutLosesReadings'))) && logout()
 
-  // Signed in, the switch also saves the language to the account.
-  async function switchLanguage() {
-    if (langBusy) return // aria-disabled rather than disabled, so the button keeps focus
-    if (!user) return i18n.changeLanguage(otherLang)
-    setLangBusy(true)
-    await saveSettings({ locale: toLocale(otherLang) }, at)
-    setLangBusy(false)
-  }
-  const langSwitch = (
-    <button className="link" onClick={switchLanguage} aria-disabled={langBusy}>
-      {otherLang === 'he' ? 'עברית' : 'English'}
-    </button>
-  )
   const logoutButton = <button className="link" onClick={confirmLogout}>{t('logout')}</button>
 
   return (
@@ -102,7 +84,8 @@ export default function App() {
         </Link>
         {/* NavLink marks the current page with aria-current="page", which the stylesheet lights up. */}
         {phone && user ? (
-          <nav className="tabs">
+          // Keyed apart, so crossing 40em never turns one nav's link into the other's mid-click.
+          <nav key="tabs" className="tabs">
             <NavLink to="/" end>{t('dashboard')}</NavLink>
             <NavLink to="/history">{t('tabHistory')}</NavLink>
             <NavLink to="/checklists">{t('checklists')}</NavLink>
@@ -121,26 +104,22 @@ export default function App() {
               <div id="more-menu" ref={menu} className="more-menu" onClick={closeMore}>
                 <NavLink to="/reports">{t('reports')}</NavLink>
                 <NavLink to="/settings">{t('settings')}</NavLink>
-                {langSwitch}
                 {logoutButton}
               </div>
             )}
           </nav>
-        ) : (
-          <nav>
-            {langSwitch}
-            {user && <NavLink to="/history">{t('serviceHistory')}</NavLink>}
-            {user && <NavLink to="/reports">{t('reports')}</NavLink>}
-            {user && <NavLink to="/checklists">{t('checklists')}</NavLink>}
-            {user && <NavLink to="/tires">{t('tires')}</NavLink>}
-            {user && <NavLink to="/settings">{t('settings')}</NavLink>}
-            {user && logoutButton}
+        ) : user && (
+          <nav key="bar">
+            <NavLink to="/history">{t('serviceHistory')}</NavLink>
+            <NavLink to="/reports">{t('reports')}</NavLink>
+            <NavLink to="/checklists">{t('checklists')}</NavLink>
+            <NavLink to="/tires">{t('tires')}</NavLink>
+            <NavLink to="/settings">{t('settings')}</NavLink>
+            {logoutButton}
           </nav>
         )}
       </header>
       <main>
-        {/* Only the language switch saves from the header. */}
-        {settingsError?.at === at && <p className="error" role="alert">{settingsError.err instanceof Offline ? t('errors.offline.language') : errorMessage(settingsError.err)}</p>}
         {user ? (
           <Routes>
             <Route path="/" element={<CarsPage />} />

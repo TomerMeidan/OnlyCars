@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
+import { createContext, useContext, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { api, applyTheme, cachedUser, getToken, Offline, setToken, USER_KEY, type AuthResponse, type User } from './api'
 import i18n, { toLocale } from './i18n'
@@ -10,6 +10,8 @@ type Settings = Partial<Pick<User, 'locale' | 'theme' | 'currency' | 'distanceUn
 interface AuthState {
   user: User | null
   authenticate: (mode: 'login' | 'register', email: string, password: string, currency?: string) => Promise<void>
+  // Signs in with a Google ID token; a first sign-in makes the account with this currency and the page's language.
+  authenticateGoogle: (idToken: string, currency: string) => Promise<void>
   logout: () => void
   // Applies the change at once, saves it, and puts the old values back if the save fails. Resolves to whether it saved.
   // `at` tags a failure with where it happened; each save clears every earlier failure, wherever it showed.
@@ -23,13 +25,6 @@ const AuthContext = createContext<AuthState>(null!)
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(cachedUser)
   const [settingsError, setSettingsError] = useState<AuthState['settingsError']>(null)
-
-  // L200: back online, the header's "You are offline" language message no longer holds.
-  useEffect(() => {
-    const clear = () => setSettingsError((e) => (e?.at.startsWith('header@') && e.err instanceof Offline ? null : e))
-    addEventListener('online', clear)
-    return () => removeEventListener('online', clear)
-  }, [])
 
   // Signed in, the account's language and theme win.
   function show(u: User) {
@@ -45,7 +40,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const authenticate: AuthState['authenticate'] = async (mode, email, password, currency) => {
     const locale = mode === 'register' ? toLocale(i18n.resolvedLanguage) : undefined
-    const res = await api<AuthResponse>(`/auth/${mode}`, 'POST', { email, password, currency, locale })
+    signIn(await api<AuthResponse>(`/auth/${mode}`, 'POST', { email, password, currency, locale }))
+  }
+
+  const authenticateGoogle: AuthState['authenticateGoogle'] = async (idToken, currency) =>
+    signIn(await api<AuthResponse>('/auth/google', 'POST', { idToken, currency, locale: toLocale(i18n.resolvedLanguage) }))
+
+  function signIn(res: AuthResponse) {
     setToken(res.token)
     pruneOffline(res.user.id)
     storeUser(res.user)
@@ -80,7 +81,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     applyTheme(undefined)
   }
 
-  return <AuthContext value={{ user, authenticate, logout, saveSettings, settingsError, storeUser }}>{children}</AuthContext>
+  return <AuthContext value={{ user, authenticate, authenticateGoogle, logout, saveSettings, settingsError, storeUser }}>{children}</AuthContext>
 }
 
 export const useAuth = () => useContext(AuthContext)

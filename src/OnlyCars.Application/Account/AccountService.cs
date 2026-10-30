@@ -11,17 +11,21 @@ namespace OnlyCars.Application.Account;
 public class AccountService(IAppDbContext db, AuthService auth, IFileStorage? storage = null,
     ILogger<AccountService>? logger = null)
 {
-    public async Task DeleteAsync(Guid userId, string? password, CancellationToken ct = default)
+    public async Task DeleteAsync(Guid userId, string? password, CancellationToken ct = default, string? googleIdToken = null)
     {
-        if (string.IsNullOrEmpty(password))
+        var user = await db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == userId, ct)
+                   ?? throw new NotFoundException(nameof(User), userId);
+        if (user.PasswordHash == string.Empty)
+        {
+            // An account made with Google has no password to confirm with: a fresh Google sign-in confirms instead.
+            await auth.ConfirmWithGoogleAsync(user, googleIdToken, ct);
+        }
+        else if (string.IsNullOrEmpty(password))
         {
             throw new ValidationFailedException("auth.credentialsRequired", "Password is required.");
         }
-
-        var user = await db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == userId, ct)
-                   ?? throw new NotFoundException(nameof(User), userId);
         // Counts toward the login lockout (429 once locked out, ACC-2 security review); 400, not 401: the client signs out on 401.
-        if (!auth.VerifyPassword(user, password))
+        else if (!auth.VerifyPassword(user, password))
         {
             throw new ValidationFailedException("auth.invalidCredentials", "The password is not correct.");
         }

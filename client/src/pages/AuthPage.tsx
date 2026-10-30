@@ -4,11 +4,12 @@ import { errorMessage } from '../i18n'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../auth'
 import { accountDeleted, currencies } from '../api'
+import { GoogleButton } from '../google'
 import { usePage } from '../usePage'
 
 export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
   const { t, i18n } = useTranslation()
-  const { authenticate } = useAuth()
+  const { authenticate, authenticateGoogle } = useAuth()
   // Follows the UI language until the user picks one.
   const [pickedCurrency, setPickedCurrency] = useState<string | null>(null)
   const currency = pickedCurrency ?? (i18n.resolvedLanguage === 'he' ? 'ILS' : 'USD')
@@ -20,17 +21,21 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
   const [deleted] = useState(() => accountDeleted.current)
   useEffect(() => { accountDeleted.current = false }, [])
 
-  async function submit(e: FormEvent<HTMLFormElement>) {
-    e.preventDefault()
-    const form = new FormData(e.currentTarget)
+  async function run(signIn: () => Promise<void>) {
+    if (busy) return
     setBusy(true)
     setError(null)
     try {
-      await authenticate(mode, String(form.get('email')), String(form.get('password')), mode === 'register' ? currency : undefined)
+      await signIn()
     } catch (err) {
       setError(err)
       setBusy(false)
     }
+  }
+  function submit(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault()
+    const form = new FormData(e.currentTarget)
+    run(() => authenticate(mode, String(form.get('email')), String(form.get('password')), mode === 'register' ? currency : undefined))
   }
 
   return (
@@ -39,6 +44,8 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
       <h1 tabIndex={-1} aria-describedby={deleted ? 'account-deleted' : undefined}>{t(mode)}</h1>
       {deleted && <p id="account-deleted" className="notice" role="status">{t('accountDeleted')}</p>}
       <p className="intro">{t('intro')}</p>
+      {/* A first Google sign-in makes the account, with the currency shown on Register (or the language's default). */}
+      <GoogleButton text={mode === 'login' ? 'signin_with' : 'signup_with'} or onCredential={(idToken) => run(() => authenticateGoogle(idToken, currency))} />
       <label>
         {t('email')}
         <input name="email" type="email" autoComplete="email" required />

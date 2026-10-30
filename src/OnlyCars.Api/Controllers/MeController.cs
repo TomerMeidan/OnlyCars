@@ -37,7 +37,7 @@ public class MeController(AuthService authService, ExportService exportService, 
     [EnableRateLimiting(RequestLimits.AccountDeletePolicy)]
     public async Task<IActionResult> Delete(DeleteAccountRequest request, CancellationToken ct)
     {
-        await accountService.DeleteAsync(User.GetUserId(), request.Password, ct);
+        await accountService.DeleteAsync(User.GetUserId(), request.Password, ct, request.GoogleIdToken);
         return NoContent();
     }
 

@@ -152,6 +152,10 @@ main {
 }
 .narrow { max-width: 26rem; width: 100%; margin-inline: auto; }
 .intro { color: var(--muted); }
+/* Google's button is an iframe at most 400px wide; centred, with the "or" under it, and no gap while it loads */
+.google-button { display: flex; justify-content: center; color-scheme: light; }
+.google-button:empty { display: none; }
+.or { text-align: center; margin: 0; }
 .archived { opacity: 0.65; }
 .card.archived { background: var(--sunken); border-style: dashed; }
 

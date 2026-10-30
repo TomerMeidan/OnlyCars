@@ -31,7 +31,7 @@ await page.waitForLoadState('networkidle')
 await shot('1-success')
 
 // 2. Same email again
-await page.click('header nav button.link >> nth=1')
+await page.click('header nav button.link')
 await register(email, 'Passw0rd!')
 log.push({ case: 'duplicate email', error: await formError() })
 await shot('2-duplicate')

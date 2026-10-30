@@ -190,6 +190,8 @@ How this was checked (forty-second audit, short sign-off of LOW-11 per decisions
 | 14 | PRED-1: predicted due date from average km a day (spec 2, optional) | BE, then FE | **Signed off** 2026-10-24 |
 | 15 | LOW-10: Lows L199 to L201, L205 to L208, and the orphan R2 sweep | small BE, then FE | **Signed off** 2026-10-25 |
 | 16 | LOW-11: Lows L187, L188, L190, L202, L203, L209 to L211 (smoke, icons, cleanup script, tidy-ups) | small BE, then FE | **Signed off** 2026-10-25 |
+| 17 | UX-1: "N of M checked" on the checklist run page, a sharper login line (en/he) | FE | **Built 2026-10-30, not signed off** (no PM, Hebrew or browser QA pass yet) |
+| 18 | GOOG-1: Sign in with Google (owner request, not in the spec) | BE, then FE | **Built 2026-10-30, not signed off.** Hidden until the owner sets `Google:ClientId`; the real Google flow not tried yet. Apple waits for the owner's developer account. |
 | - | NOT-2: email when due | BE, then FE | **Blocked:** needs the owner's email provider, sender address and credentials. Goes next as soon as the owner answers. |
 
 ## Signed-off tickets
@@ -443,6 +445,7 @@ Every Low finding from QA and review lands here (decisions.md, "Faster pipeline 
 | L198 | NAV-1 QA | Not tried in Firefox or Safari, nor with a real Android Back button (QA used the browser's Back). | FE, browsers |
 | L204 | LOW-9 housekeeping | 22 test users on the six domains removed from the cleanup script in L182 remain in the dev DB; the script no longer matches them. The owner may delete them by hand (CHECKLIST.md, "Waiting on the owner"). | Dev DB (owner) |
 | L213 | LOW-11 QA | `client/ui-tests/smoke.mjs` takes "today" from `toISOString().slice(0,10)` (UTC, 14 places) while the app uses the local date. Between local and UTC midnight `task-status-order`, `reset-task` and `delete-account` fail (143 of 146). Until fixed, runs in that window need `UI_TZ=UTC`. Test bug, not an app bug. | Smoke |
+| L214 | 2026-10-30 smoke | `time-zone-Pago_Pago` (mobile-dark-he) failed once with "the deleted document is still listed": it counts the rows right after the Gone status shows, without waiting for the list to drop the row. Passed in the runs before and after. Test race, not an app bug: wait for the row to detach. | Smoke |
 | L212 | LOW-10 security | `R2FileStorage.ListUserPrefixesAsync` paging over `CommonPrefixes` (more than 1,000 prefixes) is tested only with a mocked S3 client, and no agent may run it against R2. It matters only once the bucket has more than 1,000 user prefixes. | Storage (owner) |
 
 ## Next ticket
@@ -455,8 +458,6 @@ Questions for the owner (any answer restarts the pipeline):
 
 ### Later
 - **NOT-2:** email when a task, checklist or document is due (spec 9 bullet 1), using NOT-1's reminders, `Notification.SentAt` to avoid duplicate sends and an `Email` `NotificationRule`. Needs the owner's email provider, sender address and credentials (user-secrets).
-- **Small UX (designer proposals, next LOW-n or a UX ticket):** "3 of 5 checked" progress on the checklist run page; a one-line value statement on the login page (en and he, with Hebrew review).
-- **UX-1:** see "Small UX" above. It was offered to the owner alongside LOW-10 and the fuel log.
 - **Fuel log** (spec 11, optional): waits for the owner's answers (full tanks only or partial fills; L/100 km, km/L or mpg).
 - **Snoozed list:** see and undo earlier snoozes, not only the latest (from L149).
 - **Car delete** (not asked for; cars are archived): if ever added, it must delete run-photo rows first and `Notifications WHERE VehicleId` in code, as the account delete does.

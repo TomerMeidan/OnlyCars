@@ -138,6 +138,10 @@ export default function RunPage() {
           </label>
         )}
 
+        {/* An item counts once it has its answer; the hand flag alone doesn't. */}
+        <p className="muted run-progress" aria-live="polite">
+          {t('runProgress', { done: answers.filter((a) => a.bool !== null || a.num !== '' || a.text.trim() !== '').length, total: answers.length })}
+        </p>
         <div className="items" role="group" aria-label={t('checklistItems')}>
           {template.items.map((it, i) => (
             <RunItem key={it.id} item={it} answer={answers[i]} lng={lng} onChange={(patch) => set(i, patch)} tie={tie}>

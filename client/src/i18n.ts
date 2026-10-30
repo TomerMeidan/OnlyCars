@@ -46,7 +46,7 @@ const en = {
   odometer: 'Odometer',
   newReading: 'New reading in {{distUnits}}',
   plateValue: 'Plate {{plate}}',
-  intro: 'Track mileage and upkeep for every car you own.',
+  intro: 'Never miss a service: mileage, upkeep and costs for every car you own, in one place.',
   // {{distUnit}} follows a number, {{distUnits}} names the unit in a label; both come from units.ts.
   distance: { Km: 'km', Mi: 'mi' },
   distances: { Km: 'km', Mi: 'miles' },
@@ -259,6 +259,9 @@ const en = {
   deleteAccountPasswordRequired: 'Enter your password.',
   deleteAccountFailed: 'Your account was not deleted.',
   deleteAccountTooMany: 'Too many tries. Try again in a few minutes.',
+  deleteAccountGoogle: 'To confirm, sign in with Google again.',
+  deleteAccountGoogleDone: 'Confirmed with Google.',
+  deleteAccountGoogleRequired: 'Confirm with Google first.',
   accountDeleted: 'Your account was deleted.',
   // CSV header row; the other columns reuse car, odometer, shop, currency and notes.
   csvDate: 'Date',
@@ -348,6 +351,7 @@ const en = {
   rangeMax: 'At most <n>{{max}}</n>',
   flagged: { hand: 'Flagged', notOk: 'Flagged: Not OK', below: 'Flagged: below <n>{{min}}</n>', above: 'Flagged: above <n>{{max}}</n>' },
   saveRun: 'Save run',
+  runProgress: '{{done}} of {{total}} checked',
   startChecklist: 'Start a checklist',
   startChecklistOf: 'Start a checklist: {{name}}',
   chooseChecklist: 'Choose a checklist',
@@ -495,6 +499,10 @@ const en = {
       passwordTooShort: 'The password must be at least 8 characters.',
       credentialsRequired: 'Enter your email and password.',
       invalidCurrency: 'Choose one of the listed currencies.',
+      googleFailed: "Google sign-in didn't work. Try again.",
+      googleEmailNotVerified: 'Your Google email is not verified, so it can’t be used here.',
+      googleAccountMismatch: 'This email is already linked to a different Google account.',
+      googleUsePassword: 'This email already has an account. Log in with your email and password.',
     },
     vehicle: {
       vinTaken: 'Another car on your account already has this VIN.',
@@ -549,7 +557,6 @@ const en = {
     },
     offline: {
       noConnection: 'You are offline. Check the connection and try again.',
-      language: 'You are offline. The language was not changed.',
       queueFull: 'Up to {{max, number}} readings can wait to be sent. Send or delete some first.',
     },
     odometerReading: {
@@ -754,7 +761,7 @@ const he: typeof en = {
   odometer: 'קילומטראז׳',
   newReading: 'קריאה חדשה ב{{distUnits}}',
   plateValue: 'מספר רישוי {{plate}}',
-  intro: 'מעקב אחר קילומטראז׳ ותחזוקה לכל הרכבים שלך.',
+  intro: 'לא לפספס אף טיפול: הקילומטראז׳, התחזוקה וההוצאות של כל הרכבים שלך, במקום אחד.',
   // Like ק״מ, מייל after a number stays singular; the plural names the unit in a label (במיילים).
   distance: { Km: 'ק״מ', Mi: 'מייל' },
   distances: { Km: 'ק״מ', Mi: 'מיילים' },
@@ -961,6 +968,9 @@ const he: typeof en = {
   deleteAccountPasswordRequired: 'יש להזין את הסיסמה.',
   deleteAccountFailed: 'החשבון לא נמחק.',
   deleteAccountTooMany: 'יותר מדי ניסיונות. אפשר לנסות שוב בעוד כמה דקות.',
+  deleteAccountGoogle: 'כדי לאשר, יש להתחבר שוב עם Google.',
+  deleteAccountGoogleDone: 'האישור עם Google התקבל.',
+  deleteAccountGoogleRequired: 'יש לאשר קודם עם Google.',
   accountDeleted: 'החשבון שלך נמחק.',
   csvDate: 'תאריך',
   csvTasks: 'משימות',
@@ -1047,6 +1057,7 @@ const he: typeof en = {
   rangeMax: 'לכל היותר <n>{{max}}</n>',
   flagged: { hand: 'סומן כבעיה', notOk: 'סומן כבעיה: לא תקין', below: 'סומן כבעיה: מתחת ל־<n>{{min}}</n>', above: 'סומן כבעיה: מעל <n>{{max}}</n>' },
   saveRun: 'שמירת הבדיקה',
+  runProgress: 'נבדקו ⁦{{done}}⁩ מתוך ⁦{{total}}⁩',
   startChecklist: 'ביצוע רשימת בדיקה',
   startChecklistOf: 'ביצוע רשימת בדיקה: ⁨{{name}}⁩',
   chooseChecklist: 'בחירת רשימת בדיקה',
@@ -1189,6 +1200,10 @@ const he: typeof en = {
       passwordTooShort: 'הסיסמה חייבת להכיל לפחות 8 תווים.',
       credentialsRequired: 'יש להזין אימייל וסיסמה.',
       invalidCurrency: 'יש לבחור אחד מהמטבעות ברשימה.',
+      googleFailed: 'ההתחברות עם Google לא הצליחה. אפשר לנסות שוב.',
+      googleEmailNotVerified: 'כתובת האימייל בחשבון Google לא אומתה, ולכן אי אפשר להשתמש בה כאן.',
+      googleAccountMismatch: 'האימייל הזה כבר מקושר לחשבון Google אחר.',
+      googleUsePassword: 'כבר קיים חשבון עם האימייל הזה. אפשר להתחבר עם האימייל והסיסמה.',
     },
     vehicle: {
       vinTaken: 'בחשבון שלך כבר יש רכב עם מספר השלדה הזה.',
@@ -1240,7 +1255,6 @@ const he: typeof en = {
     },
     offline: {
       noConnection: 'אין חיבור לאינטרנט. יש לבדוק את החיבור ולנסות שוב.',
-      language: 'אין חיבור לאינטרנט. השפה לא שונתה.',
       queueFull: 'אפשר להשאיר עד ⁦{{max, number}}⁩ קריאות בהמתנה לשליחה. יש לשלוח או למחוק חלק מהן קודם.',
     },
     odometerReading: {

@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { useLocation } from 'react-router-dom'
 import { accountDeleted, api, ApiError, apiResponse, currencies, download, limit, type User } from '../api'
 import { useAuth } from '../auth'
+import { GoogleButton } from '../google'
 import { errorMessage } from '../i18n'
 import { usePage } from '../usePage'
 
@@ -69,7 +70,9 @@ export default function SettingsPage() {
   }
 
   // ACC-2: delete the account. null is closed; the panel opens on its heading, and Cancel or Escape go back to the opener.
-  const [del, setDel] = useState<{ busy?: boolean; error?: unknown } | null>(null)
+  // An account made with Google has no password: a fresh Google sign-in confirms instead, kept as googleIdToken.
+  const [del, setDel] = useState<{ busy?: boolean; error?: unknown; googleIdToken?: string } | null>(null)
+  const withGoogle = user!.hasPassword === false
   const deleteButton = useRef<HTMLButtonElement>(null)
   const delHeading = useRef<HTMLHeadingElement>(null)
   const delPassword = useRef<HTMLInputElement>(null)
@@ -89,18 +92,21 @@ export default function SettingsPage() {
     e.preventDefault()
     if (del?.busy) return // aria-disabled, so a second Enter lands here
     const password = new FormData(e.currentTarget).get('password')
-    setDel({ busy: true })
+    const googleIdToken = del?.googleIdToken
+    if (withGoogle && !googleIdToken) return setDel({ error: new ApiError(400, { code: 'auth.googleRequired' }, 'Bad Request') })
+    setDel({ busy: true, googleIdToken })
     try {
-      await api('/me', 'DELETE', { password })
+      await api('/me', 'DELETE', withGoogle ? { googleIdToken } : { password })
       accountDeleted.current = true
       logout() // the signed-out routes send /settings to /login
     } catch (error) {
-      setDel({ error })
+      setDel({ error }) // drops a Google confirmation too: a retry signs in with Google again (the server takes one up to 10 minutes old)
     }
   }
   const delMessage = del?.error == null ? null
     : delCode === 'auth.invalidCredentials' ? t('deleteAccountWrongPassword')
     : delCode === 'auth.credentialsRequired' ? t('deleteAccountPasswordRequired')
+    : delCode === 'auth.googleRequired' ? t('deleteAccountGoogleRequired')
     : `${t('deleteAccountFailed')} ${del.error instanceof ApiError && del.error.status === 429 ? t('deleteAccountTooMany') : errorMessage(del.error)}`
 
   const errorFor = (field: Field) =>
@@ -187,11 +193,18 @@ export default function SettingsPage() {
             <h3 id="delete-account-title" tabIndex={-1} ref={delHeading}>{t('deleteAccountTitle')}</h3>
             <p>{t('deleteAccountWarning')}</p>
             <p>{t('deleteAccountExportFirst')}</p>
-            <label>
-              {t('password')}
-              <input ref={delPassword} name="password" type="password" autoComplete="current-password" required
-                aria-invalid={badPassword || undefined} aria-describedby={badPassword ? 'delete-account-error' : undefined} />
-            </label>
+            {withGoogle ? (
+              del.googleIdToken ? <p role="status">{t('deleteAccountGoogleDone')}</p> : <>
+                <p>{t('deleteAccountGoogle')}</p>
+                <GoogleButton text="continue_with" onCredential={(googleIdToken) => setDel({ googleIdToken })} />
+              </>
+            ) : (
+              <label>
+                {t('password')}
+                <input ref={delPassword} name="password" type="password" autoComplete="current-password" required
+                  aria-invalid={badPassword || undefined} aria-describedby={badPassword ? 'delete-account-error' : undefined} />
+              </label>
+            )}
             {delMessage && <p id="delete-account-error" className="error" role="alert" tabIndex={-1} ref={delAlert}>{delMessage}</p>}
             <div className="actions">
               <button className="danger stack" aria-disabled={!!del.busy} data-alt={t(del.busy ? 'deleteAccountConfirm' : 'deleteAccountBusy')}>
