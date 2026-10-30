@@ -492,3 +492,13 @@ export const limit = (message: string) => (e: FormEvent<HTMLInputElement>) => {
   el.setCustomValidity('')
   el.setCustomValidity(el.validity.valid ? '' : message)
 }
+
+// How people get in (asked once per page load): the Google client id, null when Google sign-in isn't set up, and whether
+// anyone may register (off when invite-only). Unreachable reads as neither.
+type Providers = { googleClientId: string | null; openRegistration: boolean }
+let providersOnce: Promise<Providers> | undefined
+export const providers = () =>
+  (providersOnce ??= api<Providers>('/auth/providers').catch(() => {
+    providersOnce = undefined // offline now: ask again on the next visit
+    return { googleClientId: null, openRegistration: false }
+  }))

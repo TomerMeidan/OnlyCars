@@ -83,6 +83,7 @@ for (const s of setups) {
       run.steps.push({ step: name, ok: true, screenshot: shot })
     } catch (e) {
       run.steps.push({ step: name, ok: false, error: e.message.split('\n')[0], screenshot: shot })
+      console.error(`FAIL ${s.name} ${name}: ${e.message.split('\n')[0]}`) // printed now, so a later crash can't hide it
     }
     await page.waitForLoadState('networkidle').catch(() => {})
     await page.screenshot({ path: shot, fullPage: true })
@@ -638,9 +639,11 @@ for (const s of setups) {
   await step('task-status-order', async () => {
     const token = await page.evaluate(() => localStorage.getItem('token'))
     const url = `${BASE}/api/vehicles/${new URL(page.url()).pathname.split('/').pop()}/tasks`
-    const today = await localDate() // the browser's date, as the app's (L213)
+    // The browser's date, as the app's (L213); localDate() is defined further down.
+    const today = await page.evaluate(() => new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10))
     const add = async (name, intervalKm, lastDoneOdometerKm, intervalDays = null) => {
-      const r = await page.request.post(url, { headers: { Authorization: `Bearer ${token}` }, data: { name, category: 'Other', intervalKm, intervalDays, lastDoneOdometerKm, lastDoneDate: today } })
+      // With the client's today, as the app sends it: otherwise the server judges the local date by UTC (L213).
+      const r = await page.request.post(`${url}?today=${today}`, { headers: { Authorization: `Bearer ${token}` }, data: { name, category: 'Other', intervalKm, intervalDays, lastDoneOdometerKm, lastDoneDate: today } })
       if (r.status() !== 201) throw new Error(`POST ${name}: ${r.status()}`)
     }
     await add('10k service', 20000, 59000, 365) // OK, 0% used
@@ -6478,7 +6481,8 @@ for (const s of setups) {
     try {
       // LOW-8 L178: a service file uploaded now to R2; its signed URL serves it before the delete and finds nothing after.
       const fileCar = (await apiCall('GET', '/vehicles'))[0]
-      const fileRec = (await apiCall('POST', `/vehicles/${fileCar.id}/service-records`, { odometerKm: fileCar.currentOdometerKm, totalCost: 1 })).record
+      // With the client's today, as the app sends it: the server's UTC date can be a day before the car's readings (L213).
+      const fileRec = (await apiCall('POST', `/vehicles/${fileCar.id}/service-records?today=${await localDate()}`, { odometerKm: fileCar.currentOdometerKm, totalCost: 1 })).record
       const token = await page.evaluate(() => localStorage.getItem('token'))
       const up = await page.request.post(`${BASE}/api/vehicles/${fileCar.id}/service-records/${fileRec.id}/attachments`,
         { headers: { Authorization: `Bearer ${token}` }, multipart: { file: { name: 'l178.png', mimeType: 'image/png', buffer: await image('image/png') } } })

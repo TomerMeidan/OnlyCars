@@ -14,7 +14,7 @@ public record LoginRequest(string Email, string Password);
 // A Google ID token from Google's sign-in button; Currency and Locale are used only when this makes a new account.
 public record GoogleLoginRequest(string? IdToken, string? Currency = null, string? Locale = null);
 
-public record AuthProvidersDto(string? GoogleClientId);
+public record AuthProvidersDto(string? GoogleClientId, bool OpenRegistration);
 
 public record UserDto(Guid Id, string Email, DistanceUnit DistanceUnit, string Currency, Locale Locale, Theme Theme, int ReminderLeadDays,
     bool HasPassword = true);

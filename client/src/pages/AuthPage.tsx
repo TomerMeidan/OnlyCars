@@ -1,9 +1,9 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { errorMessage } from '../i18n'
-import { Link } from 'react-router-dom'
+import { Link, Navigate } from 'react-router-dom'
 import { useAuth } from '../auth'
-import { accountDeleted, currencies } from '../api'
+import { accountDeleted, currencies, providers } from '../api'
 import { GoogleButton } from '../google'
 import { usePage } from '../usePage'
 
@@ -20,6 +20,9 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
   // Read once and cleared, so the note doesn't come back on a later visit.
   const [deleted] = useState(() => accountDeleted.current)
   useEffect(() => { accountDeleted.current = false }, [])
+  // Invite-only unless the API says otherwise: no Register link, and /register goes to /login.
+  const [openRegistration, setOpenRegistration] = useState<boolean | null>(null)
+  useEffect(() => { providers().then((p) => setOpenRegistration(p.openRegistration)) }, [])
 
   async function run(signIn: () => Promise<void>) {
     if (busy) return
@@ -37,6 +40,8 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
     const form = new FormData(e.currentTarget)
     run(() => authenticate(mode, String(form.get('email')), String(form.get('password')), mode === 'register' ? currency : undefined))
   }
+
+  if (mode === 'register' && openRegistration === false) return <Navigate to="/login" replace />
 
   return (
     <form className="card narrow" onSubmit={submit}>
@@ -70,10 +75,12 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
       )}
       {error != null && <p className="error" role="alert">{errorMessage(error)}</p>}
       <button disabled={busy}>{t(mode)}</button>
-      <p className="switch">
-        {mode === 'login' ? t('noAccount') : t('haveAccount')}{' '}
-        <Link to={mode === 'login' ? '/register' : '/login'}>{t(mode === 'login' ? 'register' : 'login')}</Link>
-      </p>
+      {(mode === 'register' || openRegistration) && (
+        <p className="switch">
+          {mode === 'login' ? t('noAccount') : t('haveAccount')}{' '}
+          <Link to={mode === 'login' ? '/register' : '/login'}>{t(mode === 'login' ? 'register' : 'login')}</Link>
+        </p>
+      )}
     </form>
   )
 }

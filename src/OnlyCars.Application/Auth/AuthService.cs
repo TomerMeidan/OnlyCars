@@ -18,8 +18,12 @@ public class AuthService(
     IJwtTokenService jwtTokenService,
     IMemoryCache cache,
     IOptions<RateLimitOptions> limits,
-    IGoogleTokenValidator? google = null)
+    IGoogleTokenValidator? google = null,
+    IOptions<AuthOptions>? options = null)
 {
+    // Tests that build the service by hand get open registration; the app always passes the configured value (closed by default).
+    private bool OpenRegistration => options?.Value.OpenRegistration ?? true;
+
     public const int MinPasswordLength = 8;
     public const int MaxEmailLength = 256; // the Email column length
 
@@ -30,13 +34,12 @@ public class AuthService(
 
     public async Task<AuthResponse> RegisterAsync(RegisterRequest request, CancellationToken ct = default)
     {
-        var email = request.Email.Trim().ToLowerInvariant();
-
-        // MailAddress also parses display-name forms like "a <b@c.d>", so require the address to round-trip unchanged.
-        if (email.Length > MaxEmailLength || !MailAddress.TryCreate(email, out var address) || address.Address != email)
+        if (!OpenRegistration)
         {
-            throw new ValidationFailedException("auth.invalidEmail", "Email address is not valid.");
+            throw new ValidationFailedException("auth.registrationClosed", "Registration is closed.");
         }
+
+        var email = NormalizeEmail(request.Email);
 
         if (request.Password.Length < MinPasswordLength)
         {
@@ -80,9 +83,10 @@ public class AuthService(
     }
 
     /// <summary>
-    /// Google sign-in (owner, 2026-10-30): the account linked to this Google id; else a new account without a password.
-    /// An existing account with the email is never linked here: register doesn't verify emails, so its password may be
-    /// someone else's (account pre-hijacking, security review of GOOG-1).
+    /// Google sign-in (owner, 2026-10-30): the account linked to this Google id; else the account the owner added for this
+    /// verified email (no password, no Google id yet), linked now; else, only with open registration, a new account.
+    /// An account with a password is never linked: register doesn't verify emails, so its password may be someone else's
+    /// (account pre-hijacking, security review of GOOG-1).
     /// </summary>
     public async Task<AuthResponse> GoogleAsync(GoogleLoginRequest request, CancellationToken ct = default)
     {
@@ -105,19 +109,32 @@ public class AuthService(
                 throw GoogleFailed();
             }
 
-            if (await db.Users.FirstOrDefaultAsync(u => u.Email == email, ct) is { } existing)
+            user = await db.Users.FirstOrDefaultAsync(u => u.Email == email, ct);
+            if (user is { GoogleSubject: not null })
             {
-                throw existing.GoogleSubject is null
-                    ? new ConflictException("auth.googleUsePassword", "This email has an account with a password. Log in with the password.")
-                    : new ConflictException("auth.googleAccountMismatch", "This email is linked to a different Google account.");
+                throw new ConflictException("auth.googleAccountMismatch", "This email is linked to a different Google account.");
             }
 
-            user = new User { Email = email, PasswordHash = string.Empty, GoogleSubject = identity.Subject, Locale = locale ?? Locale.En };
-            if (request.Currency is not null)
+            if (user is not null && user.PasswordHash != string.Empty)
             {
-                user.Currency = request.Currency;
+                throw new ConflictException("auth.googleUsePassword", "This email has an account with a password. Log in with the password.");
             }
-            db.Users.Add(user);
+
+            if (user is null)
+            {
+                if (!OpenRegistration)
+                {
+                    throw new ValidationFailedException("auth.notInvited", "This Google account has not been invited.");
+                }
+
+                user = new User { Email = email, PasswordHash = string.Empty, Locale = locale ?? Locale.En };
+                if (request.Currency is not null)
+                {
+                    user.Currency = request.Currency;
+                }
+                db.Users.Add(user);
+            }
+            user.GoogleSubject = identity.Subject;
 
             try
             {
@@ -164,6 +181,35 @@ public class AuthService(
     }
 
     private static ValidationFailedException GoogleFailed() => new("auth.googleFailed", "The Google sign-in could not be verified.");
+
+    /// <summary>
+    /// The owner's add-user command (invite-only, 2026-10-30): an account without a password, so its owner signs in with the
+    /// Google account of this email. False when the email already has an account.
+    /// </summary>
+    public async Task<bool> InviteAsync(string email, CancellationToken ct = default)
+    {
+        email = NormalizeEmail(email);
+        if (await db.Users.AnyAsync(u => u.Email == email, ct))
+        {
+            return false;
+        }
+
+        db.Users.Add(new User { Email = email, PasswordHash = string.Empty });
+        await db.SaveChangesAsync(ct);
+        return true;
+    }
+
+    private static string NormalizeEmail(string raw)
+    {
+        var email = raw.Trim().ToLowerInvariant();
+        // MailAddress also parses display-name forms like "a <b@c.d>", so require the address to round-trip unchanged.
+        if (email.Length > MaxEmailLength || !MailAddress.TryCreate(email, out var address) || address.Address != email)
+        {
+            throw new ValidationFailedException("auth.invalidEmail", "Email address is not valid.");
+        }
+
+        return email;
+    }
 
     private static ConflictException EmailTaken() => new("auth.emailTaken", "An account with this email already exists.");
 

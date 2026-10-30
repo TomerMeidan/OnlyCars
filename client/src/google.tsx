@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { api } from './api'
+import { providers } from './api'
 
 type Gsi = {
   initialize: (o: { client_id: string; callback: (r: { credential: string }) => void }) => void
@@ -9,10 +9,6 @@ type Gsi = {
 declare global {
   interface Window { google?: { accounts: { id: Gsi } } }
 }
-
-// The Google client id from the API, null when Google sign-in isn't set up there; asked once per page load.
-let clientId: Promise<string | null> | undefined
-const googleClientId = () => (clientId ??= api<{ googleClientId: string | null }>('/auth/providers').then((r) => r.googleClientId, () => null))
 
 let script: Promise<void> | undefined
 const loadScript = () => (script ??= new Promise((resolve, reject) => {
@@ -38,15 +34,16 @@ export function GoogleButton({ text, onCredential, or = false }: {
 
   useEffect(() => {
     let live = true
-    googleClientId()
-      .then(async (id) => {
+    providers()
+      .then(async ({ googleClientId: id }) => {
         if (!id) return
         await loadScript()
         const el = box.current
         if (!live || !el || !window.google) return
         window.google.accounts.id.initialize({ client_id: id, callback: (r) => callback.current(r.credential) })
         el.replaceChildren()
-        window.google.accounts.id.renderButton(el, { text, theme: 'outline', size: 'large', locale: lng, width: Math.min(400, el.clientWidth) })
+        // No width: the box is hidden (width 0) until the button is in it, and Google refuses width=0.
+        window.google.accounts.id.renderButton(el, { text, theme: 'outline', size: 'large', locale: lng })
         setReady(true)
       })
       .catch(() => {})

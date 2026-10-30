@@ -193,6 +193,7 @@ How this was checked (forty-second audit, short sign-off of LOW-11 per decisions
 | 17 | UX-1: "N of M checked" on the checklist run page, a sharper login line (en/he) | FE | **Built 2026-10-30, not signed off** (no PM, Hebrew or browser QA pass yet) |
 | 18 | GOOG-1: Sign in with Google (owner request, not in the spec) | BE, then FE | **Built 2026-10-30, not signed off.** Hidden until the owner sets `Google:ClientId`; the real Google flow not tried yet. Apple waits for the owner's developer account. |
 | 19 | LOW-12: L213, L214 and the audit's easy Lows (HSTS, no Server header, one Swagger, frame and referrer headers on the web app) | small BE, then FE | **Built 2026-10-30, not signed off** |
+| 20 | INV-1: invite-only (no open registration; the owner adds Google users with add-user) | BE, then FE | **Built 2026-10-30, not signed off** |
 | - | NOT-2: email when due | BE, then FE | **Blocked:** needs the owner's email provider, sender address and credentials. Goes next as soon as the owner answers. |
 
 ## Signed-off tickets

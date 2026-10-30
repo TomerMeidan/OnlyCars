@@ -503,6 +503,8 @@ const en = {
       googleEmailNotVerified: 'Your Google email is not verified, so it can’t be used here.',
       googleAccountMismatch: 'This email is already linked to a different Google account.',
       googleUsePassword: 'This email already has an account. Log in with your email and password.',
+      notInvited: "This Google account doesn't have access to OnlyCars. Ask the owner to add it.",
+      registrationClosed: 'New accounts are by invitation only.',
     },
     vehicle: {
       vinTaken: 'Another car on your account already has this VIN.',
@@ -1204,6 +1206,8 @@ const he: typeof en = {
       googleEmailNotVerified: 'כתובת האימייל בחשבון Google לא אומתה, ולכן אי אפשר להשתמש בה כאן.',
       googleAccountMismatch: 'האימייל הזה כבר מקושר לחשבון Google אחר.',
       googleUsePassword: 'כבר קיים חשבון עם האימייל הזה. אפשר להתחבר עם האימייל והסיסמה.',
+      notInvited: 'לחשבון Google הזה אין גישה ל־OnlyCars. אפשר לבקש מבעל האתר להוסיף אותו.',
+      registrationClosed: 'אפשר לפתוח חשבון חדש רק בהזמנה.',
     },
     vehicle: {
       vinTaken: 'בחשבון שלך כבר יש רכב עם מספר השלדה הזה.',

@@ -5,6 +5,7 @@ using Microsoft.IdentityModel.Tokens;
 using OnlyCars.Api.Common;
 using OnlyCars.Api.Middleware;
 using OnlyCars.Application;
+using OnlyCars.Application.Auth;
 using OnlyCars.Application.Common;
 using OnlyCars.Infrastructure;
 using OnlyCars.Infrastructure.Auth;
@@ -12,7 +13,13 @@ using OnlyCars.Infrastructure.Storage;
 
 // The owner's storage cleanup (LOW-10). Its options are not configuration, so they don't reach the builder.
 var sweepOrphans = args is ["sweep-orphans", ..];
-var builder = WebApplication.CreateBuilder(sweepOrphans ? [] : args);
+// The owner's invite (2026-10-30): add-user <email> [<email> ...] adds people who then sign in with Google.
+var addUser = args is ["add-user", ..];
+var builder = WebApplication.CreateBuilder(sweepOrphans || addUser ? [] : args);
+if (sweepOrphans || addUser)
+{
+    builder.Logging.AddFilter("Microsoft.EntityFrameworkCore", LogLevel.Warning); // the owner reads the command's own lines, not its SQL
+}
 
 const string ClientCorsPolicy = "ClientCors";
 
@@ -26,6 +33,7 @@ builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
 builder.Services.AddApplication();
+builder.Services.Configure<AuthOptions>(builder.Configuration.GetSection(AuthOptions.SectionName));
 builder.Services.AddInfrastructure(builder.Configuration);
 
 builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
@@ -80,6 +88,15 @@ if (sweepOrphans)
     Console.WriteLine($"Bucket '{builder.Configuration["R2:BucketName"]}', database '{sql.InitialCatalog}' on '{sql.DataSource}'.");
     Environment.ExitCode = await OrphanSweep.RunAsync(scope.ServiceProvider.GetService<IFileStorage>(),
         scope.ServiceProvider.GetRequiredService<IAppDbContext>(), args[1..], Console.Out);
+    return;
+}
+
+if (addUser)
+{
+    using var scope = app.Services.CreateScope();
+    var sql = new Microsoft.Data.SqlClient.SqlConnectionStringBuilder(builder.Configuration.GetConnectionString("Default"));
+    Console.WriteLine($"Database '{sql.InitialCatalog}' on '{sql.DataSource}'.");
+    Environment.ExitCode = await AddUser.RunAsync(scope.ServiceProvider.GetRequiredService<AuthService>(), args[1..], Console.Out);
     return;
 }
 

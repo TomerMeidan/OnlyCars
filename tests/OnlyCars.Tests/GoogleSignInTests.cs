@@ -246,3 +246,86 @@ public class GoogleTokenValidatorTests
         Assert.Null(await Validator().ValidateAsync("not.a.token", default));
     }
 }
+
+/// <summary>Invite-only (owner, 2026-10-30): with registration closed, only people the owner added can get in.</summary>
+public class InviteOnlyTests
+{
+    private readonly AppDbContext db = TestDbContextFactory.Create();
+
+    private AuthService Auth(bool open = false) =>
+        new(db, new PasswordHasher<User>(), new FakeJwtTokenService(), new MemoryCache(new MemoryCacheOptions()),
+            Options.Create(new RateLimitOptions()), new FakeGoogle(), Options.Create(new AuthOptions { OpenRegistration = open }));
+
+    [Fact]
+    public async Task Closed_RegisterIsRefused()
+    {
+        var error = await Assert.ThrowsAsync<ValidationFailedException>(() =>
+            Auth().RegisterAsync(new RegisterRequest("me@example.com", "right-password-1")));
+
+        Assert.Equal("auth.registrationClosed", error.Code);
+        Assert.False(await db.Users.AnyAsync());
+    }
+
+    [Fact]
+    public async Task Closed_AnUninvitedGoogleAccount_GetsNoAccount()
+    {
+        var error = await Assert.ThrowsAsync<ValidationFailedException>(() =>
+            Auth().GoogleAsync(new GoogleLoginRequest(FakeGoogle.Token("g1", "stranger@gmail.com"))));
+
+        Assert.Equal("auth.notInvited", error.Code);
+        Assert.False(await db.Users.AnyAsync());
+    }
+
+    [Fact]
+    public async Task Invited_SignsInWithGoogle_AndIsLinkedFromThen()
+    {
+        Assert.True(await Auth().InviteAsync(" Friend@Gmail.com "));
+
+        var first = await Auth().GoogleAsync(new GoogleLoginRequest(FakeGoogle.Token("g1", "friend@gmail.com")));
+        var again = await Auth().GoogleAsync(new GoogleLoginRequest(FakeGoogle.Token("g1", "friend@gmail.com")));
+
+        Assert.Equal(("friend@gmail.com", false), (first.User.Email, first.User.HasPassword));
+        Assert.Equal(first.User.Id, again.User.Id);
+        Assert.Equal("g1", (await db.Users.SingleAsync()).GoogleSubject);
+        // Another Google account with the same email (a re-created one) can't take it over.
+        Assert.Equal("auth.googleAccountMismatch", (await Assert.ThrowsAsync<ConflictException>(() =>
+            Auth().GoogleAsync(new GoogleLoginRequest(FakeGoogle.Token("g2", "friend@gmail.com"))))).Code);
+    }
+
+    [Fact]
+    public async Task Invited_ButGoogleHasntVerifiedTheEmail_IsRefused()
+    {
+        await Auth().InviteAsync("friend@gmail.com");
+
+        Assert.Equal("auth.googleEmailNotVerified", (await Assert.ThrowsAsync<ValidationFailedException>(() =>
+            Auth().GoogleAsync(new GoogleLoginRequest(FakeGoogle.Token("g1", "friend@gmail.com", verified: false))))).Code);
+        Assert.Null((await db.Users.SingleAsync()).GoogleSubject);
+    }
+
+    [Fact]
+    public async Task Invite_AnExistingEmail_ChangesNothing_AndABadEmailIsRefused()
+    {
+        await Auth(open: true).RegisterAsync(new RegisterRequest("me@example.com", "right-password-1"));
+
+        Assert.False(await Auth().InviteAsync("ME@example.com"));
+        Assert.NotEqual(string.Empty, (await db.Users.SingleAsync()).PasswordHash);
+        await Assert.ThrowsAsync<ValidationFailedException>(() => Auth().InviteAsync("not an email"));
+    }
+
+    [Fact]
+    public async Task AddUserCommand_ReportsEachEmail_AndFailsOnABadOne()
+    {
+        var output = new StringWriter();
+
+        var exitCode = await OnlyCars.Api.Common.AddUser.RunAsync(Auth(), ["a@gmail.com", "bad", "a@gmail.com"], output);
+
+        Assert.Equal(1, exitCode);
+        var lines = output.ToString().Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries);
+        Assert.Collection(lines,
+            l => Assert.StartsWith("Added a@gmail.com:", l),
+            l => Assert.Equal("Not a valid email, skipped: bad", l),
+            l => Assert.StartsWith("a@gmail.com already has an account", l));
+        Assert.Equal(0, await OnlyCars.Api.Common.AddUser.RunAsync(Auth(), ["b@gmail.com"], TextWriter.Null));
+        Assert.Equal(1, await OnlyCars.Api.Common.AddUser.RunAsync(Auth(), [], TextWriter.Null));
+    }
+}
