@@ -1,0 +1,7 @@
+# Cloudflare Pages response headers (security audit 2026-10-30). No other site may frame the app (clickjacking).
+# shortcut: no full Content-Security-Policy yet (the inline theme script and Google's sign-in script need hashes and allowances); add one before sharing the app widely.
+/*
+  Content-Security-Policy: frame-ancestors 'none'
+  X-Frame-Options: DENY
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin

@@ -16,10 +16,12 @@ var builder = WebApplication.CreateBuilder(sweepOrphans ? [] : args);
 
 const string ClientCorsPolicy = "ClientCors";
 
+// No "Server: Kestrel" on responses: it only tells a scanner what to try (security audit 2026-10-30).
+builder.WebHost.ConfigureKestrel(o => o.AddServerHeader = false);
+
 builder.Services.AddControllers()
     .AddJsonOptions(ApiJson.Configure)
     .ConfigureApiBehaviorOptions(o => o.InvalidModelStateResponseFactory = GlobalExceptionHandler.InvalidModelStateResponse);
-builder.Services.AddOpenApi();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
@@ -89,11 +91,15 @@ app.UseRequestLimits(ClientCorsPolicy);
 
 if (app.Environment.IsDevelopment())
 {
-    app.MapOpenApi();
     app.UseSwagger();
     app.UseSwaggerUI();
 }
 
+// Browsers remember to use HTTPS only (security audit 2026-10-30); not in Development, where it would stick to localhost.
+if (!app.Environment.IsDevelopment())
+{
+    app.UseHsts();
+}
 app.UseHttpsRedirection();
 
 app.UseAuthorization(); // authentication runs inside UseRequestLimits, before the limiter

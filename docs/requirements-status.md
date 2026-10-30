@@ -1,7 +1,7 @@
 # OnlyCars: Requirements Status
 
 **Audit date:** 2026-10-25 (forty-second audit, short sign-off of LOW-11; LOW-11 is uncommitted in the working tree)
-**Overall:** MVP steps 1 to 4 are complete. Step 5 is done except reminder emails (NOT-2), which wait for the owner's email provider. Spec 2 and spec 12 are complete. LOW-11 (smoke clean-up and flakiness, dark-background icons, the cleanup script's database allow-list, tidy-ups) is signed off; no requirement status changes. **The pipeline is parked:** NOT-2, UX-1 and the fuel log all wait for the owner, and the Lows left that need no owner input (L186, L198, L213) are too few for a batch.
+**Overall:** MVP steps 1 to 4 are complete. Step 5 is done except reminder emails (NOT-2), which wait for the owner's email provider. Spec 2 and spec 12 are complete. LOW-11 (smoke clean-up and flakiness, dark-background icons, the cleanup script's database allow-list, tidy-ups) is signed off; no requirement status changes. Since 2026-10-30 (owner's session, no PM audit yet): UX-1, the language only in Settings, Sign in with Google (GOOG-1) and LOW-12 are built, not signed off. NOT-2 and the fuel log still wait for the owner.
 
 | Status | Count |
 |---|---|
@@ -192,6 +192,7 @@ How this was checked (forty-second audit, short sign-off of LOW-11 per decisions
 | 16 | LOW-11: Lows L187, L188, L190, L202, L203, L209 to L211 (smoke, icons, cleanup script, tidy-ups) | small BE, then FE | **Signed off** 2026-10-25 |
 | 17 | UX-1: "N of M checked" on the checklist run page, a sharper login line (en/he) | FE | **Built 2026-10-30, not signed off** (no PM, Hebrew or browser QA pass yet) |
 | 18 | GOOG-1: Sign in with Google (owner request, not in the spec) | BE, then FE | **Built 2026-10-30, not signed off.** Hidden until the owner sets `Google:ClientId`; the real Google flow not tried yet. Apple waits for the owner's developer account. |
+| 19 | LOW-12: L213, L214 and the audit's easy Lows (HSTS, no Server header, one Swagger, frame and referrer headers on the web app) | small BE, then FE | **Built 2026-10-30, not signed off** |
 | - | NOT-2: email when due | BE, then FE | **Blocked:** needs the owner's email provider, sender address and credentials. Goes next as soon as the owner answers. |
 
 ## Signed-off tickets
@@ -431,7 +432,7 @@ How this was checked (forty-second audit, short sign-off of LOW-11 per decisions
 
 ## Low issues backlog
 
-Every Low finding from QA and review lands here (decisions.md, "Faster pipeline (owner)"). They are fixed together in a batch ticket LOW-n about every 3 tickets. LOW-1 closed L1 to L12, LOW-2 L13 to L26, LOW-3 L27 to L65, LOW-4 L66 to L86, LOW-5 L87 to L106 (L98 closed as not reproduced), LOW-6 L114 to L140 (L120 closed by L119, L128 closed as accepted; L124 was closed by FILE-2's cleanup script), LOW-7 L107 to L113; ACC-1's caps closed L154; ACC-2 closed L135 and L168; LOW-8 closed L141 to L181 except L144 and L148 (L141, L149, L152, L163, L164, L166 and L172 as accepted, decisions.md "LOW-8 sign-off"; L146 and L153 by the redesign); LOW-9 closed L182 to L185 and L189, L191 to L196 (L192 by the new second-tab smoke step); LOW-10 closed L199 to L201 and L205 to L208; LOW-11 closed L187, L188, L190, L202, L203 and L209 to L211; those rows are in git history. Open (L144, L148, L72, L105, L134, L197 and L204 are the owner's; L212 can only show in the owner's run against R2; L186, L198 and L213 join the LOW-n after the next owner-chosen ticket):
+Every Low finding from QA and review lands here (decisions.md, "Faster pipeline (owner)"). They are fixed together in a batch ticket LOW-n about every 3 tickets. LOW-1 closed L1 to L12, LOW-2 L13 to L26, LOW-3 L27 to L65, LOW-4 L66 to L86, LOW-5 L87 to L106 (L98 closed as not reproduced), LOW-6 L114 to L140 (L120 closed by L119, L128 closed as accepted; L124 was closed by FILE-2's cleanup script), LOW-7 L107 to L113; ACC-1's caps closed L154; ACC-2 closed L135 and L168; LOW-8 closed L141 to L181 except L144 and L148 (L141, L149, L152, L163, L164, L166 and L172 as accepted, decisions.md "LOW-8 sign-off"; L146 and L153 by the redesign); LOW-9 closed L182 to L185 and L189, L191 to L196 (L192 by the new second-tab smoke step); LOW-10 closed L199 to L201 and L205 to L208; LOW-11 closed L187, L188, L190, L202, L203 and L209 to L211; LOW-12 closed L213 and L214; those rows are in git history. Open (L144, L148, L72, L105, L134, L197 and L204 are the owner's; L212 can only show in the owner's run against R2; L186 and L198 need a fake clock or other browsers):
 
 | # | From | Issue | Area |
 |---|---|---|---|
@@ -444,8 +445,6 @@ Every Low finding from QA and review lands here (decisions.md, "Faster pipeline 
 | L197 | NAV-1 QA | Not tried on a real iPhone: the bar above the home indicator (safe area), the installed app (standalone), and a field focused with the real on-screen keyboard. Needs a real device; added to the owner's iPhone check. | Owner or a device |
 | L198 | NAV-1 QA | Not tried in Firefox or Safari, nor with a real Android Back button (QA used the browser's Back). | FE, browsers |
 | L204 | LOW-9 housekeeping | 22 test users on the six domains removed from the cleanup script in L182 remain in the dev DB; the script no longer matches them. The owner may delete them by hand (CHECKLIST.md, "Waiting on the owner"). | Dev DB (owner) |
-| L213 | LOW-11 QA | `client/ui-tests/smoke.mjs` takes "today" from `toISOString().slice(0,10)` (UTC, 14 places) while the app uses the local date. Between local and UTC midnight `task-status-order`, `reset-task` and `delete-account` fail (143 of 146). Until fixed, runs in that window need `UI_TZ=UTC`. Test bug, not an app bug. | Smoke |
-| L214 | 2026-10-30 smoke | `time-zone-Pago_Pago` (mobile-dark-he) failed once with "the deleted document is still listed": it counts the rows right after the Gone status shows, without waiting for the list to drop the row. Passed in the runs before and after. Test race, not an app bug: wait for the row to detach. | Smoke |
 | L212 | LOW-10 security | `R2FileStorage.ListUserPrefixesAsync` paging over `CommonPrefixes` (more than 1,000 prefixes) is tested only with a mocked S3 client, and no agent may run it against R2. It matters only once the bucket has more than 1,000 user prefixes. | Storage (owner) |
 
 ## Next ticket

@@ -638,7 +638,7 @@ for (const s of setups) {
   await step('task-status-order', async () => {
     const token = await page.evaluate(() => localStorage.getItem('token'))
     const url = `${BASE}/api/vehicles/${new URL(page.url()).pathname.split('/').pop()}/tasks`
-    const today = await page.evaluate(() => new Date().toISOString().slice(0, 10))
+    const today = await localDate() // the browser's date, as the app's (L213)
     const add = async (name, intervalKm, lastDoneOdometerKm, intervalDays = null) => {
       const r = await page.request.post(url, { headers: { Authorization: `Bearer ${token}` }, data: { name, category: 'Other', intervalKm, intervalDays, lastDoneOdometerKm, lastDoneDate: today } })
       if (r.status() !== 201) throw new Error(`POST ${name}: ${r.status()}`)
@@ -5790,7 +5790,8 @@ for (const s of setups) {
       await p2.locator(`.documents > li[data-id="${doc.id}"]`).waitFor({ state: 'detached' })
       await p.locator(`.documents > li[data-id="${doc.id}"] form button:not(.link)`).click()
       await p.locator('section[aria-labelledby=documents] > p[role=status]', { hasText: key('documentGone') }).waitFor()
-      if (await p.locator(`.documents > li[data-id="${doc.id}"]`).count()) throw new Error('the deleted document is still listed')
+      // The list drops the row after the status shows: wait for it rather than count at once (L214).
+      await p.locator(`.documents > li[data-id="${doc.id}"]`).waitFor({ state: 'detached', timeout: 3000 }).catch(() => { throw new Error('the deleted document is still listed') })
       await p.waitForFunction(() => document.activeElement?.matches('section[aria-labelledby=documents] button.add'), null, { timeout: 3000 })
     } finally {
       await tz.close()
