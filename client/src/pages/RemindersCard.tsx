@@ -12,7 +12,8 @@ const snoozeDays = [1, 7, 30]
 const keyOf = (x: Pick<Reminder, 'kind' | 'refId'>) => `${x.kind}-${x.refId}`
 const nameOf = (x: Reminder, t: TFunction) => x.name ?? t(`docType.${x.documentType}`)
 
-// The dashboard's Reminders (NOT-1): due tasks and checklists and expiring documents, most urgent first (the server's order), each with Snooze.
+// The dashboard's Needs attention (NOT-1, owner 2026-10-30): due tasks and checklists and expiring documents, most urgent first (the server's
+// order), each with Snooze; then the open to-dos, which are finished on the car page rather than snoozed.
 // It loads on its own, again whenever `version` (the dashboard's data) changes, so a Mark done or a reading there shows here too.
 export function RemindersCard({ version }: { version: unknown }) {
   const { t, i18n } = useTranslation()
@@ -80,11 +81,22 @@ export function RemindersCard({ version }: { version: unknown }) {
       )}
       {!data ? (
         error == null && <p className="muted" role="status">{t('loading')}</p>
-      ) : data.items.length === 0 ? (
+      ) : data.items.length + data.openToDos.length === 0 ? (
         <p className="muted">{t('noReminders')}</p>
       ) : (
         <ul className="tasks">
           {data.items.map((x) => <ReminderRow key={keyOf(x)} item={x} onSnooze={(days) => snooze(x, days)} />)}
+          {data.openToDos.map((x) => (
+            <li key={x.id} data-key={`ToDo-${x.id}`}>
+              <div className="task-head">
+                <span className="name" dir="auto">{x.title}</span>
+                <span className="badge">{t('toDo')}</span>
+              </div>
+              <div className="actions">
+                <Link className="car" to={`/cars/${encodeURIComponent(x.vehicleId)}`} dir="auto"><span>{x.vehicleNickname}</span></Link>
+              </div>
+            </li>
+          ))}
         </ul>
       )}
       {data && data.snoozedCount > 0 && <p className="muted">{t('snoozedCount', { count: data.snoozedCount })}</p>}

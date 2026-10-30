@@ -66,8 +66,13 @@ public class ReminderService(IAppDbContext db)
             .ThenBy(r => r.Name ?? r.DocumentType.ToString(), StringComparer.InvariantCulture)
             .ToList();
 
+        var toDos = (await db.Issues.Where(i => i.Vehicle!.UserId == userId && !i.Vehicle.IsArchived && i.Status == IssueStatus.Open)
+                .OrderByDescending(i => i.CreatedAt).ThenBy(i => i.Id).Select(i => new { i.Id, i.VehicleId, i.Title }).ToListAsync(ct))
+            .Where(i => cars.ContainsKey(i.VehicleId))
+            .Select(i => new OpenToDoDto(i.Id, i.VehicleId, cars[i.VehicleId].Nickname, i.Title)).ToList();
+
         // Counts hidden reminders only, so a snooze of a done, deleted or archived item isn't counted.
-        return new(leadDays, due.Count - items.Count, items);
+        return new(leadDays, due.Count - items.Count, items, toDos);
     }
 
     /// <summary>Hides the item until today + days; snoozing again moves the date. The item must be the user's, on an active car.</summary>

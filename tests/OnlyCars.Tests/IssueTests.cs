@@ -44,7 +44,8 @@ public class IssueTests
         (await vehicles.CreateAsync(owner ?? userId, new CreateVehicleRequest(nickname, null, null, null, null, null, null, null, null, null, 50_000))).Id;
 
     // A run of "Monthly quick check" on the car: Lights Not OK (flagged), Tire pressure 1.8 bar (flagged), Notes empty (not flagged).
-    private async Task<(ChecklistRunDto Run, ChecklistTemplateDto Template, Guid ChecklistId)> RunAsync(Guid car, Guid? owner = null)
+    // Saving it makes a to-do per flagged item; keepAuto: false removes them, for the tests of to-dos made by hand.
+    private async Task<(ChecklistRunDto Run, ChecklistTemplateDto Template, Guid ChecklistId)> RunAsync(Guid car, Guid? owner = null, bool keepAuto = false)
     {
         var o = owner ?? userId;
         var t = await templates.CreateAsync(o, new ChecklistTemplateRequest("Monthly quick check", [
@@ -58,6 +59,12 @@ public class IssueTests
             new ChecklistRunItemRequest(t.Items[1].Id, null, 1.8m, null),
             new ChecklistRunItemRequest(t.Items[2].Id, null, null, null)
         ]));
+        if (!keepAuto)
+        {
+            db.Issues.RemoveRange(db.Issues.Where(i => i.SourceRunItem!.RunId == r.Run.Id));
+            await db.SaveChangesAsync();
+            return (r.Run with { Items = r.Run.Items.Select(i => i with { IssueId = null }).ToList() }, t, c.Id);
+        }
         return (r.Run, t, c.Id);
     }
 
@@ -238,19 +245,68 @@ public class IssueTests
         await Assert.ThrowsAsync<DbUpdateException>(() => t.AddAsync(car, source: run.Items[0].Id));
     }
 
-    // --- Criterion 3: deleting a run keeps its to-dos ---
+    // --- Saving a run makes a to-do per flagged item (owner, 2026-10-30) ---
 
     [Fact]
-    public async Task DeleteRun_KeepsItsToDos_WithoutSource()
+    public async Task SaveRun_MakesAnOpenToDoPerFlaggedItem_LinkedToIt()
     {
         var car = await CarAsync();
-        var (run, _, _) = await RunAsync(car);
-        var i = await AddAsync(car, "Lights", "Not OK", run.Items[0].Id);
+
+        var (run, _, _) = await RunAsync(car, keepAuto: true);
+
+        var made = await issues.ListAsync(userId, car);
+        Assert.Equal(["Monthly quick check: Lights", "Monthly quick check: Tire pressure"], made.Select(i => i.Title).Order());
+        Assert.All(made, i => Assert.Equal(IssueStatus.Open, i.Status));
+        // Lights and Tire pressure, in title order as in item order.
+        Assert.Equal([run.Items[0].Id, run.Items[1].Id], made.OrderBy(i => i.Title).Select(i => i.Source!.RunItemId));
+        Assert.Equal(made.OrderBy(i => i.Title).Select(i => (Guid?)i.Id), run.Items.Take(2).Select(i => i.IssueId));
+        Assert.Null(run.Items[2].IssueId);
+    }
+
+    [Fact]
+    public async Task SaveRun_AtTheToDoLimit_StillSaves_AndMakesOnlyWhatFits()
+    {
+        var car = await CarAsync();
+        db.Issues.AddRange(Enumerable.Range(0, Issue.MaxPerVehicle - 1).Select(n => new Issue { VehicleId = car, Title = $"#{n}" }));
+        await db.SaveChangesAsync();
+
+        var (run, _, _) = await RunAsync(car, keepAuto: true);
+
+        Assert.Equal(Issue.MaxPerVehicle, await db.Issues.CountAsync());
+        Assert.Equal(1, run.Items.Count(i => i.IssueId is not null));
+    }
+
+    [Fact]
+    public async Task SaveRun_ALongTitle_IsCutToTheLimit()
+    {
+        var car = await CarAsync();
+        var t = await templates.CreateAsync(userId, new ChecklistTemplateRequest(new string('c', 80), [new(null, new string('l', 80), "Check", null, null, null)]));
+        var c = await checklists.AttachAsync(userId, car, new AttachChecklistRequest(t.Id, null, null, Today));
+
+        await checklists.CreateRunAsync(userId, c.Id, new CreateChecklistRunRequest(Today, null, null, [new ChecklistRunItemRequest(t.Items[0].Id, false, null, null)]));
+
+        var title = (await db.Issues.SingleAsync()).Title;
+        Assert.Equal(Issue.MaxTitleLength, title.Length);
+        Assert.EndsWith("…", title);
+    }
+
+    // --- Deleting a run removes its open to-dos and keeps the done ones ---
+
+    [Fact]
+    public async Task DeleteRun_RemovesItsOpenToDos_AndKeepsDoneOnes_WithoutSource()
+    {
+        var car = await CarAsync();
+        var (run, _, _) = await RunAsync(car, keepAuto: true);
+        var made = (await issues.ListAsync(userId, car)).OrderBy(i => i.Title).ToList();
+        var done = await SetAsync(made[0], IssueStatus.Done, Today);
+        var mine = await AddAsync(car, "By hand");
 
         await checklists.DeleteRunAsync(userId, run.Id);
 
-        var kept = Assert.Single(await issues.ListAsync(userId, car));
-        Assert.Equal(i with { Source = null }, kept);
+        var left = await issues.ListAsync(userId, car);
+        Assert.Equal(["By hand", made[0].Title], left.Select(i => i.Title).Order());
+        Assert.Null(left.Single(i => i.Id == done.Id).Source);
+        Assert.Contains(left, i => i.Id == mine.Id);
     }
 
     [Fact]
@@ -365,7 +421,8 @@ public class IssueTests
         {
             var added = eventData.Context!.ChangeTracker.Entries<Issue>()
                 .FirstOrDefault(e => e.State == EntityState.Added && e.Entity.SourceRunItemId is not null);
-            if (fired || added is null)
+            // Only a to-do made by hand: a run's save adds its own to-dos too.
+            if (fired || added is null || eventData.Context.ChangeTracker.Entries<ChecklistRun>().Any(e => e.State == EntityState.Added))
             {
                 return result;
             }

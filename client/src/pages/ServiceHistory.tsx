@@ -42,7 +42,8 @@ const toItem = (i: ServiceItem | null, isLabor = false): Item => ({
 })
 
 // The car page's service history, between the tasks and the odometer history. It loads on its own, like the tasks.
-export function ServiceHistory({ car, onChanged }: { car: Vehicle; onChanged: () => void }) {
+// logFor: a task's "Log with details" opens Record a service with that task ticked; n reopens it for the same task.
+export function ServiceHistory({ car, logFor, onChanged }: { car: Vehicle; logFor?: { taskId: string; n: number } | null; onChanged: () => void }) {
   const { t } = useTranslation()
   const [records, setRecords] = useState<ServiceRecord[] | null>(null)
   const [error, setError] = useState<unknown>(null)
@@ -76,6 +77,12 @@ export function ServiceHistory({ car, onChanged }: { car: Vehicle; onChanged: ()
     ;(target ?? section.querySelector<HTMLElement>('h2'))?.focus()
   }, [records])
 
+  useEffect(() => {
+    if (!logFor || readOnly) return
+    form.open('record')
+    sectionRef.current?.scrollIntoView({ block: 'start' })
+  }, [logFor]) // eslint-disable-line react-hooks/exhaustive-deps
+
   const changed = () => { setGone(false); onChanged() }
   // The tasks and odometer may have moved too (deleted elsewhere), so everything reloads, as after a Delete.
   const onGone = () => { focusNext.current = []; setGone(true); onChanged() }
@@ -85,7 +92,7 @@ export function ServiceHistory({ car, onChanged }: { car: Vehicle; onChanged: ()
       <div className="row">
         <h2 id="service-history" tabIndex={-1}>{t('serviceHistory')}</h2>
         <div className="actions">
-          <Link to={`/history?vehicleId=${encodeURIComponent(car.id)}`}>{t('searchAllHistory')}</Link>
+          <Link to={`/spending?vehicleId=${encodeURIComponent(car.id)}`}>{t('searchAllHistory')}</Link>
           {!readOnly && form.mode === 'view' && !editing && (
             <button className="add" ref={form.opener('record')} onClick={() => { setGone(false); form.open('record') }}>{t('recordService')}</button>
           )}
@@ -94,9 +101,11 @@ export function ServiceHistory({ car, onChanged }: { car: Vehicle; onChanged: ()
 
       {form.mode === 'record' && (
         <RecordForm
+          key={logFor?.n}
           car={car}
           url={path}
           row={form}
+          preselect={logFor?.taskId}
           onTaskGone={onChanged}
           onSaved={(record) => {
             focusNext.current = [`li[data-id="${record.id}"] button.edit-service`]
@@ -145,11 +154,12 @@ export function ServiceHistory({ car, onChanged }: { car: Vehicle; onChanged: ()
 }
 
 // Record a service (no record) or edit one, with the same fields.
-function RecordForm({ car, url, row, record, onSaved, onGone, onTaskGone }: {
+function RecordForm({ car, url, row, record, preselect, onSaved, onGone, onTaskGone }: {
   car: Vehicle
   url: string // the list's path to record, the record's to edit
   row: { busy: boolean; error: unknown; run: ReturnType<typeof useRow>['run']; open: (m: 'view') => void }
   record?: ServiceRecord
+  preselect?: string // a new record's task, ticked at the start
   onSaved: (record: ServiceRecord) => void
   onGone?: () => void
   onTaskGone?: () => void // a ticked task was deleted: the page's own task list reloads
@@ -221,7 +231,7 @@ function RecordForm({ car, url, row, record, onSaved, onGone, onTaskGone }: {
   )
   const errorAt = isOrderError(error) ? 'odometer' : itemKey ?? 'end'
   // A disabled task stays listed while the record is linked to it, so saving doesn't unlink it.
-  const linked = new Set(record?.tasks.map((x) => x.id))
+  const linked = new Set(record ? record.tasks.map((x) => x.id) : preselect ? [preselect] : [])
   const shown = tasks?.filter((task) => task.isEnabled || linked.has(task.id))
   const total = itemsTotal(items.map((i) => ({ quantity: Number(i.quantity) || 0, unitCost: Number(i.unitCost) || 0 })))
   const currency = user?.currency

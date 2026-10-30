@@ -5,6 +5,7 @@ import { api, ApiError, type MaintenanceTask, type ServiceRecordPage, type Vehic
 import { useAuth } from '../auth'
 import { errorMessage, money } from '../i18n'
 import { usePage } from '../usePage'
+import { SpendingTabs } from './SpendingTabs'
 import { ServiceRow } from './ServiceHistory'
 
 const FILTERS = ['vehicleId', 'taskId', 'from', 'to', 'q'] as const
@@ -157,6 +158,7 @@ export default function HistoryPage() {
 
   return (
     <>
+      <SpendingTabs />
       <h1 tabIndex={-1}>{t('serviceHistory')}</h1>
       <div className="card inline-form filters" role="search">
         <label>

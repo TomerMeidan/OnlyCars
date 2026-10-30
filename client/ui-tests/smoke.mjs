@@ -37,6 +37,8 @@ const setups = [
 ]
 // SMOKE_ALL=1 adds the other two combinations, so QA can check dark English and light Hebrew too.
 // UI_TZ (e.g. UTC, Pacific/Kiritimati) sets the browser timezone, so QA can run where the local date differs from the server's UTC date.
+// SMOKE_SETUP=<name> runs that one setup only, for quick checks while fixing; the full run stays the check before a push.
+if (process.env.SMOKE_SETUP) setups.splice(0, setups.length, ...setups.filter((x) => x.name === process.env.SMOKE_SETUP))
 if (process.env.SMOKE_ALL) setups.push(
   { name: 'desktop-dark-he', viewport: { width: 1280, height: 800 }, colorScheme: 'dark', lng: 'he' },
   { name: 'mobile-light-en', viewport: { width: 390, height: 844 }, colorScheme: 'light', lng: 'en', isMobile: true, hasTouch: true },
@@ -192,7 +194,7 @@ for (const s of setups) {
   const clearBtn = filterBar.getByRole('button', { name: HS.clear, exact: true })
   await step('history-empty', async () => {
     await page.setViewportSize({ width: 390, height: 844 })
-    await page.click('header a[href="/history"]')
+    await page.click('header a[href="/spending"]')
     await arrivedAt(HS.title)
     await histStatus.filter({ hasText: HS.empty }).waitFor()
     if (await histRows.count()) throw new Error('rows without records')
@@ -762,8 +764,8 @@ for (const s of setups) {
   })
   // MVP2-C: Mark done and Undo, at 390px wide in both setups. The odometer is at 59,000.
   const RS = he
-    ? { done: 'סימון כבוצע: ', cost: 'הוספת עלות או הערות: ', marked: 'סומן כבוצע.', service: 'טיפול', generic: 'משהו השתבש. אפשר לנסות שוב.', costMsg: 'יש להזין עלות בין 0 ל־1,000,000, עם עד 2 ספרות אחרי הנקודה.', oilLeft: 'עוד 10,000 ק״מ', oilLate: 'באיחור של 1,000 ק״מ', oilAt: 'ב־48,000 ק״מ' }
-    : { done: 'Mark done: ', cost: 'Add cost or notes: ', marked: 'Marked as done.', service: 'Service', generic: 'Something went wrong. Please try again.', costMsg: 'Enter a cost from 0 to 1,000,000 with up to 2 decimals.', oilLeft: '10,000 km left', oilLate: 'Overdue by 1,000 km', oilAt: 'at 48,000 km' }
+    ? { done: 'סימון כבוצע: ', cost: 'תיעוד עם פרטים: ', marked: 'סומן כבוצע.', service: 'טיפול', generic: 'משהו השתבש. אפשר לנסות שוב.', costMsg: 'יש להזין עלות בין 0 ל־1,000,000, עם עד 2 ספרות אחרי הנקודה.', oilLeft: 'עוד 10,000 ק״מ', oilLate: 'באיחור של 1,000 ק״מ', oilAt: 'ב־48,000 ק״מ' }
+    : { done: 'Mark done: ', cost: 'Log with details: ', marked: 'Marked as done.', service: 'Service', generic: 'Something went wrong. Please try again.', costMsg: 'Enter a cost from 0 to 1,000,000 with up to 2 decimals.', oilLeft: '10,000 km left', oilLate: 'Overdue by 1,000 km', oilAt: 'at 48,000 km' }
   const localDate = () => page.evaluate(() => new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10))
   const histDay = (offset) => page.evaluate((o) => new Date(Date.now() + o * 86_400_000 - new Date().getTimezoneOffset() * 60_000).toISOString().slice(0, 10), offset)
   const serviceRows = () => page.locator('.history li').filter({ hasText: RS.service })
@@ -836,58 +838,33 @@ for (const s of setups) {
     await serviceRows().first().waitFor({ state: 'detached' })
   })
   await step('reset-with-cost', async () => {
-    const opener = `button[aria-label="${RS.cost}Brakes"]`
-    const form = taskRow('Brakes').locator('form')
-    // Escape and Cancel close the form with focus back on its opener.
+    // SIMP-1: "Log with details" opens Record a service with that task ticked, and only that one; cost limits block on the client.
     await taskBtn(RS.cost, 'Brakes').click()
-    await focusIs('form input[name=cost]', 'cost form open')
-    await page.keyboard.press('Escape')
-    await form.waitFor({ state: 'detached' })
-    await focusIs(opener, 'after Escape')
-    await taskBtn(RS.cost, 'Brakes').click()
-    await form.locator('button.link').click()
-    await focusIs(opener, 'after Cancel')
-    await taskBtn(RS.cost, 'Brakes').click()
-    const label = plain(await form.locator('label').first().textContent())
-    if (!label.includes(registered.user.currency)) throw new Error(`cost label "${label}"`)
-    await noOverflow('the cost form open')
-    await sweep('car page with the cost form open')
-    // Blocked on the client with the message on the field.
+    await recordForm.locator('fieldset input:checked').waitFor() // the form loads its tasks first
+    const ticked = (await recordForm.locator('fieldset label', { has: page.locator('input:checked') }).allTextContents()).map(plain)
+    if (JSON.stringify(ticked) !== JSON.stringify(['Brakes'])) throw new Error(`ticked ${ticked}`)
+    if (!plain(await recordForm.locator('label', { has: page.locator('input[name=totalCost]') }).textContent()).includes(registered.user.currency)) throw new Error('cost label')
+    await noOverflow('the record form opened from a task')
     let posts = 0
-    const count = (r) => isReset(r) && posts++
+    const count = (r) => isRecordPost(r) && posts++
     page.on('request', count)
     for (const v of ['-1', '1000000.01', '1.234']) {
-      await form.locator('input[name=cost]').fill(v)
-      await form.locator('button:not(.link)').click()
-      const shown = await form.locator('input[name=cost]').evaluate((el) => el.validationMessage)
+      await recordForm.locator('input[name=totalCost]').fill(v)
+      await recordForm.locator('button:not(.link)').click()
+      const shown = await recordForm.locator('input[name=totalCost]').evaluate((el) => el.validationMessage)
       if (plain(shown) !== RS.costMsg) throw new Error(`cost ${v}: "${shown}"`)
     }
     await page.waitForTimeout(300)
     page.off('request', count)
-    if (posts) throw new Error(`${posts} reset POSTs for blocked costs`)
-    await form.locator('input[name=cost]').fill('120.50')
-    await form.locator('textarea[name=notes]').fill('  Castrol 5W-30 ')
-    // A failed reset keeps the form, shows the error, and puts focus back on the form's Mark done.
-    await page.route(at('/reset'), (r) => r.fulfill({ status: 500, contentType: 'application/json', body: '{}' }), { times: 1 })
-    await form.locator('button:not(.link)').click()
-    const failed = await form.locator('[role=alert]').textContent()
-    if (failed !== RS.generic) throw new Error(`cost form error "${failed}"`)
-    await focusIs('.tasks form button:not(.link)', 'after a failed reset from the form')
-    forget500()
-    const res = page.waitForResponse((r) => isReset(r.request()))
-    await form.locator('button:not(.link)').click()
+    if (posts) throw new Error(`${posts} record POSTs for blocked costs`)
+    await recordForm.locator('input[name=totalCost]').fill('120.50')
+    await recordForm.locator('textarea[name=notes]').fill('Castrol 5W-30')
+    const res = page.waitForResponse((r) => isRecordPost(r.request()))
+    await recordForm.locator('button:not(.link)').click()
     const r = await res
     const body = r.request().postDataJSON()
-    if (r.status() !== 201 || body.cost !== 120.5 || body.notes !== '  Castrol 5W-30 ' || body.date !== (await localDate())) throw new Error(`${r.status()} ${JSON.stringify(body)}`)
-    const saved = await r.json()
-    if (!saved.serviceRecordId || saved.task.lastDoneOdometerKm !== 59000 || saved.task.status !== 'Ok') throw new Error(`response ${JSON.stringify(saved)}`)
-    await badgeIs('Brakes', ST.Ok)
-    await focusIs('.tasks .undo button', 'after Mark done from the form')
-    // Criterion 12: any other action in the section removes the bar without undoing.
-    await taskBtn(TK.edit, '9k service').click()
-    await page.keyboard.press('Escape')
-    if (await tasks.locator('.undo').count()) throw new Error('bar still shown after Edit')
-    await page.waitForTimeout(300)
+    if (r.status() !== 201 || body.totalCost !== 120.5 || body.taskIds.length !== 1 || body.odometerKm !== 59000) throw new Error(`${r.status()} ${JSON.stringify(body)}`)
+    await recordForm.waitFor({ state: 'detached' })
     await badgeIs('Brakes', ST.Ok)
     if ((await serviceRows().count()) !== 1) throw new Error(`${await serviceRows().count()} Service readings`)
   })
@@ -2230,7 +2207,7 @@ for (const s of setups) {
     await page.click('header a.brand')
     await page.click('.cars > li h2 a')
     await taskBtn(RS.cost, 'Brakes').click()
-    const label = plain(await taskRow('Brakes').locator('form label').first().textContent())
+    const label = plain(await page.locator('section[aria-labelledby=service-history] form label', { has: page.locator('input[name=totalCost]') }).textContent())
     if (!label.includes(target)) throw new Error(`cost label "${label}"`)
     await page.keyboard.press('Escape')
     if (!(await page.evaluate(() => window.noReload))) throw new Error('the page reloaded')
@@ -2586,7 +2563,7 @@ for (const s of setups) {
     const slow = async (r) => { await page.waitForTimeout(700); await r.continue().catch(() => {}) } // the request may be gone by then
     const listGet = (url) => isHistoryGet(url.href)
     await page.route(listGet, slow)
-    await page.click('header a[href="/history"]')
+    await page.click('header a[href="/spending"]')
     await histStatus.filter({ hasText: he ? 'טוען' : 'Loading' }).waitFor()
     await page.unroute(listGet, slow)
     await arrivedAt(HS.title)
@@ -2887,7 +2864,7 @@ for (const s of setups) {
     await tall(dashCar().locator('.quick input[type=number]'), 'quick entry')
     // Criterion 4: the month links to /history for this month, which shows the same count and total.
     const month = summary.locator('a')
-    if ((await month.getAttribute('href')) !== `/history?from=${dash.month}-01&to=${today}`) throw new Error(`month link ${await month.getAttribute('href')}`)
+    if ((await month.getAttribute('href')) !== `/spending?from=${dash.month}-01&to=${today}`) throw new Error(`month link ${await month.getAttribute('href')}`)
     await month.click()
     await arrivedAt(HS.title)
     if (dash.monthServiceCount) await summaryIs(dash.monthServiceCount, dash.monthTotalCost)
@@ -3280,7 +3257,8 @@ for (const s of setups) {
   await step('checklists-empty', async () => {
     // Criterion 8: a failed load shows a translated error with Retry; Retry focuses the h1. Every load fails until unrouted (StrictMode loads twice).
     await page.route('**/api/checklist-templates', (r) => r.fulfill({ status: 500, contentType: 'application/json', body: '{}' }))
-    await page.click('header nav a[href="/checklists"]')
+    await page.goto(`${BASE}/settings`)
+    await page.click('main a[href="/settings/checklists"]') // a click, so the page focuses its h1
     await arrivedAt(CL.title)
     const alert = page.locator('main [role=alert]')
     await alert.waitFor()
@@ -3576,7 +3554,7 @@ for (const s of setups) {
     await ckSec.getByRole('button', { name: CK.add, exact: true }).click()
     const empty = ckSec.locator('.inline-form p')
     await empty.waitFor()
-    if (plain(await empty.textContent()) !== CK.noTemplates || !(await empty.locator('a[href="/checklists"]').count())) throw new Error(`no templates "${await empty.textContent()}"`)
+    if (plain(await empty.textContent()) !== CK.noTemplates || !(await empty.locator('a[href="/settings/checklists"]').count())) throw new Error(`no templates "${await empty.textContent()}"`)
     await page.keyboard.press('Escape')
     await focusIs('section[aria-labelledby=checklists] button.add', 'Add a checklist after Escape')
     monthlyTpl = await apiCall('POST', '/checklist-templates', { name: 'Monthly quick check', items: [
@@ -3795,6 +3773,12 @@ for (const s of setups) {
     await page.setViewportSize(s.viewport)
   }
   await step('issue-from-flag', async () => {
+    // SIMP-1: saving the run made a to-do per flagged item (Lights and Tire pressure by rule, Notes by hand). They go, so the hand-made path below is tested as before.
+    const auto = (await apiCall('GET', `/vehicles/${dashCarId}/issues`)).filter((i) => i.source)
+    const titles = auto.filter((i) => i.source.checklistName === 'Monthly quick check').map((i) => i.title).sort()
+    if (JSON.stringify(titles) !== JSON.stringify(['Monthly quick check: Lights', 'Monthly quick check: Notes', 'Monthly quick check: Tire pressure'])) throw new Error(`auto to-dos ${JSON.stringify(titles)}`)
+    for (const i of auto) await apiCall('DELETE', `/issues/${i.id}`)
+    await page.reload()
     // Criterion 5: the empty state first; then Create to-do on Tire pressure, prefilled, with the title changed.
     await isSec.getByText(IS.empty, { exact: true }).waitFor()
     const monthly = ckRow('Monthly quick check')
@@ -3993,9 +3977,10 @@ for (const s of setups) {
     if (await runNote.count()) throw new Error('the run history note outlived the run delete')
     await page.waitForFunction((b) => document.querySelector('.odometer').getAttribute('aria-label').replace(/\D/g, '') !== b, before, { timeout: 5000 })
     await page.waitForFunction(([id, w]) => document.querySelector(`li[data-id="${id}"] details.run-history > summary`).textContent.replace(/[⁦-⁩]/g, '') === w, [monthlyId, CK.history(0)], { timeout: 5000 })
-    // MVP5-C criterion 5: the run's to-dos stay, without their From line.
-    await page.waitForFunction((sel) => !document.querySelector(`${sel} .open-issues p.muted`), isSel, { timeout: 5000 })
-    if ((await isSec.locator('.open-issues > li').count()) !== 2) throw new Error('the to-dos went with the run')
+    // SIMP-1: the run's open to-dos go with it (they were made from its flagged items).
+    await isSec.locator('.open-issues > li').first().waitFor({ state: 'detached', timeout: 5000 }).catch(() => { throw new Error("the run's open to-dos stayed") })
+    // Two to-dos by hand, for the dashboard's open to-do count below.
+    for (const title of ['Wash the car', 'Check the wipers']) await apiCall('POST', `/vehicles/${dashCarId}/issues`, { title })
   })
   // FILE-3: photos on a saved run, on Monthly quick check (no runs after checklist-run-history). Two images go to the real API and R2
   // (with FILE-1's and FILE-2's 6 uploads, 8 of this user's 10 per 10 minutes); the run is deleted at the end, with its photos, and
@@ -4381,7 +4366,8 @@ for (const s of setups) {
   })
   await step('checklist-template-in-use', async () => {
     // Deleting a template that is on a car: the translated inUse message on its row, which stays.
-    await page.click('header nav a[href="/checklists"]')
+    await page.goto(`${BASE}/settings`)
+    await page.click('main a[href="/settings/checklists"]') // a click, so the page focuses its h1
     await arrivedAt(CL.title)
     const row = clRow('Monthly quick check')
     await row.getByRole('button', { name: `${CL.del}Monthly quick check`, exact: true }).click()
@@ -4919,7 +4905,8 @@ for (const s of setups) {
     await page.click('form button:not(.link)')
     await page.locator('a[href="/cars/new"]').waitFor()
     await more(page)
-    await page.click('header a[href="/reports"]')
+    await page.click('header a[href="/spending"]')
+    await page.click('.subnav a[href="/spending/reports"]')
     await arrivedAt(RP.title)
     await page.getByText(RP.empty, { exact: true }).waitFor()
     await page.locator('main .report a[href="/"]', { hasText: RP.goCars }).waitFor()
@@ -5071,7 +5058,7 @@ for (const s of setups) {
     await page.route(costs, slow)
     await page.selectOption(rpCarSel, rpA)
     await page.locator('main .report[aria-busy=true]').waitFor()
-    const hrefs = () => page.locator('main .report a[href^="/history"]').evaluateAll((as) => as.filter((a) => !a.closest('.by-car')).map((a) => a.getAttribute('href'))) // By car links name their own car
+    const hrefs = () => page.locator('main .report a[href^="/spending"]').evaluateAll((as) => as.filter((a) => !a.closest('.by-car')).map((a) => a.getAttribute('href'))) // By car links name their own car
     const old = await hrefs()
     if (!old.length || old.some((h) => h.includes('vehicleId=')) || !(await page.locator('main .by-car').count())) throw new Error(`links while loading ${old}`)
     await page.unroute(costs, slow)
@@ -6305,7 +6292,7 @@ for (const s of setups) {
         const r = el.getBoundingClientRect()
         return { text: el.textContent, top: r.top, left: r.left, h: r.height, cut: el.scrollWidth > el.clientWidth || el.scrollHeight > el.clientHeight }
       }))
-      const want = he ? ['לוח בקרה', 'היסטוריה', 'רשימות בדיקה', 'צמיגים', 'עוד'] : ['Dashboard', 'History', 'Checklists', 'Tires', 'More']
+      const want = he ? ['לוח בקרה', 'הוצאות', 'צמיגים', 'עוד'] : ['Dashboard', 'Spending', 'Tires', 'More']
       if (JSON.stringify(boxes.map((b) => b.text)) !== JSON.stringify(want)) throw new Error(`tabs ${JSON.stringify(boxes.map((b) => b.text))}`)
       const bad = boxes.filter((b) => b.h < 44 || b.cut || b.top !== boxes[0].top)
       if (bad.length) throw new Error(`tabs under 44px, cut off or not in one row: ${JSON.stringify(bad)}`)
@@ -6320,11 +6307,11 @@ for (const s of setups) {
       if ((await moreBtn.getAttribute('aria-expanded')) !== 'true') throw new Error('More not expanded')
       await page.screenshot({ path: `${OUT}/${s.name}-phone-nav-more.png` })
       const order = []
-      for (let i = 0; i < 3; i++) {
+      for (let i = 0; i < 2; i++) {
         await page.keyboard.press('Tab')
         order.push(await page.evaluate(() => document.activeElement.closest('#more-menu') && (document.activeElement.getAttribute('href') ?? document.activeElement.textContent)))
       }
-      const wantOrder = ['/reports', '/settings', he ? 'התנתקות' : 'Log out']
+      const wantOrder = ['/settings', he ? 'התנתקות' : 'Log out']
       if (JSON.stringify(order) !== JSON.stringify(wantOrder)) throw new Error(`menu order ${JSON.stringify(order)}`)
       await page.keyboard.press('Escape')
       await menu.waitFor({ state: 'detached' })
@@ -6341,8 +6328,8 @@ for (const s of setups) {
         if (a[0] !== 'false' || a[1] !== null) throw new Error(`More after ${what}: aria-expanded ${a[0]}, aria-controls ${a[1]}`)
       }
       await moreBtn.click()
-      await page.click('.tabs > a[href="/history"]')
-      await page.waitForURL('**/history')
+      await page.click('.tabs > a[href="/spending"]')
+      await page.waitForURL('**/spending')
       await closed('a tab')
       await moreBtn.click()
       await menu.waitFor()

@@ -181,6 +181,16 @@ public class VehicleChecklistService(IAppDbContext db, VehicleService vehicleSer
         };
         db.ChecklistRuns.Add(run);
 
+        // Each flagged item becomes an open to-do on the car (owner, 2026-10-30), within the car's to-do limit.
+        var room = Issue.MaxPerVehicle - await db.Issues.CountAsync(i => i.VehicleId == vehicle.Id, ct);
+        var flaggedIssues = items.Where(i => i.IsFlagged).Take(Math.Max(room, 0)).Select(i => new Issue
+        {
+            VehicleId = vehicle.Id,
+            Title = Truncate($"{checklist.Template!.Name}: {i.LabelSnapshot}", Issue.MaxTitleLength),
+            SourceRunItem = i,
+        }).ToList();
+        db.Issues.AddRange(flaggedIssues);
+
         if (reading is not null)
         {
             readings.Add(reading);
@@ -195,8 +205,11 @@ public class VehicleChecklistService(IAppDbContext db, VehicleService vehicleSer
         }
 
         await db.SaveChangesAsync(ct);
-        return new(ToDto(run, new Dictionary<Guid, Guid>(), userId, vehicle.Id), await DtoAsync(checklist.Id, day, ct));
+        return new(ToDto(run, flaggedIssues.ToDictionary(i => i.SourceRunItemId!.Value, i => i.Id), userId, vehicle.Id),
+            await DtoAsync(checklist.Id, day, ct));
     }
+
+    private static string Truncate(string s, int max) => s.Length <= max ? s : s[..(max - 1)] + "…";
 
     /// <summary>
     /// Hard delete. The last run becomes the later of the attach values and the latest remaining run, and the run's Checklist reading
@@ -219,9 +232,16 @@ public class VehicleChecklistService(IAppDbContext db, VehicleService vehicleSer
         var photos = run.Attachments.ToList();
         db.Attachments.RemoveRange(photos);
 
-        // The to-do link doesn't cascade (SQL Server's one-path rule): the run's to-dos stay, without their source.
+        // The to-do link doesn't cascade (SQL Server's one-path rule): the run's open to-dos go with it (owner, 2026-10-30),
+        // done ones stay as history, without their source.
         foreach (var issue in await db.Issues.Where(i => i.SourceRunItem!.RunId == run.Id).ToListAsync(ct))
         {
+            if (issue.Status == IssueStatus.Open)
+            {
+                db.Issues.Remove(issue);
+                continue;
+            }
+
             issue.SourceRunItemId = null;
             issue.UpdatedAt = now;
         }

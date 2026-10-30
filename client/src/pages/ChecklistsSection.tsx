@@ -92,7 +92,7 @@ export function ChecklistsSection({ car, onChanged, onIssuesChanged }: { car: Ve
           templatesError != null ? <p className="error" role="alert">{errorMessage(templatesError)}</p> : <p className="muted" role="status">{t('loading')}</p>
         ) : available.length === 0 ? (
           <div className="inline-form" onKeyDown={(e) => e.key === 'Escape' && form.open('view')}>
-            <p><Trans i18nKey={templates!.length ? 'allAttached' : 'noTemplates'} components={{ a: <Link to="/checklists" /> }} /></p>
+            <p><Trans i18nKey={templates!.length ? 'allAttached' : 'noTemplates'} components={{ a: <Link to="/settings/checklists" /> }} /></p>
             <div className="actions">
               <button type="button" className="link" onClick={() => form.open('view')} autoFocus>{t('cancel')}</button>
             </div>

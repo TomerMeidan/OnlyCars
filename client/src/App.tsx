@@ -87,14 +87,13 @@ export default function App() {
           // Keyed apart, so crossing 40em never turns one nav's link into the other's mid-click.
           <nav key="tabs" className="tabs">
             <NavLink to="/" end>{t('dashboard')}</NavLink>
-            <NavLink to="/history">{t('tabHistory')}</NavLink>
-            <NavLink to="/checklists">{t('checklists')}</NavLink>
+            <NavLink to="/spending">{t('spending')}</NavLink>
             <NavLink to="/tires">{t('tires')}</NavLink>
             <button
               ref={moreButton}
               aria-expanded={moreOpen}
               aria-controls={moreOpen ? 'more-menu' : undefined}
-              aria-current={['/reports', '/settings'].includes(location.pathname) ? 'page' : undefined}
+              aria-current={location.pathname.startsWith('/settings') ? 'page' : undefined}
               onClick={() => setMoreOpen(!moreOpen)}
             >
               {t('more')}
@@ -102,7 +101,6 @@ export default function App() {
             {/* After More in the tab order; any choice closes it (a click bubbles here after the item's own handler). */}
             {moreOpen && (
               <div id="more-menu" ref={menu} className="more-menu" onClick={closeMore}>
-                <NavLink to="/reports">{t('reports')}</NavLink>
                 <NavLink to="/settings">{t('settings')}</NavLink>
                 {logoutButton}
               </div>
@@ -110,9 +108,7 @@ export default function App() {
           </nav>
         ) : user && (
           <nav key="bar">
-            <NavLink to="/history">{t('serviceHistory')}</NavLink>
-            <NavLink to="/reports">{t('reports')}</NavLink>
-            <NavLink to="/checklists">{t('checklists')}</NavLink>
+            <NavLink to="/spending">{t('spending')}</NavLink>
             <NavLink to="/tires">{t('tires')}</NavLink>
             <NavLink to="/settings">{t('settings')}</NavLink>
             {logoutButton}
@@ -127,9 +123,12 @@ export default function App() {
             <Route path="/cars/:id" element={<CarPage />} />
             <Route path="/cars/:id/edit" element={<CarFormPage />} />
             <Route path="/cars/:id/checklists/:checklistId/run" element={<RunPage />} />
-            <Route path="/history" element={<HistoryPage />} />
-            <Route path="/reports" element={<ReportsPage />} />
-            <Route path="/checklists" element={<ChecklistsPage />} />
+            <Route path="/spending" element={<HistoryPage />} />
+            <Route path="/spending/reports" element={<ReportsPage />} />
+            <Route path="/history" element={<Moved to="/spending" />} />
+            <Route path="/reports" element={<Moved to="/spending/reports" />} />
+            <Route path="/settings/checklists" element={<ChecklistsPage />} />
+            <Route path="/checklists" element={<Moved to="/settings/checklists" />} />
             <Route path="/tires" element={<TiresPage />} />
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="*" element={<Navigate to="/" replace />} />
@@ -144,4 +143,10 @@ export default function App() {
       </main>
     </>
   )
+}
+
+// A page that moved (owner, 2026-10-30): old links and bookmarks land on the new address with their filters.
+function Moved({ to }: { to: string }) {
+  const { search } = useLocation()
+  return <Navigate to={to + search} replace />
 }

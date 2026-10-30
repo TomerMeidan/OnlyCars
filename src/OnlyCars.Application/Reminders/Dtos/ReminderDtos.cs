@@ -13,7 +13,10 @@ public record VehicleDocumentRequest(string? Type, DateOnly? ExpiryDate, decimal
 public record ReminderDto(NotificationKind Kind, Guid RefId, Guid VehicleId, string VehicleNickname, string? Name, VehicleDocumentType? DocumentType,
     string Status, DateOnly? DueDate, decimal? RemainingKm, int? RemainingDays);
 
-public record RemindersDto(int LeadDays, int SnoozedCount, List<ReminderDto> Items);
+// OpenToDos: the open to-dos of active cars, newest first, shown after the items in Needs attention (owner, 2026-10-30); never snoozed.
+public record RemindersDto(int LeadDays, int SnoozedCount, List<ReminderDto> Items, List<OpenToDoDto> OpenToDos);
+
+public record OpenToDoDto(Guid Id, Guid VehicleId, string VehicleNickname, string Title);
 
 public record SnoozeRequest(string? Kind, Guid RefId, int Days, DateOnly? Today);
 

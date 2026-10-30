@@ -76,6 +76,25 @@ public class ReminderTests
 
     private static async Task<string> CodeAsync(Func<Task> act) => (await Assert.ThrowsAnyAsync<AppException>(act)).Code;
 
+    [Fact]
+    public async Task OpenToDos_OfActiveCarsOnly_NewestFirst_AndNeverCountedAsSnoozed()
+    {
+        var car = await CarAsync();
+        var archived = await CarAsync("Old");
+        var theirs = await CarAsync("Theirs", otherUserId);
+        var older = new Issue { VehicleId = car, Title = "Older", CreatedAt = DateTimeOffset.UtcNow.AddDays(-1) };
+        db.Issues.AddRange(older, new Issue { VehicleId = car, Title = "Newer" }, new Issue { VehicleId = car, Title = "Done", Status = IssueStatus.Done },
+            new Issue { VehicleId = archived, Title = "On archived" }, new Issue { VehicleId = theirs, Title = "Theirs" });
+        await db.SaveChangesAsync();
+        await vehicles.ArchiveAsync(userId, archived, true);
+
+        var r = await GetAsync();
+
+        Assert.Equal(["Newer", "Older"], r.OpenToDos.Select(i => i.Title));
+        Assert.All(r.OpenToDos, i => Assert.Equal((car, "Mazda"), (i.VehicleId, i.VehicleNickname)));
+        Assert.Equal(0, r.SnoozedCount);
+    }
+
     // ---- Documents (criterion 2) ----
 
     [Fact]

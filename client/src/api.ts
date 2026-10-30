@@ -348,6 +348,7 @@ export interface Reminders {
   leadDays: number
   snoozedCount: number
   items: Reminder[]
+  openToDos: { id: string; vehicleId: string; vehicleNickname: string; title: string }[] // after the items, never snoozed
 }
 
 // ProblemDetails from the API; `code` is translated by errorMessage() in i18n.ts.

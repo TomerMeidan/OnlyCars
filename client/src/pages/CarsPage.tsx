@@ -130,7 +130,7 @@ export default function CarsPage() {
         <div className="card summary">
           <Counts overdue={data.dash.overdueCount} dueSoon={data.dash.dueSoonCount} />
           <p>
-            <Link to={`/history?from=${data.dash.month}-01&to=${data.today}`}>
+            <Link to={`/spending?from=${data.dash.month}-01&to=${data.today}`}>
               {t('thisMonth', { count: data.dash.monthServiceCount, total: money(data.dash.monthTotalCost, lng, user?.currency) })}
             </Link>
           </p>

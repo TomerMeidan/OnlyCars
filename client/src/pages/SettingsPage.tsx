@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import { useLocation } from 'react-router-dom'
+import { Link, useLocation } from 'react-router-dom'
 import { accountDeleted, api, ApiError, apiResponse, currencies, download, limit, type User } from '../api'
 import { useAuth } from '../auth'
 import { GoogleButton } from '../google'
@@ -214,6 +214,11 @@ export default function SettingsPage() {
             </div>
           </form>
         )}
+      </section>
+      <section className="field" aria-labelledby="checklist-templates">
+        <h2 id="checklist-templates">{t('checklistTemplates')}</h2>
+        <p className="muted">{t('checklistTemplatesHint')}</p>
+        <div className="actions"><Link to="/settings/checklists">{t('checklistTemplates')}</Link></div>
       </section>
     </div>
   )

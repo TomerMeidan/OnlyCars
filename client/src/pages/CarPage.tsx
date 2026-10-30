@@ -31,6 +31,8 @@ export default function CarPage() {
   const historyRef = useRef<HTMLElement>(null)
   // Here so a save or Undo in the service history ends it too: it may void the very record.
   const [undo, setUndo] = useState<TaskUndo>(null)
+  // A task's "Log with details": the service history opens Record a service with it ticked.
+  const [logFor, setLogFor] = useState<{ taskId: string; n: number } | null>(null)
   // Bumped when the run history creates a to-do, so To-dos reloads.
   const [issuesVersion, setIssuesVersion] = useState(0)
 
@@ -104,12 +106,12 @@ export default function CarPage() {
         {!car.isArchived && <OdometerQuickEntry car={car} onSaved={load} />}
       </div>
 
-      <TasksSection car={car} undo={undo} setUndo={setUndo} onOdometerChanged={load} />
+      <TasksSection car={car} undo={undo} setUndo={setUndo} onOdometerChanged={load} onLogService={(taskId) => setLogFor((l) => ({ taskId, n: (l?.n ?? 0) + 1 }))} />
       <IssuesSection car={car} version={issuesVersion} />
       <DocumentsSection car={car} />
       <ChecklistsSection car={car} onChanged={load} onIssuesChanged={() => setIssuesVersion((v) => v + 1)} />
       <TiresSection car={car} />
-      <ServiceHistory car={car} onChanged={() => { setUndo(null); load() }} />
+      <ServiceHistory car={car} logFor={logFor} onChanged={() => { setUndo(null); load() }} />
 
       <section className="card" aria-labelledby="odometer-history" ref={historyRef}>
         <h2 id="odometer-history" tabIndex={-1}>{t('odometerHistory')}</h2>

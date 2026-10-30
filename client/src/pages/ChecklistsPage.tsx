@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { Trans, useTranslation } from 'react-i18next'
+import { Link } from 'react-router-dom'
 import { api, ApiError, checklistItemTypes, limit, type ChecklistItemType, type ChecklistTemplate } from '../api'
 import { errorMessage } from '../i18n'
 import { useItemErrors } from '../useItemErrors'
@@ -60,6 +61,7 @@ export default function ChecklistsPage() {
   return (
     <>
       <div className="row">
+        <Link to="/settings" className="back">{t('settings')}</Link>
         <h1 tabIndex={-1}>{t('checklists')}</h1>
         {templates && form.mode === 'view' && (
           <button className="add" ref={form.opener('new')} onClick={() => form.open('new')}>{t('newChecklist')}</button>

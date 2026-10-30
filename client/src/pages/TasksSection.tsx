@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, type FormEvent, type KeyboardEvent, type MouseEventHandler, type ReactNode } from 'react'
 import { Trans, useTranslation } from 'react-i18next'
-import { useAuth, useDistance } from '../auth'
+import { useDistance } from '../auth'
 import { api, ApiError, byUrgency, localToday, taskCategories, type MaintenanceTask, type TaskCategory, type TaskStatus, type TaskTemplate, type Vehicle } from '../api'
 import { errorMessage, fmtDate } from '../i18n'
 import { splitDays, unitDays, type Unit } from '../units'
@@ -101,11 +101,12 @@ export function UndoBar({ id, busy, onClick, message, label }: { id: string; bus
 // The last reset, undoable from its row until the next action in this section or in the service history.
 export type TaskUndo = { taskId: string; recordId: string } | null
 
-export function TasksSection({ car, undo, setUndo, onOdometerChanged }: {
+export function TasksSection({ car, undo, setUndo, onOdometerChanged, onLogService }: {
   car: Vehicle
   undo: TaskUndo
   setUndo: (undo: TaskUndo) => void
   onOdometerChanged: () => void
+  onLogService: (taskId: string) => void // the full Record a service form, with this task ticked (owner, 2026-10-30)
 }) {
   const { t, i18n } = useTranslation()
   const d = useDistance()
@@ -248,7 +249,8 @@ export function TasksSection({ car, undo, setUndo, onOdometerChanged }: {
               currentKm={car.currentOdometerKm}
               readOnly={readOnly}
               onSaved={saved}
-              onReset={(body) => reset(`${path}/${encodeURIComponent(task.id)}`, body)}
+              onReset={() => reset(`${path}/${encodeURIComponent(task.id)}`, {})}
+              onLogService={() => onLogService(task.id)}
               onUndo={undo?.taskId === task.id ? undoReset : undefined}
               onDeleted={() => {
                 // The row that takes this one's place, or the h2 if it was the last.
@@ -375,34 +377,24 @@ function TaskForm({ initial, currentKm, onSubmit, onCancel }: {
   )
 }
 
-function TaskRow({ task, url, currentKm, readOnly, onSaved, onDeleted, onReset, onUndo }: {
+function TaskRow({ task, url, currentKm, readOnly, onSaved, onDeleted, onReset, onLogService, onUndo }: {
   task: MaintenanceTask
   url: string
   currentKm: number
   readOnly: boolean
   onSaved: (task: MaintenanceTask, focus?: string) => void
   onDeleted: () => void
-  onReset: (body: { cost?: number; notes?: string }) => Promise<void>
+  onReset: () => Promise<void>
+  onLogService: () => void
   // Set while this row shows the Undo bar.
   onUndo?: () => Promise<void>
 }) {
   const { t, i18n } = useTranslation()
-  const { user } = useAuth()
   const d = useDistance()
   // After Save or Delete the section refocuses (close()); Cancel and Escape go back to the opener.
-  const { mode, open, close, busy, error, run, opener } = useRow<'edit' | 'delete' | 'cost'>()
+  const { mode, open, close, busy, error, run, opener } = useRow<'edit' | 'delete'>()
   const lng = i18n.resolvedLanguage
   const name = task.name
-
-  async function submitCost(e: FormEvent<HTMLFormElement>) {
-    e.preventDefault()
-    const f = new FormData(e.currentTarget)
-    const cost = f.get('cost') === '' ? undefined : Number(f.get('cost'))
-    await run(async () => {
-      await onReset({ cost, notes: String(f.get('notes')) })
-      close()
-    }, (e.nativeEvent as SubmitEvent).submitter)
-  }
 
   const errorText = error != null && <p className="error" role="alert">{errorMessage(error)}</p>
 
@@ -435,8 +427,8 @@ function TaskRow({ task, url, currentKm, readOnly, onSaved, onDeleted, onReset, 
         <div className="actions">
           {task.isEnabled && (
             <>
-              <button className="done" aria-label={t('markDoneTask', { name })} disabled={busy} onClick={(e) => run(() => onReset({}), e.currentTarget)}>{t('markDone')}</button>
-              <button className="link" aria-label={t('addCostNotesTask', { name })} ref={opener('cost')} onClick={() => open('cost')}>{t('addCostNotes')}</button>
+              <button className="done" aria-label={t('markDoneTask', { name })} disabled={busy} onClick={(e) => run(onReset, e.currentTarget)}>{t('markDone')}</button>
+              <button className="link log" aria-label={t('addCostNotesTask', { name })} onClick={onLogService}>{t('addCostNotes')}</button>
             </>
           )}
           <button className="link edit" aria-label={t('editTask', { name })} ref={opener('edit')} onClick={() => open('edit')}>{t('edit')}</button>
@@ -466,30 +458,6 @@ function TaskRow({ task, url, currentKm, readOnly, onSaved, onDeleted, onReset, 
             onSaved(saved)
           }}
         />
-      )}
-
-      {mode === 'cost' && (
-        <form className="inline-form" onSubmit={submitCost} onKeyDown={(e) => !busy && e.key === 'Escape' && open('view')}
-          // The browser blocks an out-of-range cost or a third decimal before any request, with this message on the field.
-          onInput={(e) => {
-            const el = e.currentTarget.elements.namedItem('cost') as HTMLInputElement
-            el.setCustomValidity('')
-            el.setCustomValidity(el.validity.valid ? '' : t('limits.cost'))
-          }}>
-          <label>
-            {t('cost', { currency: user?.currency })}
-            <input name="cost" type="number" inputMode="decimal" min={0} max={1_000_000} step={0.01} autoFocus />
-          </label>
-          <label className="wide">
-            {t('notes')}
-            <textarea name="notes" maxLength={1000} rows={2} />
-          </label>
-          {errorText}
-          <div className="actions">
-            <button disabled={busy}>{t('markDone')}</button>
-            <button type="button" className="link" disabled={busy} onClick={() => open('view')}>{t('cancel')}</button>
-          </div>
-        </form>
       )}
 
       {mode === 'delete' && (

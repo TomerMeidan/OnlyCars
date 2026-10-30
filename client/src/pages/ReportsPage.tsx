@@ -8,10 +8,11 @@ import { toCsv } from '../csv'
 import { errorMessage, money } from '../i18n'
 import { KM_PER_MI } from '../units'
 import { usePage } from '../usePage'
+import { SpendingTabs } from './SpendingTabs'
 
 const pad = (n: number) => String(n).padStart(2, '0')
 // /history for a span of days, with the chosen car.
-const historyLink = (from: string, to: string, vehicleId: string) => `/history?${new URLSearchParams({ ...(vehicleId && { vehicleId }), from, to })}`
+const historyLink = (from: string, to: string, vehicleId: string) => `/spending?${new URLSearchParams({ ...(vehicleId && { vehicleId }), from, to })}`
 
 // /reports: cost reports for a year and every car's all-time costs; the Year and Car filters live in the URL, as on /history.
 export default function ReportsPage() {
@@ -210,6 +211,7 @@ export default function ReportsPage() {
   const canExport = !busy && report != null
   return (
     <>
+      <SpendingTabs />
       <h1 tabIndex={-1}>{t('reports')}</h1>
       {report && <p className="print-only">{t('printLine', {
         year: report.year, car: shown.vehicleId ? nickname(report, shown.vehicleId) : t('allCars'), date: today.toLocaleDateString(lng, { dateStyle: 'medium' }),
