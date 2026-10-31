@@ -102,11 +102,28 @@ if (addUser)
 }
 
 // Production creates and updates the tables itself (appsettings.Production.json): GitHub's runners can't reach Azure SQL, which only
-// lets Azure in, so the deploy can't run the migrations (2026-10-31).
+// lets Azure in, so the deploy can't run the migrations (2026-10-31). In the background once the app listens, with retries: the free
+// database pauses when idle and takes a while to wake, and a failure must not stop the app, or its error never reaches the log stream.
 if (app.Configuration.GetValue<bool>("Database:MigrateOnStartup"))
 {
-    using var scope = app.Services.CreateScope();
-    await scope.ServiceProvider.GetRequiredService<OnlyCars.Infrastructure.Persistence.AppDbContext>().Database.MigrateAsync();
+    app.Lifetime.ApplicationStarted.Register(() => _ = Task.Run(async () =>
+    {
+        for (var attempt = 1; attempt <= 5; attempt++)
+        {
+            try
+            {
+                using var scope = app.Services.CreateScope();
+                await scope.ServiceProvider.GetRequiredService<OnlyCars.Infrastructure.Persistence.AppDbContext>().Database.MigrateAsync();
+                app.Logger.LogInformation("Database is up to date.");
+                return;
+            }
+            catch (Exception ex)
+            {
+                app.Logger.LogError("Database update, try {Attempt} of 5, failed: {Error}: {Message}", attempt, ex.GetType().Name, ex.Message);
+                await Task.Delay(TimeSpan.FromSeconds(20));
+            }
+        }
+    }));
 }
 
 app.UseNoSniff();
