@@ -1,3 +1,4 @@
+using Microsoft.EntityFrameworkCore;
 using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Diagnostics;
@@ -100,6 +101,14 @@ if (addUser)
     return;
 }
 
+// Production creates and updates the tables itself (appsettings.Production.json): GitHub's runners can't reach Azure SQL, which only
+// lets Azure in, so the deploy can't run the migrations (2026-10-31).
+if (app.Configuration.GetValue<bool>("Database:MigrateOnStartup"))
+{
+    using var scope = app.Services.CreateScope();
+    await scope.ServiceProvider.GetRequiredService<OnlyCars.Infrastructure.Persistence.AppDbContext>().Database.MigrateAsync();
+}
+
 app.UseNoSniff();
 app.UseExceptionHandler(_ => { });
 
@@ -120,6 +129,8 @@ if (!app.Environment.IsDevelopment())
 app.UseHttpsRedirection();
 
 app.UseAuthorization(); // authentication runs inside UseRequestLimits, before the limiter
+
+app.MapClientApp();
 
 app.MapControllers();
 
