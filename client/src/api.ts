@@ -385,8 +385,11 @@ export class Offline extends TypeError {}
 
 const TOKEN_KEY = 'token'
 export const getToken = () => localStorage.getItem(TOKEN_KEY)
-export const setToken = (t: string | null) =>
-  t ? localStorage.setItem(TOKEN_KEY, t) : localStorage.removeItem(TOKEN_KEY)
+export const setToken = (t: string | null) => {
+  getCache.clear() // another user never sees this one's data
+  if (t) localStorage.setItem(TOKEN_KEY, t)
+  else localStorage.removeItem(TOKEN_KEY)
+}
 
 export const USER_KEY = 'user'
 export const cachedUser = (): User | null => (getToken() ? JSON.parse(localStorage.getItem(USER_KEY) ?? 'null') : null)
@@ -397,9 +400,24 @@ export function applyTheme(theme: User['theme'] | undefined) {
   else delete document.documentElement.dataset.theme
 }
 
+// PERF-1 (2026-11-01): moving between pages reuses what a GET returned in the last minute instead of asking the server again.
+// Memory only, so a reload always asks; any change (POST, PUT, DELETE, upload) empties it, so the user's own edits show at once.
+// shortcut: another device's changes can take up to a minute to show here; shorten FRESH_MS if that ever matters.
+// Off on the dev server: the smoke suite changes data straight through the API, as another device would, and expects it at once.
+const FRESH_MS = import.meta.env?.DEV ? 0 : 60_000
+const getCache = new Map<string, { at: number; data: Promise<unknown> }>()
+
 export async function api<T>(path: string, method = 'GET', body?: unknown): Promise<T> {
-  const res = await apiResponse(path, method, body)
-  return res.status === 204 ? (undefined as T) : res.json()
+  const call = () => apiResponse(path, method, body).then((res) => (res.status === 204 ? undefined : res.json()))
+  if (method !== 'GET') return call() as Promise<T>
+  let hit = getCache.get(path)
+  if (!hit || Date.now() - hit.at >= FRESH_MS) {
+    const entry = { at: Date.now(), data: call() }
+    entry.data.catch(() => { if (getCache.get(path) === entry) getCache.delete(path) }) // a failure is never reused
+    getCache.set(path, entry)
+    hit = entry
+  }
+  return structuredClone(await hit.data) as T // each page gets its own copy, so editing it never changes the cache
 }
 
 // The checked response itself, for a download that needs its headers and its body as a blob.
@@ -417,6 +435,7 @@ export async function apiResponse(path: string, method = 'GET', body?: unknown, 
     body: body === undefined ? undefined : form ? body : JSON.stringify(body),
     signal,
   }).catch((err) => { throw navigator.onLine || err?.name === 'AbortError' ? err : new Offline() })
+    .finally(() => { if (method !== 'GET') getCache.clear() })
   if (res.status === 401 && token) {
     setToken(null)
     localStorage.removeItem(USER_KEY) // as logout() does, so another device's 401 leaves no cached user behind
