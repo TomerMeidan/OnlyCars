@@ -5,6 +5,7 @@ services:
     name: onlycars
     runtime: docker
     plan: free
+    region: frankfurt # the closest Render region to the database (Azure SQL, Israel Central)
     branch: main
     autoDeploy: true
     healthCheckPath: /api/auth/providers
