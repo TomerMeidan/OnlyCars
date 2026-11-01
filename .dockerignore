@@ -1,0 +1,11 @@
+**/bin
+**/obj
+**/node_modules
+client/dist
+client/ui-tests
+scratch
+tests
+docs
+.git
+.github
+.claude

@@ -52,8 +52,8 @@ public static class RequestLimits
         services.Configure<KestrelServerOptions>(o => o.Limits.MaxRequestBodySize = MaxBodyBytes);
         services.Configure<IISServerOptions>(o => o.MaxRequestBodySize = MaxBodyBytes);
 
-        // App Service's front ends append the client IP to X-Forwarded-For and have no fixed addresses, so trust any
-        // proxy. ForwardLimit stays 1: only the rightmost entry (added by Azure) is used, not ones a client sent.
+        // The host's front ends (Render, 2026-11-01) append the client IP to X-Forwarded-For and have no fixed addresses, so
+        // trust any proxy. ForwardLimit stays 1: only the rightmost entry (added by the host) is used, not ones a client sent.
         services.Configure<ForwardedHeadersOptions>(o =>
         {
             o.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;

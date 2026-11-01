@@ -1,0 +1,27 @@
+# Render Blueprint (2026-11-01): one free web service built from the Dockerfile, redeployed on every push to main.
+# Values marked sync: false are secrets; Render asks for them when the Blueprint is created and never reads them from here.
+services:
+  - type: web
+    name: onlycars
+    runtime: docker
+    plan: free
+    branch: main
+    autoDeploy: true
+    healthCheckPath: /api/auth/providers
+    envVars:
+      - key: ConnectionStrings__Default
+        sync: false
+      - key: Jwt__SigningKey
+        sync: false
+      - key: Google__ClientId
+        sync: false
+      - key: Client__Origins__0
+        sync: false
+      - key: R2__AccountId
+        sync: false
+      - key: R2__AccessKeyId
+        sync: false
+      - key: R2__SecretAccessKey
+        sync: false
+      - key: R2__BucketName
+        sync: false
