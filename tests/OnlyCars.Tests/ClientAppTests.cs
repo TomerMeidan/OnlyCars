@@ -37,7 +37,9 @@ public class ClientAppTests
 
         var headers = (await client.GetAsync("/settings")).Headers;
         Assert.Equal("DENY", headers.GetValues("X-Frame-Options").Single());
-        Assert.Equal("frame-ancestors 'none'", headers.GetValues("Content-Security-Policy").Single());
+        Assert.Equal(NoSniff.ContentSecurityPolicy, headers.GetValues("Content-Security-Policy").Single());
+        var scripts = NoSniff.ContentSecurityPolicy.Split("; ").Single(d => d.StartsWith("script-src "));
+        Assert.DoesNotContain("unsafe", scripts); // only scripts from the site and Google's sign-in run, never inline code
 
         await app.StopAsync();
         Directory.Delete(root, true);

@@ -6,18 +6,11 @@
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>OnlyCars</title>
-    <script>
-      // Before the first paint, so a reload never shows the OS theme first. Mirrors applyTheme() and cachedUser() in src/api.ts.
-      try {
-        var u = localStorage.getItem('token') && JSON.parse(localStorage.getItem('user'))
-        if (u && (u.theme === 'Light' || u.theme === 'Dark')) document.documentElement.dataset.theme = u.theme.toLowerCase()
-      } catch (e) {}
-    </script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <!-- onload: both scripts' faces even when the page shows one (a phone keeps the other in More), so the service worker caches both for offline. -->
-    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Hebrew:wdth,wght@62.5..100,400..800&family=Noto+Sans:wdth,wght@62.5..100,400..800&display=swap" rel="stylesheet"
-      onload="document.fonts.load('1em Noto Sans', 'a'); document.fonts.load('1em Noto Sans Hebrew', 'א')" />
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Hebrew:wdth,wght@62.5..100,400..800&family=Noto+Sans:wdth,wght@62.5..100,400..800&display=swap" rel="stylesheet" />
+    <!-- The saved theme before the first paint, and both font faces for offline: public/boot.js. -->
+    <script src="/boot.js"></script>
     <meta name="theme-color" content="#0F1A1F" />
   </head>
   <body>
