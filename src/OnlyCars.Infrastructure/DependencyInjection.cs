@@ -37,13 +37,20 @@ public static class DependencyInjection
             services.AddSingleton<IFileStorage>(storage);
         }
 
-        // Not registered without a Resend key, so a fresh clone and the tests send nothing (DigestService then gets null).
+        // Not registered without a Resend key or an SMTP login, so a fresh clone and the tests send nothing (DigestService then gets null).
         var email = configuration.GetSection(EmailOptions.SectionName);
         services.Configure<EmailOptions>(email);
-        if (email[nameof(EmailOptions.ResendApiKey)] is { Length: > 0 } resendKey)
+        var o = email.Get<EmailOptions>() ?? new EmailOptions();
+        if (o.ResendApiKey is { Length: > 0 } resendKey)
         {
-            var from = email[nameof(EmailOptions.From)] is { Length: > 0 } f ? f : throw new InvalidOperationException("Email:From is not configured.");
+            var from = o.From is { Length: > 0 } f ? f : throw new InvalidOperationException("Email:From is not configured.");
             services.AddSingleton<IEmailSender>(new ResendEmailSender(resendKey, from));
+        }
+        else if (o is { SmtpUser.Length: > 0, SmtpPassword.Length: > 0 })
+        {
+            // Gmail sends only as the signed-in account, so From defaults to it.
+            services.AddSingleton<IEmailSender>(new SmtpEmailSender(o.SmtpHost, o.SmtpPort, o.SmtpUser, o.SmtpPassword,
+                o.From is { Length: > 0 } f ? f : $"OnlyCars <{o.SmtpUser}>"));
         }
 
         return services;

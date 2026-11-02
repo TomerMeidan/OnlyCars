@@ -48,7 +48,9 @@ POST /api/jobs/daily-digest  X-Job-Key: right -> 204
 | Key | Meaning |
 | --- | --- |
 | `Email:ResendApiKey` | Resend API key. Unset: nothing is sent and the daily timer is off; the app runs normally. Secret. |
-| `Email:From` | Sender, e.g. `OnlyCars <reminders@your-domain>`; required when the key is set (start-up fails otherwise). |
+| `Email:SmtpUser`, `Email:SmtpPassword` | Used when there is no Resend key (owner's choice, 2026-11-02): an SMTP login, by default a Gmail address and its app password. Both set: email goes through SMTP. Secret (the password). |
+| `Email:SmtpHost`, `Email:SmtpPort` | Default `smtp.gmail.com` and `587` (STARTTLS). |
+| `Email:From` | Sender, e.g. `OnlyCars <reminders@your-domain>`; required with a Resend key (start-up fails otherwise); with SMTP it defaults to `OnlyCars <SmtpUser>`. |
 | `Email:SiteUrl` | Link in the email, e.g. `https://onlycars-ev28.onrender.com`. Unset: no links. |
 | `Email:JobKey` | Shared secret for the job endpoint. Unset: the endpoint is a 404. Secret. |
 | `Email:DigestHourLocal` | Hour (0 to 23, Israel time) of the in-app timer; default 8. |
