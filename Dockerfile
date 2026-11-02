@@ -18,4 +18,6 @@ COPY --from=client /client/dist ./wwwroot
 # Render sends traffic to port 10000 unless told otherwise.
 ENV ASPNETCORE_HTTP_PORTS=10000
 EXPOSE 10000
+# The image's own unprivileged user, not root (audit 2026-11-02).
+USER $APP_UID
 ENTRYPOINT ["dotnet", "OnlyCars.Api.dll"]

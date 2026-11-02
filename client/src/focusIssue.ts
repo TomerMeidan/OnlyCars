@@ -1,5 +1,8 @@
-// Focuses an element, first opening the "Done (n)" toggle around it.
+import { unfold } from './fold'
+
+// Focuses an element, first opening the "Done (n)" toggle and the collapsed section around it.
 export const focusIn = (el: HTMLElement | null | undefined) => {
+  unfold(el)
   el?.closest('details')?.setAttribute('open', '')
   el?.focus()
 }

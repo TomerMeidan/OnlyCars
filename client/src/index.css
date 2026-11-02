@@ -550,3 +550,31 @@ details > summary { padding-block: 0.625rem; cursor: pointer; }
 .subnav { display: flex; gap: 1.5rem; margin-block-end: 0.5rem; }
 .subnav a { display: inline-flex; align-items: center; min-height: 2.75rem; color: var(--muted); text-decoration: none; border-block-end: 2px solid transparent; }
 .subnav a[aria-current='page'] { color: var(--ink); font-weight: 700; border-block-end-color: var(--amber); }
+/* Car page sections fold (owner, 2026-11-02): the heading is the 44px toggle, its chevron down when open and toward the inline end when closed */
+button.fold {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  box-shadow: none;
+  padding: 0;
+  gap: 0.6rem;
+  text-align: start;
+  margin-block: calc((1lh - 2.75rem) / 2);
+}
+button.fold:is(:hover, :active):not(:disabled, [aria-disabled='true']) { background: none; transform: none; box-shadow: none; }
+button.fold::after {
+  content: '';
+  flex: none;
+  inline-size: 0.5em;
+  block-size: 0.5em;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  margin-block-end: 0.3em; /* the down chevron's point sits on the text's middle */
+  transform: rotate(45deg);
+  transition: transform 160ms ease-out;
+}
+button.fold[aria-expanded='false']::after { margin-block-end: 0; transform: rotate(-45deg); }
+button.fold[aria-expanded='false']:dir(rtl)::after { transform: rotate(135deg); }
+.card.collapsed > :not(:first-child, .fold-summary), .card.collapsed > .row:first-child > :not(h2, .fold-summary) { display: none; }
+.fold-summary { margin-inline-end: auto; }

@@ -174,6 +174,18 @@ public class GoogleSignInSqlTests : IAsyncLifetime
             Options.Create(new RateLimitOptions()), new FakeGoogle());
 
     [Fact]
+    public async Task ALookAlikeEmail_NeverClaimsAnInvitedAccount_ThoughTheCollationMatchesIt()
+    {
+        await Auth().InviteAsync("me@example.com");
+
+        var error = await Assert.ThrowsAsync<ValidationFailedException>(() =>
+            Auth().GoogleAsync(new GoogleLoginRequest(FakeGoogle.Token("g1", "ｍe@example.com"))));
+
+        Assert.Equal("auth.googleFailed", error.Code);
+        Assert.Null((await db.Users.SingleAsync()).GoogleSubject);
+    }
+
+    [Fact]
     public async Task FreshGoogleSignIn_DeletesTheAccount_AndPasswordUsersSharingNullSubjectsAreFine()
     {
         await Auth().RegisterAsync(new RegisterRequest("a@example.com", "right-password-1"));

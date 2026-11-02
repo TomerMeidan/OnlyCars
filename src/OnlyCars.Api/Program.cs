@@ -36,6 +36,11 @@ builder.Services.AddSwaggerGen();
 builder.Services.AddApplication();
 builder.Services.Configure<AuthOptions>(builder.Configuration.GetSection(AuthOptions.SectionName));
 builder.Services.AddInfrastructure(builder.Configuration);
+// The daily reminder email's timer only with a Resend key (NOT-2); the job endpoint covers the days the host was asleep.
+if (builder.Configuration["Email:ResendApiKey"] is { Length: > 0 })
+{
+    builder.Services.AddHostedService<DailyDigestTimer>();
+}
 
 builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 // Framework-generated ProblemDetails (e.g. [ApiController] model validation) get a code too.
@@ -57,6 +62,7 @@ builder.Services
             ValidateAudience = true,
             ValidAudience = jwtSection["Audience"],
             ValidateIssuerSigningKey = true,
+            ValidAlgorithms = [SecurityAlgorithms.HmacSha256], // only what JwtTokenService signs with (audit 2026-11-02)
             IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSigningKey)),
             ValidateLifetime = true,
             ClockSkew = TimeSpan.FromMinutes(1)

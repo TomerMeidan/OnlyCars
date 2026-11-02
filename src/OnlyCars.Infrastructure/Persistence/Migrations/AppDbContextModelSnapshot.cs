@@ -397,6 +397,12 @@ namespace OnlyCars.Infrastructure.Persistence.Migrations
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("datetimeoffset");
 
+                    b.Property<bool>("IsEnabled")
+                        .HasColumnType("bit");
+
+                    b.Property<DateOnly?>("LastSentOn")
+                        .HasColumnType("date");
+
                     b.Property<int>("LeadDays")
                         .HasColumnType("int");
 

@@ -110,6 +110,11 @@ public class AuthService(
             }
 
             user = await db.Users.FirstOrDefaultAsync(u => u.Email == email, ct);
+            // SQL Server's collation calls look-alikes equal (a full-width ｍ = m): only the exact address may claim an account (audit 2026-11-02).
+            if (user is not null && !string.Equals(user.Email, email, StringComparison.Ordinal))
+            {
+                throw GoogleFailed();
+            }
             if (user is { GoogleSubject: not null })
             {
                 throw new ConflictException("auth.googleAccountMismatch", "This email is linked to a different Google account.");
@@ -151,7 +156,7 @@ public class AuthService(
             }
         }
 
-        return BuildResponse(user, await ReminderService.LeadDaysAsync(db, user.Id, ct));
+        return BuildResponse(user, await ToDtoAsync(user, ct));
     }
 
     /// <summary>Account delete for an account without a password (ACC-2): a Google sign-in as this user in the last 10 minutes.</summary>
@@ -244,7 +249,7 @@ public class AuthService(
             throw InvalidCredentials();
         }
 
-        return BuildResponse(user, await ReminderService.LeadDaysAsync(db, user.Id, ct));
+        return BuildResponse(user, await ToDtoAsync(user, ct));
     }
 
     /// <summary>
@@ -266,7 +271,7 @@ public class AuthService(
     }
 
     public async Task<UserDto> GetMeAsync(Guid userId, CancellationToken ct = default) =>
-        ToDto(await FindUserAsync(userId, ct), await ReminderService.LeadDaysAsync(db, userId, ct));
+        await ToDtoAsync(await FindUserAsync(userId, ct), ct);
 
     public async Task<UserDto> UpdateSettingsAsync(Guid userId, UpdateSettingsRequest request, CancellationToken ct = default)
     {
@@ -290,6 +295,20 @@ public class AuthService(
         user.Currency = request.Currency ?? user.Currency;
         user.DistanceUnit = distanceUnit ?? user.DistanceUnit;
         NotificationRule? added = null;
+        if (request.EmailReminders is { } emailOn)
+        {
+            // shortcut: a first save that races the digest's first send (unique UserId, Channel) is a 500 and works when retried; add the lead-days retry if it's ever seen.
+            var emailRule = await EmailRuleAsync(userId, ct);
+            if (emailRule is null)
+            {
+                emailRule = new NotificationRule { UserId = userId, Channel = NotificationChannel.Email };
+                db.NotificationRules.Add(emailRule);
+            }
+
+            emailRule.IsEnabled = emailOn;
+            emailRule.UpdatedAt = DateTimeOffset.UtcNow;
+        }
+
         if (request.ReminderLeadDays is { } leadDays)
         {
             var rule = await InAppRuleAsync(userId, ct);
@@ -320,8 +339,11 @@ public class AuthService(
             await db.SaveChangesAsync(ct);
         }
 
-        return ToDto(user, await ReminderService.LeadDaysAsync(db, userId, ct));
+        return await ToDtoAsync(user, ct);
     }
+
+    private Task<NotificationRule?> EmailRuleAsync(Guid userId, CancellationToken ct) =>
+        db.NotificationRules.FirstOrDefaultAsync(r => r.UserId == userId && r.Channel == NotificationChannel.Email, ct);
 
     private Task<NotificationRule?> InAppRuleAsync(Guid userId, CancellationToken ct) =>
         db.NotificationRules.FirstOrDefaultAsync(r => r.UserId == userId && r.Channel == NotificationChannel.InApp, ct);
@@ -344,8 +366,13 @@ public class AuthService(
         }
     }
 
-    private static UserDto ToDto(User user, int reminderLeadDays) =>
-        new(user.Id, user.Email, user.DistanceUnit, user.Currency, user.Locale, user.Theme, reminderLeadDays, user.PasswordHash != string.Empty);
+    private static UserDto ToDto(User user, int reminderLeadDays, bool emailReminders) =>
+        new(user.Id, user.Email, user.DistanceUnit, user.Currency, user.Locale, user.Theme, reminderLeadDays, user.PasswordHash != string.Empty,
+            emailReminders);
+
+    // No Email rule means the daily digest is on (NOT-2).
+    private async Task<UserDto> ToDtoAsync(User user, CancellationToken ct) =>
+        ToDto(user, await ReminderService.LeadDaysAsync(db, user.Id, ct), await EmailRuleAsync(user.Id, ct) is not { IsEnabled: false });
 
     private static UnauthorizedException InvalidCredentials() => new("auth.invalidCredentials", "Invalid email or password.");
 
@@ -391,9 +418,9 @@ public class AuthService(
         public DateTimeOffset ResetsAt { get; } = resetsAt;
     }
 
-    private AuthResponse BuildResponse(User user, int reminderLeadDays = NotificationRule.DefaultLeadDays)
+    private AuthResponse BuildResponse(User user, UserDto? dto = null)
     {
         var (token, expiresAt) = jwtTokenService.CreateToken(user);
-        return new AuthResponse(token, expiresAt, ToDto(user, reminderLeadDays));
+        return new AuthResponse(token, expiresAt, dto ?? ToDto(user, NotificationRule.DefaultLeadDays, true));
     }
 }

@@ -5,6 +5,7 @@ import { api, ApiError, attachmentTypes, fileError, isGoneRecord, photoTypes, is
 import { useAuth, useDistance } from '../auth'
 import { errorMessage, fmtDate, money } from '../i18n'
 import { useItemErrors } from '../useItemErrors'
+import { useFold } from '../fold'
 import { useRow } from '../useRow'
 
 // The form field each API error is about, so the message is tied to that field (item fields also by the error's row index).
@@ -77,8 +78,10 @@ export function ServiceHistory({ car, logFor, onChanged }: { car: Vehicle; logFo
     ;(target ?? section.querySelector<HTMLElement>('h2'))?.focus()
   }, [records])
 
+  const fold = useFold('service-history')
   useEffect(() => {
     if (!logFor || readOnly) return
+    fold.setCollapsed(false)
     form.open('record')
     sectionRef.current?.scrollIntoView({ block: 'start' })
   }, [logFor]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -88,9 +91,9 @@ export function ServiceHistory({ car, logFor, onChanged }: { car: Vehicle; logFo
   const onGone = () => { focusNext.current = []; setGone(true); onChanged() }
 
   return (
-    <section className="card" aria-labelledby="service-history" ref={sectionRef}>
+    <section {...fold.section} aria-labelledby="service-history" ref={sectionRef}>
       <div className="row">
-        <h2 id="service-history" tabIndex={-1}>{t('serviceHistory')}</h2>
+        {fold.heading(t('serviceHistory'))}
         <div className="actions">
           <Link to={`/spending?vehicleId=${encodeURIComponent(car.id)}`}>{t('searchAllHistory')}</Link>
           {!readOnly && form.mode === 'view' && !editing && (

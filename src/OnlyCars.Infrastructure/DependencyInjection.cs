@@ -3,7 +3,9 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using OnlyCars.Application.Auth;
 using OnlyCars.Application.Common;
+using OnlyCars.Application.Reminders;
 using OnlyCars.Infrastructure.Auth;
+using OnlyCars.Infrastructure.Email;
 using OnlyCars.Infrastructure.Persistence;
 using OnlyCars.Infrastructure.Storage;
 
@@ -33,6 +35,15 @@ public static class DependencyInjection
         if (R2FileStorage.FromConfiguration(configuration) is { } storage)
         {
             services.AddSingleton<IFileStorage>(storage);
+        }
+
+        // Not registered without a Resend key, so a fresh clone and the tests send nothing (DigestService then gets null).
+        var email = configuration.GetSection(EmailOptions.SectionName);
+        services.Configure<EmailOptions>(email);
+        if (email[nameof(EmailOptions.ResendApiKey)] is { Length: > 0 } resendKey)
+        {
+            var from = email[nameof(EmailOptions.From)] is { Length: > 0 } f ? f : throw new InvalidOperationException("Email:From is not configured.");
+            services.AddSingleton<IEmailSender>(new ResendEmailSender(resendKey, from));
         }
 
         return services;

@@ -125,7 +125,7 @@ for (const s of setups) {
   }
   const heightOf = (loc) => loc.evaluate((el) => el.getBoundingClientRect().height)
   async function tall(loc, what) {
-    const h = await heightOf(loc)
+    const h = Math.round(await heightOf(loc) * 100) / 100 // 43.99997 is 44 laid out on a fractional pixel
     if (h < 44) throw new Error(`${what} is ${h}px tall`)
   }
   // Every visible link and button on the page is a 44px tap target; a text-link button is also 44px wide (LOW-3 L48).
@@ -898,6 +898,37 @@ for (const s of setups) {
     await page.reload()
     await taskRow('Coolant').waitFor()
     await page.setViewportSize(s.viewport)
+  })
+  // Owner, 2026-11-02: each car page section folds from its heading, remembered per section after a reload; Log with details opens a folded Service history.
+  await step('car-sections-fold', async () => {
+    const toggle = (id) => page.locator(`h2#${id} > button.fold`)
+    const expanded = async (id) => (await toggle(id).getAttribute('aria-expanded')) === 'true'
+    for (const id of ['maintenance', 'todos', 'documents', 'checklists', 'tires', 'service-history', 'odometer-history']) {
+      if (!(await expanded(id))) throw new Error(`${id} not open by default`)
+      if ((await toggle(id).getAttribute('aria-controls')) !== `${id}-section`) throw new Error(`${id} aria-controls`)
+    }
+    await tall(toggle('maintenance'), 'the Maintenance toggle')
+    await toggle('maintenance').click()
+    await tasks.locator('.tasks').waitFor({ state: 'hidden' })
+    if (await tasks.locator('button.add').isVisible()) throw new Error('Add task shown while folded')
+    // From the keyboard: Enter on the focused heading button folds Service history.
+    await toggle('service-history').focus()
+    await page.keyboard.press('Enter')
+    if (await expanded('service-history')) throw new Error('Enter did not fold Service history')
+    await page.reload()
+    await toggle('maintenance').waitFor()
+    if (await expanded('maintenance') || await expanded('service-history') || !(await expanded('todos'))) throw new Error('fold state not kept after a reload')
+    await noOverflow('folded sections')
+    await page.screenshot({ path: `${OUT}/${s.name}-car-sections-folded.png`, fullPage: true })
+    if (await tasks.locator('.tasks').isVisible()) throw new Error('tasks shown while folded after a reload')
+    await toggle('maintenance').click()
+    await taskRow('Brakes').waitFor()
+    // Log with details opens the folded Service history, with its form. Brakes: Record a service keeps the last task it was opened with.
+    await taskBtn(RS.cost, 'Brakes').click()
+    await recordForm.waitFor()
+    if (!(await expanded('service-history'))) throw new Error('Log with details left Service history folded')
+    await page.keyboard.press('Escape')
+    await recordForm.waitFor({ state: 'detached' })
   })
   // MVP3-A at 390px. The odometer is at 59,000; Coolant, 9k service and Brakes (120.50, notes) were marked done today.
   const odometerIs = (v) => page.waitForFunction((v) => document.querySelector('.odometer')?.getAttribute('aria-label')?.replace(/\D/g, '') === v, v, { timeout: 5000 })
@@ -2299,7 +2330,8 @@ for (const s of setups) {
     // LOW-3 L36: a new car's first reading takes the local date the app sends, as the add-car form does.
     mileCarId = (await apiCall('POST', '/vehicles', { nickname: 'Mile car', initialOdometerKm: 80467, readingDate: await localDate() })).id
     await apiCall('POST', `/vehicles/${mileCarId}/odometer`, { valueKm: 79967, readingDate: await histDay(-10) })
-    await apiCall('POST', `/vehicles/${mileCarId}/tasks`, { name: 'Mile oil', category: 'Oil', intervalKm: 10000, intervalDays: null, dueSoonPercent: 10, lastDoneOdometerKm: 72000, lastDoneDate: await localDate() })
+    // Due soon (20%), so the dashboard lists it (only tasks needing attention show there).
+    await apiCall('POST', `/vehicles/${mileCarId}/tasks`, { name: 'Mile oil', category: 'Oil', intervalKm: 10000, intervalDays: null, dueSoonPercent: 20, lastDoneOdometerKm: 72000, lastDoneDate: await localDate() })
     if (!(await radio('distanceUnit', 'Km').isChecked())) throw new Error('unit not Km by default')
     // SET-1 QA Low 1: an arrow key while the group saves leaves focus on its checked radio, and sends nothing.
     let puts = 0
@@ -2516,13 +2548,13 @@ for (const s of setups) {
   await step('archived-tasks-read-only', async () => {
     await page.locator('.cars > li.archived', { hasText: 'Renamed Corolla' }).locator('h2 a').click()
     await taskRow(TK.belt).waitFor()
-    const controls = await tasks.locator('button, input, select').count()
+    const controls = await tasks.locator('button:not(.fold), input, select').count() // the heading's fold toggle stays
     if (controls) throw new Error(`${controls} controls on an archived car's tasks`)
     // MVP3-A criterion 11 and MVP3-B criterion 13: the history and its items are shown, without Record, Edit or Delete.
     await apiCall('POST', `/vehicles/${carId()}/service-records`, { date: await localDate(), odometerKm: 59000, items: [{ description: 'Wiper', quantity: 2, unitCost: 30 }] })
     await page.reload()
     await services.locator('.service-items li', { hasText: 'Wiper' }).waitFor()
-    if (await services.locator('button, input').count()) throw new Error('Record, Edit or Delete on an archived car')
+    if (await services.locator('button:not(.fold), input').count()) throw new Error('Record, Edit or Delete on an archived car')
     await page.click('main > a.back')
     await page.locator('a[href="/cars/new"]').waitFor() // the list hides archived cars again
   })
@@ -2776,10 +2808,10 @@ for (const s of setups) {
     ? { overdue: (n) => ['אין משימות באיחור', 'משימה אחת באיחור', 'שתי משימות באיחור'][n] ?? `${n} משימות באיחור`,
         soon: (n) => ['אין משימות לביצוע בקרוב', 'משימה אחת לביצוע בקרוב', 'שתי משימות לביצוע בקרוב'][n] ?? `${n} משימות לביצוע בקרוב`,
         month: (n, total) => (n ? `החודש: ${total} (${['', 'טיפול אחד', 'שני טיפולים'][n] || `${n} טיפולים`})` : 'החודש: אין טיפולים'),
-        all: (n) => `כל המשימות (${n})`, noTasks: 'עדיין אין משימות תחזוקה.', addTask: 'הוספת משימה', status: { Overdue: 'באיחור', DueSoon: 'בקרוב' }, brakesLate: 'באיחור של 500 ק״מ' }
+        all: (n) => `כל המשימות (${n})`, caughtUp: 'אין כרגע משימות לטיפול.', noTasks: 'עדיין אין משימות תחזוקה.', addTask: 'הוספת משימה', status: { Overdue: 'באיחור', DueSoon: 'בקרוב' }, brakesLate: 'באיחור של 500 ק״מ' }
     : { overdue: (n) => (n ? `${n} task${n === 1 ? '' : 's'} overdue` : 'No tasks overdue'), soon: (n) => (n ? `${n} task${n === 1 ? '' : 's'} due soon` : 'No tasks due soon'),
         month: (n, total) => (n ? `This month: ${total} (${n} service${n === 1 ? '' : 's'})` : 'This month: no services'),
-        all: (n) => `All tasks (${n})`, noTasks: 'No maintenance tasks yet.', addTask: 'Add task', status: { Overdue: 'Overdue', DueSoon: 'Due soon' }, brakesLate: 'Overdue by 500 km' }
+        all: (n) => `All tasks (${n})`, caughtUp: 'All caught up: nothing due.', noTasks: 'No maintenance tasks yet.', addTask: 'Add task', status: { Overdue: 'Overdue', DueSoon: 'Due soon' }, brakesLate: 'Overdue by 500 km' }
   const isDashGet = (u) => u.pathname === '/api/dashboard'
   const dashCar = () => page.locator('.cars > li').filter({ has: page.getByRole('link', { name: 'Dash car', exact: true }) })
   const dashRow = (name) => dashCar().locator('.dash-tasks > li').filter({ has: page.locator('.name', { hasText: new RegExp(`^${name}$`) }) })
@@ -2847,8 +2879,8 @@ for (const s of setups) {
     if (names.join('|') !== want.join('|')) throw new Error(`cards ${names}, want ${want}`)
     await summaryShows(dash)
     noLatin((await summary.textContent()).replace(/[A-Z]{3}/, ''), 'summary')
-    // The first 3 tasks, most urgent first, with status and remaining; All tasks (4); a car without tasks says so.
-    if ((await dashNames()).join('|') !== 'Oil|Brakes|Air filter') throw new Error(`tasks ${await dashNames()}`)
+    // Only the tasks due soon or overdue, most urgent first (owner, 2026-11-02), with status and remaining; All tasks (4); a car without tasks says so.
+    if ((await dashNames()).join('|') !== 'Oil|Brakes') throw new Error(`tasks ${await dashNames()}`)
     if ((await dashRow('Oil').locator('.badge.status').textContent()) !== D.status.Overdue) throw new Error('Oil badge')
     if ((await dashRow('Brakes').locator('.badge.status').textContent()) !== D.status.DueSoon) throw new Error('Brakes badge')
     if (!plain(await dashRow('Oil').textContent()).includes(RS.oilLate)) throw new Error(`Oil row "${plain(await dashRow('Oil').textContent())}"`)
@@ -2890,9 +2922,9 @@ for (const s of setups) {
     const sent = page.waitForRequest(isReset)
     await dashRow('Oil').getByRole('button', { name: RS.done + 'Oil', exact: true }).click()
     if ((await sent).postDataJSON().date !== (await localDate())) throw new Error('reset not dated with the local date')
-    // Criterion 5: focus on the row's Undo; Oil restarts and stays shown with its Undo though it is now 4th; the counts drop.
+    // Criterion 5: focus on the row's Undo; Oil restarts and stays shown with its Undo though it is now OK; the counts drop.
     await focusIs(`li[data-id="${taskIds.Oil}"] .undo button`, 'Undo after Mark done')
-    if ((await dashNames()).join('|') !== 'Brakes|Air filter|Coolant|Oil') throw new Error(`tasks after Mark done ${await dashNames()}`)
+    if ((await dashNames()).join('|') !== 'Brakes|Oil') throw new Error(`tasks after Mark done ${await dashNames()}`)
     if (!plain(await dashRow('Oil').textContent()).includes(RS.oilLeft)) throw new Error(`Oil row "${plain(await dashRow('Oil').textContent())}"`)
     if ((await cardCounts()) !== `${D.overdue(0)}|${D.soon(1)}`) throw new Error(`card counts ${await cardCounts()}`)
     const after = await dashApi()
@@ -2905,7 +2937,7 @@ for (const s of setups) {
     await focusIs(`li[data-id="${taskIds.Oil}"] button.done`, 'Mark done after Undo')
     let w = await watched()
     if (w.body || w.gone) throw new Error(`during Undo: focus on body ${w.body} times, Oil row gone ${w.gone} times`)
-    if ((await dashNames()).join('|') !== 'Oil|Brakes|Air filter') throw new Error(`tasks after Undo ${await dashNames()}`)
+    if ((await dashNames()).join('|') !== 'Oil|Brakes') throw new Error(`tasks after Undo ${await dashNames()}`)
     if (!plain(await dashRow('Oil').textContent()).includes(RS.oilLate)) throw new Error('Oil not overdue again')
     await summaryShows(before)
     // LOW-2 review M1: ticking Show archived while Undo is in flight ends the Undo bar.
@@ -2924,7 +2956,7 @@ for (const s of setups) {
     const reloaded = page.waitForResponse((r) => isDashGet(new URL(r.url())))
     await archived.uncheck()
     await reloaded
-    // LOW-2 L22: Undo is 44px at 390px; when the restored task is no longer among the first 3, focus goes to the car's h2 link.
+    // LOW-2 L22: Undo is 44px at 390px; when the restored task is no longer shown (OK now), focus goes to the car's h2 link.
     await page.setViewportSize({ width: 390, height: 844 })
     await dashRow('Oil').getByRole('button', { name: RS.done + 'Oil', exact: true }).click()
     await focusIs(`li[data-id="${taskIds.Oil}"] .undo button`, 'Undo after Mark done')
@@ -2942,7 +2974,7 @@ for (const s of setups) {
     await focusIs(`.cars > li[data-id="${dashCarId}"] h2 a`, 'the car link after Undo')
     w = await watched()
     if (w.body) throw new Error(`during Undo: focus on body ${w.body} times`)
-    if (await dashRow('Oil').count()) throw new Error('Oil still shown outside the first 3')
+    if (await dashRow('Oil').count()) throw new Error('Oil still shown while OK')
     await page.setViewportSize(s.viewport)
     // LOW-3 L27: Undo whose reload fails: the bar goes, and focus moves to the row's Mark done, not body.
     const markBrakes = () => dashRow('Brakes').getByRole('button', { name: RS.done + 'Brakes', exact: true })
@@ -3010,6 +3042,27 @@ for (const s of setups) {
     if (await brakesError.count()) throw new Error("the failed Mark done's error stayed after the reload")
     if (!(await page.evaluate(() => window.noReload))) throw new Error('the page reloaded')
   })
+  // Owner, 2026-11-02: a task marked done stays with its Undo, then goes once Undo is gone; a car with nothing due says so, with All tasks.
+  await step('dashboard-caught-up', async () => {
+    const calmId = (await apiCall('POST', '/vehicles', { nickname: 'Calm car', initialOdometerKm: 9500, readingDate: await localDate() })).id
+    const wash = await apiCall('POST', `/vehicles/${calmId}/tasks`, { name: 'Wash', category: 'Other', intervalKm: 10000, intervalDays: null, dueSoonPercent: 10, lastDoneOdometerKm: 0, lastDoneDate: await localDate() })
+    const calm = page.locator('.cars > li').filter({ has: page.getByRole('link', { name: 'Calm car', exact: true }) })
+    await page.reload()
+    await calm.locator('.dash-tasks').waitFor()
+    await calm.getByRole('button', { name: RS.done + 'Wash', exact: true }).click()
+    await focusIs(`li[data-id="${wash.id}"] .undo button`, 'Undo after Mark done')
+    if (await calm.getByText(D.caughtUp).count()) throw new Error('caught up while the Undo row shows')
+    // The next load ends Undo: the OK row goes, and the card says it is caught up, with All tasks (1).
+    await page.reload()
+    await calm.getByText(D.caughtUp).waitFor()
+    if (await calm.locator('.dash-tasks').count()) throw new Error('an OK task on the dashboard')
+    const all = calm.locator(`.actions a[href="/cars/${calmId}"]`)
+    if (!(await all.count()) || plain(await all.textContent()) !== D.all(1)) throw new Error('no All tasks link when caught up')
+    await page.screenshot({ path: `${OUT}/${s.name}-dashboard-caught-up.png`, fullPage: true })
+    await apiCall('POST', `/vehicles/${calmId}/archive`) // the steps below expect the cars they made
+    await page.reload()
+    await dashCar().waitFor()
+  })
   await step('dashboard-long-name', async () => {
     // LOW-2 L25: a long task name wraps beside its status badge, at 390px and 1280px, without overflow.
     const long = 'Replace the timing belt, the water pump and every tensioner and idler pulley on the engine'
@@ -3049,11 +3102,12 @@ for (const s of setups) {
       : { around: (x) => `Around ${x}`, hint: (v, u) => `Dates based on ${v} ${u} a day`, km: 'km', mi: 'mi' }
     const fmt = (iso) => page.evaluate(([d, l]) => new Date(d).toLocaleDateString(l, { dateStyle: 'medium', timeZone: 'UTC' }), [iso, s.lng])
     const id = (await apiCall('POST', '/vehicles', { nickname: 'Pred car', initialOdometerKm: 50000, readingDate: plus(-100) })).id
+    // All three due soon after the 53,000 reading (50%), so the dashboard lists them: it shows only tasks that need attention.
     const task = (name, intervalKm, intervalDays, lastKm) =>
-      apiCall('POST', `/vehicles/${id}/tasks`, { name, category: 'Other', intervalKm, intervalDays, dueSoonPercent: 10, lastDoneOdometerKm: lastKm, lastDoneDate: plus(-100) })
+      apiCall('POST', `/vehicles/${id}/tasks`, { name, category: 'Other', intervalKm, intervalDays, dueSoonPercent: 50, lastDoneOdometerKm: lastKm, lastDoneDate: plus(-100) })
     await task('Oil', 5000, null, 49000) // 1,000 km left after the 53,000 reading: 34 days at 30 km a day
-    await task('Belt', 100000, null, 50000) // more than 2 years out: no date
-    await task('Wipers', null, 365, 50000) // time only: no date
+    await task('Belt', 100000, null, 0) // 47,000 km left, more than 2 years out: no date
+    await task('Wipers', null, 180, 50000) // time only: no date
     const card = page.locator('.cars > li').filter({ has: page.getByRole('link', { name: 'Pred car', exact: true }) })
     const row = (loc, name) => loc.locator('.tasks > li').filter({ has: page.locator('.name', { hasText: new RegExp(`^${name}$`) }) })
     const dates = (loc) => loc.locator('.predicted').allTextContents().then((x) => x.map(plain))
@@ -4848,7 +4902,7 @@ for (const s of setups) {
     await tiSec.getByRole('button', { name: TI.unmount, exact: true }).click()
     await tiSave.click()
     await tiSec.getByText(TI.noneOnCar, { exact: true }).waitFor()
-    if (await tiSec.locator('button').count()) throw new Error('a button on an archived car with no set')
+    if (await tiSec.locator('button:not(.fold)').count()) throw new Error('a button on an archived car with no set')
   })
   await step('tires-delete-mount', async () => {
     await page.goto(`${BASE}${ckCarPath()}`)
@@ -5704,11 +5758,27 @@ for (const s of setups) {
     await remRow(NT.types.Insurance).waitFor()
     if (!(await page.evaluate(() => window.noReload))) throw new Error('the page reloaded')
   })
+  // NOT-2: the daily email toggle, on by default; off and on again round-trips through the API and the cached user.
+  await step('settings-email-reminders', async () => {
+    await openSettings()
+    const box = page.locator('input[name=emailReminders]')
+    if (!(await box.isChecked())) throw new Error('email reminders not on by default')
+    if (!(await page.locator(`#${await box.getAttribute('aria-describedby')}`).isVisible())) throw new Error('no hint')
+    for (const on of [false, true]) {
+      const res = putSettings()
+      await box.setChecked(on)
+      if (JSON.stringify((await res).request().postDataJSON()) !== JSON.stringify({ emailReminders: on })) throw new Error('PUT body')
+      await savedShown()
+      if ((await page.evaluate(() => JSON.parse(localStorage.getItem('user')).emailReminders)) !== on) throw new Error('cached user')
+      if ((await apiCall('GET', '/me')).emailReminders !== on) throw new Error(`API emailReminders not ${on}`)
+    }
+    await tall(box.locator('xpath=..'), 'the email reminders label')
+  })
   await step('documents-archived', async () => {
     await apiCall('POST', `/vehicles/${ntCarId}/archive`)
     await page.goto(`${BASE}/cars/${ntCarId}`)
     await docRow('Insurance').waitFor()
-    if (await docs.locator('button').count()) throw new Error("buttons on an archived car's documents")
+    if (await docs.locator('button:not(.fold)').count()) throw new Error("buttons on an archived car's documents")
     await page.goto(`${BASE}/`)
     await page.locator('main h1').waitFor()
     await page.waitForLoadState('networkidle')
@@ -5809,9 +5879,9 @@ for (const s of setups) {
     const slow = async (r) => { await page.waitForTimeout(700); await r.continue().catch(() => {}) }
     await page.route(exportUrl, slow, { times: 1 })
     const width = (await btn.boundingBox()).width
-    await page.locator('main form:has(input[name=reminderLeadDays]) button').focus()
+    await page.locator('input[name=emailReminders]').focus()
     await page.keyboard.press('Tab')
-    await focusIs('main section[aria-labelledby=your-data] button.stack', 'Export after the lead days Save')
+    await focusIs('main section[aria-labelledby=your-data] button.stack', 'Export after the email reminders box')
     if ((await page.evaluate(() => getComputedStyle(document.activeElement).outlineStyle)) !== 'solid') throw new Error('no focus ring')
     const dl = page.waitForEvent('download', { timeout: 15000 })
     await page.keyboard.press('Enter')
@@ -6054,7 +6124,7 @@ for (const s of setups) {
     let pctx, pp, failure
     try {
       const carId = (await as(U)('POST', '/vehicles', { nickname: 'Offline car', initialOdometerKm: 10000, readingDate: today })).id
-      await as(U)('POST', `/vehicles/${carId}/tasks`, { name: 'Off oil', category: 'Oil', intervalKm: 5000, intervalDays: null, dueSoonPercent: 10, lastDoneOdometerKm: 10000, lastDoneDate: today })
+      await as(U)('POST', `/vehicles/${carId}/tasks`, { name: 'Off oil', category: 'Oil', intervalKm: 5000, intervalDays: null, dueSoonPercent: 50, lastDoneOdometerKm: 7000, lastDoneDate: today }) // due soon, so the dashboard lists it
       const readings = async () => (await as(U)('GET', `/vehicles/${carId}/odometer`)).map((r) => Number(r.valueKm))
       pctx = await chromium.launchPersistentContext(profile, { channel: 'chrome', timezoneId: process.env.UI_TZ, viewport: s.viewport, colorScheme: s.colorScheme, isMobile: s.isMobile, hasTouch: s.hasTouch })
       pp = pctx.pages()[0] ?? await pctx.newPage()

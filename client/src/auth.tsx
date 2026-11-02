@@ -5,7 +5,7 @@ import i18n, { toLocale } from './i18n'
 import { clearOffline, pruneOffline } from './offline'
 import { distance } from './units'
 
-type Settings = Partial<Pick<User, 'locale' | 'theme' | 'currency' | 'distanceUnit' | 'reminderLeadDays'>>
+type Settings = Partial<Pick<User, 'locale' | 'theme' | 'currency' | 'distanceUnit' | 'reminderLeadDays' | 'emailReminders'>>
 
 interface AuthState {
   user: User | null

@@ -4,6 +4,7 @@ import { Link, useParams } from 'react-router-dom'
 import { api, carNotFound, isGuid, isOrderError, localToday, Offline, runReturn, type OdometerReading, type Vehicle } from '../api'
 import { errorMessage } from '../i18n'
 import { useDistance } from '../auth'
+import { useFold } from '../fold'
 import { usePage } from '../usePage'
 import { useRow } from '../useRow'
 import { Odometer, OdometerQuickEntry } from './CarsPage'
@@ -35,6 +36,7 @@ export default function CarPage() {
   const [logFor, setLogFor] = useState<{ taskId: string; n: number } | null>(null)
   // Bumped when the run history creates a to-do, so To-dos reloads.
   const [issuesVersion, setIssuesVersion] = useState(0)
+  const fold = useFold('odometer-history')
 
   const load = () =>
     Promise.all([api<Vehicle>(path), api<OdometerReading[]>(`${path}/odometer`)]).then(
@@ -113,8 +115,8 @@ export default function CarPage() {
       <TiresSection car={car} />
       <ServiceHistory car={car} logFor={logFor} onChanged={() => { setUndo(null); load() }} />
 
-      <section className="card" aria-labelledby="odometer-history" ref={historyRef}>
-        <h2 id="odometer-history" tabIndex={-1}>{t('odometerHistory')}</h2>
+      <section {...fold.section} aria-labelledby="odometer-history" ref={historyRef}>
+        {fold.heading(t('odometerHistory'))}
         {readings.length === 0 ? (
           <p className="muted">{t('noReadings')}</p>
         ) : (

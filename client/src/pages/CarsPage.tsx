@@ -100,6 +100,10 @@ export default function CarsPage() {
     await reloadThenFocus(() => row(taskId)?.querySelector('button.done') ?? document.querySelector(`.cars > li[data-id="${carId}"] h2 a`), () => setUndo(null))
   }
 
+  // Only what is due soon or overdue, the 3 most urgent (owner, 2026-11-02); the row showing Undo stays even when its reset made it OK or moved it past 3.
+  const needsAttention = (tasks: DashboardTask[]) => [...tasks].sort(byUrgency(lng))
+    .filter((task) => task.status !== 'Ok' || task.id === undo?.taskId)
+    .filter((task, i) => i < 3 || task.id === undo?.taskId)
   const byId = new Map(data?.cars.map((c) => [c.id, c]))
   const cards = data && [
     ...data.dash.vehicles.flatMap((v) => (byId.has(v.id) ? [{ car: byId.get(v.id)!, dash: v }] : [])),
@@ -180,17 +184,18 @@ export default function CarsPage() {
                   </div>
                 ) : (
                   <>
-                    <ul className="tasks dash-tasks">
-                      {/* The row showing Undo stays even when its reset moved it past the first 3. */}
-                      {[...dash.tasks].sort(byUrgency(lng)).filter((task, i) => i < 3 || task.id === undo?.taskId).map((task) => (
-                        <DashTask
-                          key={task.id}
-                          task={task}
-                          onReset={() => markDone(car.id, task.id)}
-                          onUndo={undo?.taskId === task.id ? () => undoReset(car.id) : undefined}
-                        />
-                      ))}
-                    </ul>
+                    {needsAttention(dash.tasks).length === 0 ? <p className="muted">{t('allCaughtUp')}</p> : (
+                      <ul className="tasks dash-tasks">
+                        {needsAttention(dash.tasks).map((task) => (
+                          <DashTask
+                            key={task.id}
+                            task={task}
+                            onReset={() => markDone(car.id, task.id)}
+                            onUndo={undo?.taskId === task.id ? () => undoReset(car.id) : undefined}
+                          />
+                        ))}
+                      </ul>
+                    )}
                     <div className="actions">
                       <Link to={`/cars/${car.id}`}>{t('allTasksCount', { n: dash.tasks.length })}</Link>
                     </div>

@@ -31,8 +31,9 @@ public static class NoSniff
                 var h = ctx.Response.Headers;
                 h.XContentTypeOptions = "nosniff";
                 h.XFrameOptions = "DENY";
-                // Swagger (Development only) runs inline scripts; it keeps the framing rule alone.
-                h.ContentSecurityPolicy = ctx.Request.Path.StartsWithSegments("/swagger") ? "frame-ancestors 'none'" : ContentSecurityPolicy;
+                // Swagger (Development only) runs inline scripts; it keeps the framing rule alone. Elsewhere /swagger is just a page of the app.
+                var swagger = ctx.Request.Path.StartsWithSegments("/swagger") && ctx.RequestServices.GetRequiredService<IWebHostEnvironment>().IsDevelopment();
+                h.ContentSecurityPolicy = swagger ? "frame-ancestors 'none'" : ContentSecurityPolicy;
                 h["Referrer-Policy"] = "strict-origin-when-cross-origin";
                 return Task.CompletedTask;
             });

@@ -10,6 +10,7 @@ import { splitDays, unitDays, type Unit } from '../units'
 import { Due, Interval, StatusBadge } from './TasksSection'
 import { IssueForm } from './IssuesSection'
 import { focusIssue } from '../focusIssue'
+import { useFold } from '../fold'
 import { Attachments } from './ServiceHistory'
 
 // The server's cap on a checklist's time interval (10 years).
@@ -23,7 +24,9 @@ export function ChecklistsSection({ car, onChanged, onIssuesChanged }: { car: Ve
   const navigate = useNavigate()
   // Read once, then cleared from the history entry (or the hand-off after a Save that went back), so a reload doesn't repeat the status line.
   const [back] = useState(() => (location.state as RunReturn | null) ?? runReturn.current)
+  const fold = useFold('checklists')
   useEffect(() => {
+    if (back) fold.setCollapsed(false) // so the run's Run button and the saved note show and can take focus
     runReturn.current = null
     if (location.state) navigate(location.pathname, { replace: true, state: null })
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
@@ -73,9 +76,9 @@ export function ChecklistsSection({ car, onChanged, onIssuesChanged }: { car: Ve
   const savedId = back?.flagged == null ? undefined : 'run-saved'
 
   return (
-    <section className="card" aria-labelledby="checklists" ref={sectionRef}>
+    <section {...fold.section} aria-labelledby="checklists" ref={sectionRef}>
       <div className="row">
-        <h2 id="checklists" tabIndex={-1}>{t('checklists')}</h2>
+        {fold.heading(t('checklists'))}
         {!readOnly && list && form.mode === 'view' && (
           <button className="add" ref={form.opener('add')} onClick={() => form.open('add')}>{t('addChecklist')}</button>
         )}

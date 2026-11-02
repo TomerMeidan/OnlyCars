@@ -5,6 +5,7 @@ import { api, ApiError, limit, localToday, tireName, tirePositions, type TireChe
 import { useDistance } from '../auth'
 import { errorMessage, fmtDate } from '../i18n'
 import { noItems, useItemErrors } from '../useItemErrors'
+import { useFold } from '../fold'
 import { useRow } from '../useRow'
 
 // The field each tire error is about (decisions.md, MVP5-D and MVP5-E); 'row' is a whole wheel of a check; anything else shows under the form.
@@ -137,9 +138,11 @@ export function TiresSection({ car }: { car: Vehicle }) {
   // The row that takes a deleted one's place, then the first, then `rest` (decisions.md, MVP1-C).
   const afterDelete = (list: string, i: number, ...rest: string[]) => [`.${list} > li:nth-child(${i + 1}) button.link`, `.${list} > li button.link`, ...rest]
 
+  const fold = useFold('tires')
+
   return (
-    <section className="card" aria-labelledby="tires" ref={sectionRef}>
-      <h2 id="tires" tabIndex={-1}>{t('tires')}</h2>
+    <section {...fold.section} aria-labelledby="tires" ref={sectionRef}>
+      {fold.heading(t('tires'))}
       {error != null && (
         <div className="row">
           <p className="error" role="alert">{errorMessage(error)}</p>

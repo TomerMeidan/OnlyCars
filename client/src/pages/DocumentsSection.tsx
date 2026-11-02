@@ -3,6 +3,7 @@ import { Trans, useTranslation } from 'react-i18next'
 import { api, ApiError, documentTypes, limit, localToday, type VehicleDocument, type Vehicle } from '../api'
 import { useAuth } from '../auth'
 import { errorMessage, fmtDate, money } from '../i18n'
+import { useFold } from '../fold'
 import { useRow } from '../useRow'
 
 // "Expired 3 days ago", "Expires today", "Expires in 10 days"; nothing when Ok (the expiry date says it). Colored by a status-* class on an ancestor.
@@ -112,10 +113,12 @@ export function DocumentsSection({ car }: { car: Vehicle }) {
     setReloads((n) => n + 1)
   }
 
+  const fold = useFold('documents')
+
   return (
-    <section className="card" aria-labelledby="documents" ref={sectionRef}>
+    <section {...fold.section} aria-labelledby="documents" ref={sectionRef}>
       <div className="row">
-        <h2 id="documents" tabIndex={-1}>{t('documents')}</h2>
+        {fold.heading(t('documents'))}
         {!readOnly && list && form.mode === 'view' && (
           <button className="add" ref={form.opener('add')} onClick={() => form.open('add')}>{t('addDocument')}</button>
         )}

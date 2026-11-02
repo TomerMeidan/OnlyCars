@@ -4,6 +4,7 @@ import { api, ApiError, localToday, type Issue, type Vehicle } from '../api'
 import { errorMessage, fmtDate } from '../i18n'
 import { useRow } from '../useRow'
 import { focusIn } from '../focusIssue'
+import { useFold } from '../fold'
 
 type IssueBody = { title: string; description: string }
 
@@ -81,6 +82,7 @@ export function IssuesSection({ car, version }: { car: Vehicle; version: number 
     setNote(message)
     setReloads((n) => n + 1)
   }
+  const fold = useFold('todos')
   const open = list?.filter((x) => x.status === 'Open') ?? []
   const done = list?.filter((x) => x.status === 'Done') ?? []
   const rows = (xs: Issue[], cls: string) => (
@@ -100,9 +102,9 @@ export function IssuesSection({ car, version }: { car: Vehicle; version: number 
   )
 
   return (
-    <section className="card" aria-labelledby="todos" ref={sectionRef}>
+    <section {...fold.section} aria-labelledby="todos" ref={sectionRef}>
       <div className="row">
-        <h2 id="todos" tabIndex={-1}>{t('todos')}</h2>
+        {fold.heading(t('todos'), open.length > 0 && t('openIssues', { count: open.length }))}
         {!readOnly && list && form.mode === 'view' && (
           <button className="add" ref={form.opener('add')} onClick={() => form.open('add')}>{t('addIssue')}</button>
         )}

@@ -5,6 +5,7 @@ import { api, ApiError, byUrgency, localToday, taskCategories, type MaintenanceT
 import { errorMessage, fmtDate } from '../i18n'
 import { splitDays, unitDays, type Unit } from '../units'
 import { noItems, useItemErrors } from '../useItemErrors'
+import { useFold } from '../fold'
 import { useRow } from '../useRow'
 
 // The field a task error is about (aria-invalid, and focus after a failed Save): the date errors Last done date, task.invalidLastDone the Last done reading; any other code focuses Name.
@@ -151,6 +152,8 @@ export function TasksSection({ car, undo, setUndo, onOdometerChanged, onLogServi
   }, [tasks, adding])
 
   const sorted = tasks && [...tasks].sort(byUrgency(i18n.resolvedLanguage))
+  const fold = useFold('maintenance')
+  const due = tasks?.filter((x) => x.status !== 'Ok').length ?? 0
 
   const saved = (task: MaintenanceTask, focus = 'button.edit') => {
     focusNext.current = `li[data-id="${task.id}"] ${focus}`
@@ -203,10 +206,10 @@ export function TasksSection({ car, undo, setUndo, onOdometerChanged, onLogServi
 
   return (
     // Any button or toggle here, except the Undo bar's own, ends the chance to undo. Bubble phase: clearing it in capture swallowed the Enabled checkbox's first change.
-    <section className="card" aria-labelledby="maintenance" ref={sectionRef}
+    <section {...fold.section} aria-labelledby="maintenance" ref={sectionRef}
       onClick={(e) => (e.target as Element).closest('button, input') && !(e.target as Element).closest('.undo') && setUndo(null)}>
       <div className="row">
-        <h2 id="maintenance" tabIndex={-1}>{t('maintenance')}</h2>
+        {fold.heading(t('maintenance'), due > 0 && t('tasksDue', { count: due }))}
         {!readOnly && tasks && !adding && <button className="add" onClick={() => setAdding('pick')}>{t('addTask')}</button>}
       </div>
 

@@ -7,7 +7,7 @@ import { GoogleButton } from '../google'
 import { errorMessage } from '../i18n'
 import { usePage } from '../usePage'
 
-type Field = 'locale' | 'theme' | 'currency' | 'distanceUnit' | 'reminderLeadDays'
+type Field = 'locale' | 'theme' | 'currency' | 'distanceUnit' | 'reminderLeadDays' | 'emailReminders'
 
 export default function SettingsPage() {
   const { t, i18n } = useTranslation()
@@ -33,7 +33,7 @@ export default function SettingsPage() {
     api<User>('/me').then((u) => saveStarted.current || storeUser(u), () => {})
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  async function save(field: Field, value: string | number) {
+  async function save(field: Field, value: string | number | boolean) {
     if (busy) return // the controlled value puts the control back
     saveStarted.current = true
     setBusy(true)
@@ -112,7 +112,7 @@ export default function SettingsPage() {
   const errorFor = (field: Field) =>
     settingsError?.at === at(field) && <p className="error" role="alert">{errorMessage(settingsError.err)}</p>
 
-  const radios = (field: Exclude<Field, 'currency' | 'reminderLeadDays'>, legend: string, values: string[], label: (v: string) => ReactNode) => (
+  const radios = (field: Exclude<Field, 'currency' | 'reminderLeadDays' | 'emailReminders'>, legend: string, values: string[], label: (v: string) => ReactNode) => (
     <fieldset aria-disabled={busy}>
       <legend>{t(legend)}</legend>
       {values.map((v) => (
@@ -166,6 +166,16 @@ export default function SettingsPage() {
         <p id="lead-days-hint" className="muted">{t('leadDaysHint')}</p>
         {errorFor('reminderLeadDays')}
       </form>
+      <div className="field">
+        <label className="inline">
+          {/* React puts a controlled checkbox back when a busy change is ignored. */}
+          <input type="checkbox" name="emailReminders" checked={user!.emailReminders ?? true} aria-disabled={busy} aria-describedby="email-reminders-hint"
+            onChange={(e) => save('emailReminders', e.target.checked)} />
+          {t('emailReminders')}
+        </label>
+        <p id="email-reminders-hint" className="muted">{t('emailRemindersHint')}</p>
+        {errorFor('emailReminders')}
+      </div>
       <p role="status">{saved && t('saved')}</p>
       <section className="field" aria-labelledby="your-data">
         <h2 id="your-data">{t('yourData')}</h2>
