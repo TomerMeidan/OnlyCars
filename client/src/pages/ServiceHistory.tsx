@@ -76,6 +76,9 @@ export function ServiceHistory({ car, logFor, onChanged }: { car: Vehicle; logFo
     focusNext.current = null
     const target = sels.map((s) => section.querySelector<HTMLElement>(s)).find(Boolean)
     ;(target ?? section.querySelector<HTMLElement>('h2'))?.focus()
+    // A saved row moves to its date's place (newest first), so it lights up where it landed: on a PC the whole list
+    // fits and the top row, another of today's, looked like the date hadn't changed (owner, 2026-11-03).
+    if (target?.matches('.edit-service')) target.closest('li')?.animate([{ background: 'color-mix(in srgb, var(--amber) 35%, transparent)' }, {}], { duration: 2000, easing: 'ease-in' })
   }, [records])
 
   const fold = useFold('service-history')
