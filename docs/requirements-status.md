@@ -460,6 +460,7 @@ Questions for the owner (any answer restarts the pipeline):
 ### Later
 - **NOT-2:** email when a task, checklist or document is due (spec 9 bullet 1), using NOT-1's reminders, `Notification.SentAt` to avoid duplicate sends and an `Email` `NotificationRule`. Needs the owner's email provider, sender address and credentials (user-secrets).
 - **Fuel log** (spec 11, optional): waits for the owner's answers (full tanks only or partial fills; L/100 km, km/L or mpg).
+- **Shop link** (owner, 2026-11-03): a service record can keep a link to the shop's or garage's Google page (Google Maps / Business profile), shown as a link on the record. Open questions: https-only and Google hosts only, or any link; per record or a saved shop list.
 - **Snoozed list:** see and undo earlier snoozes, not only the latest (from L149).
 - **Car delete** (not asked for; cars are archived): if ever added, it must delete run-photo rows first and `Notifications WHERE VehicleId` in code, as the account delete does.
 
