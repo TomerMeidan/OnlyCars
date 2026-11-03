@@ -188,6 +188,7 @@ public class EmailDigestTests
         var mail = Assert.Single(sender.Sent);
         Assert.Equal("OnlyCars: 2 פריטים דורשים תשומת לב", mail.Subject);
         Assert.Contains("<html lang=\"he\" dir=\"rtl\">", mail.Html);
+        Assert.Contains("<div dir=\"rtl\" style=\"direction:rtl;text-align:right\">", mail.Html);
         Assert.Contains("באיחור של 1,000 מייל", mail.Html);
         Assert.Contains("מטלה: Wash", mail.Html);
         Assert.Contains("הגדרות", mail.Html);

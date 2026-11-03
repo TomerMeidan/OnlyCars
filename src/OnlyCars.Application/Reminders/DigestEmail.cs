@@ -23,6 +23,8 @@ public static class DigestEmail
         var html = new StringBuilder();
         html.Append(he ? "<!DOCTYPE html><html lang=\"he\" dir=\"rtl\">" : "<!DOCTYPE html><html lang=\"en\" dir=\"ltr\">")
             .Append("<body style=\"font-family:Arial,sans-serif;font-size:15px;line-height:1.5;color:#222\">")
+            // Gmail drops the html element's dir, so the content's own wrapper carries it too (owner, 2026-11-03).
+            .Append(he ? "<div dir=\"rtl\" style=\"direction:rtl;text-align:right\">" : "<div dir=\"ltr\">")
             .Append("<h1 style=\"font-size:20px\">").Append(he ? "דורש תשומת לב" : "Needs attention").Append("</h1>");
 
         // Cars in the order of their most urgent item, then cars with to-dos only.
@@ -53,7 +55,7 @@ public static class DigestEmail
                 .Append("<a href=\"").Append(Encode(site + "/settings")).Append("\">").Append(he ? "הגדרות" : "Settings").Append("</a>.</p>");
         }
 
-        return (subject, html.Append("</body></html>").ToString());
+        return (subject, html.Append("</div></body></html>").ToString());
     }
 
     private static string Encode(string text) => WebUtility.HtmlEncode(text);
