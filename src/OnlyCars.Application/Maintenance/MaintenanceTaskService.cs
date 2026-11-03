@@ -296,7 +296,15 @@ public partial class MaintenanceTaskService(IAppDbContext db, VehicleService veh
     {
         var vehicle = await vehicleService.FindOwnedAsync(userId, vehicleId, ct);
         var day = ClientToday(today);
+        var (record, linked) = await StageRecordAsync(vehicle, request, day, ct);
+        await db.SaveChangesAsync(ct);
+        return new(ToDto(record, userId), linked.Select(t => ToDto(t, vehicle, day)).ToList());
+    }
 
+    /// <summary>Runs every check of POST service-records and adds the record, its links and its reading, without saving (TIRE-2 Replace saves it with the tires).</summary>
+    internal async Task<(ServiceRecord Record, List<MaintenanceTask> Linked)> StageRecordAsync(Vehicle vehicle, CreateServiceRecordRequest request,
+        DateOnly day, CancellationToken ct)
+    {
         // Same one day of slack as readings and resets: the client sends its local date.
         var date = request.Date ?? day;
         if (date > TodayUtc().AddDays(1))
@@ -354,9 +362,7 @@ public partial class MaintenanceTaskService(IAppDbContext db, VehicleService veh
 
         db.ServiceRecords.Add(record);
         LogServiceReading(vehicle, readings, reading);
-
-        await db.SaveChangesAsync(ct);
-        return new(ToDto(record, userId), linked.Select(t => ToDto(t, vehicle, day)).ToList());
+        return (record, linked);
     }
 
     // Matched in memory against this car's tasks, so another car's (or user's) task id is not found; duplicates are ignored.
@@ -569,6 +575,12 @@ public partial class MaintenanceTaskService(IAppDbContext db, VehicleService veh
         // "Deleting a record deletes its prefix" (owner): the rows go with the void, the objects after it.
         var attachments = await db.Attachments.Where(a => a.ServiceRecordId == record.Id).ToListAsync(ct);
         db.Attachments.RemoveRange(attachments);
+
+        // Its tires stay (TIRE-2); the key is NoAction, so the link is cleared here.
+        foreach (var tire in await db.Tires.Where(t => t.ServiceRecordId == record.Id).ToListAsync(ct))
+        {
+            (tire.ServiceRecordId, tire.UpdatedAt) = (null, now);
+        }
 
         try
         {

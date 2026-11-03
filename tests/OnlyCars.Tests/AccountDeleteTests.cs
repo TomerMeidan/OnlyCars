@@ -72,7 +72,9 @@ public class AccountDeleteSqlTests : IAsyncLifetime
 
     private async Task SeedMineAsync()
     {
-        await ExportTests.SeedAsync(db, mine, "mine");
+        var ids = await ExportTests.SeedAsync(db, mine, "mine");
+        // TIRE-2: rows kept in the renamed old tire tables go with the account too.
+        await TireMigrationTests.InsertOldTiresAsync(db, "Legacy_", mine, ids["car"]);
         var user = await db.Users.SingleAsync(u => u.Id == mine);
         user.PasswordHash = new PasswordHasher<User>().HashPassword(user, Password);
         await db.SaveChangesAsync();
@@ -82,7 +84,8 @@ public class AccountDeleteSqlTests : IAsyncLifetime
     private async Task<Dictionary<string, int>> CountsAsync()
     {
         var counts = new Dictionary<string, int>();
-        foreach (var table in db.Model.GetEntityTypes().Select(t => t.GetTableName()!).Distinct())
+        foreach (var table in db.Model.GetEntityTypes().Select(t => t.GetTableName()!).Distinct()
+                     .Concat(TireMigrationTests.OldTables.Select(t => "Legacy_" + t)))
         {
 #pragma warning disable EF1003 // table names come from the EF model, not from input, and can't be parameters
             counts[table] = await db.Database.SqlQueryRaw<int>("SELECT COUNT(*) AS [Value] FROM [" + table + "]").SingleAsync();

@@ -474,11 +474,49 @@ details > summary { padding-block: 0.625rem; cursor: pointer; }
 .issues .name { font-weight: 600; }
 .issues .notes, .documents .notes { white-space: pre-line; }
 
-/* Tires (MVP5-D): a set's facts wrap as one line of label: value pairs; storage notes keep the user's line breaks */
+/* Tires (TIRE-2b): a tire's facts wrap as one line of label: value pairs; notes keep the user's line breaks */
 .facts { display: flex; flex-wrap: wrap; gap: 0 1rem; }
-.tire-sets .notes, .rotations .notes { white-space: pre-line; }
-.current-tires { display: grid; gap: 0.25rem; }
-.current-tires + .actions { flex-wrap: wrap; } /* Swap, Unmount and the two Log buttons */
+.tire-details .notes, .rotations .notes { white-space: pre-line; }
+.tire-name { font-weight: 650; }
+.tire-groups { margin-block-end: 0.75rem; }
+.tire-groups button[aria-pressed='true'] { background: color-mix(in srgb, var(--amber) 14%, var(--surface)); border-color: var(--ink); }
+.tire-layout { display: grid; gap: 1rem; }
+@media (min-width: 40rem) { .tire-layout { grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); align-items: start; } }
+.tire-side > .actions { flex-wrap: wrap; gap: 0.5rem 1.25rem; }
+.tire-saved, .tire-log { margin-block-start: 0.75rem; }
+.tire-saved a { display: inline-flex; align-items: center; min-height: 2.75rem; }
+/* The car from above: dir="ltr" in every language, so the driver's left wheel stays on the left; the wheels' tires sit on the body's edge */
+.tire-car { display: grid; grid-template-columns: minmax(0, 1fr) 6.5rem minmax(0, 1fr); grid-template-rows: minmax(6.5rem, auto) minmax(6.5rem, auto) auto; align-items: center; }
+.car-body { grid-column: 2; grid-row: 1 / 3; inline-size: 100%; block-size: 13rem; align-self: center; }
+.car-body .shell { fill: var(--sunken); stroke: var(--field); stroke-width: 1.5; }
+.car-body .glass { fill: var(--line); stroke: var(--field); }
+.car-body .roof { fill: var(--surface); stroke: var(--line); }
+.car-body .lamp { fill: none; stroke: var(--muted); stroke-width: 2; stroke-linecap: round; }
+button.wheel {
+  background: none; border: 1px solid transparent; box-shadow: none; color: var(--ink);
+  font: 400 condensed 0.8rem/1.3 var(--sans); padding: 0.25rem; min-block-size: 2.75rem; min-inline-size: 2.75rem;
+  display: flex; align-items: center; justify-content: start; gap: 0.4rem; border-radius: var(--r-control); position: relative;
+}
+button.wheel:hover:not(:disabled) { background: var(--sunken); }
+.wheel-FL, .wheel-RL { grid-column: 1; flex-direction: row-reverse; margin-inline-end: -0.55rem; }
+.wheel-FR, .wheel-RR { grid-column: 3; margin-inline-start: -0.55rem; }
+.wheel-FL, .wheel-FR { grid-row: 1; }
+.wheel-RL, .wheel-RR { grid-row: 2; }
+.wheel-Spare { grid-column: 1 / -1; grid-row: 3; justify-self: center; margin-block-start: 0.5rem; }
+.wheel .tire { flex-shrink: 0; inline-size: 1.1rem; block-size: 2.6rem; border-radius: 5px; background: var(--ink); border: 2px solid var(--ink); }
+.wheel-Spare .tire { inline-size: 2.25rem; block-size: 2.25rem; border-radius: 50%; background: none; border-width: 0.45rem; }
+.wheel.empty .tire { background: none; border: 2px dashed var(--field); }
+.wheel-facts { flex: 1 1 auto; min-inline-size: 0; display: flex; flex-direction: column; }
+.wheel-facts > :first-child:not(:only-child) { font-weight: 650; max-inline-size: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wheel-FL .wheel-facts, .wheel-RL .wheel-facts { align-items: end; } /* toward the car: the button is always ltr */
+.wheel-facts .badge.status { white-space: normal; border: none; background: none; padding: 0; font-size: inherit; } /* the word and its triangle, without the pill */
+/* Selected: an ink edge on an amber tint, and the tire itself lit amber; needing attention: a dashed outline in the Due soon color, with its word */
+button.wheel[aria-pressed='true'], button.wheel[aria-pressed='true']:hover { background: color-mix(in srgb, var(--amber) 14%, var(--surface)); border-color: var(--ink); }
+.wheel[aria-pressed='true'] .tire { background: var(--amber); border-color: var(--on-amber); }
+.wheel-Spare[aria-pressed='true'] .tire { background: none; border-color: var(--amber); }
+.wheel.attention .tire { outline: 2px dashed var(--status-soon); outline-offset: 2px; }
+.inline-form > fieldset.moves { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 11rem), 1fr)); gap: 0.5rem 0.75rem; }
+.moves > legend, .moves > .quick { grid-column: 1 / -1; }
 .tire-check .item > label { flex-basis: 6rem; } /* MVP5-E: both inputs of a wheel side by side at 390px */
 /* MVP5-D criterion 10: the tire forms are one column on a phone, fields side by side above 30rem (480px) */
 .inline-form.tire-form > label { flex-basis: 100%; }

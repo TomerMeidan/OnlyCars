@@ -45,6 +45,8 @@ All tokens live on `:root` in `client/src/index.css` as `light-dark(light, dark)
 | status text on its 10% badge tint | 4.7 or more | 6.5 or more |
 | status fill on bar track (`--line`) | 3.6 / 4.1 / 4.0 | 6.0 / 6.8 / 4.9 |
 | chart bar (`--muted`) on surface | 6.5 | 7.0 |
+| selected wheel or pair button: ink text and edge / Due soon text on its amber 14% tint | 14.4 / 5.6 | 10.7 / 7.0 |
+| selected tire on that tint: its `--on-amber` edge (light) or its amber fill (dark) | 14.4 | 7.0 |
 
 Amber on the light surface is 2.0:1, so amber is never used for text or a ring on paper; amber buttons carry their own dark text and are named by it. Print turns everything black on white.
 
@@ -81,6 +83,7 @@ Amber on the light surface is 2.0:1, so amber is never used for text or a ring o
 - **Status**: a telltale badge with the word, the status color on a 10% tint, and a shape: a circle for OK, a triangle for Due soon / Expiring, a square for Overdue / Expired. Progress bars fill from the inline start (the right in Hebrew) with the status color.
 - **Odometer**: the drum counter (each digit a cell; leading zeros dimmed; only changed digits roll) inside a dark bezel with the unit in amber condensed, and the km/day average beside it in `--cluster-muted`. It is the one bold element on a screen.
 - **Undo bar**: sunken, amber inline-start rule, slides in. A one-time notice (`.notice`, such as "Your account was deleted." on `/login`) looks the same.
+- **Tire drawing** (TIRE-2b): the car from above in its own inline SVG (body `--sunken` with a `--field` edge, glass `--line`, roof `--surface`), front at the top, always `dir="ltr"` so the driver's left wheel stays on the left in Hebrew; the facts beside each wheel keep the page's language and direction. Each wheel is a 44px button (`aria-pressed`, named by position and tire) with its tire drawn as an `--ink` bar (the spare a ring behind the car; an empty wheel a dashed `--field` outline) and its facts in condensed 0.8rem. Selected: an ink edge on a 14% amber tint, the tire lit amber. Low tread (under 3 mm): a dashed `--status-soon` outline on the tire plus the Due soon word and triangle. Pair buttons are secondary buttons with the same selected tint.
 - **Empty, loading, error**: empty is a plain `--muted` sentence with the action next to it; loading is a `--muted` `role="status"` line in the place the content will take; errors are `--fault` text (500 weight) with `role="alert"` and a Retry button where a retry makes sense.
 
 ## Motion

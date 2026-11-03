@@ -13,7 +13,8 @@ namespace OnlyCars.Application.Account;
 /// </summary>
 public class ExportService(IAppDbContext db)
 {
-    public const int FormatVersion = 1;
+    // 2 (TIRE-2): tireSets gave way to tires and rotations per car.
+    public const int FormatVersion = 2;
 
     public async Task<ExportDto> ExportAsync(Guid userId, CancellationToken ct = default)
     {
@@ -62,18 +63,14 @@ public class ExportService(IAppDbContext db)
         var templateItems = (await db.ChecklistTemplateItems.AsNoTracking().Where(i => i.Template!.UserId == userId).ToListAsync(ct))
             .OrderBy(i => i.SortOrder).ThenBy(i => i.Id).ToLookup(i => i.TemplateId);
 
-        var tireSets = (await db.TireSets.AsNoTracking().Where(s => s.UserId == userId).ToListAsync(ct))
-            .OrderBy(s => s.CreatedAt).ThenBy(s => s.Id).ToList();
-        var mounts = (await db.TireMounts.AsNoTracking().Where(m => m.TireSet!.UserId == userId).ToListAsync(ct))
-            .OrderBy(m => m.MountedAt).ThenBy(m => m.CreatedAt).ThenBy(m => m.Id).ToLookup(m => m.TireSetId);
-        var checks = (await db.TireChecks.AsNoTracking().Where(c => c.TireMount!.TireSet!.UserId == userId).ToListAsync(ct))
-            .OrderBy(c => c.MeasuredAt).ThenBy(c => c.CreatedAt).ThenBy(c => c.Id).ToLookup(c => c.TireMountId);
-        var measurements = (await db.TireMeasurements.AsNoTracking().Where(m => m.TireCheck!.TireMount!.TireSet!.UserId == userId).ToListAsync(ct))
-            .OrderBy(m => m.Position).ThenBy(m => m.CreatedAt).ThenBy(m => m.Id).ToLookup(m => m.TireCheckId);
-        var rotations = (await db.TireRotations.AsNoTracking().Where(r => r.TireMount!.TireSet!.UserId == userId).ToListAsync(ct))
-            .OrderBy(r => r.Date).ThenBy(r => r.CreatedAt).ThenBy(r => r.Id).ToLookup(r => r.TireMountId);
-
-        var currentKm = vehicles.ToDictionary(v => v.Id, v => v.CurrentOdometerKm);
+        var tires = (await db.Tires.AsNoTracking().Where(t => t.Vehicle!.UserId == userId).ToListAsync(ct))
+            .OrderBy(t => t.FittedAt).ThenBy(t => t.Position).ThenBy(t => t.CreatedAt).ThenBy(t => t.Id).ToLookup(t => t.VehicleId);
+        var measurements = (await db.TireMeasurements.AsNoTracking().Where(m => m.Tire!.Vehicle!.UserId == userId).ToListAsync(ct))
+            .OrderBy(m => m.MeasuredAt).ThenBy(m => m.Id).ToLookup(m => m.TireId);
+        var rotations = (await db.TireRotations.AsNoTracking().Where(r => r.Vehicle!.UserId == userId).ToListAsync(ct))
+            .OrderBy(r => r.Date).ThenBy(r => r.CreatedAt).ThenBy(r => r.Id).ToLookup(r => r.VehicleId);
+        var moves = (await db.TireRotationMoves.AsNoTracking().Where(m => m.TireRotation!.Vehicle!.UserId == userId).ToListAsync(ct))
+            .OrderBy(m => m.FromPosition).ThenBy(m => m.Id).ToLookup(m => m.TireRotationId);
 
         return new ExportDto(FormatVersion, DateTimeOffset.UtcNow, new("km", user.Currency),
             new(user.Email, user.DistanceUnit, user.Currency, user.Locale, user.Theme, leadDays, user.CreatedAt),
@@ -95,18 +92,17 @@ public class ExportService(IAppDbContext db)
                         runFiles[r.Id].ToList())).ToList())).ToList(),
                 issues[v.Id].Select(i => new ExportIssueDto(i.Id, i.Title, StripDirectionMarks(i.Description), i.Status, i.SourceRunItemId,
                     i.ResolvedAt, i.CreatedAt)).ToList(),
-                documents[v.Id].Select(d => new ExportDocumentDto(d.Id, d.Type, d.ExpiryDate, d.Cost, d.Notes)).ToList())).ToList(),
+                documents[v.Id].Select(d => new ExportDocumentDto(d.Id, d.Type, d.ExpiryDate, d.Cost, d.Notes)).ToList(),
+                tires[v.Id].Select(t => new ExportTireDto(t.Id, t.Position, t.Brand, t.Model, t.Size, t.Season, t.DotCode, t.PurchaseDate,
+                    t.FittedAt, t.FittedOdometerKm, t.RemovedAt, t.RemovedOdometerKm,
+                    Math.Max(0, (t.RemovedOdometerKm ?? v.CurrentOdometerKm) - t.FittedOdometerKm), t.Notes, t.ServiceRecordId,
+                    measurements[t.Id].Select(m => new ExportTireMeasurementDto(m.MeasuredAt, m.Position, m.PressureBar, m.TreadDepthMm)).ToList()))
+                    .ToList(),
+                rotations[v.Id].Select(r => new ExportTireRotationDto(r.Id, r.Date, r.OdometerKm, r.Notes,
+                    moves[r.Id].Select(m => new ExportTireRotationMoveDto(m.TireId, m.FromPosition, m.ToPosition)).ToList())).ToList())).ToList(),
             templates.Select(t => new ExportChecklistTemplateDto(t.Id, t.Name,
                 templateItems[t.Id].Select(i => new ExportTemplateItemDto(i.Id, i.Label, i.Type, i.Unit, i.MinValue, i.MaxValue, i.SortOrder))
-                    .ToList())).ToList(),
-            tireSets.Select(s => new ExportTireSetDto(s.Id, s.Brand, s.Model, s.Size, s.Season, s.PurchaseDate, s.DotCode, s.Notes,
-                mounts[s.Id].Select(m => new ExportTireMountDto(m.VehicleId, m.MountedAt, m.MountOdometerKm, m.UnmountedAt, m.UnmountOdometerKm,
-                    // The same km per mount as the tire screens (TireService).
-                    m.UnmountOdometerKm is { } off ? off - m.MountOdometerKm
-                        : Math.Max(currentKm.GetValueOrDefault(m.VehicleId, m.MountOdometerKm) - m.MountOdometerKm, 0),
-                    checks[m.Id].Select(c => new ExportTireCheckDto(c.MeasuredAt,
-                        measurements[c.Id].Select(x => new ExportTireMeasurementDto(x.Position, x.PressureBar, x.TreadDepthMm)).ToList())).ToList(),
-                    rotations[m.Id].Select(r => new ExportTireRotationDto(r.Date, r.OdometerKm, r.Notes)).ToList())).ToList())).ToList());
+                    .ToList())).ToList());
     }
 
     /// <summary>Removes LRM, RLM and the isolates (U+2066 to U+2069) the Hebrew to-do prefill adds (decisions.md "Direction marks in the to-do prefill").</summary>

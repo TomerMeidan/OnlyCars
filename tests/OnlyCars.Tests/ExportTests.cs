@@ -79,17 +79,17 @@ public class ExportTests
             new NotificationRule { UserId = owner, Channel = NotificationChannel.InApp, LeadDays = 14 },
             new Notification { UserId = owner, VehicleId = car.Id, Kind = NotificationKind.Task, RefId = task.Id, SnoozedUntil = Day.AddDays(400) });
 
-        var set = new TireSet { Id = Id("tireSet"), UserId = owner, Brand = $"Michelin-{tag}", Season = TireSeason.Winter, Notes = $"Garage-{tag}" };
-        var closed = new TireMount { Id = Id("closedMount"), TireSetId = set.Id, VehicleId = car.Id, MountedAt = Day, MountOdometerKm = 50_000,
-            UnmountedAt = Day.AddDays(30), UnmountOdometerKm = 52_500 };
-        var open = new TireMount { Id = Id("openMount"), TireSetId = set.Id, VehicleId = car.Id, MountedAt = Day.AddDays(60), MountOdometerKm = 60_000 };
-        var check = new TireCheck { TireMountId = closed.Id, MeasuredAt = Day.AddDays(5) };
-        db.AddRange(set, closed, open, check,
-            new TireMeasurement { TireCheckId = check.Id, Position = TirePosition.FR, PressureBar = 2.3m, TreadDepthMm = 6 },
-            new TireMeasurement { TireCheckId = check.Id, Position = TirePosition.FL, PressureBar = 2.2m },
-            new TireRotation { TireMountId = closed.Id, Date = Day.AddDays(10), OdometerKm = 51_000, Notes = $"Rotate-{tag}" },
-            // Not on a car: no mounts.
-            new TireSet { Id = Id("spareSet"), UserId = owner, Brand = $"Spare-{tag}", Season = TireSeason.Summer });
+        // A removed tire and one on the car bought with the record (its key is NoAction: ACC-2's delete test needs that path).
+        var removedTire = new Tire { Id = Id("removedTire"), VehicleId = car.Id, Position = TirePosition.FL, Brand = $"Michelin-{tag}",
+            Season = TireSeason.Winter, Notes = $"Garage-{tag}", FittedAt = Day, FittedOdometerKm = 50_000, RemovedAt = Day.AddDays(30),
+            RemovedOdometerKm = 52_500 };
+        var tire = new Tire { Id = Id("tire"), VehicleId = car.Id, Position = TirePosition.FR, Brand = $"Pirelli-{tag}", Season = TireSeason.Summer,
+            FittedAt = Day, FittedOdometerKm = 60_000, ServiceRecordId = record.Id };
+        var rotation = new TireRotation { Id = Id("rotation"), VehicleId = car.Id, Date = Day.AddDays(10), OdometerKm = 60_500, Notes = $"Rotate-{tag}",
+            Moves = [new TireRotationMove { TireId = tire.Id, FromPosition = TirePosition.RR, ToPosition = TirePosition.FR }] };
+        db.AddRange(removedTire, tire, rotation,
+            new TireMeasurement { TireId = removedTire.Id, Position = TirePosition.FL, MeasuredAt = Day.AddDays(5), PressureBar = 2.2m },
+            new TireMeasurement { TireId = tire.Id, Position = TirePosition.FR, MeasuredAt = Day.AddDays(5), PressureBar = 2.3m, TreadDepthMm = 6 });
         await db.SaveChangesAsync();
         return ids;
     }
@@ -108,7 +108,7 @@ public class ExportTests
         var ids = await SeedAsync(userId, "mine");
         var (root, _) = await ExportAsync(userId);
 
-        Assert.Equal(1, root.GetProperty("formatVersion").GetInt32());
+        Assert.Equal(2, root.GetProperty("formatVersion").GetInt32());
         Assert.Equal("km", root.GetProperty("units").GetProperty("distance").GetString());
         Assert.Equal("EUR", root.GetProperty("units").GetProperty("currency").GetString());
         var account = root.GetProperty("account");
@@ -166,15 +166,22 @@ public class ExportTests
         var template = One(root.GetProperty("checklistTemplates"));
         Assert.Equal("bar", One(template.GetProperty("items")).GetProperty("unit").GetString());
 
-        var sets = root.GetProperty("tireSets").EnumerateArray().ToList();
-        Assert.Equal(2, sets.Count);
-        Assert.Empty(sets.Single(s => s.GetProperty("id").GetGuid() == ids["spareSet"]).GetProperty("mounts").EnumerateArray());
-        var mounts = sets.Single(s => s.GetProperty("id").GetGuid() == ids["tireSet"]).GetProperty("mounts").EnumerateArray().ToList();
-        Assert.Equal(2_500m, mounts[0].GetProperty("kmDriven").GetDecimal()); // unmounted: unmount - mount
-        Assert.Equal(1_000m, mounts[1].GetProperty("kmDriven").GetDecimal()); // on the car: current 61,000 - 60,000
-        var tireCheck = One(mounts[0].GetProperty("checks"));
-        Assert.Equal(["FL", "FR"], tireCheck.GetProperty("measurements").EnumerateArray().Select(m => m.GetProperty("position").GetString()));
-        Assert.Equal("Rotate-mine", One(mounts[0].GetProperty("rotations")).GetProperty("notes").GetString());
+        Assert.False(root.TryGetProperty("tireSets", out _)); // format 2 (TIRE-2)
+        var carTires = car.GetProperty("tires").EnumerateArray().ToList();
+        Assert.Equal([ids["removedTire"], ids["tire"]], carTires.Select(t => t.GetProperty("id").GetGuid()));
+        Assert.Equal(2_500m, carTires[0].GetProperty("kmOnTire").GetDecimal()); // removed: removal - fitted
+        Assert.Equal(1_000m, carTires[1].GetProperty("kmOnTire").GetDecimal()); // on the car: current 61,000 - 60,000
+        Assert.Equal("2026-03-31", carTires[0].GetProperty("removedAt").GetString());
+        Assert.Equal(ids["record"], carTires[1].GetProperty("serviceRecordId").GetGuid());
+        Assert.Equal("FR", carTires[1].GetProperty("position").GetString());
+        Assert.Equal(2.3m, One(carTires[1].GetProperty("measurements")).GetProperty("pressureBar").GetDecimal());
+        Assert.Equal("2026-03-06", One(carTires[0].GetProperty("measurements")).GetProperty("measuredAt").GetString());
+        var rotation = One(car.GetProperty("rotations"));
+        Assert.Equal("Rotate-mine", rotation.GetProperty("notes").GetString());
+        var move = One(rotation.GetProperty("moves"));
+        Assert.Equal((ids["tire"], "RR", "FR"), (move.GetProperty("tireId").GetGuid(), move.GetProperty("fromPosition").GetString(),
+            move.GetProperty("toPosition").GetString()));
+        Assert.Empty(cars[1].GetProperty("tires").EnumerateArray());
     }
 
     [Fact]
@@ -215,7 +222,6 @@ public class ExportTests
 
         Assert.Empty(root.GetProperty("vehicles").EnumerateArray());
         Assert.Empty(root.GetProperty("checklistTemplates").EnumerateArray());
-        Assert.Empty(root.GetProperty("tireSets").EnumerateArray());
         Assert.Equal(NotificationRule.DefaultLeadDays, root.GetProperty("account").GetProperty("reminderLeadDays").GetInt32());
         Assert.Equal("ILS", root.GetProperty("units").GetProperty("currency").GetString());
     }
@@ -281,7 +287,7 @@ public class ExportTests
         Assert.NotEqual(0xEF, body.ToArray()[0]); // no UTF-8 BOM
         var text = Encoding.UTF8.GetString(body.ToArray());
         Assert.Contains("Weekly-mine", text); // written to the response, not buffered in a result
-        Assert.Contains("\n  \"formatVersion\": 1", text); // indented
+        Assert.Contains("\n  \"formatVersion\": 2", text); // indented
         Assert.Contains("Car-mine", text);
     }
 

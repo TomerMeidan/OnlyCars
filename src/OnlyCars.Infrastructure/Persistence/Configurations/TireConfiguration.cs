@@ -4,62 +4,36 @@ using OnlyCars.Domain.Entities;
 
 namespace OnlyCars.Infrastructure.Persistence.Configurations;
 
-public class TireSetConfiguration : IEntityTypeConfiguration<TireSet>
+public class TireConfiguration : IEntityTypeConfiguration<Tire>
 {
-    public void Configure(EntityTypeBuilder<TireSet> builder)
+    public void Configure(EntityTypeBuilder<Tire> builder)
     {
-        builder.Property(s => s.Brand).IsRequired().HasMaxLength(TireSet.MaxBrandLength);
-        builder.Property(s => s.Model).HasMaxLength(TireSet.MaxModelLength);
-        builder.Property(s => s.Size).HasMaxLength(TireSet.MaxSizeLength);
-        builder.Property(s => s.DotCode).HasMaxLength(TireSet.MaxDotCodeLength);
-        builder.Property(s => s.Notes).HasMaxLength(TireSet.MaxNotesLength);
+        builder.Property(t => t.Brand).IsRequired().HasMaxLength(Tire.MaxBrandLength);
+        builder.Property(t => t.Model).HasMaxLength(Tire.MaxModelLength);
+        builder.Property(t => t.Size).HasMaxLength(Tire.MaxSizeLength);
+        builder.Property(t => t.DotCode).HasMaxLength(Tire.MaxDotCodeLength);
+        builder.Property(t => t.Notes).HasMaxLength(Tire.MaxNotesLength);
+        builder.Property(t => t.FittedOdometerKm).HasColumnType("decimal(12,2)");
+        builder.Property(t => t.RemovedOdometerKm).HasColumnType("decimal(12,2)");
+        // Every change sets UpdatedAt, so a replace or rotation racing another on the same tire matches no row (409).
+        builder.Property(t => t.UpdatedAt).IsConcurrencyToken();
 
-        builder.HasOne(s => s.User)
+        builder.HasOne(t => t.Vehicle)
             .WithMany()
-            .HasForeignKey(s => s.UserId)
-            .OnDelete(DeleteBehavior.Cascade);
-    }
-}
-
-public class TireMountConfiguration : IEntityTypeConfiguration<TireMount>
-{
-    public void Configure(EntityTypeBuilder<TireMount> builder)
-    {
-        builder.Property(m => m.MountOdometerKm).HasColumnType("decimal(12,2)");
-        builder.Property(m => m.UnmountOdometerKm).HasColumnType("decimal(12,2)");
-
-        builder.HasOne(m => m.TireSet)
-            .WithMany(s => s.Mounts)
-            .HasForeignKey(m => m.TireSetId)
+            .HasForeignKey(t => t.VehicleId)
             .OnDelete(DeleteBehavior.Cascade);
 
-        // The user cascades through the set already, so this path can't (SQL Server); cars are archived, never hard-deleted.
-        builder.HasOne(m => m.Vehicle)
+        // The car already cascades to its records, so this path can't (SQL Server): MaintenanceTaskService.VoidAsync nulls it in code.
+        builder.HasOne(t => t.ServiceRecord)
             .WithMany()
-            .HasForeignKey(m => m.VehicleId)
+            .HasForeignKey(t => t.ServiceRecordId)
             .OnDelete(DeleteBehavior.NoAction);
 
-        // At most one open mount per car and per set (spec "Indexes and Constraints").
-        builder.HasIndex(m => m.VehicleId).IsUnique().HasFilter("[UnmountedAt] IS NULL").HasDatabaseName("IX_TireMounts_VehicleId_Open");
-        builder.HasIndex(m => m.TireSetId).IsUnique().HasFilter("[UnmountedAt] IS NULL").HasDatabaseName("IX_TireMounts_TireSetId_Open");
-        builder.HasIndex(m => new { m.TireSetId, m.MountedAt });
-        builder.HasIndex(m => new { m.VehicleId, m.MountedAt });
-        builder.ToTable(t => t.HasCheckConstraint("CK_TireMounts_Unmount",
-            "([UnmountedAt] IS NULL AND [UnmountOdometerKm] IS NULL) OR ([UnmountedAt] >= [MountedAt] AND [UnmountOdometerKm] >= [MountOdometerKm])"));
-    }
-}
-
-public class TireCheckConfiguration : IEntityTypeConfiguration<TireCheck>
-{
-    public void Configure(EntityTypeBuilder<TireCheck> builder)
-    {
-        builder.HasOne(c => c.TireMount)
-            .WithMany(m => m.Checks)
-            .HasForeignKey(c => c.TireMountId)
-            .OnDelete(DeleteBehavior.Cascade);
-
-        // One check per mount per date; a repeated or simultaneous check on the same date fails here, whatever its wheels.
-        builder.HasIndex(c => new { c.TireMountId, c.MeasuredAt }).IsUnique();
+        // At most one tire on the car per wheel.
+        builder.HasIndex(t => new { t.VehicleId, t.Position }).IsUnique().HasFilter("[RemovedAt] IS NULL")
+            .HasDatabaseName("IX_Tires_VehicleId_Position_OnCar");
+        builder.ToTable(t => t.HasCheckConstraint("CK_Tires_Removal",
+            "([RemovedAt] IS NULL AND [RemovedOdometerKm] IS NULL) OR ([RemovedAt] >= [FittedAt] AND [RemovedOdometerKm] >= [FittedOdometerKm])"));
     }
 }
 
@@ -70,12 +44,13 @@ public class TireMeasurementConfiguration : IEntityTypeConfiguration<TireMeasure
         builder.Property(m => m.PressureBar).HasColumnType("decimal(4,2)");
         builder.Property(m => m.TreadDepthMm).HasColumnType("decimal(4,1)");
 
-        builder.HasOne(m => m.TireCheck)
-            .WithMany(c => c.Measurements)
-            .HasForeignKey(m => m.TireCheckId)
+        builder.HasOne(m => m.Tire)
+            .WithMany(t => t.Measurements)
+            .HasForeignKey(m => m.TireId)
             .OnDelete(DeleteBehavior.Cascade);
 
-        builder.HasIndex(m => new { m.TireCheckId, m.Position }).IsUnique();
+        // One measurement per tire per date; a simultaneous second one fails here.
+        builder.HasIndex(m => new { m.TireId, m.MeasuredAt }).IsUnique();
         builder.ToTable(t => t.HasCheckConstraint("CK_TireMeasurements_Values",
             "([PressureBar] IS NOT NULL OR [TreadDepthMm] IS NOT NULL) AND ([PressureBar] IS NULL OR [PressureBar] BETWEEN 0.5 AND 6.0) AND ([TreadDepthMm] IS NULL OR [TreadDepthMm] BETWEEN 0 AND 20)"));
     }
@@ -88,11 +63,30 @@ public class TireRotationConfiguration : IEntityTypeConfiguration<TireRotation>
         builder.Property(r => r.OdometerKm).HasColumnType("decimal(12,2)");
         builder.Property(r => r.Notes).HasMaxLength(TireRotation.MaxNotesLength);
 
-        builder.HasOne(r => r.TireMount)
-            .WithMany(t => t.Rotations)
-            .HasForeignKey(r => r.TireMountId)
+        builder.HasOne(r => r.Vehicle)
+            .WithMany()
+            .HasForeignKey(r => r.VehicleId)
             .OnDelete(DeleteBehavior.Cascade);
 
-        builder.HasIndex(r => new { r.TireMountId, r.Date });
+        builder.HasIndex(r => new { r.VehicleId, r.Date });
+    }
+}
+
+public class TireRotationMoveConfiguration : IEntityTypeConfiguration<TireRotationMove>
+{
+    public void Configure(EntityTypeBuilder<TireRotationMove> builder)
+    {
+        builder.HasOne(m => m.TireRotation)
+            .WithMany(r => r.Moves)
+            .HasForeignKey(m => m.TireRotationId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        // The car already cascades to the tire through Tires, so this path can't (SQL Server); a moved tire can't be deleted (tire.rotated).
+        builder.HasOne(m => m.Tire)
+            .WithMany()
+            .HasForeignKey(m => m.TireId)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        builder.HasIndex(m => new { m.TireRotationId, m.TireId }).IsUnique();
     }
 }

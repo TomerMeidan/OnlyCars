@@ -34,7 +34,8 @@ public class ReportService(IAppDbContext db)
         // shortcut: loads all of the user's non-voided records into memory, fine at personal-app scale; group in SQL if it gets slow.
         var records = await db.ServiceRecords.Where(r => ids.Contains(r.VehicleId) && !r.IsVoided)
             .Select(r => new { r.VehicleId, r.Date, Cost = r.TotalCost ?? 0, Priced = r.TotalCost != null,
-                Categories = r.Tasks.Select(j => j.MaintenanceTask!.Category).ToList() })
+                Categories = r.Tasks.Select(j => j.MaintenanceTask!.Category).ToList(),
+                HasTires = db.Tires.Any(t => t.ServiceRecordId == r.Id) })
             .ToListAsync(ct);
         // The first reading by date, then save time.
         var firstKm = await db.OdometerReadings.Where(o => ids.Contains(o.VehicleId))
@@ -51,7 +52,7 @@ public class ReportService(IAppDbContext db)
             var month = inYear.Where(r => r.Date.Month == m).ToList();
             return new CostMonthDto(m, month.Sum(r => r.Cost), month.Count);
         }).ToList();
-        var byCategory = inYear.SelectMany(r => Split(r.Cost, r.Categories))
+        var byCategory = inYear.SelectMany(r => Split(r.Cost, r.Categories.Count == 0 && r.HasTires ? [TaskCategory.Tires] : r.Categories))
             .GroupBy(s => s.Category).Select(g => new CostCategoryDto(g.Key, g.Sum(s => s.Amount)))
             .Where(c => c.Total != 0).OrderByDescending(c => c.Total).ThenBy(c => c.Category?.ToString()).ToList();
         var byVehicle = vehicles.Select(v =>
@@ -77,7 +78,7 @@ public class ReportService(IAppDbContext db)
 
     /// <summary>
     /// Splits a cost equally over the distinct categories (2 decimals, the remainder cents on the first category by name),
-    /// so the parts add up to the cost. No categories: all of it under null.
+    /// so the parts add up to the cost. No categories: all of it under null (a Replace tires record, with no tasks, comes in as Tires).
     /// </summary>
     private static IEnumerable<(TaskCategory? Category, decimal Amount)> Split(decimal cost, IEnumerable<TaskCategory> categories)
     {

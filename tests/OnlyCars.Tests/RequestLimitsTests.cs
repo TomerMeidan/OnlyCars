@@ -156,8 +156,11 @@ public class RequestLimitsTests
     [InlineData("/test/vehicles", """{"nickname":"A","fuelType":"99"}""", HttpStatusCode.BadRequest)]
     [InlineData("/test/issues", """{"title":"A","status":"Done"}""", HttpStatusCode.OK)]
     [InlineData("/test/issues", """{"title":"A","status":2}""", HttpStatusCode.BadRequest)]
-    [InlineData("/test/tire-sets", """{"brand":"A","season":"AllSeason"}""", HttpStatusCode.OK)]
-    [InlineData("/test/tire-sets", """{"brand":"A","season":1}""", HttpStatusCode.BadRequest)]
+    [InlineData("/test/tires-replace", """{"positions":["FL","FR"],"brand":"A","season":"AllSeason"}""", HttpStatusCode.OK)]
+    [InlineData("/test/tires-replace", """{"positions":["FL"],"brand":"A","season":1}""", HttpStatusCode.BadRequest)]
+    [InlineData("/test/tires-replace", """{"positions":[0],"brand":"A","season":"Summer"}""", HttpStatusCode.BadRequest)]
+    [InlineData("/test/tire-rotations", """{"odometerKm":1,"moves":[{"fromPosition":"FL","toPosition":"Spare"}]}""", HttpStatusCode.OK)]
+    [InlineData("/test/tire-rotations", """{"odometerKm":1,"moves":[{"fromPosition":"FL","toPosition":4}]}""", HttpStatusCode.BadRequest)]
     [InlineData("/test/tire-checks", """{"items":[{"position":"Spare","pressureBar":2.4}]}""", HttpStatusCode.OK)]
     [InlineData("/test/tire-checks", """{"items":[{"position":0,"pressureBar":2.4}]}""", HttpStatusCode.BadRequest)]
     public async Task EnumValues_BindByNameOnly(string path, string json, HttpStatusCode expected)
@@ -213,8 +216,11 @@ public class ModelBindingTestController : ControllerBase
     [HttpPost("issues")]
     public IActionResult Update(UpdateIssueRequest request) => Ok();
 
-    [HttpPost("tire-sets")]
-    public IActionResult CreateTireSet(TireSetRequest request) => Ok();
+    [HttpPost("tires-replace")]
+    public IActionResult ReplaceTires(ReplaceTiresRequest request) => Ok();
+
+    [HttpPost("tire-rotations")]
+    public IActionResult CreateTireRotation(TireRotationRequest request) => Ok();
 
     [HttpPost("tire-checks")]
     public IActionResult CreateTireCheck(TireCheckRequest request) => Ok();

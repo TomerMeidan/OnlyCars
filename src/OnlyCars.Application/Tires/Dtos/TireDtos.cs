@@ -2,37 +2,31 @@ using OnlyCars.Domain;
 
 namespace OnlyCars.Application.Tires.Dtos;
 
-// The set's open mount: the car it is on now.
-public record TireSetOpenMountDto(Guid VehicleId, string VehicleNickname, DateOnly MountedAt, decimal MountOdometerKm);
+// TIRE-2. Km in km, computed on read: KmOnTire = (RemovedOdometerKm ?? the car's current) - FittedOdometerKm, at least 0.
+// DotDate is the Monday of the DOT week when DotCode ends in WWYY (WW 01 to 53), else null. RemovedAt/RemovedOdometerKm are null on the car.
+public record TireDto(Guid Id, TirePosition Position, string Brand, string? Model, string? Size, TireSeason Season, string? DotCode,
+    DateOnly? DotDate, DateOnly? PurchaseDate, DateOnly FittedAt, decimal FittedOdometerKm, DateOnly? RemovedAt, decimal? RemovedOdometerKm,
+    decimal KmOnTire, string? Notes, Guid? ServiceRecordId, TireMeasurementDto? LatestMeasurement);
 
-// KmDriven is in km, computed on read: closed mounts plus the open one up to the car's current odometer (never negative).
-public record TireSetDto(Guid Id, string Brand, string? Model, string? Size, TireSeason Season, DateOnly? PurchaseDate, string? DotCode,
-    string? Notes, DateTimeOffset CreatedAt, decimal KmDriven, TireSetOpenMountDto? OpenMount, int MountCount);
+public record TireMeasurementDto(DateOnly MeasuredAt, TirePosition Position, decimal? PressureBar, decimal? TreadDepthMm);
 
-// Season is required; a null one is tireSet.invalidSeason.
-public record TireSetRequest(string? Brand, string? Model, string? Size, TireSeason? Season, DateOnly? PurchaseDate, string? DotCode, string? Notes);
+// Current: the tires on the car in FL, FR, RL, RR, Spare order. Removed: newest removal first.
+public record VehicleTiresDto(List<TireDto> Current, List<TireDto> Removed, DateOnly? LastCheckDate, LastTireRotationDto? LastRotation);
 
-// One mount with its set and car. UnmountedAt and UnmountOdometerKm are null while the set is on the car.
-public record TireMountDto(Guid Id, Guid TireSetId, string Brand, string? Model, string? Size, TireSeason Season, Guid VehicleId,
-    string VehicleNickname, DateOnly MountedAt, decimal MountOdometerKm, DateOnly? UnmountedAt, decimal? UnmountOdometerKm, decimal KmDriven)
-{
-    // MVP5-E: filled only on VehicleTiresDto.Current; null on past mounts and set mount lists.
-    public TireCheckDto? LastCheck { get; init; }
-    public LastTireRotationDto? LastRotation { get; init; }
-}
+// One set of details for every position. Positions: one position, [FL, FR], [RL, RR] or the four. A null Date is today (UTC).
+// Cost, ShopName and Notes go on the service record it creates; Notes also on each new tire.
+public record ReplaceTiresRequest(List<TirePosition>? Positions, DateOnly? Date, decimal? OdometerKm, string? Brand, string? Model,
+    string? Size, TireSeason? Season, string? DotCode, DateOnly? PurchaseDate, decimal? Cost, string? ShopName, string? Notes,
+    bool ConfirmCorrection = false);
 
-// The car's open mount (null when no set is on) and its closed mounts, newest first.
-public record VehicleTiresDto(TireMountDto? Current, List<TireMountDto> Past);
+// PUT /api/tires/{id}: the detail fields only. Season is required (a null one is tire.invalidSeason).
+public record UpdateTireRequest(string? Brand, string? Model, string? Size, TireSeason? Season, string? DotCode, DateOnly? PurchaseDate,
+    string? Notes);
 
-// A null MountedAt is today (UTC); OdometerKm is required.
-public record MountTireSetRequest(Guid TireSetId, DateOnly? MountedAt, decimal? OdometerKm);
+// One tire of a check; at least one of the two values is set.
+public record TireCheckItemDto(Guid TireId, TirePosition Position, decimal? PressureBar, decimal? TreadDepthMm);
 
-public record UnmountTireSetRequest(DateOnly? UnmountedAt, decimal? OdometerKm);
-
-// MVP5-E. One wheel of a check; at least one of the two values is set.
-public record TireCheckItemDto(TirePosition Position, decimal? PressureBar, decimal? TreadDepthMm);
-
-// A check is every wheel logged on one date; items in the order FL, FR, RL, RR, Spare.
+// A check is the car's measurements of one date; items in the order FL, FR, RL, RR, Spare.
 public record TireCheckDto(DateOnly MeasuredAt, List<TireCheckItemDto> Items);
 
 // Position is required (a missing one is tireMeasurement.invalidPosition); a null MeasuredAt is today (UTC).
@@ -40,10 +34,15 @@ public record TireCheckItemRequest(TirePosition? Position, decimal? PressureBar,
 
 public record TireCheckRequest(DateOnly? MeasuredAt, List<TireCheckItemRequest>? Items);
 
-public record TireRotationDto(Guid Id, DateOnly Date, decimal OdometerKm, string? Notes);
+public record TireRotationMoveDto(Guid TireId, TirePosition FromPosition, TirePosition ToPosition);
+
+// Moves is empty on rotations migrated from tire sets ("Wheels not recorded").
+public record TireRotationDto(Guid Id, DateOnly Date, decimal OdometerKm, string? Notes, List<TireRotationMoveDto> Moves);
 
 // KmSince is in km: max(0, the car's current odometer - the rotation's odometer).
-public record LastTireRotationDto(DateOnly Date, decimal OdometerKm, decimal KmSince);
+public record LastTireRotationDto(Guid Id, DateOnly Date, decimal OdometerKm, decimal KmSince);
+
+public record TireRotationMoveRequest(TirePosition? FromPosition, TirePosition? ToPosition);
 
 // A null Date is today (UTC); OdometerKm is required.
-public record TireRotationRequest(DateOnly? Date, decimal? OdometerKm, string? Notes);
+public record TireRotationRequest(DateOnly? Date, decimal? OdometerKm, string? Notes, List<TireRotationMoveRequest>? Moves);

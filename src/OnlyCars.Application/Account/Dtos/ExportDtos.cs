@@ -4,7 +4,7 @@ namespace OnlyCars.Application.Account.Dtos;
 
 // The data export (ACC-1, decisions.md "Data export, ACC-1"). Never add a storage key, signed URL, password hash or login data here.
 public record ExportDto(int FormatVersion, DateTimeOffset ExportedAt, ExportUnitsDto Units, ExportAccountDto Account,
-    List<ExportVehicleDto> Vehicles, List<ExportChecklistTemplateDto> ChecklistTemplates, List<ExportTireSetDto> TireSets);
+    List<ExportVehicleDto> Vehicles, List<ExportChecklistTemplateDto> ChecklistTemplates);
 
 public record ExportUnitsDto(string Distance, string Currency);
 
@@ -16,7 +16,7 @@ public record ExportVehicleDto(Guid Id, string Nickname, string? Make, string? M
     DateTimeOffset? ArchivedAt, bool HasPhoto, DateTimeOffset CreatedAt,
     List<ExportOdometerReadingDto> OdometerReadings, List<ExportMaintenanceTaskDto> MaintenanceTasks,
     List<ExportServiceRecordDto> ServiceRecords, List<ExportChecklistDto> Checklists, List<ExportIssueDto> Issues,
-    List<ExportDocumentDto> Documents);
+    List<ExportDocumentDto> Documents, List<ExportTireDto> Tires, List<ExportTireRotationDto> Rotations);
 
 public record ExportOdometerReadingDto(Guid Id, decimal ValueKm, DateOnly ReadingDate, OdometerSource Source, Guid? ServiceRecordId);
 
@@ -51,14 +51,13 @@ public record ExportChecklistTemplateDto(Guid Id, string Name, List<ExportTempla
 public record ExportTemplateItemDto(Guid Id, string Label, ChecklistItemType Type, string? Unit, decimal? MinValue, decimal? MaxValue,
     int SortOrder);
 
-public record ExportTireSetDto(Guid Id, string Brand, string? Model, string? Size, TireSeason Season, DateOnly? PurchaseDate,
-    string? DotCode, string? Notes, List<ExportTireMountDto> Mounts);
+// KmOnTire as on the tire screens (TireService).
+public record ExportTireDto(Guid Id, TirePosition Position, string Brand, string? Model, string? Size, TireSeason Season, string? DotCode,
+    DateOnly? PurchaseDate, DateOnly FittedAt, decimal FittedOdometerKm, DateOnly? RemovedAt, decimal? RemovedOdometerKm, decimal KmOnTire,
+    string? Notes, Guid? ServiceRecordId, List<ExportTireMeasurementDto> Measurements);
 
-public record ExportTireMountDto(Guid VehicleId, DateOnly MountedAt, decimal MountOdometerKm, DateOnly? UnmountedAt,
-    decimal? UnmountOdometerKm, decimal KmDriven, List<ExportTireCheckDto> Checks, List<ExportTireRotationDto> Rotations);
+public record ExportTireMeasurementDto(DateOnly MeasuredAt, TirePosition Position, decimal? PressureBar, decimal? TreadDepthMm);
 
-public record ExportTireCheckDto(DateOnly MeasuredAt, List<ExportTireMeasurementDto> Measurements);
+public record ExportTireRotationDto(Guid Id, DateOnly Date, decimal OdometerKm, string? Notes, List<ExportTireRotationMoveDto> Moves);
 
-public record ExportTireMeasurementDto(TirePosition Position, decimal? PressureBar, decimal? TreadDepthMm);
-
-public record ExportTireRotationDto(DateOnly Date, decimal OdometerKm, string? Notes);
+public record ExportTireRotationMoveDto(Guid TireId, TirePosition FromPosition, TirePosition ToPosition);

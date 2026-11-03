@@ -34,7 +34,10 @@ await call('POST', `/vehicles/${car.id}/issues`, { title: 'Rattle from the rear 
 const tpl = await call('POST', '/checklist-templates', { name: 'Monthly check', items: [
   { label: 'Lights', type: 'Check' }, { label: 'Tire pressure', type: 'Number', unit: 'bar', minValue: 2, maxValue: 2.6 }, { label: 'Notes', type: 'Text' }] })
 const vc = await call('POST', `/vehicles/${car.id}/checklists`, { templateId: tpl.id, intervalKm: null, intervalDays: 30, date: today })
-await call('POST', '/tire-sets', { brand: 'Michelin', model: 'Primacy 4', size: '205/55 R16', season: 'Summer', purchaseDate: null, dotCode: null, notes: null })
+// TIRE-2b: four tires entered as already on the car, the front pair replaced since (a Tires record), and a check with a low rear-left tread.
+await call('POST', `/vehicles/${car.id}/tires/replace`, { positions: ['FL', 'FR', 'RL', 'RR'], date: ago(390), odometerKm: 48500, brand: 'Michelin', model: 'Primacy 4', size: '205/55 R16', season: 'Summer', dotCode: 'DOT 4X 2124' })
+await call('POST', `/vehicles/${car.id}/tires/replace`, { positions: ['FL', 'FR'], date: ago(30), odometerKm: 60000, brand: 'Pirelli', model: 'Cinturato P7', size: '205/55 R16', season: 'Summer', cost: 720, shopName: 'Tire shop' })
+await call('POST', `/vehicles/${car.id}/tires/checks`, { measuredAt: ago(2), items: [{ position: 'FL', pressureBar: 2.3, treadDepthMm: 7.5 }, { position: 'RL', pressureBar: 2.2, treadDepthMm: 2.5 }] })
 
 const screens = [
   ['login', '/login', false],
@@ -47,6 +50,8 @@ const screens = [
   ['history', '/history', true],
   ['tires', '/tires', true],
   ['car-new', '/cars/new', true],
+  // TIRE-2b: the car page's Tires section alone, the rear-left wheel (low tread) selected.
+  ['car-tires', `/cars/${car.id}`, true, async (page) => { await page.click('.wheel-RL'); return page.locator('#tires-section') }],
 ]
 for (const lng of ['en', 'he']) {
   await call('PUT', '/me/settings', { locale: lng === 'he' ? 'He' : 'En' })
@@ -56,7 +61,7 @@ for (const lng of ['en', 'he']) {
     const ctx = await browser.newContext({ viewport: { width, height: mobile ? 844 : 800 }, colorScheme: scheme, isMobile: mobile, hasTouch: mobile })
     const page = await ctx.newPage()
     page.on('pageerror', (e) => console.error('pageerror', e.message))
-    for (const [name, path, signedIn] of screens) {
+    for (const [name, path, signedIn, act] of screens) {
       await page.goto(`${BASE}/login`)
       await page.evaluate(([token, user, lng, signedIn]) => {
         localStorage.clear()
@@ -68,7 +73,9 @@ for (const lng of ['en', 'he']) {
       await page.waitForTimeout(400)
       const over = await page.evaluate((w) => document.documentElement.scrollWidth - w, width)
       if (over > 0) console.error(`OVERFLOW ${over}px ${name} ${lng} ${scheme} ${width}`)
-      await page.screenshot({ path: `${OUT}/${name}-${lng}-${scheme}-${width}.png`, fullPage: true })
+      const shot = { path: `${OUT}/${name}-${lng}-${scheme}-${width}.png` }
+      if (act) await (await act(page)).screenshot(shot)
+      else await page.screenshot({ ...shot, fullPage: true })
     }
     await ctx.close()
   }

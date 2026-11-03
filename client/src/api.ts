@@ -236,66 +236,55 @@ export interface Issue {
   source: { runItemId: string; runId: string; runAt: string; checklistName: string; label: string } | null
 }
 
-// Tire sets (MVP5-D): owned by the user, on one car at a time. Every km value is in km; kmDriven is computed on read.
+// TIRE-2a/2b: one tire per wheel, spare included. Every km value is in km; kmOnTire is computed on read.
 export type Season = 'Summer' | 'Winter' | 'AllSeason'
 export const seasons: Season[] = ['Summer', 'Winter', 'AllSeason']
-
-export interface TireSet {
-  id: string
-  brand: string
-  model: string | null
-  size: string | null
-  season: Season
-  purchaseDate: string | null
-  dotCode: string | null
-  notes: string | null // the storage notes
-  createdAt: string
-  kmDriven: number
-  openMount: { vehicleId: string; vehicleNickname: string; mountedAt: string; mountOdometerKm: number } | null // null = in storage
-  mountCount: number
-}
-
-// One stretch of a set on a car; unmounted* are null while it is on.
-export interface TireMount {
-  id: string
-  tireSetId: string
-  brand: string
-  model: string | null
-  size: string | null
-  season: Season
-  vehicleId: string
-  vehicleNickname: string
-  mountedAt: string
-  mountOdometerKm: number
-  unmountedAt: string | null
-  unmountOdometerKm: number | null
-  kmDriven: number
-  // MVP5-E: filled only on VehicleTires.current.
-  lastCheck?: TireCheck | null
-  lastRotation?: { date: string; odometerKm: number; kmSince: number } | null
-}
-
-// MVP5-E: a check is one date on a mount, with pressure (bar) and tread (mm) per wheel, in this order.
 export type TirePosition = 'FL' | 'FR' | 'RL' | 'RR' | 'Spare'
 export const tirePositions: TirePosition[] = ['FL', 'FR', 'RL', 'RR', 'Spare']
+
+export interface Tire {
+  id: string
+  position: TirePosition // on the car: its wheel now; removed: the wheel it came off
+  brand: string
+  model: string | null
+  size: string | null
+  season: Season
+  dotCode: string | null
+  dotDate: string | null // the Monday of the DOT week, when the code ends in WWYY
+  purchaseDate: string | null
+  fittedAt: string
+  fittedOdometerKm: number
+  removedAt: string | null // null while on the car
+  removedOdometerKm: number | null
+  kmOnTire: number
+  notes: string | null
+  serviceRecordId: string | null // the Replace record that bought it
+  latestMeasurement: { measuredAt: string; position: TirePosition; pressureBar: number | null; treadDepthMm: number | null } | null
+}
+
+// The tires on the car (wheel order, an empty wheel missing), the removed ones newest first.
+export interface VehicleTires {
+  current: Tire[]
+  removed: Tire[]
+  lastCheckDate: string | null
+  lastRotation: { id: string; date: string; odometerKm: number; kmSince: number } | null
+}
+
+// A check is the car's measurements of one date, in wheel order.
 export interface TireCheck {
   measuredAt: string
-  items: { position: TirePosition; pressureBar: number | null; treadDepthMm: number | null }[]
+  items: { tireId: string; position: TirePosition; pressureBar: number | null; treadDepthMm: number | null }[]
 }
+// moves is empty on a migrated rotation ("Wheels not recorded").
 export interface TireRotation {
   id: string
   date: string
   odometerKm: number
   notes: string | null
+  moves: { tireId: string; fromPosition: TirePosition; toPosition: TirePosition }[]
 }
 
-// The car's set now, and its earlier mounts newest first (the newest 100).
-export interface VehicleTires {
-  current: TireMount | null
-  past: TireMount[]
-}
-
-export const tireName = (x: Pick<TireSet, 'brand' | 'model'>) => [x.brand, x.model].filter(Boolean).join(' ')
+export const tireName = (x: Pick<Tire, 'brand' | 'model'>) => [x.brand, x.model].filter(Boolean).join(' ')
 
 // The server's automatic flag, live on the run form: Not OK, or a number outside the range (the bounds themselves are inside).
 export const autoFlag = (i: Pick<ChecklistRunItem, 'boolValue' | 'numberValue' | 'minValue' | 'maxValue'>): 'notOk' | 'below' | 'above' | null =>
@@ -365,8 +354,10 @@ export interface Problem {
   maxDate?: string // the latest accepted date of a date.tooLate error
   min?: number // settings.invalidLeadDays
   max?: number // settings.invalidLeadDays, vehicleDocument.tooMany
-  mountOdometerKm?: number // tireMount.odometerBeforeMount: the odometer when the set went on
-  mountedAt?: string // tireMount.dateBeforeMount: the date the set went on
+  fittedOdometerKm?: number // tire.odometerBeforeFitted: the odometer when that tire went on
+  fittedAt?: string // tire.dateBeforeFitted: the date that tire went on
+  position?: string // tire.*, tireMeasurement.noTire, tireRotation.noTire: the wheel (TirePosition)
+  latestDate?: string // tireRotation.beforeLatest: the car's newest rotation
   maxBytes?: number // file.quotaExceeded: the user's storage limit
   errors?: Record<string, string[]> // model binding's 400 (http.400), by field
 }

@@ -198,62 +198,83 @@ public class MaintenanceSchemaTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Tires_SwapOnSqlServer_OneOpenMountPerCarAndSet_AndUserDeleteCascades()
+    public async Task Tires_OnSqlServer_ReplaceAndSwaps_PassTheOneTirePerWheelIndex_AndUserDeleteCascades()
     {
-        // MVP5-D: the swap closes the old mount and inserts the new one in one save, past the filtered unique indexes.
+        // TIRE-2: Replace closes and fits in one save, and a rotation swaps wheels, past the filtered unique (car, position) index.
         var vehicles = new VehicleService(db);
-        var tires = new TireService(db, vehicles);
+        var tasks = new MaintenanceTaskService(db, vehicles);
+        var tires = new TireService(db, vehicles, tasks);
         var car = await AddCarAsync();
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
-        var a = await tires.CreateAsync(car.UserId, new TireSetRequest("A", null, null, TireSeason.Summer, null, null, null));
-        var b = await tires.CreateAsync(car.UserId, new TireSetRequest("B", null, null, TireSeason.Winter, null, null, null));
-        await tires.MountAsync(car.UserId, car.Id, new MountTireSetRequest(a.Id, today, 0));
-        var swapped = await tires.MountAsync(car.UserId, car.Id, new MountTireSetRequest(b.Id, today, 10));
-        Assert.Equal((b.Id, a.Id), (swapped.Current!.TireSetId, Assert.Single(swapped.Past).TireSetId));
-        db.ChangeTracker.Clear();
+        TireRotationMoveRequest Move(TirePosition from, TirePosition to) => new(from, to);
+        async Task<Dictionary<TirePosition, Guid>> OnCar() => (await tires.GetVehicleTiresAsync(car.UserId, car.Id)).Current.ToDictionary(t => t.Position, t => t.Id);
 
-        // A second open mount on the car (two simultaneous mounts) is refused by the index.
-        db.TireMounts.Add(new TireMount { TireSetId = a.Id, VehicleId = car.Id, MountedAt = today });
+        await tires.ReplaceAsync(car.UserId, car.Id, new ReplaceTiresRequest([TirePosition.FL, TirePosition.FR, TirePosition.RL, TirePosition.RR], today.AddDays(-10),
+            1_000, "A", null, null, TireSeason.Summer, null, null, null, null, null));
+        var replaced = await tires.ReplaceAsync(car.UserId, car.Id, new ReplaceTiresRequest([TirePosition.FL, TirePosition.FR], today.AddDays(-5), 2_000,
+            "B", null, null, TireSeason.Winter, null, null, 400, null, null));
+        Assert.Equal((4, 2), (replaced.Current.Count, replaced.Removed.Count));
+        var ids = await OnCar();
+
+        var swap = await tires.AddRotationAsync(car.UserId, car.Id, new TireRotationRequest(today.AddDays(-4), 2_100, null,
+            [Move(TirePosition.FL, TirePosition.FR), Move(TirePosition.FR, TirePosition.FL)]));
+        var cycle = await tires.AddRotationAsync(car.UserId, car.Id, new TireRotationRequest(today.AddDays(-3), 2_200, null,
+            [Move(TirePosition.FL, TirePosition.RL), Move(TirePosition.RL, TirePosition.RR), Move(TirePosition.RR, TirePosition.FR), Move(TirePosition.FR, TirePosition.FL)]));
+        db.ChangeTracker.Clear();
+        var rotated = await OnCar();
+        Assert.Equal((ids[TirePosition.FL], ids[TirePosition.RR], ids[TirePosition.FR], ids[TirePosition.RL]),
+            (rotated[TirePosition.FL], rotated[TirePosition.FR], rotated[TirePosition.RL], rotated[TirePosition.RR]));
+        await tires.DeleteRotationAsync(car.UserId, cycle.Id);
+        await tires.DeleteRotationAsync(car.UserId, swap.Id);
+        db.ChangeTracker.Clear();
+        Assert.Equal(ids, await OnCar());
+
+        // A second tire on a wheel, and a removal before the fitting, are refused by the database.
+        db.Tires.Add(new Tire { VehicleId = car.Id, Position = TirePosition.FL, Brand = "X", FittedAt = today });
+        await Assert.ThrowsAsync<DbUpdateException>(() => db.SaveChangesAsync());
+        db.ChangeTracker.Clear();
+        db.Tires.Add(new Tire { VehicleId = car.Id, Position = TirePosition.Spare, Brand = "X", FittedAt = today, RemovedAt = today.AddDays(-1), RemovedOdometerKm = 0 });
         await Assert.ThrowsAsync<DbUpdateException>(() => db.SaveChangesAsync());
         db.ChangeTracker.Clear();
 
-        // Deleting the user removes cars, sets and mounts in one statement (no cascade cycle).
+        // Voiding the Replace record keeps its tires and clears their link (the key is NoAction).
+        var record = await db.ServiceRecords.SingleAsync();
+        await tasks.VoidAsync(car.UserId, car.Id, record.Id);
+        db.ChangeTracker.Clear();
+        Assert.Equal(6, await db.Tires.CountAsync(t => t.ServiceRecordId == null));
+
+        // Deleting the user removes cars, records, tires, measurements, rotations and moves in one statement, a tire linked to a record included.
+        await db.Tires.Where(t => t.RemovedAt == null).ExecuteUpdateAsync(u => u.SetProperty(t => t.ServiceRecordId, record.Id));
+        await tires.AddCheckAsync(car.UserId, car.Id, new TireCheckRequest(today, [new(TirePosition.FL, 2.2m, null)]));
+        await tires.AddRotationAsync(car.UserId, car.Id, new TireRotationRequest(today, 2_300, null, [Move(TirePosition.FL, TirePosition.FR), Move(TirePosition.FR, TirePosition.FL)]));
         await db.Users.Where(u => u.Id == car.UserId).ExecuteDeleteAsync();
-        Assert.Equal((0, 0, 0), (await db.Vehicles.CountAsync(), await db.TireSets.CountAsync(), await db.TireMounts.CountAsync()));
+        Assert.Equal((0, 0, 0, 0, 0, 0), (await db.Vehicles.CountAsync(), await db.ServiceRecords.CountAsync(), await db.Tires.CountAsync(),
+            await db.TireMeasurements.CountAsync(), await db.TireRotations.CountAsync(), await db.TireRotationMoves.CountAsync()));
     }
 
     [Fact]
-    public async Task TireChecks_OnSqlServer_DuplicateDateRefusedByTheIndex_ValuesChecked_AndSetDeleteCascades()
+    public async Task TireMeasurements_OnSqlServer_SameTireAndDateRefusedByTheIndex_ValuesChecked_AndTireDeleteCascades()
     {
-        // MVP5-E: the unique (mount, date) check index refuses a second check on the same date; deletes cascade in the database.
-        var tires = new TireService(db, new VehicleService(db));
+        var vehicles = new VehicleService(db);
+        var tires = new TireService(db, vehicles, new MaintenanceTaskService(db, vehicles));
         var car = await AddCarAsync();
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
-        var set = await tires.CreateAsync(car.UserId, new TireSetRequest("A", null, null, TireSeason.Summer, null, null, null));
-        var mount = (await tires.MountAsync(car.UserId, car.Id, new MountTireSetRequest(set.Id, today, 0))).Current!.Id;
-        var check = await tires.AddCheckAsync(car.UserId, mount, new TireCheckRequest(today, [new(TirePosition.FL, 2.25m, 6.5m)]));
-        await tires.AddRotationAsync(car.UserId, mount, new TireRotationRequest(today, 10, "x"));
-        Assert.Equal(new TireCheckItemDto(TirePosition.FL, 2.25m, 6.5m), Assert.Single(check.Items));
+        var fl = Assert.Single((await tires.ReplaceAsync(car.UserId, car.Id, new ReplaceTiresRequest([TirePosition.FL], today, 0, "A", null, null,
+            TireSeason.Summer, null, null, null, null, null))).Current).Id;
+        var check = await tires.AddCheckAsync(car.UserId, car.Id, new TireCheckRequest(today, [new(TirePosition.FL, 2.25m, 6.5m)]));
+        Assert.Equal(new TireCheckItemDto(fl, TirePosition.FL, 2.25m, 6.5m), Assert.Single(check.Items));
         db.ChangeTracker.Clear();
 
-        // A simultaneous request that passed the "already a check" query fails on the index even with other wheels.
-        // (Turning that failure into a 409 is covered on InMemory in TireTests, not here.)
-        db.TireChecks.Add(new TireCheck { TireMountId = mount, MeasuredAt = today, Measurements = [new() { Position = TirePosition.RR, PressureBar = 2 }] });
+        // A simultaneous request that passed the "already measured" query fails on the index. (Its 409 is covered on InMemory in TireTests.)
+        db.TireMeasurements.Add(new TireMeasurement { TireId = fl, Position = TirePosition.FL, MeasuredAt = today, PressureBar = 2 });
+        await Assert.ThrowsAsync<DbUpdateException>(() => db.SaveChangesAsync());
+        db.ChangeTracker.Clear();
+        db.TireMeasurements.Add(new TireMeasurement { TireId = fl, Position = TirePosition.FL, MeasuredAt = today.AddDays(-1) });
         await Assert.ThrowsAsync<DbUpdateException>(() => db.SaveChangesAsync());
         db.ChangeTracker.Clear();
 
-        // The same wheel twice in one check, and a wheel with neither value, are refused.
-        var checkId = (await db.TireChecks.SingleAsync()).Id;
-        db.TireMeasurements.Add(new TireMeasurement { TireCheckId = checkId, Position = TirePosition.FL, PressureBar = 2 });
-        await Assert.ThrowsAsync<DbUpdateException>(() => db.SaveChangesAsync());
-        db.ChangeTracker.Clear();
-        db.TireMeasurements.Add(new TireMeasurement { TireCheckId = checkId, Position = TirePosition.FR });
-        await Assert.ThrowsAsync<DbUpdateException>(() => db.SaveChangesAsync());
-        db.ChangeTracker.Clear();
-
-        await tires.DeleteAsync(car.UserId, set.Id);
-        Assert.Equal((0, 0, 0, 0), (await db.TireMounts.CountAsync(), await db.TireChecks.CountAsync(), await db.TireMeasurements.CountAsync(),
-            await db.TireRotations.CountAsync()));
+        await tires.DeleteAsync(car.UserId, fl);
+        Assert.Equal((0, 0), (await db.Tires.CountAsync(), await db.TireMeasurements.CountAsync()));
     }
 
     // --- LOW-4: races on the real database. Each "other request" runs on its own context just before this request's save. ---
@@ -652,7 +673,7 @@ public class MaintenanceSchemaTests : IAsyncLifetime
 
         Assert.Equal(3, three.Vehicles.Count);
         Assert.Equal("r.pdf", Assert.Single(Assert.Single(one.Vehicles).ServiceRecords).Attachments.Single().FileName);
-        Assert.Equal(21, queriesForOne); // the user, lead days, then one per table
+        Assert.Equal(20, queriesForOne); // the user, lead days, then one per table
         Assert.Equal(queriesForOne, commands.Texts.Count);
         Assert.DoesNotContain(commands.Texts, t => t.Contains("[PasswordHash]") || t.Contains("[FileUrl]")
             || System.Text.RegularExpressions.Regex.IsMatch(t, @"\[PhotoUrl\](?! IS NOT NULL)")); // only tested for null, never read

@@ -112,7 +112,7 @@ export default function CarPage() {
       <IssuesSection car={car} version={issuesVersion} />
       <DocumentsSection car={car} />
       <ChecklistsSection car={car} onChanged={load} onIssuesChanged={() => setIssuesVersion((v) => v + 1)} />
-      <TiresSection car={car} />
+      <TiresSection car={car} onChanged={load} />
       <ServiceHistory car={car} logFor={logFor} onChanged={() => { setUndo(null); load() }} />
 
       <section {...fold.section} aria-labelledby="odometer-history" ref={historyRef}>

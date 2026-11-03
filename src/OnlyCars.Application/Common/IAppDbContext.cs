@@ -25,11 +25,10 @@ public interface IAppDbContext
     DbSet<ChecklistRun> ChecklistRuns { get; }
     DbSet<ChecklistRunItem> ChecklistRunItems { get; }
     DbSet<Issue> Issues { get; }
-    DbSet<TireSet> TireSets { get; }
-    DbSet<TireMount> TireMounts { get; }
-    DbSet<TireCheck> TireChecks { get; }
+    DbSet<Tire> Tires { get; }
     DbSet<TireMeasurement> TireMeasurements { get; }
     DbSet<TireRotation> TireRotations { get; }
+    DbSet<TireRotationMove> TireRotationMoves { get; }
     DbSet<VehicleDocument> VehicleDocuments { get; }
     DbSet<NotificationRule> NotificationRules { get; }
     DbSet<Notification> Notifications { get; }

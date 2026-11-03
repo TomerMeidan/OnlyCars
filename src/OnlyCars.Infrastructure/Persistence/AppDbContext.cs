@@ -25,11 +25,10 @@ public class AppDbContext : DbContext, IAppDbContext
     public DbSet<ChecklistRun> ChecklistRuns => Set<ChecklistRun>();
     public DbSet<ChecklistRunItem> ChecklistRunItems => Set<ChecklistRunItem>();
     public DbSet<Issue> Issues => Set<Issue>();
-    public DbSet<TireSet> TireSets => Set<TireSet>();
-    public DbSet<TireMount> TireMounts => Set<TireMount>();
-    public DbSet<TireCheck> TireChecks => Set<TireCheck>();
+    public DbSet<Tire> Tires => Set<Tire>();
     public DbSet<TireMeasurement> TireMeasurements => Set<TireMeasurement>();
     public DbSet<TireRotation> TireRotations => Set<TireRotation>();
+    public DbSet<TireRotationMove> TireRotationMoves => Set<TireRotationMove>();
     public DbSet<VehicleDocument> VehicleDocuments => Set<VehicleDocument>();
     public DbSet<NotificationRule> NotificationRules => Set<NotificationRule>();
     public DbSet<Notification> Notifications => Set<Notification>();
