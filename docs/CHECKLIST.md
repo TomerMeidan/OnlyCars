@@ -96,6 +96,7 @@ Legend:
 - [x] Hebrew and English, including right-to-left
 - [x] Receipt image storage with size limits (10 MB per file, 1 GB per account, shared by the car photo, receipts and run photos; the files are deleted with the account, ACC-2)
 - [x] Offline odometer entry that syncs later (on the dashboard; sent by itself when you are back online, never twice, OFF-1)
+- [ ] **Full export with files (owner, 2026-11-03, major)**: one download with all of the account's data and every stored file: car photos, receipts and service files, checklist run photos, car documents. Today "Export my data" gives only the data as JSON, without the files.
 
 ## 11. Optional (deferred, as the spec allows)
 - [ ] Fuel log and consumption tracking *(needs your answers first; see "Waiting on the owner")*
