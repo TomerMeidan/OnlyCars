@@ -180,6 +180,7 @@ function RecordForm({ car, url, row, record, preselect, onSaved, onGone, onTaskG
   const [needsConfirm, setNeedsConfirm] = useState(false)
   const [confirmCorrection, setConfirmCorrection] = useState(false)
   const [items, setItems] = useState(() => record?.items.map((i) => toItem(i)) ?? [])
+  const [date, setDate] = useState(() => record?.date.slice(0, 10) ?? localToday())
   const { formRef, errorId, itemKey, n, focus, failed, tie } = useItemErrors(items, error, fieldOf)
   // The odometer field starts at the record's value when editing, at the car's when recording.
   const startStored = record?.odometerKm ?? car.currentOdometerKm
@@ -250,7 +251,9 @@ function RecordForm({ car, url, row, record, preselect, onSaved, onGone, onTaskG
     <form className="inline-form" ref={formRef} onSubmit={submit} onKeyDown={(e) => !busy && e.key === 'Escape' && open('view')}>
       <label>
         {t('readingDate')}
-        <input name="date" type="date" required max={localToday()} onInput={future} defaultValue={record?.date.slice(0, 10) ?? localToday()} autoFocus {...tie('date')} />
+        <input name="date" type="date" required max={localToday()} onInput={(e) => { future(e); setDate(e.currentTarget.value) }} defaultValue={date} autoFocus {...tie('date', `${id}date`)} />
+        {/* The field's order follows the browser's language (10/12 can be 10 Dec), so the date is spelled out too (owner, 2026-11-03). */}
+        <span id={`${id}date`} className="muted" aria-hidden="true">{date && fmtDate(date, lng)}</span>
       </label>
       <label>
         {t('serviceOdometer', d.vars)}
