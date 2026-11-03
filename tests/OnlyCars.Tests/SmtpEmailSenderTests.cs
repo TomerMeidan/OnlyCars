@@ -25,6 +25,8 @@ public class SmtpEmailSenderTests
         var gmail = new Dictionary<string, string?> { ["SmtpUser"] = "cars@gmail.com", ["SmtpPassword"] = "app-password" };
         Assert.IsType<SmtpEmailSender>(SenderFor(gmail));
         Assert.IsType<ResendEmailSender>(SenderFor(new(gmail) { ["ResendApiKey"] = "re_x", ["From"] = "a@b.c" }));
+        Assert.IsType<SmtpEmailSender>(SenderFor(new(gmail) { ["ResendApiKey"] = "re_x" }));
+        Assert.Null(SenderFor(new() { ["ResendApiKey"] = "re_x" }));
         Assert.Null(SenderFor(new() { ["SmtpUser"] = "cars@gmail.com" }));
         Assert.Null(SenderFor(new()));
     }

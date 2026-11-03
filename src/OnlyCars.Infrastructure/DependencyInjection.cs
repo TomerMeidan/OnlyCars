@@ -41,10 +41,10 @@ public static class DependencyInjection
         var email = configuration.GetSection(EmailOptions.SectionName);
         services.Configure<EmailOptions>(email);
         var o = email.Get<EmailOptions>() ?? new EmailOptions();
-        if (o.ResendApiKey is { Length: > 0 } resendKey)
+        // Resend needs a From; without one it's skipped rather than stopping the site (deploy 2026-11-03 crashed on it).
+        if (o is { ResendApiKey.Length: > 0, From.Length: > 0 })
         {
-            var from = o.From is { Length: > 0 } f ? f : throw new InvalidOperationException("Email:From is not configured.");
-            services.AddSingleton<IEmailSender>(new ResendEmailSender(resendKey, from));
+            services.AddSingleton<IEmailSender>(new ResendEmailSender(o.ResendApiKey, o.From));
         }
         else if (o is { SmtpUser.Length: > 0, SmtpPassword.Length: > 0 })
         {
