@@ -31,9 +31,7 @@ public class FullExportService(IAppDbContext db, ExportService exportService, Ex
         var export = await exportService.ExportAsync(userId, ct);
         var photoKeys = await db.Vehicles.Where(v => v.UserId == userId && v.PhotoUrl != null).ToDictionaryAsync(v => v.Id, v => v.PhotoUrl!, ct);
         // The same filter as the export's file list.
-        var fileKeys = await db.Attachments
-            .Where(a => a.ServiceRecord!.Vehicle!.UserId == userId || a.ChecklistRun!.VehicleChecklist!.Vehicle!.UserId == userId)
-            .ToDictionaryAsync(a => a.Id, a => a.FileUrl, ct);
+        var fileKeys = await db.Attachments.Where(AttachmentFiles.OwnedBy(userId)).ToDictionaryAsync(a => a.Id, a => a.FileUrl, ct);
 
         // Every path first, since data.json (the first entry) lists them.
         var used = new HashSet<string>(StringComparer.OrdinalIgnoreCase); // Windows and macOS see "Car" and "car" as one name
@@ -53,6 +51,10 @@ public class FullExportService(IAppDbContext db, ExportService exportService, Ex
             foreach (var run in car.Checklists.SelectMany(c => c.Runs))
             {
                 AddFiles(run.Photos, $"{folder}checklist-runs/{Folder(run.RunAt, run.Id)}/");
+            }
+            foreach (var document in car.Documents)
+            {
+                AddFiles(document.Attachments, $"{folder}documents/{document.Type} {Folder(document.ExpiryDate, document.Id)}/");
             }
         }
 

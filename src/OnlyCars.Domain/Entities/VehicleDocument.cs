@@ -15,4 +15,6 @@ public class VehicleDocument : Entity
     public DateOnly ExpiryDate { get; set; }
     public decimal? Cost { get; set; }
     public string? Notes { get; set; }
+
+    public List<Attachment> Attachments { get; set; } = [];
 }

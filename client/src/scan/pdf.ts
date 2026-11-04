@@ -27,3 +27,11 @@ export function pdf(pages: JpegPage[]): Uint8Array<ArrayBuffer> {
   parts.reduce((at, b) => (out.set(b, at), at + b.length), 0)
   return out
 }
+
+// SCAN-2b: the saved name from the File name field. Characters Windows refuses become -, empty (or only ".pdf") is the default,
+// a typed .pdf in any case is kept rather than doubled; 251 + ".pdf" stays within 255.
+export function pdfName(typed: string, today: string) {
+  let name = typed.trim().replace(/[\\/:*?"<>|]/g, '-').slice(0, 251).trimEnd()
+  if (!name || /^\.pdf$/i.test(name)) name = `scan-${today}`
+  return /\.pdf$/i.test(name) ? name : `${name}.pdf`
+}

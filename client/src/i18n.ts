@@ -204,6 +204,7 @@ const en = {
   next: 'Next',
   scanWorking: 'Straightening the page…',
   scanCleanup: 'Clean-up',
+  scanName: 'File name',
   scanBw: 'Black and white',
   scanColor: 'Color',
   scanPages: 'Pages',
@@ -442,6 +443,9 @@ const en = {
   expiresIn_other: 'Expires in <n>{{count, number}}</n> days',
   editDocumentOf: 'Edit {{name}}, expires on {{date}}',
   deleteDocumentOf: 'Delete {{name}}, expires on {{date}}',
+  addFileToDocument: 'Add file to {{name}}, expires on {{date}}',
+  scanToDocument: 'Scan a document into {{name}}, expires on {{date}}',
+  documentFilesMax: 'This document has the maximum of 10 files.',
   confirmDeleteDocument: 'Delete this document?',
   documentGone: 'This document was already deleted. The list has been updated.',
   reminders: 'Needs attention',
@@ -617,6 +621,10 @@ const en = {
     // Not an API code: file.storageUnavailable on the ZIP export, which reads files rather than saving them.
     exportZip: {
       storageUnavailable: "Your files can't be reached right now, so the ZIP can't be made. Try again later.",
+    },
+    // Not an API code: attachment.tooMany on a car document's files.
+    documentFile: {
+      tooMany: 'This document already has 10 files. Delete one to add another.',
     },
     // Not an API code: the file.* messages for a service's files instead of the car photo.
     attachmentFile: {
@@ -1004,6 +1012,7 @@ const he: typeof en = {
   next: 'הבא',
   scanWorking: 'מיישר את הדף…',
   scanCleanup: 'ניקוי',
+  scanName: 'שם הקובץ',
   scanBw: 'שחור־לבן',
   scanColor: 'צבע',
   scanPages: 'דפים',
@@ -1233,6 +1242,9 @@ const he: typeof en = {
   expiresIn_other: 'התוקף יפוג בעוד <n>{{count, number}}</n> ימים',
   editDocumentOf: 'עריכה של {{name}}, בתוקף עד {{date}}',
   deleteDocumentOf: 'מחיקה של {{name}}, בתוקף עד {{date}}',
+  addFileToDocument: 'הוספת קובץ למסמך {{name}}, בתוקף עד {{date}}',
+  scanToDocument: 'סריקת מסמך ל־{{name}}, בתוקף עד {{date}}',
+  documentFilesMax: 'למסמך הזה כבר יש ⁦10⁩ קבצים, וזה המספר המרבי.',
   confirmDeleteDocument: 'למחוק את המסמך הזה?',
   documentGone: 'המסמך הזה כבר נמחק, והרשימה עודכנה.',
   reminders: 'דורש תשומת לב',
@@ -1402,6 +1414,9 @@ const he: typeof en = {
     },
     exportZip: {
       storageUnavailable: 'הקבצים שלך לא זמינים כרגע, ולכן אי אפשר להכין את קובץ ה־ZIP. אפשר לנסות שוב מאוחר יותר.',
+    },
+    documentFile: {
+      tooMany: 'למסמך הזה כבר יש ⁦10⁩ קבצים. כדי להוסיף קובץ, יש למחוק אחד מהם.',
     },
     attachmentFile: {
       required: 'יש לבחור קובץ להעלאה.',

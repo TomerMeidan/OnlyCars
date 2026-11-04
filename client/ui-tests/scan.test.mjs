@@ -3,7 +3,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { blackAndWhite, color, homography, warp } from '../src/scan/image.ts'
-import { pdf } from '../src/scan/pdf.ts'
+import { pdf, pdfName } from '../src/scan/pdf.ts'
 
 const quad = [[120.5, 40], [900, 95], [860, 1210.25], [60, 1100]]
 
@@ -41,6 +41,44 @@ test('black and white: gray paper turns white, a 3 px stroke black', () => {
   assert.equal(out.data[(50 * 200 + 100) * 4], 0)
 })
 
+const at = (img, x, y) => img.data[(y * img.width + x) * 4]
+
+test('black and white: a shadow across the paper still comes out white, and the text in it black', () => {
+  // The light falls from 230 on the left to 90 on the right; a 3 px line runs through it at 30% of the local paper.
+  const w = 400, h = 300, data = new Uint8ClampedArray(w * h * 4)
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const light = 230 - (140 * x) / w, v = y >= 149 && y < 152 && x >= 20 && x < 380 ? light * 0.3 : light
+    data.set([v, v, v, 255], (y * w + x) * 4)
+  }
+  const out = blackAndWhite({ data, width: w, height: h })
+  for (const x of [10, 100, 200, 300, 390]) {
+    assert.equal(at(out, x, 50), 255, `paper at x=${x}`)
+    if (x > 20 && x < 380) assert.equal(at(out, x, 150), 0, `ink at x=${x}`)
+  }
+})
+
+test('black and white: a solid dark square (a stamp) stays filled', () => {
+  const w = 1000, h = 1400, s = (x, y) => x >= 400 && x < 520 && y >= 600 && y < 720
+  const out = blackAndWhite(page(w, h, 200, 50, s))
+  for (const [x, y] of [[460, 660], [405, 605], [515, 715], [440, 690]]) assert.equal(at(out, x, y), 0, `inside at ${x},${y}`)
+  assert.equal(at(out, 100, 100), 255)
+})
+
+test('black and white: a soft text edge keeps its gray steps instead of a hard cut', () => {
+  // A camera-blurred edge: paper 220 ramps down to ink 40 over 8 px.
+  const w = 200, h = 100, data = new Uint8ClampedArray(w * h * 4)
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const v = x < 96 ? 220 : x >= 104 ? (x < 112 ? 40 : 220) : 220 - (180 * (x - 96)) / 8
+    data.set([v, v, v, 255], (y * w + x) * 4)
+  }
+  const out = blackAndWhite({ data, width: w, height: h })
+  const row = Array.from({ length: 10 }, (_, i) => at(out, 95 + i, 50))
+  assert.equal(row[0], 255)
+  assert.equal(at(out, 108, 50), 0)
+  assert.ok(row.filter((v) => v > 20 && v < 235).length >= 2, `gray steps on the edge: ${row}`)
+  for (let i = 1; i < row.length; i++) assert.ok(row[i] <= row[i - 1], `monotone: ${row}`)
+})
+
 test('color: the paper is stretched to white', () => {
   const out = color(page(100, 100, 190, 40, (x, y) => y < 10))
   assert.equal(out.data[(50 * 100 + 50) * 4], 255)
@@ -70,4 +108,17 @@ test('the PDF has one page per JPEG, in order, and a correct xref', () => {
   })
   // Each image's /Length is its JPEG's byte count.
   assert.equal(text.match(/\/Length 8 >>/g).length, 3)
+})
+
+// SCAN-2b: the File name field's rule.
+test('pdfName: default, trim, .pdf not doubled, reserved characters, the 251 cut, Hebrew', () => {
+  const d = '2026-11-04'
+  for (const typed of ['', '   ', '.pdf', ' .PDF ']) assert.equal(pdfName(typed, d), 'scan-2026-11-04.pdf')
+  assert.equal(pdfName('  policy  ', d), 'policy.pdf')
+  assert.equal(pdfName('x.PDF', d), 'x.PDF')
+  assert.equal(pdfName('x.pdf.txt', d), 'x.pdf.txt.pdf')
+  assert.equal(pdfName('a/b\\c:d*e?f"g<h>i|j', d), 'a-b-c-d-e-f-g-h-i-j.pdf')
+  assert.equal(pdfName('פוליסה 2027.PDF', d), 'פוליסה 2027.PDF')
+  assert.equal(pdfName('א'.repeat(300), d), `${'א'.repeat(251)}.pdf`)
+  assert.equal(pdfName(`${'a'.repeat(247)}.pdf`, d).length, 251)
 })

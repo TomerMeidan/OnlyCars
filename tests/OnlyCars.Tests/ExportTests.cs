@@ -65,6 +65,8 @@ public class ExportTests
         var run = new ChecklistRun { Id = Id("run"), VehicleChecklistId = checklist.Id, RunAt = Day, OdometerKm = 60_500, Notes = $"Run-{tag}" };
         var runItem = new ChecklistRunItem { Id = Id("runItem"), RunId = run.Id, TemplateItemId = templateItem.Id, LabelSnapshot = $"Tires-{tag}",
             Type = ChecklistItemType.Number, Unit = "bar", NumberValue = 1.8m, IsFlagged = true };
+        var document = new VehicleDocument { Id = Id("document"), VehicleId = car.Id, Type = VehicleDocumentType.Insurance, ExpiryDate = Day.AddYears(1),
+            Cost = 3_000, Notes = $"Policy-{tag}" };
 
         db.AddRange(user, car, archived, template, task, offTask, record, voided, checklistTemplate, templateItem, checklist, run, runItem,
             new OdometerReading { Id = Id("reading"), VehicleId = car.Id, ValueKm = 60_000, ReadingDate = Day, Source = OdometerSource.Service,
@@ -78,8 +80,10 @@ public class ExportTests
                 ContentType = "image/jpeg", SizeBytes = 999 },
             new Issue { Id = Id("issue"), VehicleId = car.Id, Title = $"Fix-{tag}", Status = IssueStatus.Done, ResolvedAt = Day,
                 SourceRunItemId = runItem.Id, Description = "\u200F\u2068לחץ\u2069 \u2066 2.1 bar\u2067\u200E" },
-            new VehicleDocument { Id = Id("document"), VehicleId = car.Id, Type = VehicleDocumentType.Insurance, ExpiryDate = Day.AddYears(1),
-                Cost = 3_000, Notes = $"Policy-{tag}" },
+            document,
+            // SCAN-2a: a document file (its key is NoAction too).
+            new Attachment { VehicleDocumentId = document.Id, FileUrl = $"users/{owner}/documents/key-{tag}.pdf", FileName = $"policy-{tag}.pdf",
+                ContentType = "application/pdf", SizeBytes = 777 },
             new NotificationRule { UserId = owner, Channel = NotificationChannel.InApp, LeadDays = 14 },
             new Notification { UserId = owner, VehicleId = car.Id, Kind = NotificationKind.Task, RefId = task.Id, SnoozedUntil = Day.AddDays(400) });
 
@@ -166,6 +170,9 @@ public class ExportTests
         var document = One(car.GetProperty("documents"));
         Assert.Equal("Insurance", document.GetProperty("type").GetString());
         Assert.Equal(3_000m, document.GetProperty("cost").GetDecimal());
+        var policy = One(document.GetProperty("attachments"));
+        Assert.Equal(("policy-mine.pdf", 777L), (policy.GetProperty("fileName").GetString(), policy.GetProperty("sizeBytes").GetInt64()));
+        Assert.Equal(["fileName", "contentType", "sizeBytes", "createdAt"], policy.EnumerateObject().Select(p => p.Name));
 
         var template = One(root.GetProperty("checklistTemplates"));
         Assert.Equal("bar", One(template.GetProperty("items")).GetProperty("unit").GetString());
@@ -464,6 +471,7 @@ public class FullExportTests : FileTestBase
             [$"{mine}services/{Folder(ids["record"], Day)}/receipt-mine.pdf"] = $"users/{userId}/receipts/key-mine.pdf",
             [$"{mine}services/{Folder(ids["voided"], Day.AddDays(1))}/void.pdf"] = voided.FileUrl,
             [$"{mine}checklist-runs/{Folder(ids["run"], Day)}/run-mine.jpg"] = $"users/{userId}/runs/key-mine.jpg",
+            [$"{mine}documents/Insurance {Folder(ids["document"], Day.AddYears(1))}/policy-mine.pdf"] = $"users/{userId}/documents/key-mine.pdf",
             ["cars/Old-mine/photo.png"] = archived.PhotoUrl,
             [$"cars/המאזדה שלי/services/{Folder(record.Id, Day)}/קבלה.pdf"] = receipt.FileUrl,
             [$"cars/המאזדה שלי/services/{Folder(record.Id, Day)}/קבלה (2).pdf"] = receipt2.FileUrl,
@@ -581,9 +589,9 @@ public class FullExportTests : FileTestBase
         using var zip = await ZipAsync();
 
         var missing = Text(zip.GetEntry("missing-files.txt")!).Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries);
-        Assert.Equal(3, missing.Length);
+        Assert.Equal(4, missing.Length);
         Assert.Single(missing, l => l.EndsWith("receipt-mine.pdf - not found in storage"));
-        Assert.Equal(2, missing.Count(l => l.EndsWith(" - could not be read from storage"))); // the car photo and the run photo
+        Assert.Equal(3, missing.Count(l => l.EndsWith(" - could not be read from storage"))); // the car photo, the run photo and the document file
         Assert.DoesNotContain(receipt.FileUrl, opened);
         Assert.Equal(["data.json", "missing-files.txt"], zip.Entries.Select(e => e.FullName));
     }
@@ -596,7 +604,7 @@ public class FullExportTests : FileTestBase
         using var zip = await ZipAsync();
 
         var missing = Text(zip.GetEntry("missing-files.txt")!).Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries);
-        Assert.Equal(3, missing.Count(l => l.EndsWith(" - could not be read from storage")));
+        Assert.Equal(4, missing.Count(l => l.EndsWith(" - could not be read from storage")));
     }
 
     [Theory]

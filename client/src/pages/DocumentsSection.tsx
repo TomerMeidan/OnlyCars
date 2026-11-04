@@ -4,6 +4,7 @@ import { api, ApiError, documentTypes, limit, localToday, type VehicleDocument, 
 import { useAuth } from '../auth'
 import { errorMessage, fmtDate, money } from '../i18n'
 import { useFold } from '../fold'
+import { Attachments } from './ServiceHistory'
 import { useRow } from '../useRow'
 
 // "Expired 3 days ago", "Expires today", "Expires in 10 days"; nothing when Ok (the expiry date says it). Colored by a status-* class on an ancestor.
@@ -75,6 +76,8 @@ function DocumentForm({ row, initial, onSubmit }: {
   )
 }
 
+const isGone = (err: unknown) => err instanceof ApiError && err.problem.code === 'vehicleDocument.notFound'
+
 // The car page's Documents, after To-dos: insurance, inspection, registration and licence, by expiry date (the server's order). It loads on its own.
 export function DocumentsSection({ car }: { car: Vehicle }) {
   const { t } = useTranslation()
@@ -129,7 +132,8 @@ export function DocumentsSection({ car }: { car: Vehicle }) {
         <DocumentForm row={form} onSubmit={async (body) => {
           const x = await api<VehicleDocument>(`${path}?today=${localToday()}`, 'POST', body)
           form.close()
-          reload([`li[data-id="${x.id}"] button.edit`])
+          // Its Add file, so a file or a scan is one step away (decisions.md, SCAN-2b).
+          reload([`li[data-id="${x.id}"] button.add-file`, `li[data-id="${x.id}"] button.edit`])
         }} />
       )}
 
@@ -156,6 +160,8 @@ export function DocumentsSection({ car }: { car: Vehicle }) {
               doc={x}
               path={`${path}/${encodeURIComponent(x.id)}`}
               readOnly={readOnly}
+              listPath={path}
+              onFiles={(d) => setList((xs) => xs && xs.map((y) => (y.id === d.id ? { ...y, attachments: d.attachments } : y)))}
               onSaved={() => reload([`li[data-id="${x.id}"] button.edit`])}
               // The row that takes this one's place, then the first, then Add a document (decisions.md, MVP1-C).
               onDeleted={() => reload([`.documents > li:nth-child(${i + 1}) button.edit`, '.documents > li button.edit', 'button.add'])}
@@ -168,10 +174,12 @@ export function DocumentsSection({ car }: { car: Vehicle }) {
   )
 }
 
-function DocumentRow({ doc: x, path, readOnly, onSaved, onDeleted, onGone }: {
+function DocumentRow({ doc: x, path, listPath, readOnly, onFiles, onSaved, onDeleted, onGone }: {
   doc: VehicleDocument
   path: string
+  listPath: string
   readOnly: boolean
+  onFiles: (doc: VehicleDocument) => void // its files changed, or got fresh links
   onSaved: () => void
   onDeleted: () => void
   onGone: () => void
@@ -189,7 +197,7 @@ function DocumentRow({ doc: x, path, readOnly, onSaved, onDeleted, onGone }: {
     try {
       await request()
     } catch (err) {
-      if (!(err instanceof ApiError && err.problem.code === 'vehicleDocument.notFound')) throw err
+      if (!isGone(err)) throw err
       close()
       onGone()
     }
@@ -203,6 +211,12 @@ function DocumentRow({ doc: x, path, readOnly, onSaved, onDeleted, onGone }: {
       </div>
       <p><ExpiresOn date={x.expiryDate} />{x.cost != null && <> · <bdi>{money(x.cost, lng, user?.currency)}</bdi></>}</p>
       {x.notes && <p className="notes" dir="auto">{x.notes}</p>}
+      <Attachments kind="document" parent={x} url={path} canAdd={!readOnly} canDelete addLabel={t('addFileToDocument', label)} scanLabel={t('scanToDocument', label)}
+        onChange={onFiles} onGone={onGone} isGone={isGone} load={async () => {
+          const fresh = (await api<VehicleDocument[]>(`${listPath}?today=${localToday()}`)).find((d) => d.id === x.id)
+          if (!fresh) throw new ApiError(404, { code: 'vehicleDocument.notFound' }, 'Not Found')
+          return fresh
+        }} />
 
       {!readOnly && mode === 'view' && (
         <div className="actions">
@@ -220,7 +234,7 @@ function DocumentRow({ doc: x, path, readOnly, onSaved, onDeleted, onGone }: {
       )}
       {mode === 'delete' && (
         <div className="inline-form" onKeyDown={(e) => !busy && e.key === 'Escape' && open('view')}>
-          <p>{t('confirmDeleteDocument')}</p>
+          <p>{t('confirmDeleteDocument')}{x.attachments.length > 0 && ` ${t('filesDeletedToo')}`}</p>
           {error != null && <p className="error" role="alert">{errorMessage(error)}</p>}
           <div className="actions">
             <button className="danger" disabled={busy} onClick={(e) => run(() => gone(async () => {

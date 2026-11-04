@@ -691,6 +691,112 @@ public class MaintenanceSchemaTests : IAsyncLifetime
         }
     }
 
+    // --- SCAN-2a: document files on the real database. ---
+
+    private VehicleDocumentService DocumentRacer()
+    {
+        var context = Context();
+        return new VehicleDocumentService(context, new VehicleService(context, storage));
+    }
+
+    private async Task<(Vehicle Car, Guid Document)> DocumentWithFilesAsync(int files)
+    {
+        var car = await AddCarAsync();
+        var document = (await DocumentRacer().CreateAsync(car.UserId, car.Id, new VehicleDocumentRequest("Insurance", new DateOnly(2027, 1, 31), null, null),
+            null)).Id;
+        for (var i = 0; i < files; i++)
+        {
+            await DocumentRacer().AddAttachmentAsync(car.UserId, car.Id, document, Pdf, $"{i}.pdf", null);
+        }
+
+        return (car, document);
+    }
+
+    [Fact]
+    public async Task DocumentAttachments_OnSqlServer_HaveExactlyOneOfThreeParents_AreIndexed_AndBlockARawDocumentDelete()
+    {
+        var (car, document) = await DocumentWithFilesAsync(1);
+        var record = (await Racer().CreateRecordAsync(car.UserId, car.Id, new CreateServiceRecordRequest(null, 1_000, null, null, null, []))).Record.Id;
+
+        foreach (var (recordId, documentId) in new (Guid?, Guid?)[] { (null, null), (record, document) })
+        {
+            await using var bad = Context();
+            bad.Attachments.Add(new Attachment { ServiceRecordId = recordId, VehicleDocumentId = documentId, FileUrl = "k", FileName = "x",
+                ContentType = "application/pdf", SizeBytes = 1 });
+            var ex = await Assert.ThrowsAsync<DbUpdateException>(() => bad.SaveChangesAsync());
+            Assert.Contains("CK_Attachments_OneParent", ex.InnerException!.Message);
+        }
+
+        var index = await db.Database.SqlQuery<string>(
+            $"SELECT c.name AS Value FROM sys.indexes i JOIN sys.index_columns ic ON ic.object_id = i.object_id AND ic.index_id = i.index_id JOIN sys.columns c ON c.object_id = ic.object_id AND c.column_id = ic.column_id WHERE i.name = 'IX_Attachments_VehicleDocumentId'")
+            .ToListAsync();
+        Assert.Equal(["VehicleDocumentId"], index);
+
+        // NoAction: the database never deletes a document's files by itself; the services do.
+        var blocked = await Assert.ThrowsAsync<SqlException>(() => db.VehicleDocuments.Where(d => d.Id == document).ExecuteDeleteAsync());
+        Assert.Contains("FK_Attachments_VehicleDocuments_VehicleDocumentId", blocked.Message);
+        await DocumentRacer().DeleteAsync(car.UserId, car.Id, document);
+        await using var check = Context();
+        Assert.Equal(0, await check.Attachments.CountAsync(a => a.VehicleDocumentId != null));
+        Assert.DoesNotContain(storage.Objects.Keys, k => k.Contains("/documents/"));
+    }
+
+    [Fact]
+    public async Task DocumentAttachment_OnSqlServer_TwoSimultaneousUploadsAtNineFiles_OnlyOneSaves_TheOthersObjectIsDeleted()
+    {
+        var (car, document) = await DocumentWithFilesAsync(Attachment.MaxPerParent - 1);
+        storage.PutGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var first = Task.Run(() => DocumentRacer().AddAttachmentAsync(car.UserId, car.Id, document, Pdf, "a.pdf", null));
+        var second = Task.Run(() => DocumentRacer().AddAttachmentAsync(car.UserId, car.Id, document, Pdf, "b.pdf", null));
+        await WaitForPutsAsync(2);
+        storage.PutGate.SetResult();
+
+        // The handler turns it into 409 concurrency.conflict (GlobalExceptionHandlerTests).
+        var results = await Task.WhenAll(Settle(first), Settle(second));
+        Assert.Single(results, e => e is null);
+        Assert.Single(results, e => e is DbUpdateConcurrencyException);
+        await using var check = Context();
+        var keys = await check.Attachments.Select(a => a.FileUrl).ToListAsync();
+        Assert.Equal(Attachment.MaxPerParent, keys.Count);
+        Assert.Equal(keys.Order(), storage.Objects.Keys.Order());
+    }
+
+    [Fact]
+    public async Task DocumentAttachment_OnSqlServer_ADocumentDeleteThatSavesDuringTheUpload_Wins_TheUploadIsAConflict_AndItsObjectIsDeleted()
+    {
+        var (car, document) = await DocumentWithFilesAsync(1);
+        storage.PutGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var upload = Task.Run(() => DocumentRacer().AddAttachmentAsync(car.UserId, car.Id, document, Pdf, "late.pdf", null));
+        await WaitForPutsAsync(1);
+        await DocumentRacer().DeleteAsync(car.UserId, car.Id, document);
+        storage.PutGate.SetResult();
+
+        await Assert.ThrowsAsync<DbUpdateConcurrencyException>(() => upload);
+        await using var check = Context();
+        Assert.Empty(check.Attachments);
+        Assert.Empty(check.VehicleDocuments);
+        Assert.Empty(storage.Objects);
+    }
+
+    [Fact]
+    public async Task DocumentDelete_OnSqlServer_AfterAnUploadSavedSinceItsRead_IsAConcurrencyException_AndKeepsEverything()
+    {
+        var (car, document) = await DocumentWithFilesAsync(0);
+        var interceptor = new BeforeSave();
+        await using var context = Context(interceptor);
+        var deleter = new VehicleDocumentService(context, new VehicleService(context, storage));
+        interceptor.Next = () => DocumentRacer().AddAttachmentAsync(car.UserId, car.Id, document, Pdf, "a.pdf", null);
+
+        await Assert.ThrowsAsync<DbUpdateConcurrencyException>(() => deleter.DeleteAsync(car.UserId, car.Id, document));
+
+        await using var check = Context();
+        Assert.Single(check.Attachments);
+        Assert.Single(check.VehicleDocuments);
+        Assert.Single(storage.Objects);
+    }
+
     /// <summary>Simulates another request saving first: runs <see cref="Next"/> once, at the start of the next save.</summary>
     private sealed class BeforeSave : SaveChangesInterceptor
     {

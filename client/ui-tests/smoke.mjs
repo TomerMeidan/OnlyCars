@@ -2224,6 +2224,8 @@ for (const s of setups) {
       await page.click(`${D} .scan-bar button`)
       await page.click(`${D} .inline-form button.link`)
       if (await pageCount() !== 2 || !(await page.locator(D).isVisible())) throw new Error('Keep scanning lost the scan')
+      // SCAN-2b: the File name field, with today's default (its rules: scan-name, on a document).
+      if ((await page.inputValue(`${D} .scan-name input`)) !== `scan-${await localDate()}`) throw new Error('no File name default on a service')
       // Save: one PDF named for today, with 2 pages, and focus back on Scan.
       const post = page.waitForResponse((r) => r.url().endsWith('/attachments') && r.request().method() === 'POST')
       await page.click(`${D} button.save-scan`)
@@ -5616,7 +5618,8 @@ for (const s of setups) {
       if (r.status() !== 201 || new URL(r.url()).searchParams.get('today') !== ntToday) throw new Error(`POST ${r.status()} ${r.url()}`)
       const body = r.request().postDataJSON()
       if (JSON.stringify(body) !== JSON.stringify({ type, expiryDate: expiry, cost: cost ?? null, notes: notes ?? '' })) throw new Error(`body ${JSON.stringify(body)}`)
-      await focusIs(`section[aria-labelledby=documents] li[data-id="${(await r.json()).id}"] button.edit`, `Edit after adding ${type}`)
+      // SCAN-2b: on the new document's Add file, so a file or a scan is one step away.
+      await focusIs(`section[aria-labelledby=documents] li[data-id="${(await r.json()).id}"] button.add-file`, `Add file after adding ${type}`)
     }
     await add('Insurance', await histDay(10), 1250, 'Comprehensive')
     await add('Inspection', ntToday)
@@ -5689,6 +5692,173 @@ for (const s of setups) {
     await focusIs('section[aria-labelledby=documents] li button.edit', 'an Edit after Delete')
     if ((await docs.locator('.documents > li').count()) !== 3) throw new Error('rows after Delete')
     await page.screenshot({ path: `${OUT}/${s.name}-documents.png`, fullPage: true })
+  })
+  // SCAN-2b: a car document's Files, as a service's: Add file and Scan named for the document, an image and a PDF listed with sizes and
+  // opened inline, a refused type, Delete asks first, the 10-file note and refusal (mocked), the document gone meanwhile (mocked);
+  // deleting a document with files says so, and its file link is 404 afterwards. At 360 px.
+  let insId
+  const DOCFILES = () => `section[aria-labelledby=documents] .documents > li[data-id="${insId}"] .files`
+  await step('documents-files', async () => {
+    const listUrl = (u) => u.pathname === `/api/vehicles/${ntCarId}/documents`
+    const ten = async (r) => {
+      const res = await r.fetch()
+      const xs = await res.json()
+      await r.fulfill({ response: res, json: xs.map((x) => (x.id !== insId ? x : { ...x, attachments: [...Array(10)].map((_, i) => ({ ...x.attachments[0], id: `00000000-0000-4000-8000-${String(i).padStart(12, '0')}` })) })) })
+    }
+    await page.setViewportSize({ width: 360, height: 780 })
+    try {
+      await page.goto(`${BASE}/cars/${ntCarId}`)
+      await docRow('Insurance').waitFor()
+      insId = await docRow('Insurance').getAttribute('data-id')
+      const add = `${DOCFILES()} button.add-file`, scan = `${DOCFILES()} button.scan`
+      const named = async (k) => plain(key(k)).replace('{{name}}', NT.types.Insurance).replace('{{date}}', await fmtDay(await histDay(5)))
+      if (plain(await page.getAttribute(add, 'aria-label')) !== await named('addFileToDocument')) throw new Error(`Add file label "${await page.getAttribute(add, 'aria-label')}"`)
+      if (plain(await page.getAttribute(scan, 'aria-label')) !== await named('scanToDocument')) throw new Error(`Scan label "${await page.getAttribute(scan, 'aria-label')}"`)
+      const chooseDoc = async (file) => { const [c] = await Promise.all([page.waitForEvent('filechooser'), page.click(add)]); await c.setFiles(file) }
+      const alertIs = async (want, what) => {
+        const el = page.locator(`${DOCFILES()} p.error[role=alert]`)
+        await el.waitFor()
+        if (plain(await el.textContent()) !== plain(want)) throw new Error(`${what}: "${await el.textContent()}"`)
+      }
+      await chooseDoc({ name: 'notes.txt', mimeType: 'text/plain', buffer: Buffer.from('hello') })
+      await alertIs(AF.unsupported, 'a .txt file')
+      const post = () => page.waitForResponse((r) => r.url().endsWith(`/documents/${insId}/attachments`) && r.request().method() === 'POST')
+      for (const [i, file] of [{ name: 'policy.png', mimeType: 'image/png', buffer: await image('image/png') }, { name: 'פוליסה.pdf', mimeType: 'application/pdf', buffer: pdf }].entries()) {
+        const res = post()
+        await chooseDoc(file)
+        if ((await res).status() !== 200) throw new Error(`upload ${file.name}: ${(await res).status()}`)
+        await page.locator(`${DOCFILES()} li >> nth=${i}`).waitFor()
+        await focusIs(add, `Add file after uploading ${file.name}`)
+      }
+      if (await page.locator(`${DOCFILES()} p.error`).count()) throw new Error('the error stayed after an upload')
+      // After a reload: both, in upload order, with sizes; each link serves its file inline.
+      await page.reload()
+      await page.locator(`${DOCFILES()} li >> nth=1`).waitFor()
+      const names = (await page.locator(`${DOCFILES()} li a bdi`).allTextContents()).map(plain)
+      if (names.join('|') !== 'policy.png|פוליסה.pdf') throw new Error(`names ${names}`)
+      const sizes = (await page.locator(`${DOCFILES()} li > span.muted`).allTextContents()).map(plain)
+      if (!sizes.every((x) => /^[\d.,]+ (KB|ק״ב)$/.test(x))) throw new Error(`sizes ${JSON.stringify(sizes)}`)
+      for (const [i, type] of [[0, 'image/png'], [1, 'application/pdf']]) {
+        const r = await page.request.get(await page.locator(`${DOCFILES()} li a >> nth=${i}`).getAttribute('href'))
+        if (r.status() !== 200 || r.headers()['content-type'] !== type || !r.headers()['content-disposition']?.startsWith('inline')) throw new Error(`file ${i}: ${r.status()} ${r.headers()['content-type']}`)
+      }
+      const [popup] = await Promise.all([page.waitForEvent('popup'), page.click(`${DOCFILES()} li a >> nth=1`)])
+      await popup.waitForURL((u) => u.pathname.endsWith('.pdf'), { timeout: 10000 })
+      await popup.close()
+      await noOverflow('a document with files at 360px')
+      await sweep('a document with files at 360px')
+      await page.screenshot({ path: `${OUT}/${s.name}-documents-files.png`, fullPage: true })
+      // Delete asks first; focus goes to the list.
+      await page.locator(`${DOCFILES()} li >> nth=1`).locator('button.link').click()
+      if (plain(await page.locator(`${DOCFILES()} .inline-form p`).textContent()) !== AF.confirm) throw new Error('file delete confirm text')
+      const del = page.waitForResponse((r) => r.url().includes(`/documents/${insId}/attachments/`) && r.request().method() === 'DELETE')
+      await page.click(`${DOCFILES()} button.danger`)
+      if ((await del).status() !== 204) throw new Error(`delete ${(await del).status()}`)
+      await page.waitForFunction((sel) => document.querySelectorAll(`${sel} li`).length === 1, DOCFILES(), { timeout: 5000 })
+      await focusIs(DOCFILES(), 'the list after a delete')
+      // The API's 10-file refusal, in the document's words; then 10 files (mocked): no Add file or Scan, and the note.
+      await page.route(`**/api/vehicles/${ntCarId}/documents/${insId}/attachments`, problem({ code: 'attachment.tooMany', maxCount: 10 }), { times: 1 })
+      await chooseDoc({ name: 'more.png', mimeType: 'image/png', buffer: await image('image/png') })
+      await alertIs(inBlock('documentFile', 'tooMany'), 'the 10-file refusal')
+      await page.route(listUrl, ten)
+      await page.reload()
+      await page.locator(`${DOCFILES()} li >> nth=9`).waitFor()
+      await page.unroute(listUrl, ten)
+      if (await page.locator(`${add}, ${scan}`).count()) throw new Error('Add file or Scan at 10 files')
+      if (plain(await page.locator(`${DOCFILES()} > p.muted`).textContent()) !== plain(key('documentFilesMax'))) throw new Error('no 10-file note')
+      // Deleted in another tab (mocked): the list reloads with the gone note, not an error.
+      await page.reload()
+      await page.locator(add).waitFor()
+      await page.route(`**/api/vehicles/${ntCarId}/documents/${insId}/attachments`, problem({ code: 'vehicleDocument.notFound' }, 404), { times: 1 })
+      await chooseDoc({ name: 'more.png', mimeType: 'image/png', buffer: await image('image/png') })
+      await docs.locator('p[role=status]', { hasText: plain(key('documentGone')) }).waitFor()
+      if (await docs.locator('[role=alert]').count()) throw new Error('an error with the gone note')
+      // A document with a file: its delete confirm says the files go too, and afterwards the file's link is 404.
+      const lic = await apiCall('POST', `/vehicles/${ntCarId}/documents?today=${ntToday}`, { type: 'Licence', expiryDate: await histDay(100), cost: null, notes: null })
+      const token = await page.evaluate(() => localStorage.getItem('token'))
+      const up = await page.request.post(`${BASE}/api/vehicles/${ntCarId}/documents/${lic.id}/attachments`, { headers: { Authorization: `Bearer ${token}` }, multipart: { file: { name: 'licence.png', mimeType: 'image/png', buffer: await image('image/png') } } })
+      if (up.status() !== 200) throw new Error(`API upload ${up.status()}`)
+      const link = (await up.json()).attachments[0].url
+      await page.reload()
+      await docRow('Licence').locator('button.edit + button').click()
+      const q = plain(await docRow('Licence').locator('.inline-form p').textContent())
+      if (q !== `${plain(key('confirmDeleteDocument'))} ${plain(key('filesDeletedToo'))}`) throw new Error(`document delete confirm "${q}"`)
+      await docRow('Licence').locator('.inline-form button.danger').click()
+      await docRow('Licence').waitFor({ state: 'detached' })
+      if ((await page.request.get(link)).status() !== 404) throw new Error("the deleted document's file still opens")
+    } finally {
+      await page.unroute(listUrl, ten)
+      await page.setViewportSize(s.viewport)
+    }
+  })
+  // SCAN-2b: the scanner's File name, on a document: the default, the fixed .pdf at the end, Enter saves nothing, a failed upload keeps
+  // the name, the saved names (a/b, Hebrew with .PDF, cleared), and the default again on reopen. At 360 px.
+  await step('scan-name', async () => {
+    const D = 'dialog.scanner', NAME = `${D} .scan-name input`
+    const scan = () => `${DOCFILES()} button.scan`
+    await page.setViewportSize({ width: 360, height: 780 })
+    try {
+      await page.goto(`${BASE}/cars/${ntCarId}`)
+      await page.locator(scan()).waitFor()
+      const today = await localDate()
+      const photo = { name: 'paper.png', mimeType: 'image/png', buffer: await image('image/png') }
+      const toPages = async () => {
+        const [c] = await Promise.all([page.waitForEvent('filechooser'), page.click(scan())])
+        await c.setFiles(photo)
+        await page.locator(`${D} button.corner >> nth=3`).waitFor()
+        await page.click(`${D} .actions button:not(.add)`)
+        await page.locator(NAME).waitFor()
+      }
+      const save = async (typed, want) => {
+        await page.fill(NAME, typed)
+        const res = page.waitForResponse((r) => r.url().endsWith(`/documents/${insId}/attachments`) && r.request().method() === 'POST')
+        await page.click(`${D} button.save-scan`)
+        if ((await res).status() !== 200) throw new Error(`"${typed}": upload ${(await res).status()}`)
+        const got = (await (await res).json()).attachments.at(-1)
+        if (got.fileName !== want || got.contentType !== 'application/pdf') throw new Error(`"${typed}" saved as ${got.fileName} ${got.contentType}`)
+        await page.locator(D).waitFor({ state: 'detached' })
+        await focusIs(scan(), `Scan after saving "${typed}"`)
+        if ((await page.locator(`${DOCFILES()} li a bdi`).allTextContents()).filter((x) => plain(x) === want).length !== 1) throw new Error(`${want} not listed once`)
+      }
+      await toPages()
+      if ((await page.inputValue(NAME)) !== `scan-${today}`) throw new Error(`default "${await page.inputValue(NAME)}"`)
+      if ((await page.getAttribute(NAME, 'maxlength')) !== '251' || (await page.getAttribute(NAME, 'dir')) !== 'auto') throw new Error('maxlength or dir')
+      if ((await page.getByLabel(plain(key('scanName')), { exact: true }).count()) !== 1) throw new Error('the field has no File name label')
+      // .pdf at the end: right of the field in English, left of it in Hebrew.
+      const [field, ext] = [await page.locator(NAME).boundingBox(), await page.locator(`${D} .scan-name [dir=ltr]`).boundingBox()]
+      if ((ext.x < field.x) !== he || plain(await page.locator(`${D} .scan-name [dir=ltr]`).textContent()) !== '.pdf') throw new Error(`.pdf at ${ext.x}, the field at ${field.x}`)
+      await tall(page.locator(NAME), 'the File name field')
+      const over = await page.evaluate((d) => { const el = document.querySelector(d); return el.scrollWidth - el.clientWidth }, D)
+      if (over > 0) throw new Error(`the scanner scrolls sideways by ${over}px`)
+      // Enter saves nothing and keeps the scanner open.
+      let posts = 0
+      const count = (r) => r.method() === 'POST' && r.url().includes('/attachments') && posts++
+      page.on('request', count)
+      await page.fill(NAME, 'a/b')
+      await page.press(NAME, 'Enter')
+      await page.waitForTimeout(300)
+      page.off('request', count)
+      if (posts || !(await page.locator(D).isVisible())) throw new Error('Enter saved or closed the scanner')
+      await page.screenshot({ path: `${OUT}/${s.name}-scan-name.png` })
+      // Offline: the error, with the name and the page kept; then saved under that name.
+      await ctx.setOffline(true)
+      await page.click(`${D} button.save-scan`)
+      await page.locator(`${D} p.error[role=alert]`).waitFor({ timeout: 10000 })
+      await ctx.setOffline(false)
+      if ((await page.inputValue(NAME)) !== 'a/b' || (await page.locator(`${D} .scan-pages li`).count()) !== 1) throw new Error('the name or the page went with the failed Save')
+      await save('a/b', 'a-b.pdf')
+      await toPages()
+      if ((await page.inputValue(NAME)) !== `scan-${today}`) throw new Error('the name did not reset on reopen')
+      await save('פוליסה 2027.PDF', 'פוליסה 2027.PDF')
+      await toPages()
+      await save('', `scan-${today}.pdf`)
+    } finally {
+      await ctx.setOffline(false)
+      // Back to one file, for documents-archived.
+      const doc = (await apiCall('GET', `/vehicles/${ntCarId}/documents?today=${ntToday}`)).find((x) => x.id === insId)
+      for (const a of doc?.attachments.slice(1) ?? []) await apiCall('DELETE', `/vehicles/${ntCarId}/documents/${insId}/attachments/${a.id}`)
+      await page.setViewportSize(s.viewport)
+    }
   })
   await step('reminders-list', async () => {
     // An overdue task (due at 4,000 km) and an overdue checklist (due at 5,500 km) once the car is at 6,000 km.
@@ -5846,7 +6016,9 @@ for (const s of setups) {
     await apiCall('POST', `/vehicles/${ntCarId}/archive`)
     await page.goto(`${BASE}/cars/${ntCarId}`)
     await docRow('Insurance').waitFor()
-    if (await docs.locator('button:not(.fold)').count()) throw new Error("buttons on an archived car's documents")
+    // SCAN-2b: only the Insurance file left by scan-name, which opens and deletes; no Add file, Scan, Edit or Delete document.
+    if (await docs.locator('button:not(.fold)').count() !== 1 || await docRow('Insurance').locator('.files li button.link').count() !== 1) throw new Error("buttons on an archived car's documents")
+    if (await docs.locator('button.add-file, button.scan').count() || !(await docRow('Insurance').locator('.files li a[href^="https:"]').count())) throw new Error("an archived car's document files")
     await page.goto(`${BASE}/`)
     await page.locator('main h1').waitFor()
     await page.waitForLoadState('networkidle')

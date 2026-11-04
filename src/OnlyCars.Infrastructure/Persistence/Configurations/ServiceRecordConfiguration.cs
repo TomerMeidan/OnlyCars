@@ -92,9 +92,17 @@ public class AttachmentConfiguration : IEntityTypeConfiguration<Attachment>
             .HasForeignKey(a => a.ChecklistRunId)
             .OnDelete(DeleteBehavior.NoAction);
 
+        // The same second path from the car: VehicleDocumentService and AccountService delete a document's file rows themselves.
+        builder.HasOne(a => a.VehicleDocument)
+            .WithMany(d => d.Attachments)
+            .HasForeignKey(a => a.VehicleDocumentId)
+            .OnDelete(DeleteBehavior.NoAction);
+
         builder.HasIndex(a => a.ServiceRecordId);
         builder.HasIndex(a => a.ChecklistRunId);
+        builder.HasIndex(a => a.VehicleDocumentId);
         builder.ToTable(t => t.HasCheckConstraint("CK_Attachments_OneParent",
-            "([ServiceRecordId] IS NOT NULL AND [ChecklistRunId] IS NULL) OR ([ServiceRecordId] IS NULL AND [ChecklistRunId] IS NOT NULL)"));
+            "(CASE WHEN [ServiceRecordId] IS NULL THEN 0 ELSE 1 END + CASE WHEN [ChecklistRunId] IS NULL THEN 0 ELSE 1 END"
+            + " + CASE WHEN [VehicleDocumentId] IS NULL THEN 0 ELSE 1 END) = 1"));
     }
 }

@@ -10,6 +10,8 @@ public class VehicleDocumentConfiguration : IEntityTypeConfiguration<VehicleDocu
     {
         builder.Property(d => d.Cost).HasColumnType("decimal(12,2)");
         builder.Property(d => d.Notes).HasMaxLength(VehicleDocument.MaxNotesLength);
+        // Every edit and file upload sets UpdatedAt, so overlapping uploads (or an upload and a delete) give one 409 (SCAN-2a).
+        builder.Property(d => d.UpdatedAt).IsConcurrencyToken();
 
         builder.HasOne(d => d.Vehicle)
             .WithMany()

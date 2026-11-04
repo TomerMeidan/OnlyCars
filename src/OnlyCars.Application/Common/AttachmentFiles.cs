@@ -1,3 +1,4 @@
+using System.Linq.Expressions;
 using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
@@ -10,7 +11,7 @@ using OnlyCars.Domain.Entities;
 namespace OnlyCars.Application.Common;
 
 /// <summary>
-/// The files of service records (FILE-2) and checklist runs (FILE-3), on the storage FILE-1 built: upload checks, the per-user quota,
+/// The files of service records (FILE-2), checklist runs (FILE-3) and vehicle documents (SCAN-2a), on the storage FILE-1 built: upload checks, the per-user quota,
 /// keys, signed URLs and deletes. Each parent's service finds the caller's parent; this does the rest.
 /// </summary>
 public class AttachmentFiles(IAppDbContext db, VehicleService vehicleService, IOptions<StorageOptions>? storageOptions = null)
@@ -30,13 +31,21 @@ public class AttachmentFiles(IAppDbContext db, VehicleService vehicleService, IO
 
     public static string RunPrefix(Guid userId, Guid vehicleId, Guid runId) => $"users/{userId}/vehicles/{vehicleId}/checklist-runs/{runId}/";
 
+    public static string DocumentPrefix(Guid userId, Guid vehicleId, Guid documentId) =>
+        $"users/{userId}/vehicles/{vehicleId}/documents/{documentId}/";
+
+    /// <summary>The user's files through any parent: the one filter of the quota, the export and the ZIP, so none misses a parent.</summary>
+    public static Expression<Func<Attachment, bool>> OwnedBy(Guid userId) => a =>
+        a.ServiceRecord!.Vehicle!.UserId == userId || a.ChecklistRun!.VehicleChecklist!.Vehicle!.UserId == userId
+        || a.VehicleDocument!.Vehicle!.UserId == userId;
+
     /// <summary>
     /// Checks in the order of the FILE-2 contract (archived, count, file, size, type, quota), stores the file under <paramref name="prefix"/>,
     /// then saves the row in <paramref name="attachments"/> with the parent's UpdatedAt moved; that is the parent's concurrency token, so a
     /// delete or another upload that saved since the parent was read fails this save (409 concurrency.conflict). Any failed save deletes the object.
     /// </summary>
     public async Task AddAsync(Guid userId, Vehicle vehicle, Entity parent, ICollection<Attachment> attachments, string prefix,
-        byte[]? content, string? fileName, bool photosOnly, CancellationToken ct)
+        byte[]? content, string? fileName, bool photosOnly, CancellationToken ct, string? fallbackName = null)
     {
         var files = vehicleService.Storage();
         if (vehicle.IsArchived)
@@ -80,7 +89,7 @@ public class AttachmentFiles(IAppDbContext db, VehicleService vehicleService, IO
         var row = new Attachment
         {
             FileUrl = key,
-            FileName = CleanFileName(fileName, extension, photosOnly ? "photo" : "receipt"),
+            FileName = CleanFileName(fileName, extension, fallbackName ?? (photosOnly ? "photo" : "receipt")),
             ContentType = contentType,
             SizeBytes = stored.Length
         };
@@ -94,12 +103,16 @@ public class AttachmentFiles(IAppDbContext db, VehicleService vehicleService, IO
         catch (Exception e)
         {
             await vehicleService.DeleteQuietlyAsync(key);
-            // A run deleted meanwhile fails the new row's foreign key before the token check: the same 409 concurrency.conflict.
+            // A run or document deleted meanwhile fails the new row's foreign key before the token check: the same 409 concurrency.conflict.
             // (Service records are voided, not deleted, so theirs is always the token check.)
             // A save that lost a deadlock (to the account delete, L173) is a conflict too; any other save error stays a 500 (L183).
             if (IsLockConflict(e)
-                || e is DbUpdateException and not DbUpdateConcurrencyException && parent is ChecklistRun
-                && !await db.ChecklistRuns.AnyAsync(r => r.Id == parent.Id, CancellationToken.None))
+                || e is DbUpdateException and not DbUpdateConcurrencyException && parent switch
+                {
+                    ChecklistRun => !await db.ChecklistRuns.AnyAsync(r => r.Id == parent.Id, CancellationToken.None),
+                    VehicleDocument => !await db.VehicleDocuments.AnyAsync(d => d.Id == parent.Id, CancellationToken.None),
+                    _ => false
+                })
             {
                 throw new DbUpdateConcurrencyException("The parent was deleted during the upload.", e);
             }
@@ -113,10 +126,8 @@ public class AttachmentFiles(IAppDbContext db, VehicleService vehicleService, IO
     private static bool IsLockConflict(Exception e) =>
         e.GetBaseException() is System.Data.Common.DbException sql && sql.GetType().GetProperty("Number")?.GetValue(sql) is 1205 or 1222;
 
-    /// <summary>Every stored attachment of the user, through either parent (deleted parents' rows go with them, so every row counts).</summary>
-    private Task<long> UsedBytesAsync(Guid userId, CancellationToken ct) =>
-        db.Attachments.Where(a => a.ServiceRecord!.Vehicle!.UserId == userId || a.ChecklistRun!.VehicleChecklist!.Vehicle!.UserId == userId)
-            .SumAsync(a => a.SizeBytes, ct);
+    /// <summary>Every stored attachment of the user, through any parent (deleted parents' rows go with them, so every row counts).</summary>
+    private Task<long> UsedBytesAsync(Guid userId, CancellationToken ct) => db.Attachments.Where(OwnedBy(userId)).SumAsync(a => a.SizeBytes, ct);
 
     /// <summary>Deletes the objects of rows already deleted (a failed object delete is logged).</summary>
     public async Task DeleteObjectsAsync(IEnumerable<Attachment> deleted, string prefix)

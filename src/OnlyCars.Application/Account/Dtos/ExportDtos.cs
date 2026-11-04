@@ -54,7 +54,7 @@ public record ExportRunItemDto(Guid Id, Guid? TemplateItemId, string Label, Chec
 public record ExportIssueDto(Guid Id, string Title, string? Description, IssueStatus Status, Guid? SourceRunItemId, DateOnly? ResolvedAt,
     DateTimeOffset CreatedAt);
 
-public record ExportDocumentDto(Guid Id, VehicleDocumentType Type, DateOnly ExpiryDate, decimal? Cost, string? Notes);
+public record ExportDocumentDto(Guid Id, VehicleDocumentType Type, DateOnly ExpiryDate, decimal? Cost, string? Notes, List<ExportFileDto> Attachments);
 
 public record ExportChecklistTemplateDto(Guid Id, string Name, List<ExportTemplateItemDto> Items);
 

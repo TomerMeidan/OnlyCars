@@ -41,12 +41,13 @@ public class ExportService(IAppDbContext db)
             .OrderBy(i => i.SortOrder).ThenBy(i => i.Id).ToLookup(i => i.ServiceRecordId);
         // Projected, so the storage key (FileUrl) is never read.
         var files = (await db.Attachments
-                .Where(a => a.ServiceRecord!.Vehicle!.UserId == userId || a.ChecklistRun!.VehicleChecklist!.Vehicle!.UserId == userId)
-                .Select(a => new { a.Id, a.ServiceRecordId, a.ChecklistRunId, File = new ExportFileDto(a.FileName, a.ContentType, a.SizeBytes, a.CreatedAt) { Id = a.Id } })
+                .Where(AttachmentFiles.OwnedBy(userId))
+                .Select(a => new { a.Id, a.ServiceRecordId, a.ChecklistRunId, a.VehicleDocumentId, File = new ExportFileDto(a.FileName, a.ContentType, a.SizeBytes, a.CreatedAt) { Id = a.Id } })
                 .ToListAsync(ct))
             .OrderBy(a => a.File.CreatedAt).ThenBy(a => a.Id).ToList();
         var recordFiles = files.Where(a => a.ServiceRecordId != null).ToLookup(a => a.ServiceRecordId!.Value, a => a.File);
         var runFiles = files.Where(a => a.ChecklistRunId != null).ToLookup(a => a.ChecklistRunId!.Value, a => a.File);
+        var documentFiles = files.Where(a => a.VehicleDocumentId != null).ToLookup(a => a.VehicleDocumentId!.Value, a => a.File);
         var checklists = (await db.VehicleChecklists.AsNoTracking().Where(c => c.Vehicle!.UserId == userId).ToListAsync(ct))
             .OrderBy(c => c.CreatedAt).ThenBy(c => c.Id).ToLookup(c => c.VehicleId);
         var runs = (await db.ChecklistRuns.AsNoTracking().Where(r => r.VehicleChecklist!.Vehicle!.UserId == userId).ToListAsync(ct))
@@ -92,7 +93,7 @@ public class ExportService(IAppDbContext db)
                         runFiles[r.Id].ToList())).ToList())).ToList(),
                 issues[v.Id].Select(i => new ExportIssueDto(i.Id, i.Title, StripDirectionMarks(i.Description), i.Status, i.SourceRunItemId,
                     i.ResolvedAt, i.CreatedAt)).ToList(),
-                documents[v.Id].Select(d => new ExportDocumentDto(d.Id, d.Type, d.ExpiryDate, d.Cost, d.Notes)).ToList(),
+                documents[v.Id].Select(d => new ExportDocumentDto(d.Id, d.Type, d.ExpiryDate, d.Cost, d.Notes, documentFiles[d.Id].ToList())).ToList(),
                 tires[v.Id].Select(t => new ExportTireDto(t.Id, t.Position, t.Brand, t.Model, t.Size, t.Season, t.DotCode, t.PurchaseDate,
                     t.FittedAt, t.FittedOdometerKm, t.RemovedAt, t.RemovedOdometerKm,
                     Math.Max(0, (t.RemovedOdometerKm ?? v.CurrentOdometerKm) - t.FittedOdometerKm), t.Notes, t.ServiceRecordId,

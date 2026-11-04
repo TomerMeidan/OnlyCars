@@ -3,7 +3,7 @@ using OnlyCars.Domain.Common;
 namespace OnlyCars.Domain.Entities;
 
 /// <summary>
-/// A stored file of a service record (receipt photo, PDF) or of a checklist run (photo); exactly one parent is set (a check constraint).
+/// A stored file of a service record (receipt photo, PDF), a checklist run (photo) or a vehicle document (SCAN-2a); exactly one parent is set (a check constraint).
 /// FileUrl holds the storage key; clients only get a signed URL.
 /// </summary>
 public class Attachment : Entity
@@ -16,6 +16,9 @@ public class Attachment : Entity
 
     public Guid? ChecklistRunId { get; set; }
     public ChecklistRun? ChecklistRun { get; set; }
+
+    public Guid? VehicleDocumentId { get; set; }
+    public VehicleDocument? VehicleDocument { get; set; }
 
     public string FileUrl { get; set; } = string.Empty;
     public string FileName { get; set; } = string.Empty;

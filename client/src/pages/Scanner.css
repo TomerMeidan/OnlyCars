@@ -33,3 +33,7 @@ button.corner:focus-visible::after { inset: 0.4rem; border-width: 3px; } /* focu
 .scan-pages { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); gap: 1rem; }
 .scan-pages li { display: flex; flex-wrap: wrap; align-items: center; gap: 0 0.75rem; }
 .scan-pages img { flex-basis: 100%; inline-size: 100%; max-block-size: 60dvh; object-fit: contain; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-control); }
+/* SCAN-2b: File name, with the fixed .pdf at its end (left in RTL). */
+.scan-name { display: grid; gap: 0.3rem; }
+.scan-name > span { display: flex; align-items: center; gap: 0.4rem; }
+.scan-name input { flex: 1; min-inline-size: 0; }

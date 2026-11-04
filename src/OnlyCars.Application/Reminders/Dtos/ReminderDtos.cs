@@ -1,10 +1,11 @@
+using OnlyCars.Application.Maintenance.Dtos;
 using OnlyCars.Domain;
 
 namespace OnlyCars.Application.Reminders.Dtos;
 
-// DaysLeft is ExpiryDate - today: 0 expires today, negative expired that many days ago.
+// DaysLeft is ExpiryDate - today: 0 expires today, negative expired that many days ago. Attachments oldest first, never null (SCAN-2a).
 public record VehicleDocumentDto(Guid Id, Guid VehicleId, VehicleDocumentType Type, DateOnly ExpiryDate, decimal? Cost, string? Notes,
-    DocumentStatus Status, int DaysLeft);
+    DocumentStatus Status, int DaysLeft, List<AttachmentDto> Attachments);
 
 // Type is a string so a bad value is a coded 400 instead of a model-binding error.
 public record VehicleDocumentRequest(string? Type, DateOnly? ExpiryDate, decimal? Cost, string? Notes);

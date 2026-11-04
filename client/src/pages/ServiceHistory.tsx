@@ -503,9 +503,12 @@ const isHttps = (u: string) => { try { return new URL(u).protocol === 'https:' }
 
 // What differs between a service's files (FILE-2) and a run's photos (FILE-3): the types, the words, and the error texts that
 // replace errorMessage()'s (file.* name the car photo; attachment.tooMany is one code for both parents).
+const fileKind = { types: attachmentTypes, list: 'attachments', add: 'addFile', busy: 'uploadingFile', confirm: 'confirmDeleteFile', max: 'filesMax',
+  errors: (c: string) => c.startsWith('file.') && `attachmentFile.${c.slice(5)}` }
 const kinds = {
-  file: { types: attachmentTypes, list: 'attachments', add: 'addFile', busy: 'uploadingFile', confirm: 'confirmDeleteFile', max: 'filesMax',
-    errors: (c: string) => c.startsWith('file.') && `attachmentFile.${c.slice(5)}` },
+  file: fileKind,
+  // SCAN-2b: a car document's files say "document" where a service's say "service".
+  document: { ...fileKind, max: 'documentFilesMax', errors: (c: string) => (c === 'attachment.tooMany' ? 'documentFile.tooMany' : fileKind.errors(c)) },
   photo: { types: photoTypes, list: 'photos', add: 'addPhoto', busy: 'uploadingPhoto', confirm: 'confirmDeletePhoto', max: 'photosMax',
     errors: (c: string) => (c.startsWith('attachment.') || c === 'file.unsupportedType' ? `runPhoto.${c.slice(c.indexOf('.') + 1)}` : c === 'file.quotaExceeded' && 'attachmentFile.quotaExceeded') },
 }
@@ -520,7 +523,7 @@ export function Attachments<T extends { attachments: Attachment[] }>({ kind, par
   canAdd: boolean
   canDelete: boolean
   addLabel: string
-  scanLabel?: string // shows Scan beside Add (a service's files only)
+  scanLabel?: string // shows Scan beside Add (a service's or a document's files)
   isGone: (err: unknown) => boolean // the parent was deleted meanwhile
   load: () => Promise<T> // the parent as stored now, with fresh links; throws the gone error once it's deleted
   onChange: (parent: T) => void

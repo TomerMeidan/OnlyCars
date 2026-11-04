@@ -319,6 +319,7 @@ export interface VehicleDocument {
   notes: string | null
   status: 'Ok' | 'Expiring' | 'Expired'
   daysLeft: number
+  attachments: Attachment[] // SCAN-2a: oldest first
 }
 
 // GET /reminders: due tasks and checklists and expiring documents of active cars, most urgent first, minus the snoozed ones.

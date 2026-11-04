@@ -2,7 +2,7 @@ import { useEffect, useId, useRef, useState, type PointerEvent, type ReactNode, 
 import { useTranslation } from 'react-i18next'
 import { localToday, maxFileBytes } from '../api'
 import { blackAndWhite, color, warp, type Pixels, type Point } from '../scan/image'
-import { pdf } from '../scan/pdf'
+import { pdf, pdfName } from '../scan/pdf'
 import './Scanner.css'
 
 // SCAN-1: photograph a paper, fit its 4 corners, straighten and clean it, up to 20 pages, saved as one PDF.
@@ -66,6 +66,7 @@ export default function Scanner({ camera, openCamera, busy, error, onSave, onClo
   const [mode, setMode] = useState<'bw' | 'color'>('bw')
   const [confirming, setConfirming] = useState(false)
   const [building, setBuilding] = useState(false)
+  const [name, setName] = useState(() => `scan-${localToday()}`) // kept after a failed upload; a new scanner starts with the default
   const urls = useRef<string[]>([]) // every object URL made here, revoked when the scanner closes
   const objectUrl = (b: Blob) => { const u = URL.createObjectURL(b); urls.current.push(u); return u }
   const saving = busy || building
@@ -115,8 +116,8 @@ export default function Scanner({ camera, openCamera, busy, error, onSave, onClo
       const cx = corners.reduce((s, [x]) => s + x, 0) / 4
       const cy = corners.reduce((s, [, y]) => s + y, 0) / 4
       const flat = warp(pixels, corners.map(([x, y]) => [(x + (cx - x) * 0.02) * pixels.width, (y + (cy - y) * 0.02) * pixels.height]))
-      // Black and white stays sharp at a lower quality, which keeps more pages under 10 MB.
-      const [bw, col] = await Promise.all([jpeg(blackAndWhite(flat), 0.7), jpeg(color(flat), 0.8)])
+      // 0.8 for both: the gray letter edges ring at 0.7, and a B&W page is still only about 100 KB at 0.8.
+      const [bw, col] = await Promise.all([jpeg(blackAndWhite(flat), 0.8), jpeg(color(flat), 0.8)])
       setPages((ps) => [...ps, { id: nextId++, width: flat.width, height: flat.height, bw, color: col, bwUrl: objectUrl(bw), colorUrl: objectUrl(col) }])
       dropPhoto()
       setStep('pages')
@@ -144,7 +145,7 @@ export default function Scanner({ camera, openCamera, busy, error, onSave, onClo
       const bytes = pdf(await Promise.all(pages.map(async (p) => ({ jpeg: new Uint8Array(await (mode === 'bw' ? p.bw : p.color).arrayBuffer()), width: p.width, height: p.height }))))
       // Over the upload limit: said here, without a request; the pages stay so some can be deleted.
       if (bytes.length > maxFileBytes) setTooBig(true)
-      else onSave(new File([bytes], `scan-${localToday()}.pdf`, { type: 'application/pdf' }))
+      else onSave(new File([bytes], pdfName(name, localToday()), { type: 'application/pdf' }))
     } finally {
       setBuilding(false)
     }
@@ -261,6 +262,15 @@ export default function Scanner({ camera, openCamera, busy, error, onSave, onClo
               ))}
             </ol>
             {pages.length >= MAX_PAGES && <p className="muted">{t('pagesMax')}</p>}
+            {/* No form around it, so Enter in the field neither saves nor closes. */}
+            <div className="scan-name">
+              <label htmlFor={`${id}name`}>{t('scanName')}</label>
+              <span>
+                <input id={`${id}name`} value={name} maxLength={251} dir="auto" autoComplete="off" spellCheck={false} aria-describedby={`${id}ext`}
+                  onChange={(e) => setName(e.target.value)} />
+                <span id={`${id}ext`} dir="ltr">.pdf</span>
+              </span>
+            </div>
             {tooBig ? <p className="error" role="alert">{t('scanTooBig')}</p> : error && <p className="error" role="alert">{error}</p>}
             <div className="actions">
               <button type="button" className="save-scan" aria-disabled={saving} aria-busy={saving} onClick={save}>{t(saving ? 'savingScan' : 'save')}</button>

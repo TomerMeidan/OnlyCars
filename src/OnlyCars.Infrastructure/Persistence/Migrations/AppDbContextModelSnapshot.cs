@@ -58,15 +58,20 @@ namespace OnlyCars.Infrastructure.Persistence.Migrations
                     b.Property<DateTimeOffset>("UpdatedAt")
                         .HasColumnType("datetimeoffset");
 
+                    b.Property<Guid?>("VehicleDocumentId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.HasKey("Id");
 
                     b.HasIndex("ChecklistRunId");
 
                     b.HasIndex("ServiceRecordId");
 
+                    b.HasIndex("VehicleDocumentId");
+
                     b.ToTable("Attachments", t =>
                         {
-                            t.HasCheckConstraint("CK_Attachments_OneParent", "([ServiceRecordId] IS NOT NULL AND [ChecklistRunId] IS NULL) OR ([ServiceRecordId] IS NULL AND [ChecklistRunId] IS NOT NULL)");
+                            t.HasCheckConstraint("CK_Attachments_OneParent", "(CASE WHEN [ServiceRecordId] IS NULL THEN 0 ELSE 1 END + CASE WHEN [ChecklistRunId] IS NULL THEN 0 ELSE 1 END + CASE WHEN [VehicleDocumentId] IS NULL THEN 0 ELSE 1 END) = 1");
                         });
                 });
 
@@ -1142,6 +1147,7 @@ namespace OnlyCars.Infrastructure.Persistence.Migrations
                         .HasColumnType("int");
 
                     b.Property<DateTimeOffset>("UpdatedAt")
+                        .IsConcurrencyToken()
                         .HasColumnType("datetimeoffset");
 
                     b.Property<Guid>("VehicleId")
@@ -1169,9 +1175,16 @@ namespace OnlyCars.Infrastructure.Persistence.Migrations
                         .HasForeignKey("ServiceRecordId")
                         .OnDelete(DeleteBehavior.Cascade);
 
+                    b.HasOne("OnlyCars.Domain.Entities.VehicleDocument", "VehicleDocument")
+                        .WithMany("Attachments")
+                        .HasForeignKey("VehicleDocumentId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
                     b.Navigation("ChecklistRun");
 
                     b.Navigation("ServiceRecord");
+
+                    b.Navigation("VehicleDocument");
                 });
 
             modelBuilder.Entity("OnlyCars.Domain.Entities.ChecklistRun", b =>
@@ -1495,6 +1508,11 @@ namespace OnlyCars.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("OnlyCars.Domain.Entities.VehicleChecklist", b =>
                 {
                     b.Navigation("Runs");
+                });
+
+            modelBuilder.Entity("OnlyCars.Domain.Entities.VehicleDocument", b =>
+                {
+                    b.Navigation("Attachments");
                 });
 #pragma warning restore 612, 618
         }
