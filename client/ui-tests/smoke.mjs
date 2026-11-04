@@ -2081,6 +2081,182 @@ for (const s of setups) {
       await ctx2.close()
     }
   })
+  // SCAN-1: Scan beside Add file; a skewed page drawn on a canvas, its corners fitted by drag and keyboard; two pages, one offline
+  // Save that keeps them, Cancel and Escape ask first; then one PDF upload with 2 pages. At 360 px, in the setup's theme and language.
+  await step('scan', async () => {
+    const D = 'dialog.scanner'
+    const SCAN = () => `${FILES()} button.scan`
+    const scannerJs = []
+    const onReq = (r) => /Scanner/.test(r.url()) && scannerJs.push(r.url())
+    page.on('request', onReq)
+    // A light page with text lines, rotated and skewed on a dark background; its corners in 0..1 of the photo.
+    const fixture = (angle) => page.evaluate((angle) => {
+      const c = Object.assign(document.createElement('canvas'), { width: 1200, height: 900 })
+      const x = c.getContext('2d')
+      x.fillStyle = '#2b2e30'
+      x.fillRect(0, 0, 1200, 900)
+      const m = new DOMMatrix().translate(600, 450).rotate(angle).skewX(6)
+      x.setTransform(m)
+      x.fillStyle = '#d9d4c4'
+      x.fillRect(-260, -340, 520, 680)
+      x.fillStyle = '#1a1a1a'
+      x.font = '28px sans-serif'
+      for (let i = 0; i < 9; i++) x.fillText(`Oil change ${i + 1} ... ${120 + i * 7}.00`, -220, -270 + i * 64)
+      const corners = [[-260, -340], [260, -340], [260, 340], [-260, 340]].map(([px, py]) => { const p = m.transformPoint({ x: px, y: py }); return [p.x / 1200, p.y / 900] })
+      return { jpeg: c.toDataURL('image/jpeg', 0.92).split(',')[1], corners }
+    }, angle).then((f) => ({ ...f, file: { name: 'paper.jpg', mimeType: 'image/jpeg', buffer: Buffer.from(f.jpeg, 'base64') } }))
+    const pageCount = () => page.locator(`${D} .scan-pages li`).count()
+    // Inside the scanner: every button 44px, no sideways scroll.
+    async function scannerFits(what) {
+      const small = await page.evaluate((d) => [...document.querySelectorAll(`${d} button`)].filter((el) => el.checkVisibility())
+        .map((el) => { const r = el.getBoundingClientRect(); return [el.textContent.trim() || el.getAttribute('aria-label'), Math.round(r.height), Math.round(r.width)] })
+        .filter(([, h, w]) => h < 44 || w < 44), D)
+      if (small.length) throw new Error(`${what}: under 44px ${JSON.stringify(small)}`)
+      const over = await page.evaluate((d) => { const el = document.querySelector(d); return el.scrollWidth - el.clientWidth }, D)
+      if (over > 0) throw new Error(`${what}: ${over}px sideways scroll`)
+    }
+    // Fraction of an image's pixels that are near white, near black, and the 4 corners' 5% insets white.
+    const tone = (sel) => page.locator(sel).evaluate(async (img) => {
+      await img.decode()
+      const c = Object.assign(document.createElement('canvas'), { width: img.naturalWidth, height: img.naturalHeight })
+      const x = c.getContext('2d')
+      x.drawImage(img, 0, 0)
+      const { data } = x.getImageData(0, 0, c.width, c.height)
+      let white = 0, black = 0, chroma = 0
+      for (let i = 0; i < data.length; i += 4) {
+        const v = (data[i] + data[i + 1] + data[i + 2]) / 3
+        if (v > 225) white++
+        if (v < 80) black++
+        chroma = Math.max(chroma, Math.max(data[i], data[i + 1], data[i + 2]) - Math.min(data[i], data[i + 1], data[i + 2]))
+      }
+      const at = (fx, fy) => x.getImageData(Math.round(fx * c.width), Math.round(fy * c.height), 1, 1).data[0]
+      return { white: white / (data.length / 4), black: black / (data.length / 4), corners: [at(0.05, 0.05), at(0.95, 0.05), at(0.95, 0.95), at(0.05, 0.95)], chroma, size: [c.width, c.height] }
+    })
+    async function dragTo(i, [fx, fy]) {
+      const box = await page.locator(`${D} .scan-photo`).boundingBox()
+      const h = await page.locator(`${D} button.corner >> nth=${i}`).boundingBox()
+      await page.mouse.move(h.x + h.width / 2, h.y + h.height / 2)
+      await page.mouse.down()
+      await page.mouse.move(box.x + fx * box.width, box.y + fy * box.height, { steps: 6 })
+      await page.mouse.up()
+    }
+    const cornerAt = (i) => page.locator(`${D} button.corner >> nth=${i}`).evaluate((el) => [parseFloat(el.style.insetInlineStart) / 100, parseFloat(el.style.insetBlockStart) / 100])
+    try {
+      await page.setViewportSize({ width: 360, height: 780 })
+      await page.goto(`${BASE}/cars/${photoCarId}`)
+      await page.locator(SCAN()).waitFor()
+      await page.waitForLoadState('networkidle')
+      if (scannerJs.length) throw new Error(`the scanner loaded with the page: ${scannerJs}`)
+      // Beside Add file, in the same row; named for its service.
+      const [add, scan] = [await page.locator(ADD()).boundingBox(), await page.locator(SCAN()).boundingBox()]
+      if (Math.abs(add.y - scan.y) > 2) throw new Error('Scan is not beside Add file')
+      if (!(await page.getAttribute(SCAN(), 'aria-label'))?.startsWith(plain(key('scanTo')).split('{{')[0])) throw new Error('Scan has no service name')
+      const one = await fixture(12)
+      let [chooser] = await Promise.all([page.waitForEvent('filechooser'), page.click(SCAN())])
+      if ((await chooser.element().getAttribute('capture')) !== 'environment') throw new Error('Scan does not open the back camera')
+      await chooser.setFiles(one.file)
+      await page.locator(`${D} button.corner >> nth=3`).waitFor()
+      if (!scannerJs.length) throw new Error('no scanner chunk after the Scan tap')
+      if ((await page.getAttribute(`${D} .scan-stage`, 'dir')) !== 'ltr') throw new Error('the photo is mirrored in RTL')
+      for (const i of [0, 1, 2]) await dragTo(i, one.corners[i])
+      // The 4th by keyboard: Shift steps 5%, plain steps 0.5%.
+      await page.locator(`${D} button.corner >> nth=3`).focus()
+      const [cx, cy] = await cornerAt(3)
+      for (const [d, keyName, other] of [[one.corners[3][0] - cx, 'ArrowRight', 'ArrowLeft'], [one.corners[3][1] - cy, 'ArrowDown', 'ArrowUp']]) {
+        const k = d >= 0 ? keyName : other, big = Math.trunc(Math.abs(d) / 0.05), small = Math.round((Math.abs(d) - big * 0.05) / 0.005)
+        for (let n = 0; n < big; n++) await page.keyboard.press(`Shift+${k}`)
+        for (let n = 0; n < small; n++) await page.keyboard.press(k)
+      }
+      for (const i of [0, 1, 2, 3]) {
+        const [x, y] = await cornerAt(i)
+        if (Math.hypot(x - one.corners[i][0], y - one.corners[i][1]) > 0.01) throw new Error(`corner ${i} at ${x},${y}, want ${one.corners[i]}`)
+      }
+      await scannerFits('the corners step')
+      await page.screenshot({ path: `${OUT}/${s.name}-scan-corners.png` })
+      await page.click(`${D} .actions button:not(.add)`)
+      await page.locator(`${D} .scan-pages img`).waitFor()
+      // Black and white by default: a straight crop (white to its corners), white paper, black text.
+      if (!(await page.locator(`${D} .scan-mode input >> nth=0`).isChecked())) throw new Error('Black and white is not the default')
+      const bw = await tone(`${D} .scan-pages img`)
+      if (bw.white < 0.8 || bw.black < 0.01 || bw.corners.some((v) => v < 200)) throw new Error(`black and white ${JSON.stringify(bw)}`)
+      await scannerFits('the pages step')
+      await page.screenshot({ path: `${OUT}/${s.name}-scan-bw.png` })
+      await page.locator(`${D} .scan-mode label >> nth=1`).click()
+      const col = await tone(`${D} .scan-pages img`)
+      if (col.white < 0.5 || col.corners.some((v) => v < 200)) throw new Error(`color ${JSON.stringify(col)}`)
+      await page.screenshot({ path: `${OUT}/${s.name}-scan-color.png` })
+      await page.locator(`${D} .scan-mode label >> nth=0`).click()
+      // Add page with the camera, delete it, add it back with Choose image: 2 pages.
+      const two = await fixture(-8)
+      await page.click(`${D} .actions button.add`)
+      ;[chooser] = await Promise.all([page.waitForEvent('filechooser'), page.click(`${D} .actions button.add >> nth=0`)])
+      await chooser.setFiles(two.file)
+      await page.locator(`${D} button.corner >> nth=3`).waitFor()
+      await page.click(`${D} .actions button:not(.add)`)
+      await page.waitForFunction((d) => document.querySelectorAll(`${d} .scan-pages li`).length === 2, D)
+      await page.click(`${D} .scan-pages li >> nth=1 >> button.link`)
+      if (await pageCount() !== 1) throw new Error('Delete page did not delete')
+      await page.click(`${D} .actions button.add`)
+      ;[chooser] = await Promise.all([page.waitForEvent('filechooser'), page.click(`${D} .actions button.add >> nth=1`)])
+      if (await chooser.element().getAttribute('capture')) throw new Error('Choose image opens the camera')
+      await chooser.setFiles(two.file)
+      await page.locator(`${D} button.corner >> nth=3`).waitFor()
+      await page.click(`${D} .actions button:not(.add)`)
+      await page.waitForFunction((d) => document.querySelectorAll(`${d} .scan-pages li`).length === 2, D)
+      // RTL: the toolbar is mirrored (the title on the right in Hebrew), and so is the page order.
+      const [title, cancelBox] = [await page.locator(`${D} .scan-bar h2`).boundingBox(), await page.locator(`${D} .scan-bar button`).boundingBox()]
+      if ((title.x > cancelBox.x) !== he) throw new Error(`toolbar direction: title at ${title.x}, Cancel at ${cancelBox.x}`)
+      await scannerFits('two pages')
+      await page.screenshot({ path: `${OUT}/${s.name}-scan-pages.png` })
+      // Offline: Save shows the error inside the scanner and the pages stay.
+      await ctx.setOffline(true)
+      await page.click(`${D} button.save-scan`)
+      await page.locator(`${D} p.error[role=alert]`).waitFor({ timeout: 10000 })
+      await ctx.setOffline(false)
+      if (await pageCount() !== 2) throw new Error('the pages went with the failed Save')
+      await page.screenshot({ path: `${OUT}/${s.name}-scan-offline.png` })
+      // Escape and Cancel ask first; Escape again keeps scanning.
+      await page.keyboard.press('Escape')
+      await page.locator(`${D} .inline-form button.danger`).waitFor()
+      if (plain(await page.locator(`${D} .inline-form p`).textContent()) !== plain(key('discardScan_two').replace('{{count, number}}', (2).toLocaleString(s.lng)))) throw new Error('the discard question')
+      await page.keyboard.press('Escape')
+      await page.locator(`${D} .inline-form`).waitFor({ state: 'detached' })
+      await page.click(`${D} .scan-bar button`)
+      await page.click(`${D} .inline-form button.link`)
+      if (await pageCount() !== 2 || !(await page.locator(D).isVisible())) throw new Error('Keep scanning lost the scan')
+      // Save: one PDF named for today, with 2 pages, and focus back on Scan.
+      const post = page.waitForResponse((r) => r.url().endsWith('/attachments') && r.request().method() === 'POST')
+      await page.click(`${D} button.save-scan`)
+      if ((await post).status() !== 200) throw new Error(`scan upload ${(await post).status()}`)
+      await page.locator(D).waitFor({ state: 'detached' })
+      await focusIs(SCAN(), 'Scan after the upload')
+      const today = await page.evaluate(() => new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10))
+      const saved = (await (await post).json()).attachments.at(-1)
+      if (saved.fileName !== `scan-${today}.pdf` || saved.contentType !== 'application/pdf') throw new Error(`saved ${saved.fileName} ${saved.contentType}`)
+      if (plain(await page.locator(`${FILES()} li a bdi`).last().textContent()) !== `scan-${today}.pdf`) throw new Error('the scan is not listed')
+      const bytes = Buffer.from(await (await page.request.get(saved.url)).body()).toString('latin1')
+      if (!bytes.startsWith('%PDF-') || bytes.match(/\/Type \/Page\b/g)?.length !== 2) throw new Error('the PDF is not 2 pages')
+      const [tab] = await Promise.all([page.waitForEvent('popup'), page.click(`${FILES()} li a >> nth=-1`)])
+      await tab.waitForLoadState().catch(() => {})
+      await tab.screenshot({ path: `${OUT}/${s.name}-scan-pdf.png` }).catch(() => {})
+      await tab.close()
+      // An empty file can't be opened: the message, back at capture; Cancel without pages closes at once.
+      ;[chooser] = await Promise.all([page.waitForEvent('filechooser'), page.click(SCAN())])
+      await chooser.setFiles({ name: 'empty.jpg', mimeType: 'image/jpeg', buffer: Buffer.alloc(0) })
+      if (plain(await page.locator(`${D} p.error[role=alert]`).textContent()) !== key('scanUnreadable')) throw new Error('no can\'t-open message')
+      // Over 25 MB is refused before decoding; the scanner stays usable.
+      ;[chooser] = await Promise.all([page.waitForEvent('filechooser'), page.click(`${D} .actions button.add >> nth=1`)])
+      await chooser.setFiles({ name: 'huge.jpg', mimeType: 'image/jpeg', buffer: Buffer.alloc(26_000_000) })
+      await page.waitForFunction(([sel, want]) => document.querySelector(sel)?.textContent.trim() === want, [`${D} p.error[role=alert]`, key('scanImageTooLarge')], { timeout: 5000 })
+      await page.click(`${D} .scan-bar button`)
+      await page.locator(D).waitFor({ state: 'detached' })
+    } finally {
+      page.off('request', onReq)
+      await ctx.setOffline(false)
+      await deleteAllFiles()
+      await page.setViewportSize(s.viewport)
+    }
+  })
   await step('history-gone-reload', async () => {
     // L130: /history with Show more used twice (150 of 160 rows, mocked), then a row's stale link finds its service gone: 150 rows
     // come back without it, with the note, which has focus (fake clock, own context).

@@ -264,13 +264,13 @@ button:active:not(:disabled, [aria-disabled='true']), .button:active { transform
 button:disabled, [aria-disabled='true'] { opacity: 0.55; cursor: default; }
 button[aria-disabled='true'], button[aria-busy='true'] { cursor: progress; }
 /* Secondary: outlined in ink, for "add" and other actions that open something rather than save it */
-button.add, button.add-file, button.more, button.mount, button.move, .picker li button, .picker li a.button {
+button.add, button.add-file, button.scan, button.more, button.mount, button.move, .picker li button, .picker li a.button {
   background: var(--surface);
   border-color: var(--field);
   color: var(--ink);
   box-shadow: none;
 }
-button.add:hover:not(:disabled, [aria-disabled='true']), button.add-file:hover:not(:disabled, [aria-disabled='true']), button.more:hover:not(:disabled, [aria-disabled='true']),
+button.add:hover:not(:disabled, [aria-disabled='true']), button.add-file:hover:not(:disabled, [aria-disabled='true']), button.scan:hover:not(:disabled, [aria-disabled='true']), button.more:hover:not(:disabled, [aria-disabled='true']),
 button.mount:hover:not(:disabled, [aria-disabled='true']), button.move:hover:not(:disabled, [aria-disabled='true']), .picker li button:hover:not(:disabled), .picker li a.button:hover {
   background: var(--sunken);
   border-color: var(--ink);
@@ -577,6 +577,8 @@ button.wheel[aria-pressed='true'], button.wheel[aria-pressed='true']:hover { bac
 /* FILE-3: a run's photos sit inside .tasks, whose bdis are LTR; a file name takes its direction from its own text, as on a service */
 .tasks .files li > a bdi, .tasks .files li > bdi { unicode-bidi: plaintext; }
 .files > button { justify-self: start; }
+.file-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem; } /* Add file and Scan */
+
 /* Read by screen readers, not shown (for example "(opens in a new tab)" on file links). */
 .visually-hidden { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
 

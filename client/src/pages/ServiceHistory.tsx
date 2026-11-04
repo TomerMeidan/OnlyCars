@@ -1,4 +1,4 @@
-import { useEffect, useId, useLayoutEffect, useRef, useState, type FormEvent, type MouseEvent, type ReactNode } from 'react'
+import { lazy, Suspense, useEffect, useId, useLayoutEffect, useRef, useState, type FormEvent, type MouseEvent, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 import { api, ApiError, attachmentTypes, fileError, isGoneRecord, photoTypes, isOrderError, itemsTotal, limit, localToday, type Attachment, type MaintenanceTask, type ServiceItem, type ServiceRecord, type Vehicle, type VehicleTires } from '../api'
@@ -452,7 +452,7 @@ export function ServiceRow({ car, record: r, url, readOnly, openOnly, onEdited, 
         </ul>
       )}
 
-      <Attachments kind="file" parent={r} url={url} canAdd={!readOnly} canDelete={!openOnly} addLabel={t('addFileTo', vars)} onChange={onFiles} onGone={onGone}
+      <Attachments kind="file" parent={r} url={url} canAdd={!readOnly} canDelete={!openOnly} addLabel={t('addFileTo', vars)} scanLabel={t('scanTo', vars)} onChange={onFiles} onGone={onGone}
         isGone={isGoneRecord} load={async () => {
           const fresh = (await api<ServiceRecord[]>(`/vehicles/${encodeURIComponent(r.vehicleId)}/service-records`)).find((x) => x.id === r.id)
           if (!fresh) throw new ApiError(404, { code: 'serviceRecord.notFound' }, 'Not Found')
@@ -488,6 +488,13 @@ export function ServiceRow({ car, record: r, url, readOnly, openOnly, onEdited, 
 }
 
 const MAX_FILES = 10
+// SCAN-1: the scanner is its own chunk, fetched on the first Scan tap.
+// shortcut: a chunk that fails to load (offline before the service worker cached it) stays failed until a reload; retry in place if users hit it.
+const Scanner = lazy(() => import('./Scanner').catch(() => ({ default: ScanFailed })))
+function ScanFailed({ onClose }: { onClose: () => void }) {
+  const { t } = useTranslation()
+  return <p className="error" role="alert">{t('scanUnavailable')} <button type="button" className="link" onClick={onClose}>{t('close')}</button></p>
+}
 // When each file's signed URL arrived. The URL lasts an hour, so an Open after 55 minutes fetches a fresh one first.
 const signedAt = new WeakMap<Attachment, number>()
 const isStale = (a: Attachment) => Date.now() - (signedAt.get(a) ?? 0) >= 55 * 60_000
@@ -506,13 +513,14 @@ const kinds = {
 // A parent's files under its row: a service's files (FILE-2) or a run's photos (FILE-3). Open everywhere; Delete where canDelete;
 // Add where canAdd (not on an archived car), one upload at a time. Each change saves at once.
 // Focus returns to Add after an upload, and to the list (or Add when it empties) after a delete.
-export function Attachments<T extends { attachments: Attachment[] }>({ kind, parent, url, canAdd, canDelete, addLabel, isGone, load, onChange, onGone }: {
+export function Attachments<T extends { attachments: Attachment[] }>({ kind, parent, url, canAdd, canDelete, addLabel, scanLabel, isGone, load, onChange, onGone }: {
   kind: keyof typeof kinds
   parent: T
   url: string // the parent's path
   canAdd: boolean
   canDelete: boolean
   addLabel: string
+  scanLabel?: string // shows Scan beside Add (a service's files only)
   isGone: (err: unknown) => boolean // the parent was deleted meanwhile
   load: () => Promise<T> // the parent as stored now, with fresh links; throws the gone error once it's deleted
   onChange: (parent: T) => void
@@ -533,6 +541,10 @@ export function Attachments<T extends { attachments: Attachment[] }>({ kind, par
   const pick = useRef<HTMLButtonElement>(null)
   const group = useRef<HTMLDivElement>(null)
   const refocus = useRef<'add' | 'list' | null>(null)
+  const [scanning, setScanning] = useState(false)
+  const camera = useRef<HTMLInputElement>(null)
+  const scan = useRef<HTMLButtonElement>(null)
+  const scanned = useRef(false)
   const files = parent.attachments
 
   useEffect(() => { for (const a of files) if (!signedAt.has(a)) signedAt.set(a, Date.now()) }, [files])
@@ -544,10 +556,17 @@ export function Attachments<T extends { attachments: Attachment[] }>({ kind, par
     target?.focus()
   }, [busy, mode, error, files])
 
-  async function upload(file: File | undefined) {
+  // Focus back on Scan (or the group, at 10 files) once the scanner closes.
+  useEffect(() => {
+    if (scanned.current && !scanning) (scan.current ?? group.current)?.focus()
+    scanned.current = scanning
+  }, [scanning])
+
+  // From the scanner, focus stays in it: the scanner closes only after a successful upload.
+  async function upload(file: File | undefined, fromScanner = false) {
     if (input.current) input.current.value = '' // so the same file can be chosen again
     if (!file) return
-    refocus.current = 'add'
+    if (!fromScanner) refocus.current = 'add'
     setReloadError(null)
     setUploading(true)
     const err = await row.run(async () => {
@@ -567,6 +586,18 @@ export function Attachments<T extends { attachments: Attachment[] }>({ kind, par
     })
     setUploading(false)
     if (isGone(err)) onGone()
+    return err
+  }
+
+  function openCamera() {
+    if (!camera.current) return
+    camera.current.value = '' // a photo from an earlier scan isn't read again
+    camera.current.click()
+  }
+
+  function closeScanner() {
+    row.open('view') // drops the scan's upload error, which belongs to the scanner
+    setScanning(false)
   }
 
   async function remove(a: Attachment, retryFrom: HTMLElement) {
@@ -649,15 +680,31 @@ export function Attachments<T extends { attachments: Attachment[] }>({ kind, par
       )}
       {canAdd && files.length >= MAX_FILES && <p className="muted">{t(k.max)}</p>}
       {canAdd && files.length < MAX_FILES && (
-        <>
+        <div className="file-actions">
           <button type="button" className="add-file" ref={pick} aria-label={uploading ? undefined : addLabel} aria-busy={uploading} aria-disabled={busy}
             onClick={() => !busy && input.current?.click()}>
             {t(uploading ? k.busy : k.add)}
           </button>
           <input ref={input} type="file" accept={k.types} hidden onChange={(e) => upload(e.target.files?.[0])} />
-        </>
+          {scanLabel && (
+            <>
+              {/* Clicked in the tap itself (a camera or file picker needs a user gesture); the scanner reads it once it has loaded. */}
+              <button type="button" className="scan" ref={scan} aria-label={scanLabel} aria-disabled={busy}
+                onClick={() => { if (busy) return; setScanning(true); openCamera() }}>{t('scan')}</button>
+              <input ref={camera} type="file" accept="image/*" capture="environment" hidden />
+            </>
+          )}
+        </div>
       )}
-      {error != null && !isGone(error) && <p className="error" role="alert">{message}{reloadError != null && ` ${errorMessage(reloadError)}`}</p>}
+      {/* Outside Add's block: a reload that reaches 10 files mustn't drop the scanner's pages and error. */}
+      {scanning && (
+        <Suspense fallback={<p className="muted" role="status">{t('scanLoading')}</p>}>
+          <Scanner camera={camera} openCamera={openCamera} busy={busy} onClose={closeScanner}
+            onSave={async (file) => { if (!(await upload(file, true))) closeScanner() }}
+            error={error != null && !isGone(error) && <>{message}{reloadError != null && ` ${errorMessage(reloadError)}`}</>} />
+        </Suspense>
+      )}
+      {!scanning && error != null && !isGone(error) && <p className="error" role="alert">{message}{reloadError != null && ` ${errorMessage(reloadError)}`}</p>}
     </div>
   )
 }

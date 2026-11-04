@@ -1,7 +1,7 @@
 # OnlyCars: Requirements Status
 
-**Audit date:** 2026-11-04 (forty-fourth audit, short sign-off of EXP-1 from the reported results; no suites re-run)
-**Overall:** every spec requirement for the MVP is done: steps 1 to 5 are complete, now that reminder emails (NOT-2, through Gmail) and tires per wheel (TIRE-2, d2a1820) are live on https://onlycars-ev28.onrender.com. Sign in with Google (GOOG-1) is live and used by the owner. The full export with every stored file (EXP-1) is signed off, uncommitted in the working tree. What remains are the owner's own requests (My files, error reporting, document scanning) and the optional spec 11 items. Next: MYF-1, My files.
+**Audit date:** 2026-11-04 (forty-fifth audit, short sign-off of SCAN-1 from the reported results; no suites re-run)
+**Overall:** every spec requirement for the MVP is done: steps 1 to 5 are complete, now that reminder emails (NOT-2, through Gmail) and tires per wheel (TIRE-2, d2a1820) are live on https://onlycars-ev28.onrender.com. Sign in with Google (GOOG-1) is live and used by the owner. The full export with every stored file (EXP-1) and Scan documents (SCAN-1) are signed off, both uncommitted in the working tree. What remains are the owner's own requests (My files, error reporting) and the optional spec 11 items. Next: MYF-1a, then MYF-1b, My files.
 
 | Status | Count |
 |---|---|
@@ -12,10 +12,9 @@
 | Deferred | 6 |
 | **Total** | **57** |
 
-How this was checked (forty-fourth audit, short sign-off of EXP-1 per decisions.md "Faster pipeline (owner)"; I re-ran no test suites and no browser scripts):
-- Reported by other agents, not re-run by me: `dotnet test` 869 of 869; security review pass (three Lows, fixed); code review should-fix items fixed; Hebrew review (two strings changed); browser QA pass in 4 setups, with the ZIP's contents checked.
-- Not re-run end to end by anyone: the corrected smoke step `export-zip` after its "at least one file" check was removed (L237).
-- Not tested by anyone: a real iPhone, Firefox and Safari (L134, L197, L198); EXP-1 against the R2 bucket on Render (only the dev bucket).
+How this was checked (forty-fifth audit, short sign-off of SCAN-1 per decisions.md "Faster pipeline (owner)"; I re-ran no test suites and no browser scripts; I read `client/src/scan/image.ts` and QA's `client/ui-tests/out-scan/report.json`):
+- Reported by other agents, not re-run by me: build and lint clean; `scan.test.mjs` 5 of 5; smoke 143 of 143 in 2 setups; main bundle +1.84 kB gzip (limit 2 kB), scanner chunk 4.25 kB JS + 0.78 kB CSS, precached; security review pass (2 Lows fixed); code review approved (fixes applied); Hebrew review (3 strings reworded); browser QA pass on all 6 criteria in 4 setups.
+- Not tested by anyone: a real Android camera and receipt, a real Android Back, the storage quota error and the 10-files error while the scanner is open (L240, L241); a real iPhone, Firefox and Safari (L134, L197, L198); EXP-1 against the R2 bucket on Render (only the dev bucket); the corrected smoke step `export-zip` (L237).
 - The notes from earlier audits are in git history.
 
 ## 1. Vehicles
@@ -199,10 +198,15 @@ How this was checked (forty-fourth audit, short sign-off of EXP-1 per decisions.
 | 23 | TIRE-2b: the top-view car diagram and Replace tires, en/he (spec 6, owner) | FE | **Signed off** 2026-11-03; **live** (d2a1820), checked 2026-11-04 |
 | 24 | EXP-1a: the full export as one streamed ZIP with every stored file (spec 12, owner, major) | BE | **Signed off** 2026-11-04 (uncommitted) |
 | 25 | EXP-1b: "Download everything (ZIP)" in Settings, en/he | FE | **Signed off** 2026-11-04 (uncommitted) |
-| 26 | MYF-1a: one list of every stored file and the storage used (owner) | BE | **Next** |
-| 27 | MYF-1b: the My files page, en/he (owner) | FE | After MYF-1a |
+| 26 | SCAN-1: scan a document into a service's files, as a PDF (owner) | FE only | **Signed off** 2026-11-04 (L238 fixed in the same commit) |
+| 27 | MYF-1a: one list of every stored file and the storage used (owner) | BE | **Next** |
+| 28 | MYF-1b: the My files page, en/he (owner) | FE | After MYF-1a |
 
 ## Signed-off tickets
+- **SCAN-1 (uncommitted in the working tree): signed off 2026-11-04.** Short sign-off under "Faster pipeline (owner)"; I re-ran no suites. Owner request, not a spec bullet: counts unchanged. Scan sits beside Add file on a service's files, lazy-loads its own chunk, takes a camera photo or a saved image, lets the user fit 4 corners, straightens, cleans up (Black and white by default, or Color), and saves 1 to 20 pages as one `scan-YYYY-MM-DD.pdf` through the FILE-2 endpoint. No new dependency, no backend change.
+  - Reported evidence: build, lint, `scan.test.mjs` 5 of 5 (homography, warp, threshold, PDF xref); smoke 143 of 143 in 2 setups; main chunk +1.84 kB gzip (AC5 limit 2 kB); security review pass, its 2 Lows fixed (size and pixel caps before and after decoding; object URLs freed when dropped); code review approved, its fixes applied (dialog `onClose` for Android Back, Close when the chunk fails to load, Scanner rendered outside the 10-files block, `min-inline-size`, a PDF over 10 MB refused before upload); Hebrew review reworded 3 strings; browser QA pass on AC1 to AC6 in desktop light en, desktop dark he, mobile 360 light en and mobile 360 dark he (`client/ui-tests/out-scan/report.json`: no scanner chunk before the tap, 44 px handles, toolbar mirrored in RTL and the photo not, no sideways scroll).
+  - AC1 to AC6 pass from the reported results. Not verified by me in a browser.
+  - QA's two cosmetic findings do not block: (1) Black and white turns solid dark areas (a stamp, a logo) into outlines, inherent in the local threshold; text, the purpose of a receipt scan, comes out right (L239). (2) A dotted line along the right and bottom edges when the corners sit right on the paper's edge: the outermost samples blend in the dark background, and the threshold, whose neighbourhood is white paper, calls them ink. It shows on most real scans (users drag the corners onto the edge), and the fix is one line, so it should go in before the commit (L238).
 - **EXP-1a and EXP-1b (uncommitted in the working tree): signed off 2026-11-04.** Short sign-off under "Faster pipeline (owner)"; I re-ran no suites. Spec 12 "data export" stays Done and now includes every stored file. Closes the owner's "Full export with files" request.
   - Reported evidence: `dotnet test` 869 of 869; security review pass, its three Lows fixed (a 60-minute download timeout, an access-log note in decisions.md, a test for a second concurrent download); code review should-fix items fixed (the "Export my data" hint no longer says files are not included; a storage timeout goes to `missing-files.txt` instead of aborting; Windows-reserved names get "_", e.g. "CON_", "aux_.pdf"); Hebrew review changed two strings; browser QA pass in desktop light en, desktop dark he, mobile 360 light en and mobile 360 dark he.
   - EXP-1a AC1 to AC6 pass (reported tests, contract `docs/contracts/EXP-1a.md`). EXP-1b AC1 pass from QA's ZIP check (data.json, car photo, receipts and run photo in the documented folders, Hebrew names in UTF-8, duplicates " (2)", no keys or links); the smoke step `export-zip` now checks the real entry list, but its corrected version was not re-run end to end (L237). AC2 to AC4 pass from QA (busy state, one request, 429/503/500/network with focus returned, 360px, RTL, keyboard; the JSON export still works). Not verified by me in a browser.
@@ -448,7 +452,7 @@ How this was checked (forty-fourth audit, short sign-off of EXP-1 per decisions.
 
 ## Low issues backlog
 
-Every Low finding from QA and review lands here (decisions.md, "Faster pipeline (owner)"). They are fixed together in a batch ticket LOW-n about every 3 tickets. LOW-1 closed L1 to L12, LOW-2 L13 to L26, LOW-3 L27 to L65, LOW-4 L66 to L86, LOW-5 L87 to L106 (L98 closed as not reproduced), LOW-6 L114 to L140 (L120 closed by L119, L128 closed as accepted; L124 was closed by FILE-2's cleanup script), LOW-7 L107 to L113; ACC-1's caps closed L154; ACC-2 closed L135 and L168; LOW-8 closed L141 to L181 except L144 and L148 (L141, L149, L152, L163, L164, L166 and L172 as accepted, decisions.md "LOW-8 sign-off"; L146 and L153 by the redesign); LOW-9 closed L182 to L185 and L189, L191 to L196 (L192 by the new second-tab smoke step); LOW-10 closed L199 to L201 and L205 to L208; LOW-11 closed L187, L188, L190, L202, L203 and L209 to L211; LOW-12 closed L213 and L214; those rows are in git history. Open (L144, L148, L72, L105, L134, L197 and L204 are the owner's; L212 can only show in the owner's run against R2; L186 and L198 need a fake clock or other browsers):
+Every Low finding from QA and review lands here (decisions.md, "Faster pipeline (owner)"). They are fixed together in a batch ticket LOW-n about every 3 tickets. LOW-1 closed L1 to L12, LOW-2 L13 to L26, LOW-3 L27 to L65, LOW-4 L66 to L86, LOW-5 L87 to L106 (L98 closed as not reproduced), LOW-6 L114 to L140 (L120 closed by L119, L128 closed as accepted; L124 was closed by FILE-2's cleanup script), LOW-7 L107 to L113; ACC-1's caps closed L154; ACC-2 closed L135 and L168; LOW-8 closed L141 to L181 except L144 and L148 (L141, L149, L152, L163, L164, L166 and L172 as accepted, decisions.md "LOW-8 sign-off"; L146 and L153 by the redesign); LOW-9 closed L182 to L185 and L189, L191 to L196 (L192 by the new second-tab smoke step); LOW-10 closed L199 to L201 and L205 to L208; LOW-11 closed L187, L188, L190, L202, L203 and L209 to L211; LOW-12 closed L213 and L214; those rows are in git history. Open (L144, L148, L72, L105, L134, L197, L204 and L240 are the owner's; L212 can only show in the owner's run against R2; L186 and L198 need a fake clock or other browsers):
 
 | # | From | Issue | Area |
 |---|---|---|---|
@@ -485,6 +489,10 @@ Every Low finding from QA and review lands here (decisions.md, "Faster pipeline 
 | L235 | EXP-1 QA | The `run-photos` smoke step failed once in mobile-dark-he: focus landed on `<summary>`. Possibly flaky; unrelated to EXP-1. | FE, smoke |
 | L236 | EXP-1 sign-off | The delete-account text (`deleteAccountExportFirst`, `i18n.ts:259,1021`) mentions only "Export my data"; point it to "Download everything (ZIP)" as the full copy, in en and he. | FE, i18n |
 | L237 | EXP-1 sign-off | The corrected smoke step `export-zip` (without the "at least one file" check) was not re-run end to end; run it in the 4 setups with the next smoke run. | FE, smoke |
+| L238 | SCAN-1 QA | **Fixed in the SCAN-1 commit** (corners pulled 2% toward the centre in `Scanner.tsx` `next()`; `scan.test.mjs` 5/5; the smoke step not re-run). A dotted line along the right and bottom edges in Black and white when the corners sit on the paper's edge (the outermost samples include the dark background). Fix in the caller, not in `warp` (its unit test checks exact pixels): at `client/src/pages/Scanner.tsx:114`, move each corner 2% of the way toward the corners' centre (about 1% in from each side) before warping, e.g. `const cx = (corners[0][0] + corners[1][0] + corners[2][0] + corners[3][0]) / 4` (and `cy` likewise), then `corners.map(([x, y]) => [(x + (cx - x) * 0.02) * pixels.width, (y + (cy - y) * 0.02) * pixels.height])`, with a one-line why comment. Then `scan.test.mjs` and the smoke step `scan` again. Close this row when applied. | FE, scan |
+| L239 | SCAN-1 QA | Black and white turns solid dark areas (a stamp, a logo) into outlines (the Bradley threshold compares each pixel with its own neighbourhood). Possible fix: also keep as ink any pixel darker than a fixed global level (for example the page's 5th percentile + a margin). Text is unaffected; Color keeps the solid areas. | FE, scan |
+| L240 | SCAN-1 QA | Not tried: a real Android phone's camera with a real receipt, and the real Android Back button closing the scanner (QA used the browser). Needs the owner's phone, once (CHECKLIST "Waiting on the owner"; joins L198 for Back). | Owner or a device |
+| L241 | SCAN-1 QA | Not tested in a browser: the 1 GB quota error and the 10-files-reached error (another tab added a file) shown while the scanner is open; both use the existing upload error path. Add to the next smoke or QA pass. | FE, smoke |
 
 ## Next ticket
 
@@ -529,14 +537,58 @@ Every Low finding from QA and review lands here (decisions.md, "Faster pipeline 
 - **Fuel log** (spec 11, optional): waits for the owner's answers (full tanks only or partial fills; L/100 km, km/L or mpg).
 - **Drop the `Legacy_*` tire tables** (L222): after the owner answers whether the Honda had tires. If a never-mounted set should come back, bring it back as tires first.
 - **Error reporting** (owner, 2026-11-03): crashes in the website and the server are recorded automatically with the error, the screen, the browser and the steps before it (e.g. Sentry free tier, client and ASP.NET SDKs), so bugs are found without the owner reporting them. No personal data in reports (no emails, car details or file names); the DSN only in the hosting settings. Open: Sentry vs Azure Application Insights. Blocked on the owner's free Sentry account.
-- **Scan documents** (owner, 2026-11-03): a Scan option when adding a receipt or document on a phone, like CamScanner: take a photo with the camera, find the paper's edges (adjustable corners), straighten the perspective, crop, and clean it up (white background, sharper text, black-and-white or color), several pages into one PDF. Open questions: done in the browser (e.g. an OpenCV/jscanify-style library, which is large) or a lighter manual-corners version first.
+- **Scan documents** (owner, 2026-11-03): SCAN-1 signed off 2026-11-04 (manual corners, no library); its ticket text is below until it is committed. Automatic edge detection is a possible SCAN-2 if the owner asks.
 - **My files** (owner, 2026-11-03): one page listing every file the user uploaded across all cars (receipts and service files, checklist run photos, car photos): name, type, size, date, and the car and service or run it belongs to, with a link to open it; plus storage used of the 1 GB limit. Now the Next ticket, MYF-1a and MYF-1b.
 - **Full export with files** (owner, 2026-11-03, major): EXP-1, signed off 2026-11-04; its ticket text is in git history (c17a1c3).
 - **Shop link** (owner, 2026-11-03): a service record can keep a link to the shop's or garage's Google page (Google Maps / Business profile), shown as a link on the record. Open questions: https-only and Google hosts only, or any link; per record or a saved shop list.
 - **Snoozed list:** see and undo earlier snoozes, not only the latest (from L149).
 - **Car delete** (not asked for; cars are archived): if ever added, it must delete run-photo rows first and `Notifications WHERE VehicleId` in code, as the account delete does.
 
+### SCAN-1 ticket (signed off 2026-11-04, kept for the record)
+
+**SCAN-1: Scan a document into a service's files** (owner, 2026-11-04: "add the scan option, which will appear near the upload file buttons"). Client only: the scan uploads as a PDF through the existing FILE-2 endpoint, so there is no backend change and no a/b split. Decisions: decisions.md "Scan documents, SCAN-1 (delegated)". 
+
+**Goal:** on my phone I tap Scan next to Add file on a service, photograph the receipt, fit the corners to the paper, and get a straight, clean, white-paper PDF (one or several pages) saved to that service.
+
+**Where it goes:** next to "Add file" in a service record's files (`Attachments` with `kind="file"`, `ServiceHistory.tsx:455`, button at `:653-657`), on the car page and on `/history`. Not on checklist run photos (`ChecklistsSection.tsx:440`: photos of the car, images only, no PDF accepted) and not on the car photo (`CarFormPage.tsx:172`: one picture of the car). Vehicle documents have no upload today.
+
+**Scope (Frontend, `frontend-engineer`); no Backend part:**
+- A **Scan** button beside Add file, shown under the same rules (`canAdd`, fewer than 10 files, disabled while uploading). It lazy-loads a full-screen scanner (`React.lazy` or dynamic `import()`, its own chunk).
+- **Capture:** a hidden `<input type="file" accept="image/*" capture="environment">` (the back camera on a phone, the file picker on a desktop), plus "Choose image" without `capture` so a phone can use a saved photo too. Decode with `createImageBitmap(file, { imageOrientation: 'from-image' })`; scale to at most 2000 px on the long side.
+- **Corners:** the photo with 4 draggable handles (pointer events, `touch-action: none`), starting 8% in from each edge; handles at least 44 px; each handle focusable, moved with the arrow keys (Shift for bigger steps), with a label ("Top-left corner" and so on). The photo and handles are physical and never mirrored in RTL.
+- **Straighten and crop:** our own perspective transform (a homography from the 4 corners, bilinear sampling) into a rectangle sized from the average side lengths.
+- **Clean-up:** "Black and white" (default: grayscale and a local adaptive threshold, so the paper is white and the text sharp) or "Color" (per-channel levels stretched so the paper is white). A preview of the result.
+- **Pages:** "Add page" (back to capture), thumbnails in order with Delete per page, up to 20; "Save" builds one PDF.
+- **PDF:** a small module of our own (for example `client/src/scan/pdf.ts`): one JPEG image (DCTDecode) per page, page width 595 pt (A4) with the page's aspect, correct xref offsets. File name `scan-YYYY-MM-DD.pdf` from `localToday()`.
+- **Upload:** the same path as Add file (`Attachments.upload`, `ServiceHistory.tsx:547`): `fileError(file, attachmentTypes)` first, then `POST {url}/attachments` (limits in `docs/contracts/FILE-2.md`: 10 MB per file, 10 files per record, 1 GB per user; PDF accepted when it starts with `%PDF-`), with the existing error texts. The scanner closes, and focus returns to Scan, only after a successful upload.
+
+**Acceptance criteria:**
+1. [FE] Scan appears next to Add file on every service record where Add file appears (car page and `/history`), and nowhere else; hidden on archived cars and at 10 files, disabled while uploading.
+2. [FE] On a phone Scan opens the back camera; on a desktop it opens the file picker (the fallback); "Choose image" picks a saved image on both. A photo taken sideways (EXIF orientation) shows upright.
+3. [FE] Dragging (or arrow-keying) the 4 corners onto a skewed page and tapping Next gives a straight, cropped page; Black and white (default) makes the paper white and the text black; Color keeps the colors. Add page, Delete page and up to 20 pages work.
+4. [BE+FE] Save uploads one file `scan-YYYY-MM-DD.pdf` with `contentType` `application/pdf` and one page per scanned page, in order; it lists with its size and opens in Chrome's PDF viewer. Over 10 MB, at 10 files, over the quota or offline: the existing error shows inside the scanner and the pages are kept for another Save. Cancel with pages asks before discarding them; Escape is Cancel.
+5. [FE] Lazy-loaded: the main entry chunk grows by at most 2 kB gzip (report the `vite build` sizes before and after); the scanner chunk loads only on the first Scan tap and is in the service worker's precache. No new dependency in `package.json`.
+6. [FE] Every new text in `en` and `he` (`i18n.ts`, `he: typeof en`); RTL lays out the toolbar and the page order right to left; light and dark; at 360 px no sideways scroll and every control at least 44 px; operable by keyboard; a loading state while the scanner chunk and the photo load, and an error state when the image can't be read ("This image can't be opened", back to capture).
+
+**Tests (frontend-engineer):** `client/ui-tests/scan.test.mjs` (`node --test`, like `items.test.mjs`): the homography maps the 4 corners exactly onto the output rectangle; the PDF writer's output starts with `%PDF-`, ends with `%%EOF`, has N `/Type /Page` objects for N pages, and every xref offset points at its `n 0 obj`. A smoke step `scan` (as in the test plan's main path).
+
+**Test plan (ui-tester):** fixture: a light page with text, rotated and skewed on a dark background, drawn by the script on a canvas (no binary in git).
+- In 4 setups (mobile 360 px dark he, mobile light en, desktop light en, desktop dark he): open a service record on a car; Scan is beside Add file. Scan is absent on a run's photos, on the car photo and on an archived car's records.
+- Network: no scanner chunk on page load; it loads on the first Scan tap.
+- `setInputFiles` on the capture input with the fixture; drag each handle onto the page's corners (once by keyboard); Next; screenshot Black and white and Color; Add page with a second capture; delete one and add it back; Save. Check the new row `scan-<today>.pdf`, then fetch its URL: it starts with `%PDF-` and has 2 pages; open it in a tab and screenshot.
+- Errors: a 0-byte or non-image file shows the can't-open message; with 9 files, one scan, then Scan is hidden; offline (`context.setOffline(true)`) Save shows the error and the pages remain; Cancel with pages asks; Escape.
+- 360 px: no sideways scroll on any scanner step; handles and buttons at least 44 px; in RTL the toolbar is mirrored, the photo and handles are not.
+- Not possible for the ui-tester: a real Android phone's camera and a real receipt (owner, once). No iPhone (decisions.md "Nothing for Apple").
+
+**Files likely touched:** `client/src/pages/ServiceHistory.tsx` (the Scan button and the lazy import in `Attachments`), new `client/src/pages/Scanner.tsx`, new `client/src/scan/` (perspective, clean-up, PDF), `client/src/i18n.ts`, `client/src/index.css`, `client/ui-tests/scan.test.mjs`, `client/ui-tests/smoke.mjs`. Nothing in `src/` or `tests/`.
+
+**Out of scope:** automatic edge detection (SCAN-2 if asked; it needs OpenCV.js or a hand-written detector), a live camera preview (`getUserMedia`), Scan on run photos, the car photo or vehicle documents, OCR or reading amounts from the receipt, rotate buttons (the corners handle any angle), keeping an unfinished scan across a reload, any backend change.
+
+**Open questions:** none; all settled in decisions.md "Scan documents, SCAN-1 (delegated)". The owner may later ask for automatic edge detection, or for Scan on vehicle documents once they take files.
+
 ## Changed since last audit
+- **2026-11-04, SCAN-1 signed off** (uncommitted): Scan beside Add file on a service's files, a cleaned-up multi-page PDF. Owner request, not a spec bullet: counts unchanged (Done 50, Partial 1, Missing 0, Deferred 6). New Lows L238 (fix before the commit: inset the corners about 1% in `Scanner.tsx`), L239 to L241. Next ticket: MYF-1a, then MYF-1b, My files. New decision "SCAN-1 sign-off".
+- **2026-11-04, SCAN-1 written** (no audit, no status changes): the owner asked for Scan next; SCAN-1 (client only, a PDF through the FILE-2 endpoint) is the Next ticket and MYF-1 waits after it. New decisions "Next ticket: Scan documents, SCAN-1, before My files (owner)" and "Scan documents, SCAN-1 (delegated)". Counts unchanged.
 - **2026-11-04, EXP-1 signed off** (uncommitted): "Download everything (ZIP)" in Settings streams one ZIP with `data.json` and every stored file. Spec 12 "data export" stays Done; counts unchanged: Done 50, Partial 1, Missing 0, Deferred 6. New Lows L233 to L237. Next ticket: MYF-1a and MYF-1b, My files.
 - **2026-11-04, TIRE-2 closed out after the push** (d2a1820, live): the spec 6 rows cite the commit; the owner's Mazda shows its 4 migrated tires, the Honda none (question to the owner, L222; `Legacy_*` tables kept).
 - **Status changes:** spec 9 bullet 1 (email when due) Partial to Done: NOT-2 is live through Gmail since 2026-11-03 (rated on the owner's live use, no PM browser pass). Spec 12 Google login corrected from "not started": GOOG-1 is live. MVP step 5 is complete. Counts: Done 50, Partial 1, Missing 0, Deferred 6.

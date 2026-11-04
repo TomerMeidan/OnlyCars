@@ -1,0 +1,35 @@
+/* Loaded with the scanner's chunk, so the first page load doesn't carry it. Tokens and buttons are in index.css. */
+/* SCAN-1: the scanner, full screen over the page. The photo sits in a cluster bezel, so the paper's edges show against it. */
+dialog.scanner { inline-size: 100%; block-size: 100%; max-inline-size: none; max-block-size: none; margin: 0; padding: 0; border: none; background: var(--bg); color: var(--ink); }
+dialog.scanner::backdrop { background: var(--bg); }
+.scan-bar { display: flex; justify-content: space-between; align-items: center; gap: 1rem; padding-block: 0.25rem; padding-inline: 1rem; background: var(--surface); border-block-end: 1px solid var(--line); }
+.scan-body { display: grid; gap: 1rem; max-inline-size: 42rem; margin-inline: auto; padding: 1rem 1rem 2rem; }
+.scan-body .actions { flex-wrap: wrap; gap: 0.75rem 1.25rem; }
+.scan-stage { padding: 22px; background: var(--cluster); border-radius: 12px; }
+.scan-photo { position: relative; margin-inline: auto; touch-action: none; user-select: none; }
+.scan-photo img, .scan-photo svg { position: absolute; inset: 0; inline-size: 100%; block-size: 100%; }
+.scan-photo svg { overflow: visible; pointer-events: none; }
+.scan-photo polygon { fill: none; stroke: var(--amber); stroke-width: 2px; vector-effect: non-scaling-stroke; }
+.scan-photo polygon.halo { stroke: var(--cluster); stroke-width: 5px; }
+button.corner, button.corner:is(:hover, :active) {
+  position: absolute;
+  inline-size: 2.75rem;
+  block-size: 2.75rem;
+  translate: -50% -50%; /* centred on its corner; the stage is always LTR */
+  padding: 0;
+  background: none;
+  border: none;
+  border-radius: 50%;
+  box-shadow: none;
+  transform: none;
+  touch-action: none;
+  cursor: grab;
+}
+button.corner::after { content: ''; position: absolute; inset: 0.75rem; border-radius: 50%; background: var(--amber); border: 2px solid var(--cluster); }
+button.corner:focus-visible { outline-color: var(--amber); outline-offset: -3px; }
+button.corner:focus-visible::after { inset: 0.4rem; border-width: 3px; } /* focused: a bigger dot too, as amber can be faint on white paper */
+.scan-mode { border: none; margin: 0; padding: 0; min-inline-size: 0; display: flex; flex-wrap: wrap; gap: 0 1.5rem; }
+.scan-mode legend { padding: 0; font-size: 0.95rem; color: var(--muted); }
+.scan-pages { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); gap: 1rem; }
+.scan-pages li { display: flex; flex-wrap: wrap; align-items: center; gap: 0 0.75rem; }
+.scan-pages img { flex-basis: 100%; inline-size: 100%; max-block-size: 60dvh; object-fit: contain; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-control); }
