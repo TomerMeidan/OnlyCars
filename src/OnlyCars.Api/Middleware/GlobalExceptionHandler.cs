@@ -19,7 +19,7 @@ public class GlobalExceptionHandler(ILogger<GlobalExceptionHandler> logger) : IE
 
         var (statusCode, title) = exception switch
         {
-            NotFoundException => (StatusCodes.Status404NotFound, "Not found"),
+            NotFoundException or LinkExpiredException => (StatusCodes.Status404NotFound, "Not found"),
             ConflictException => (StatusCodes.Status409Conflict, "Conflict"),
             ValidationFailedException => (StatusCodes.Status400BadRequest, "Validation failed"),
             UnauthorizedException or UnauthorizedAccessException => (StatusCodes.Status401Unauthorized, "Unauthorized"),

@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
+using OnlyCars.Application.Account;
 using OnlyCars.Application.Auth;
 
 namespace OnlyCars.Api.Common;
@@ -24,10 +25,16 @@ public static class RequestLimits
     /// <summary>Applied to the data export (ACC-1), one budget per signed-in user: 1 at once and <c>ExportPermitLimit</c> per window.</summary>
     public const string ExportPolicy = "export";
 
+    /// <summary>
+    /// Applied to the ZIP download (EXP-1a), which has no Bearer header: one at a time per user (the link's user) and the app-wide
+    /// <see cref="MaxExportsAtOnce"/>. Its link came from a POST under <see cref="ExportPolicy"/>, which counted it in the window.
+    /// </summary>
+    public const string ExportDownloadPolicy = "export-download";
+
     /// <summary>Applied to DELETE /api/me (ACC-2), one budget per signed-in user: 1 at once and <c>AccountDeletePermitLimit</c> per window.</summary>
     public const string AccountDeletePolicy = "account-delete";
 
-    /// <summary>Exports running at once across all users (ACC-1); a further one is a 429 <c>http.429</c>.</summary>
+    /// <summary>Exports (JSON and ZIP downloads) running at once across all users (ACC-1, EXP-1a); a further one is a 429 <c>http.429</c>.</summary>
     public const int MaxExportsAtOnce = 3;
 
     /// <summary>App-wide request body limit (L37): a larger body is a 413 <c>http.413</c>. Auth keeps its smaller attribute.</summary>
@@ -73,6 +80,11 @@ public static class RequestLimits
             // One app-wide limiter shared by every user's partition: an export holds the whole account in memory.
             var exportsAppWide = new ConcurrencyLimiter(new ConcurrencyLimiterOptions { PermitLimit = MaxExportsAtOnce, QueueLimit = 0 });
             o.AddPolicy(ExportPolicy, ctx => PerUser(ctx, 1, limits.ExportPermitLimit, limits.ExportWindowSeconds, exportsAppWide));
+            o.AddPolicy(ExportDownloadPolicy, ctx =>
+                ctx.RequestServices.GetRequiredService<ExportLinks>().Peek(ctx.GetRouteValue("token") as string ?? "") is { } userId
+                    ? RateLimitPartition.Get("user:" + userId, _ => RateLimiter.CreateChained(
+                        new ConcurrencyLimiter(new ConcurrencyLimiterOptions { PermitLimit = 1, QueueLimit = 0 }), exportsAppWide))
+                    : RateLimitPartition.GetNoLimiter("expired")); // the controller answers 404 export.linkExpired
             o.AddPolicy(AccountDeletePolicy, ctx => PerUser(ctx, 1, limits.AccountDeletePermitLimit, limits.AccountDeleteWindowSeconds));
             o.OnRejected = (context, ct) => RejectAsync(context, "http.429", ct);
         });

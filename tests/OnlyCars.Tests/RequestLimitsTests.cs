@@ -10,6 +10,7 @@ using Microsoft.Extensions.DependencyInjection;
 using OnlyCars.Api.Common;
 using OnlyCars.Api.Controllers;
 using OnlyCars.Api.Middleware;
+using OnlyCars.Application.Account;
 using OnlyCars.Application.Issues.Dtos;
 using OnlyCars.Application.Tires.Dtos;
 using OnlyCars.Application.Vehicles.Dtos;
@@ -22,7 +23,8 @@ namespace OnlyCars.Tests;
 /// </summary>
 public class RequestLimitsTests
 {
-    private static async Task<(WebApplication App, HttpClient Client)> StartAsync(int authLimit = 3, int globalLimit = 100, int failedLoginLimit = 10)
+    private static async Task<(WebApplication App, HttpClient Client)> StartAsync(int authLimit = 3, int globalLimit = 100, int failedLoginLimit = 10,
+        Func<Task>? export = null)
     {
         var builder = WebApplication.CreateBuilder();
         builder.WebHost.UseUrls("http://127.0.0.1:0");
@@ -42,6 +44,7 @@ public class RequestLimitsTests
         builder.Services.AddProblemDetails(o => o.CustomizeProblemDetails = c =>
             c.ProblemDetails.Extensions.TryAdd("code", GlobalExceptionHandler.FallbackCode(c.ProblemDetails.Status)));
         builder.Services.AddRequestLimits(builder.Configuration);
+        builder.Services.AddSingleton<ExportLinks>();
         builder.Services.AddAuthentication(); // UseRequestLimits runs authentication; no scheme here, so nobody signs in
         builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
         builder.Services.AddCors(o => o.AddPolicy("test", p => p.WithOrigins("http://client.test")));
@@ -52,6 +55,10 @@ public class RequestLimitsTests
         app.MapPost("/api/auth/login", () => "ok").RequireRateLimiting(RequestLimits.AuthPolicy);
         app.MapPost("/api/auth/register", () => "ok").RequireRateLimiting(RequestLimits.AuthPolicy);
         app.MapGet("/api/ping", () => "ok");
+        // Stand-ins for the exports (EXP-1a): the ZIP download by link, and the JSON export (by IP here, as nobody signs in).
+        app.MapGet("/download/{token}", async () => { await (export?.Invoke() ?? Task.CompletedTask); return "ok"; })
+            .RequireRateLimiting(RequestLimits.ExportDownloadPolicy);
+        app.MapGet("/export", async () => { await (export?.Invoke() ?? Task.CompletedTask); return "ok"; }).RequireRateLimiting(RequestLimits.ExportPolicy);
         app.MapControllers();
         await app.StartAsync();
 
@@ -191,6 +198,61 @@ public class RequestLimitsTests
         Assert.Equal(HttpStatusCode.OK, atLimit.StatusCode);
         Assert.Equal(HttpStatusCode.RequestEntityTooLarge, over.StatusCode);
         Assert.Equal("http.413", JsonDocument.Parse(await over.Content.ReadAsStringAsync()).RootElement.GetProperty("code").GetString());
+    }
+
+    // EXP-1a criterion 5: the ZIP download has no Bearer header, so the link's user is the partition.
+    [Fact]
+    public async Task SecondZipDownloadBySameUserAtOnceIs429_AnotherUsersIsNot()
+    {
+        var release = new TaskCompletionSource();
+        var started = 0;
+        var (app, client) = await StartAsync(export: async () => { Interlocked.Increment(ref started); await release.Task; });
+        await using var _ = app;
+        var links = app.Services.GetRequiredService<ExportLinks>();
+        Guid alice = Guid.NewGuid(), bob = Guid.NewGuid();
+
+        var first = client.GetAsync($"/download/{links.Create(alice).Token}");
+        await WaitForAsync(() => started == 1);
+        var second = await client.GetAsync($"/download/{links.Create(alice).Token}");
+        var bobs = client.GetAsync($"/download/{links.Create(bob).Token}");
+        await WaitForAsync(() => started == 2);
+        release.SetResult();
+
+        Assert.Equal(HttpStatusCode.TooManyRequests, second.StatusCode);
+        Assert.Equal("http.429", JsonDocument.Parse(await second.Content.ReadAsStringAsync()).RootElement.GetProperty("code").GetString());
+        Assert.Equal(HttpStatusCode.OK, (await first).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await bobs).StatusCode);
+    }
+
+    [Fact]
+    public async Task ZipDownloadsAndJsonExportsShareTheAppWideLimit()
+    {
+        var release = new TaskCompletionSource();
+        var started = 0;
+        var (app, client) = await StartAsync(export: async () => { Interlocked.Increment(ref started); await release.Task; });
+        await using var _ = app;
+        var links = app.Services.GetRequiredService<ExportLinks>();
+
+        var running = new List<Task<HttpResponseMessage>> { client.GetAsync("/export") };
+        for (var i = 1; i < RequestLimits.MaxExportsAtOnce; i++)
+        {
+            running.Add(client.GetAsync($"/download/{links.Create(Guid.NewGuid()).Token}"));
+        }
+        await WaitForAsync(() => started == RequestLimits.MaxExportsAtOnce);
+        var late = await client.GetAsync($"/download/{links.Create(Guid.NewGuid()).Token}");
+        release.SetResult();
+
+        Assert.Equal(HttpStatusCode.TooManyRequests, late.StatusCode);
+        Assert.All(await Task.WhenAll(running), r => Assert.Equal(HttpStatusCode.OK, r.StatusCode));
+    }
+
+    private static async Task WaitForAsync(Func<bool> condition)
+    {
+        for (var i = 0; !condition(); i++)
+        {
+            Assert.True(i < 500, "timed out");
+            await Task.Delay(20);
+        }
     }
 
     // L119: the API's own appsettings files, as the host layers them per environment.

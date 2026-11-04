@@ -2,6 +2,7 @@
 // Usage (API + Vite must be running): node ui-tests/smoke.mjs
 import { chromium } from 'playwright'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { inflateRawSync } from 'node:zlib'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { execFileSync, spawn } from 'node:child_process'
@@ -5760,7 +5761,7 @@ for (const s of setups) {
     const email = await page.evaluate(() => JSON.parse(localStorage.getItem('user')).email)
     await openSettings()
     const sec = page.locator('main section[aria-labelledby=your-data]')
-    const btn = sec.locator('.export button.stack')
+    const btn = sec.locator('.export button.stack').first()
     const alert = sec.locator('[role=alert]')
     const exportUrl = '**/api/me/export'
     let sent = 0
@@ -5815,8 +5816,8 @@ for (const s of setups) {
     if (plain(await alert.textContent()) !== `${XD.failed} ${HS.generic}`) throw new Error(`500 error "${await alert.textContent()}"`)
     if (plain(await sec.locator('[role=status]').textContent())) throw new Error('Downloaded still shown after a failure')
     if (downloads !== before) throw new Error('a failed export downloaded a file')
-    // ACC-2's Delete my account (the aria-expanded opener) also lives here; only Export may be a plain button.
-    if ((await sec.locator('button:not([aria-expanded])').count()) !== 1) throw new Error('a second button in Your data after the error')
+    // ACC-2's Delete my account (the aria-expanded opener) also lives here; only the two exports may be plain buttons.
+    if ((await sec.locator('button:not([aria-expanded])').count()) !== 2) throw new Error('a second button in Your data after the error')
     await focusIs('main section[aria-labelledby=your-data] button.stack', 'Export after the error')
     const retried = page.waitForEvent('download', { timeout: 15000 })
     await page.keyboard.press('Enter')
@@ -5829,7 +5830,7 @@ for (const s of setups) {
     await btn.click()
     await alert.waitFor()
     if (plain(await alert.textContent()) !== `${XD.failed} ${XD.rate}`) throw new Error(`429 error "${await alert.textContent()}"`)
-    if ((await sec.locator('button:not([aria-expanded])').count()) !== 1) throw new Error('a Retry after the 429')
+    if ((await sec.locator('button:not([aria-expanded])').count()) !== 2) throw new Error('a Retry after the 429')
     await focusIs('main section[aria-labelledby=your-data] button.stack', 'Export after the 429')
     // LOW-8 L162: a file cut off mid-stream still comes as a 200: it is not saved, and the export error shows (mocked).
     const cut = downloads
@@ -5856,6 +5857,83 @@ for (const s of setups) {
     page.off('request', count)
     if (sent !== 7) throw new Error(`${sent} export requests in all`)
     run.badResponses = run.badResponses.filter((r) => !r.includes('/api/me/export')) // the forced failures
+    forget500()
+  })
+  // EXP-1: Download everything (ZIP). The POST returns a one-time link; the browser downloads it under the server's file name.
+  // Makes 1 real export (with the 3 of export-data, within the server's 5 per 10 minutes); the errors are mocked.
+  await step('export-zip', async () => {
+    const XZ = { zip: key('exportZip'), busy: key('exportDataBusy'), started: key('downloadStarted'), failed: key('exportDataFailed'),
+      rate: key('exportTooMany'), storage: inBlock('exportZip', 'storageUnavailable') }
+    await openSettings()
+    const sec = page.locator('main section[aria-labelledby=your-data]')
+    const zipBtn = sec.locator('.export button.stack').nth(1)
+    const alert = sec.locator('[role=alert]')
+    const zipUrl = '**/api/me/export/full'
+    if ((await zipBtn.textContent()) !== XZ.zip) throw new Error(`ZIP button "${await zipBtn.textContent()}"`)
+    // A real one, slowed: busy keeps the width, a second press sends nothing, then one download named by the server.
+    let posts = 0
+    const count = (r) => r.url().endsWith('/api/me/export/full') && r.method() === 'POST' && posts++
+    page.on('request', count)
+    await page.route(zipUrl, async (r) => { await page.waitForTimeout(700); await r.continue().catch(() => {}) }, { times: 1 })
+    const width = (await zipBtn.boundingBox()).width
+    const dl = page.waitForEvent('download', { timeout: 30000 })
+    await zipBtn.click()
+    await zipBtn.filter({ hasText: XZ.busy }).waitFor({ timeout: 3000 })
+    if ((await zipBtn.getAttribute('aria-disabled')) !== 'true') throw new Error('ZIP not aria-disabled while busy')
+    if ((await zipBtn.boundingBox()).width !== width) throw new Error(`ZIP width ${width} became ${(await zipBtn.boundingBox()).width}`)
+    await zipBtn.click({ force: true })
+    const file = await dl
+    if (!/^onlycars-export-\d{4}-\d{2}-\d{2}\.zip$/.test(file.suggestedFilename())) throw new Error(`ZIP file name ${file.suggestedFilename()}`)
+    const zip = readFileSync(await file.path())
+    // The entry list from the ZIP's central directory; every path data.json names is in it (or in missing-files.txt).
+    const entries = new Map()
+    for (let i = zip.lastIndexOf(Buffer.from('PK\x05\x06')), o = zip.readUInt32LE(i + 16), n = zip.readUInt16LE(i + 10); n > 0; n--) {
+      const nameLen = zip.readUInt16LE(o + 28), local = zip.readUInt32LE(o + 42)
+      entries.set(zip.toString('utf8', o + 46, o + 46 + nameLen),
+        { method: zip.readUInt16LE(o + 10), size: zip.readUInt32LE(o + 20), local })
+      o += 46 + nameLen + zip.readUInt16LE(o + 30) + zip.readUInt16LE(o + 32)
+    }
+    const read = (name) => {
+      const e = entries.get(name), start = e.local + 30 + zip.readUInt16LE(e.local + 26) + zip.readUInt16LE(e.local + 28)
+      const raw = zip.subarray(start, start + e.size)
+      return (e.method === 8 ? inflateRawSync(raw) : raw).toString('utf8')
+    }
+    if (!entries.has('data.json')) throw new Error(`no data.json in ${[...entries.keys()]}`)
+    const named = [...read('data.json').matchAll(/"path":\s*"((?:[^"\\]|\\.)*)"/g)].map((m) => JSON.parse(`"${m[1]}"`))
+    const missingList = entries.has('missing-files.txt') ? read('missing-files.txt') : ''
+    const absent = named.filter((p) => !entries.has(p) && !missingList.includes(p))
+    // shortcut: earlier steps delete this user's files, so it checks only that named files arrive; ui-tests/exp1-qa.mjs checks a user with files.
+    if (absent.length) throw new Error(`data.json names files not in the ZIP: ${absent}`)
+    if (posts !== 1) throw new Error(`${posts} ZIP export requests`)
+    page.off('request', count)
+    await sec.locator('[role=status]', { hasText: XZ.started }).waitFor({ timeout: 3000 })
+    if (!page.url().endsWith('/settings')) throw new Error(`left Settings for ${page.url()}`)
+    if ((await zipBtn.textContent()) !== XZ.zip) throw new Error('ZIP button still busy after the download')
+    // 503, 429 and 500: each its translated message, focus back on the ZIP button, no download.
+    const before = downloads
+    for (const [status, code, want] of [[503, 'file.storageUnavailable', XZ.storage], [429, 'http.429', XZ.rate], [500, undefined, HS.generic]]) {
+      await page.route(zipUrl, (r) => r.fulfill({ status, contentType: 'application/problem+json', body: JSON.stringify({ status, code }) }), { times: 1 })
+      await zipBtn.click()
+      await alert.waitFor()
+      if (plain(await alert.textContent()) !== `${XZ.failed} ${want}`) throw new Error(`${status} error "${await alert.textContent()}"`)
+      if (plain(await sec.locator('[role=status]').textContent())) throw new Error(`"Download started" still shown after a ${status}`)
+      await focusIs('main section[aria-labelledby=your-data] .export button:nth-child(2)', `the ZIP button after a ${status}`)
+      if (status === 503) {
+        for (const w of [360, 390]) {
+          await page.setViewportSize({ width: w, height: 844 })
+          await noOverflow(`settings with the ZIP error at ${w}px`)
+          await page.screenshot({ path: `${OUT}/${s.name}-export-zip-${w}.png`, fullPage: true })
+        }
+        await page.setViewportSize(s.viewport)
+      }
+    }
+    if (downloads !== before) throw new Error('a failed ZIP export downloaded a file')
+    // Starting the JSON export clears the ZIP's error.
+    await page.route('**/api/me/export', (r) => r.fulfill({ status: 500, contentType: 'application/json', body: '{}' }), { times: 1 })
+    await sec.locator('.export button.stack').first().click()
+    await alert.filter({ hasText: HS.generic }).waitFor()
+    if ((await alert.count()) !== 1) throw new Error('two export errors at once')
+    run.badResponses = run.badResponses.filter((r) => !r.includes('/api/me/export'))
     forget500()
   })
   // ACC-1 caps: each create's 400 tooMany shows its own message with the max.

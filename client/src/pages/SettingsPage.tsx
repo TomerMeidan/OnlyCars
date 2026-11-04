@@ -49,7 +49,8 @@ export default function SettingsPage() {
   const exportAbort = useRef<AbortController>(null)
   useEffect(() => () => exportAbort.current?.abort(), [])
   async function exportData() {
-    if (exp?.busy) return // aria-disabled rather than disabled, so the button keeps focus
+    if (exp?.busy || zip?.busy) return // aria-disabled rather than disabled, so the button keeps focus
+    setZip(null)
     setExp({ busy: true })
     const { signal } = (exportAbort.current = new AbortController())
     try {
@@ -68,6 +69,29 @@ export default function SettingsPage() {
       exportButton.current?.focus() // pressing Export again is the retry
     }
   }
+
+  // EXP-1: every file too, as a ZIP the server streams. The POST returns a one-time link; a plain download of it goes
+  // straight to the downloads folder (never into memory), and a failed one stays a failed download instead of leaving the app.
+  const [zip, setZip] = useState<{ busy?: boolean; done?: boolean; error?: unknown } | null>(null)
+  const zipButton = useRef<HTMLButtonElement>(null)
+  async function exportZip() {
+    if (exp?.busy || zip?.busy) return // one export at a time, as the server allows
+    setExp(null)
+    setZip({ busy: true })
+    const { signal } = (exportAbort.current = new AbortController())
+    try {
+      const { url } = await (await apiResponse('/me/export/full', 'POST', undefined, signal)).json()
+      if (signal.aborted) return
+      download(url)
+      setZip({ done: true })
+    } catch (error) {
+      if (signal.aborted) return
+      setZip({ error })
+      zipButton.current?.focus()
+    }
+  }
+  const failure = (error: unknown) => error instanceof ApiError && error.status === 429 ? t('exportTooMany')
+    : errorMessage(error, undefined, error instanceof ApiError && error.status === 503 ? 'exportZip.storageUnavailable' : undefined)
 
   // ACC-2: delete the account. null is closed; the panel opens on its heading, and Cancel or Escape go back to the opener.
   // An account made with Google has no password: a fresh Google sign-in confirms instead, kept as googleIdToken.
@@ -180,17 +204,20 @@ export default function SettingsPage() {
       <section className="field" aria-labelledby="your-data">
         <h2 id="your-data">{t('yourData')}</h2>
         <p className="muted">{t('exportDataHint')}</p>
+        <p className="muted">{t('exportZipHint')}</p>
         <div className="actions export">
           <button type="button" className="stack" ref={exportButton} data-alt={t(exp?.busy ? 'exportData' : 'exportDataBusy')}
             aria-disabled={!!exp?.busy} onClick={exportData}>
             <span>{exp?.busy ? t('exportDataBusy') : t('exportData')}</span>
           </button>
+          <button type="button" className="stack" ref={zipButton} data-alt={t(zip?.busy ? 'exportZip' : 'exportDataBusy')}
+            aria-disabled={!!zip?.busy} onClick={exportZip}>
+            <span>{zip?.busy ? t('exportDataBusy') : t('exportZip')}</span>
+          </button>
         </div>
-        <p role="status">{exp?.done && t('downloaded')}</p>
-        {exp?.error != null && (
-          <p className="error" role="alert">
-            {t('exportDataFailed')} {exp.error instanceof ApiError && exp.error.status === 429 ? t('exportTooMany') : errorMessage(exp.error)}
-          </p>
+        <p role="status">{(exp?.done && t('downloaded')) || (zip?.done && t('downloadStarted'))}</p>
+        {(exp ?? zip)?.error != null && (
+          <p className="error" role="alert">{t('exportDataFailed')} {failure((exp ?? zip)!.error)}</p>
         )}
         <div className="actions">
           <button type="button" className="danger" ref={deleteButton} aria-expanded={delOpen} onClick={() => (del ? closeDelete() : setDel({}))}>

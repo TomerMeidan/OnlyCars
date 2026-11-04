@@ -4,6 +4,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.Unicode;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Net.Http.Headers;
@@ -58,6 +59,41 @@ public class MeController(AuthService authService, ExportService exportService, 
         Response.Headers.CacheControl = "no-store";
         Response.ContentType = "application/json; charset=utf-8";
         await JsonSerializer.SerializeAsync(Response.Body, export, ExportJson, ct); // UTF-8, no BOM
+        return new EmptyResult();
+    }
+
+    /// <summary>A one-time, 60-second link to the ZIP export (EXP-1a), so a plain browser download (no Bearer header) streams it to disk.</summary>
+    [HttpPost("export/full")]
+    [EnableRateLimiting(RequestLimits.ExportPolicy)]
+    public ActionResult<ExportLinkDto> CreateFullExportLink([FromServices] FullExportService fullExport)
+    {
+        var (token, expiresAt) = fullExport.CreateLink(User.GetUserId());
+        return Ok(new ExportLinkDto($"/api/me/export/full/{token}", expiresAt));
+    }
+
+    public static readonly TimeSpan ZipDownloadTimeout = TimeSpan.FromMinutes(60);
+
+    /// <summary>The ZIP export (EXP-1a), streamed; the token is the credential and works once.</summary>
+    [HttpGet("export/full/{token}")]
+    [AllowAnonymous]
+    [EnableRateLimiting(RequestLimits.ExportDownloadPolicy)]
+    public async Task<EmptyResult> DownloadFullExport(string token, [FromServices] ExportLinks links, [FromServices] FullExportService fullExport,
+        CancellationToken ct)
+    {
+        var userId = links.Take(token);
+        // ZipArchive writes each entry's trailer (data descriptor, deflate end) synchronously; the file data goes through CopyToAsync.
+        // shortcut: those small writes can block a thread briefly on a slow client; replace with a buffering stream if threads run short.
+        HttpContext.Features.Get<IHttpBodyControlFeature>()!.AllowSynchronousIO = true;
+        // A slow reader must not hold one of the app-wide export slots for hours: 60 minutes is 1 GB (the storage quota) at about
+        // 2.3 Mbit/s, a weak mobile link. Aborting the connection also ends a write blocked on the client, which a cancelled token wouldn't.
+        using var timeout = new CancellationTokenSource(ZipDownloadTimeout);
+        using var abort = timeout.Token.Register(HttpContext.Abort);
+        var disposition = new ContentDispositionHeaderValue("attachment");
+        disposition.SetHttpFileName($"onlycars-export-{DateTime.UtcNow.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)}.zip");
+        Response.Headers.ContentDisposition = disposition.ToString();
+        Response.Headers.CacheControl = "no-store";
+        Response.ContentType = "application/zip";
+        await fullExport.WriteZipAsync(userId, Response.Body, ExportJson, ct);
         return new EmptyResult();
     }
 }

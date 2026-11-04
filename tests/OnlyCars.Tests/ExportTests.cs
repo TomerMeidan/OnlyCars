@@ -1,8 +1,11 @@
+using System.IO.Compression;
 using System.Net;
 using System.Reflection;
 using System.Security.Claims;
 using System.Text;
+using System.Security.Cryptography;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
@@ -17,6 +20,7 @@ using OnlyCars.Api.Common;
 using OnlyCars.Api.Controllers;
 using OnlyCars.Application.Account;
 using OnlyCars.Application.Auth;
+using OnlyCars.Application.Common.Exceptions;
 using OnlyCars.Domain;
 using OnlyCars.Domain.Entities;
 using OnlyCars.Infrastructure.Persistence;
@@ -407,5 +411,397 @@ public class ExportTests
         Assert.Equal([HttpStatusCode.NotFound, HttpStatusCode.OK, HttpStatusCode.TooManyRequests],
             new[] { responses[0], responses[1], responses[6] }.Select(r => r.StatusCode));
         Assert.All(responses, r => Assert.Equal("nosniff", Assert.Single(r.Headers.GetValues("X-Content-Type-Options"))));
+    }
+}
+
+/// <summary>EXP-1a backend: the ZIP export with every stored file. Criterion numbers refer to the ticket.</summary>
+public class FullExportTests : FileTestBase
+{
+    private static readonly DateOnly Day = new(2026, 3, 1);
+    private readonly Guid otherUserId = Guid.NewGuid();
+
+    // ExportTests' user (car with photo, archived car, record, voided record, run photo) plus: a photo on the archived car, two cars with
+    // one Hebrew name, a car named only "..", a record with two files of one name, a file on the voided record, an unsafe name, a lost file.
+    // Returns each expected ZIP path with its storage key; every key but the lost one is stored, with random bytes.
+    private async Task<Dictionary<string, string>> SeedAsync()
+    {
+        var ids = await ExportTests.SeedAsync(db, userId, "mine");
+        await ExportTests.SeedAsync(db, otherUserId, "theirs");
+        var now = DateTimeOffset.UtcNow;
+        var archived = await db.Vehicles.FindAsync(ids["archived"]);
+        archived!.PhotoUrl = $"users/{userId}/vehicles/{archived.Id}/photo/a.png";
+        var hebrew = new Vehicle { UserId = userId, Nickname = "המאזדה שלי", CreatedAt = now.AddMinutes(1) };
+        var hebrew2 = new Vehicle { UserId = userId, Nickname = "המאזדה שלי", CreatedAt = now.AddMinutes(2) };
+        var dots = new Vehicle { UserId = userId, Nickname = "..", Make = "Honda", Model = "Jazz", CreatedAt = now.AddMinutes(3),
+            PhotoUrl = $"users/{userId}/vehicles/x/photo/h.jpg" };
+        var record = new ServiceRecord { VehicleId = hebrew.Id, Date = Day, OdometerKm = 1 };
+        var record2 = new ServiceRecord { VehicleId = hebrew2.Id, Date = Day, OdometerKm = 1 };
+        Attachment File(Guid recordId, string name, int minutes) => new()
+        {
+            ServiceRecordId = recordId, FileUrl = $"users/{userId}/r/{Guid.NewGuid()}", FileName = name, ContentType = "application/pdf",
+            SizeBytes = 64, CreatedAt = now.AddMinutes(minutes)
+        };
+        var receipt = File(record.Id, "קבלה.pdf", 1);
+        var receipt2 = File(record.Id, "קבלה.pdf", 2);
+        var voided = File(ids["voided"], "void.pdf", 1);
+        var unsafeName = File(record2.Id, "bad:/na*me?..pdf", 1);
+        var lost = File(record2.Id, "gone.pdf", 2);
+        db.AddRange(hebrew, hebrew2, dots, record, record2, receipt, receipt2, voided, unsafeName, lost);
+        await db.SaveChangesAsync();
+
+        foreach (var key in db.Attachments.Select(a => a.FileUrl).AsEnumerable()
+                     .Concat(db.Vehicles.Where(v => v.PhotoUrl != null).Select(v => v.PhotoUrl!).AsEnumerable())
+                     .Where(k => k != lost.FileUrl))
+        {
+            storage.Objects[key] = (RandomNumberGenerator.GetBytes(64), "application/octet-stream");
+        }
+
+        static string Folder(Guid id, DateOnly date) => $"{date:yyyy-MM-dd} {id.ToString()[..8]}";
+        const string mine = "cars/Car-mine/";
+        return new()
+        {
+            [mine + "photo.jpg"] = $"users/{userId}/vehicles/photo-mine.jpg",
+            [$"{mine}services/{Folder(ids["record"], Day)}/receipt-mine.pdf"] = $"users/{userId}/receipts/key-mine.pdf",
+            [$"{mine}services/{Folder(ids["voided"], Day.AddDays(1))}/void.pdf"] = voided.FileUrl,
+            [$"{mine}checklist-runs/{Folder(ids["run"], Day)}/run-mine.jpg"] = $"users/{userId}/runs/key-mine.jpg",
+            ["cars/Old-mine/photo.png"] = archived.PhotoUrl,
+            [$"cars/המאזדה שלי/services/{Folder(record.Id, Day)}/קבלה.pdf"] = receipt.FileUrl,
+            [$"cars/המאזדה שלי/services/{Folder(record.Id, Day)}/קבלה (2).pdf"] = receipt2.FileUrl,
+            [$"cars/המאזדה שלי (2)/services/{Folder(record2.Id, Day)}/bad__na_me_.pdf"] = unsafeName.FileUrl,
+            [$"cars/המאזדה שלי (2)/services/{Folder(record2.Id, Day)}/gone.pdf"] = lost.FileUrl,
+            ["cars/Honda Jazz/photo.jpg"] = dots.PhotoUrl!,
+        };
+    }
+
+    private FullExportService Service() => new(db, new ExportService(db), new ExportLinks(), storage);
+
+    private async Task<ZipArchive> ZipAsync()
+    {
+        var output = new MemoryStream();
+        await Service().WriteZipAsync(userId, output, MeController.ExportJson);
+        output.Position = 0;
+        return new ZipArchive(output, ZipArchiveMode.Read);
+    }
+
+    private static string Text(ZipArchiveEntry entry) => new StreamReader(entry.Open(), Encoding.UTF8).ReadToEnd();
+
+    private static IEnumerable<string> Paths(JsonNode? node) => node switch
+    {
+        JsonObject o => o.SelectMany(p => p.Key == "path" ? [p.Value!.GetValue<string>()] : Paths(p.Value)),
+        JsonArray a => a.SelectMany(Paths),
+        _ => []
+    };
+
+    // The document without exportedAt and without the ZIP's path fields.
+    private static JsonNode Comparable(string json)
+    {
+        var node = JsonNode.Parse(json)!;
+        node.AsObject().Remove("exportedAt");
+        Strip(node);
+        return node;
+
+        static void Strip(JsonNode? n)
+        {
+            if (n is JsonObject o)
+            {
+                o.Remove("path");
+                foreach (var p in o)
+                {
+                    Strip(p.Value);
+                }
+            }
+            else if (n is JsonArray a)
+            {
+                foreach (var i in a)
+                {
+                    Strip(i);
+                }
+            }
+        }
+    }
+
+    [Fact]
+    public async Task Criterion2And3_LayoutMatches_BytesEqual_DataJsonIsTheExportPlusPaths_NothingOfAnotherUser()
+    {
+        var expected = await SeedAsync();
+        using var zip = await ZipAsync();
+
+        var lost = expected.Keys.Single(p => p.EndsWith("gone.pdf"));
+        Assert.Equal(["data.json", .. expected.Keys.Where(p => p != lost), "missing-files.txt"], zip.Entries.Select(e => e.FullName));
+        foreach (var (path, key) in expected.Where(e => e.Key != lost))
+        {
+            using var copy = new MemoryStream();
+            zip.GetEntry(path)!.Open().CopyTo(copy);
+            Assert.Equal(storage.Objects[key].Content, copy.ToArray());
+        }
+
+        var data = Text(zip.GetEntry("data.json")!);
+        var json = JsonSerializer.Serialize(await new ExportService(db).ExportAsync(userId), MeController.ExportJson);
+        Assert.True(JsonNode.DeepEquals(Comparable(json), Comparable(data)));
+        Assert.DoesNotContain("\"path\"", json); // the JSON export stays as it was
+        // Every listed file has its path (the lost one too); car photos aren't listed, as in the JSON export.
+        Assert.Equal(expected.Keys.Where(p => !p.Contains("/photo.")).Order(), Paths(JsonNode.Parse(data)).Order());
+        Assert.DoesNotContain("theirs", data);
+        Assert.DoesNotContain(otherUserId.ToString(), data);
+    }
+
+    [Fact]
+    public async Task Criterion4_MissingFileIsListed_TheRestIsComplete_NoKeysOrLinks()
+    {
+        var expected = await SeedAsync();
+        using var zip = await ZipAsync();
+
+        var lost = expected.Keys.Single(p => p.EndsWith("gone.pdf"));
+        Assert.Equal($"{lost} - not found in storage{Environment.NewLine}", Text(zip.GetEntry("missing-files.txt")!));
+        Assert.Equal(expected.Count - 1 + 2, zip.Entries.Count);
+        var texts = zip.Entries.Select(e => e.FullName).Append(Text(zip.GetEntry("data.json")!)).Append(Text(zip.GetEntry("missing-files.txt")!));
+        foreach (var text in texts)
+        {
+            foreach (var banned in new[] { "users/", "https://", "signed.test", userId.ToString() })
+            {
+                Assert.DoesNotContain(banned, text);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task UnreadableFile_IsListed_AnotherUsersKeyIsNeverRead_ExportCompletes()
+    {
+        await ExportTests.SeedAsync(db, userId, "mine");
+        var receipt = db.Attachments.Single(a => a.FileName == "receipt-mine.pdf");
+        receipt.FileUrl = $"users/{otherUserId}/r/theirs.pdf";
+        await db.SaveChangesAsync();
+        storage.Objects[receipt.FileUrl] = ([1, 2, 3], "application/pdf");
+        var opened = new List<string>();
+        storage.OnOpen = key =>
+        {
+            opened.Add(key);
+            throw new IOException("storage down");
+        };
+        using var zip = await ZipAsync();
+
+        var missing = Text(zip.GetEntry("missing-files.txt")!).Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries);
+        Assert.Equal(3, missing.Length);
+        Assert.Single(missing, l => l.EndsWith("receipt-mine.pdf - not found in storage"));
+        Assert.Equal(2, missing.Count(l => l.EndsWith(" - could not be read from storage"))); // the car photo and the run photo
+        Assert.DoesNotContain(receipt.FileUrl, opened);
+        Assert.Equal(["data.json", "missing-files.txt"], zip.Entries.Select(e => e.FullName));
+    }
+
+    [Fact]
+    public async Task StorageTimeout_IsListedAsUnreadable_ExportCompletes()
+    {
+        await ExportTests.SeedAsync(db, userId, "mine");
+        storage.OnOpen = _ => throw new TaskCanceledException("HttpClient timeout"); // the request's own token is not cancelled
+        using var zip = await ZipAsync();
+
+        var missing = Text(zip.GetEntry("missing-files.txt")!).Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries);
+        Assert.Equal(3, missing.Count(l => l.EndsWith(" - could not be read from storage")));
+    }
+
+    [Theory]
+    [InlineData("קבלה מוסך.pdf", "קבלה מוסך.pdf")]
+    [InlineData("a\\b/c:d*e?f\"g<h>i|j.pdf", "a_b_c_d_e_f_g_h_i_j.pdf")]
+    [InlineData("tab\there\u0001.jpg", "tab_here_.jpg")]
+    [InlineData("../../etc/passwd", "_._etc_passwd")]
+    [InlineData(" . file . ", "file")]
+    [InlineData("a..b...pdf", "a.b.pdf")]
+    [InlineData("CON", "CON_")]
+    [InlineData("aux.pdf", "aux_.pdf")]
+    [InlineData("console.pdf", "console.pdf")]
+    [InlineData("...", null)]
+    [InlineData("", null)]
+    public void SafeName_RemovesWhatFileSystemsRefuse_KeepsHebrew(string name, string? expected)
+    {
+        var safe = FullExportService.SafeName(name, true);
+
+        Assert.Equal(expected, safe);
+        Assert.DoesNotContain("..", safe ?? "");
+    }
+
+    [Fact]
+    public void SafeName_LongName_KeepsItsExtension_At80()
+    {
+        var safe = FullExportService.SafeName(new string('א', 200) + ".pdf", true)!;
+
+        Assert.Equal(FullExportService.MaxNameLength, safe.Length);
+        Assert.EndsWith("א.pdf", safe);
+        Assert.Equal(80, FullExportService.SafeName(new string('x', 200), false)!.Length);
+    }
+
+    private sealed class Clock : TimeProvider
+    {
+        public DateTimeOffset Now = DateTimeOffset.UtcNow;
+        public override DateTimeOffset GetUtcNow() => Now;
+    }
+
+    [Fact]
+    public void Criterion3_LinkWorksOnce_For60Seconds_OnlyForItsUser()
+    {
+        var clock = new Clock();
+        var links = new ExportLinks(clock);
+        var mine = links.Create(userId);
+        var theirs = links.Create(otherUserId);
+
+        Assert.Equal(43, mine.Token.Length); // 32 random bytes, base64url
+        Assert.NotEqual(mine.Token, theirs.Token);
+        Assert.Equal(clock.Now.AddSeconds(60), mine.ExpiresAt);
+        Assert.Equal(otherUserId, links.Take(theirs.Token));
+        Assert.Equal("export.linkExpired", Assert.Throws<LinkExpiredException>(() => links.Take(theirs.Token)).Code); // used
+
+        clock.Now = clock.Now.AddSeconds(59);
+        Assert.Equal(userId, links.Peek(mine.Token));
+        clock.Now = clock.Now.AddSeconds(1);
+        Assert.Null(links.Peek(mine.Token));
+        Assert.Equal("export.linkExpired", Assert.Throws<LinkExpiredException>(() => links.Take(mine.Token)).Code); // expired
+        Assert.Throws<LinkExpiredException>(() => links.Take("made-up"));
+    }
+
+    [Fact]
+    public async Task Criterion1And3_Http_PostGivesALink_GetStreamsThatUsersZipOnce()
+    {
+        var expected = await SeedAsync();
+        var (app, client) = await StartAsync();
+        await using var _ = app;
+
+        var (status, body) = await ReadAsync(await client.PostAsync("/api/me/export/full", null));
+        Assert.Equal(HttpStatusCode.OK, status);
+        var url = body.GetProperty("url").GetString()!;
+        Assert.Matches("^/api/me/export/full/[A-Za-z0-9_-]{43}$", url);
+        Assert.InRange(body.GetProperty("expiresAt").GetDateTimeOffset() - DateTimeOffset.UtcNow, TimeSpan.FromSeconds(55), TimeSpan.FromSeconds(61));
+
+        // A plain browser download: no sign-in, or signed in as someone else; the link decides whose ZIP it is.
+        using var other = new HttpClient { BaseAddress = client.BaseAddress };
+        other.DefaultRequestHeaders.Add("X-Test-User", otherUserId.ToString());
+        var response = await other.GetAsync(url);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("application/zip", response.Content.Headers.ContentType!.MediaType);
+        Assert.Equal("no-store", response.Headers.CacheControl!.ToString());
+        Assert.Equal($"onlycars-export-{DateTime.UtcNow:yyyy-MM-dd}.zip", response.Content.Headers.ContentDisposition!.FileName);
+        using var zip = new ZipArchive(new MemoryStream(await response.Content.ReadAsByteArrayAsync()), ZipArchiveMode.Read);
+        Assert.Equal(["data.json", .. expected.Keys.Where(p => !p.EndsWith("gone.pdf")), "missing-files.txt"], zip.Entries.Select(e => e.FullName));
+        var data = Text(zip.GetEntry("data.json")!);
+        Assert.Contains("mine@onlycars.test", data);
+        Assert.DoesNotContain("theirs", data);
+        Assert.DoesNotContain(url.Split('/')[^1], data);
+
+        using var anonymous = new HttpClient { BaseAddress = client.BaseAddress };
+        var (again, error) = await ReadAsync(await anonymous.GetAsync(url));
+        Assert.Equal(HttpStatusCode.NotFound, again);
+        Assert.Equal("export.linkExpired", error.GetProperty("code").GetString());
+        Assert.Equal(HttpStatusCode.Unauthorized, (await anonymous.PostAsync("/api/me/export/full", null)).StatusCode);
+    }
+
+    [Fact]
+    public async Task Criterion5_SecondZipDownloadAtOnceIs429_AndLeavesItsTokenUnused()
+    {
+        await SeedAsync();
+        var (app, client) = await StartAsync();
+        await using var _ = app;
+        var opened = new TaskCompletionSource();
+        var release = new TaskCompletionSource();
+        storage.OnOpen = async key =>
+        {
+            opened.TrySetResult();
+            await release.Task;
+            return new MemoryStream(storage.Objects.GetValueOrDefault(key).Content ?? [], writable: false);
+        };
+        async Task<string> LinkAsync() => (await ReadAsync(await client.PostAsync("/api/me/export/full", null))).Body.GetProperty("url").GetString()!;
+
+        var first = client.GetAsync(await LinkAsync());
+        await opened.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        var second = await LinkAsync();
+        var (status, body) = await ReadAsync(await client.GetAsync(second));
+        release.SetResult();
+
+        Assert.Equal(HttpStatusCode.TooManyRequests, status);
+        Assert.Equal("http.429", body.GetProperty("code").GetString());
+        Assert.Equal(HttpStatusCode.OK, (await first).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await client.GetAsync(second)).StatusCode); // the refused GET didn't use the token up
+    }
+
+    [Fact]
+    public async Task NoStorage_PostIs503()
+    {
+        var (app, client) = await StartAsync(withStorage: false);
+        await using var _ = app;
+
+        var (status, body) = await ReadAsync(await client.PostAsync("/api/me/export/full", null));
+
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, status);
+        Assert.Equal("file.storageUnavailable", body.GetProperty("code").GetString());
+    }
+
+    // Write-only and not seekable, like the response body; counts the synchronous writes.
+    private sealed class ResponseLike : Stream
+    {
+        public long Written;
+        public long PeakMemory;
+
+        public override bool CanRead => false;
+        public override bool CanSeek => false;
+        public override bool CanWrite => true;
+        public override long Length => throw new NotSupportedException();
+        public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
+        public override void Flush() { }
+        public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public long WrittenSync;
+
+        public override void Write(byte[] buffer, int offset, int count)
+        {
+            WrittenSync += count;
+            Written += count;
+        }
+
+        public override ValueTask WriteAsync(ReadOnlyMemory<byte> buffer, CancellationToken ct = default)
+        {
+            Written += buffer.Length;
+            PeakMemory = Math.Max(PeakMemory, GC.GetTotalMemory(false));
+            return default;
+        }
+
+        public override Task WriteAsync(byte[] buffer, int offset, int count, CancellationToken ct) =>
+            WriteAsync(buffer.AsMemory(offset, count), ct).AsTask();
+    }
+
+    [Fact]
+    public async Task Criterion5_FiftyFilesOf10MB_StreamOneAtATime_MemoryDoesNotGrowWithTheTotal()
+    {
+        const int size = 10 * 1024 * 1024;
+        db.Users.Add(new User { Id = userId, Email = "big@onlycars.test", PasswordHash = "x" });
+        var car = new Vehicle { UserId = userId, Nickname = "Big" };
+        db.Vehicles.Add(car);
+        for (var r = 0; r < 5; r++)
+        {
+            var record = new ServiceRecord { VehicleId = car.Id, Date = Day.AddDays(r), OdometerKm = r };
+            db.ServiceRecords.Add(record);
+            for (var f = 0; f < 10; f++)
+            {
+                db.Attachments.Add(new Attachment { ServiceRecordId = record.Id, FileUrl = $"users/{userId}/big/{r}-{f}", FileName = "scan.pdf",
+                    ContentType = "application/pdf", SizeBytes = size });
+            }
+        }
+        await db.SaveChangesAsync();
+
+        var content = RandomNumberGenerator.GetBytes(size); // one buffer behind every file, so the fake storage holds 10 MB, not 500
+        var output = new ResponseLike();
+        var writtenAtOpen = new List<long>();
+        storage.OnOpen = _ =>
+        {
+            writtenAtOpen.Add(output.Written);
+            return Task.FromResult<Stream?>(new MemoryStream(content, writable: false));
+        };
+        var before = GC.GetTotalMemory(true);
+
+        await Service().WriteZipAsync(userId, output, MeController.ExportJson);
+
+        Assert.Equal(50, writtenAtOpen.Count);
+        Assert.True(output.Written > 50L * size);
+        // Each file is in the response before the next one is opened.
+        Assert.All(writtenAtOpen.Select((written, i) => (written, i)), x => Assert.True(x.written >= (long)x.i * size));
+        Assert.True(output.WrittenSync < 64 * 1024, $"{output.WrittenSync} bytes written synchronously"); // only the entries' trailers
+        Assert.True(output.PeakMemory - before < 150L * 1024 * 1024, $"grew {(output.PeakMemory - before) / 1024 / 1024} MB for 500 MB of files");
     }
 }

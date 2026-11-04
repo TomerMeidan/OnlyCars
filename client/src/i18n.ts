@@ -242,12 +242,16 @@ const en = {
   csvFailed: 'The CSV was not exported.',
   // ACC-1: Settings, Your data
   yourData: 'Your data',
-  exportDataHint: "Everything you've saved, as a JSON file. Files and photos are listed by name, not included.",
+  exportDataHint: "Everything you've saved, as a JSON file. Files and photos are listed by name only.",
   exportData: 'Export my data',
   exportDataBusy: 'Preparing…',
   downloaded: 'Downloaded',
   exportDataFailed: 'Your data was not exported.',
   exportTooMany: 'Too many exports. Try again in a few minutes.',
+  // EXP-1: the full export
+  exportZipHint: 'Download everything adds all your files and photos, in one ZIP file. It can be large.',
+  exportZip: 'Download everything (ZIP)',
+  downloadStarted: "Download started. Your browser's downloads show its progress.",
   // ACC-2: Settings, delete the account
   deleteAccount: 'Delete my account',
   deleteAccountTitle: 'Delete your account?',
@@ -573,6 +577,10 @@ const en = {
       vehicleArchived: "This car is archived, so photos can't be added. They can still be deleted.",
       notFound: 'This photo was not found. It may have been deleted already.',
       unsupportedType: 'Choose a JPEG, PNG or WebP photo.',
+    },
+    // Not an API code: file.storageUnavailable on the ZIP export, which reads files rather than saving them.
+    exportZip: {
+      storageUnavailable: "Your files can't be reached right now, so the ZIP can't be made. Try again later.",
     },
     // Not an API code: the file.* messages for a service's files instead of the car photo.
     attachmentFile: {
@@ -998,12 +1006,15 @@ const he: typeof en = {
   exportPdf: 'הדפסה או שמירה כ־PDF',
   csvFailed: 'ייצוא ה־CSV נכשל.',
   yourData: 'הנתונים שלך',
-  exportDataHint: 'כל מה ששמרת, בקובץ JSON. קבצים ותמונות מופיעים רק בשמם, בלי הקבצים עצמם.',
+  exportDataHint: 'כל מה ששמרת, בקובץ JSON. קבצים ותמונות מופיעים בו רק בשמם.',
   exportData: 'ייצוא הנתונים שלי',
   exportDataBusy: 'הקובץ בהכנה…',
   downloaded: 'הקובץ הורד',
   exportDataFailed: 'ייצוא הנתונים נכשל.',
   exportTooMany: 'יותר מדי בקשות ייצוא. אפשר לנסות שוב בעוד כמה דקות.',
+  exportZipHint: 'בהורדת הכול מקבלים גם את כל הקבצים והתמונות, בקובץ ZIP אחד. הקובץ עלול להיות גדול.',
+  exportZip: 'הורדת הכול (ZIP)',
+  downloadStarted: 'ההורדה התחילה. אפשר לעקוב אחריה בהורדות של הדפדפן.',
   deleteAccount: 'מחיקת החשבון שלי',
   deleteAccountTitle: 'למחוק את החשבון שלך?',
   deleteAccountWarning: 'החשבון שלך וכל הרכבים שלך, כולל ההיסטוריה, הקבצים והתמונות, יימחקו. אי אפשר לבטל את המחיקה.',
@@ -1317,6 +1328,9 @@ const he: typeof en = {
       vehicleArchived: 'הרכב בארכיון, ולכן אי אפשר להוסיף תמונות. עדיין אפשר למחוק תמונות קיימות.',
       notFound: 'התמונה לא נמצאה. ייתכן שהיא כבר נמחקה.',
       unsupportedType: 'יש לבחור תמונה מסוג JPEG‏, PNG‏ או WebP.',
+    },
+    exportZip: {
+      storageUnavailable: 'הקבצים שלך לא זמינים כרגע, ולכן אי אפשר להכין את קובץ ה־ZIP. אפשר לנסות שוב מאוחר יותר.',
     },
     attachmentFile: {
       required: 'יש לבחור קובץ להעלאה.',

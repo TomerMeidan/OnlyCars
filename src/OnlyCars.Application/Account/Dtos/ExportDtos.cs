@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using OnlyCars.Domain;
 
 namespace OnlyCars.Application.Account.Dtos;
@@ -28,8 +29,17 @@ public record ExportServiceRecordDto(Guid Id, DateOnly Date, decimal OdometerKm,
 
 public record ExportServiceItemDto(string Description, string? Brand, string? PartNumber, decimal Quantity, decimal UnitCost, bool IsLabor);
 
-/// <summary>A stored file by name only; the file itself is not exported.</summary>
-public record ExportFileDto(string FileName, string ContentType, long SizeBytes, DateTimeOffset CreatedAt);
+/// <summary>A stored file by name; only the ZIP export (EXP-1a) holds the file itself, at <see cref="Path"/>.</summary>
+public record ExportFileDto(string FileName, string ContentType, long SizeBytes, DateTimeOffset CreatedAt)
+{
+    // The attachment's id, so the ZIP export finds the file; never written.
+    [JsonIgnore]
+    public Guid Id { get; init; }
+
+    // Set only in the ZIP's data.json; the JSON export stays without it.
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Path { get; set; }
+}
 
 public record ExportChecklistDto(Guid Id, Guid TemplateId, int? IntervalKm, int? IntervalDays, decimal LastRunOdometerKm,
     DateOnly LastRunDate, DateOnly StartDate, decimal StartOdometerKm, bool IsEnabled, List<ExportChecklistRunDto> Runs);
@@ -61,3 +71,6 @@ public record ExportTireMeasurementDto(DateOnly MeasuredAt, TirePosition Positio
 public record ExportTireRotationDto(Guid Id, DateOnly Date, decimal OdometerKm, string? Notes, List<ExportTireRotationMoveDto> Moves);
 
 public record ExportTireRotationMoveDto(Guid TireId, TirePosition FromPosition, TirePosition ToPosition);
+
+/// <summary>The one-time download link of the ZIP export (EXP-1a).</summary>
+public record ExportLinkDto(string Url, DateTimeOffset ExpiresAt);

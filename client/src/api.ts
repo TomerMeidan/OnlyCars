@@ -449,10 +449,10 @@ export const todayCalls = new RegExp(`^(${[
   `PUT /vehicle-checklists/${id}`, `POST /vehicle-checklists/${id}/runs`, 'GET /(dashboard|reminders)',
 ].join('|')})$`)
 
-// Saves a blob as a file: the CSV and the data export.
-export function download(blob: Blob, name: string) {
+// Saves a blob as a file (the CSV and the data export), or downloads a URL under the server's file name (the ZIP export).
+export function download(file: Blob | string, name = '') {
   const a = document.createElement('a')
-  a.href = URL.createObjectURL(blob)
+  a.href = typeof file === 'string' ? file : URL.createObjectURL(file)
   a.download = name
   a.click()
   setTimeout(() => URL.revokeObjectURL(a.href))

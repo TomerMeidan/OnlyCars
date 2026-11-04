@@ -36,6 +36,8 @@ public static class DependencyInjection
         services.AddScoped<ReminderService>();
         services.AddScoped<DigestService>();
         services.AddScoped<ExportService>();
+        services.AddScoped<FullExportService>();
+        services.AddSingleton<ExportLinks>();
         services.AddScoped<AccountService>();
 
         return services;

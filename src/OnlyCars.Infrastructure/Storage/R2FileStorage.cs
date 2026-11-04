@@ -45,6 +45,19 @@ public sealed class R2FileStorage(IAmazonS3 s3, string bucket) : IFileStorage
         }, ct);
     }
 
+    public async Task<Stream?> OpenReadAsync(string key, CancellationToken ct = default)
+    {
+        try
+        {
+            // The response stream reads straight from the network; disposing it releases the connection.
+            return (await s3.GetObjectAsync(bucket, key, ct)).ResponseStream;
+        }
+        catch (AmazonS3Exception ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
+        {
+            return null;
+        }
+    }
+
     public async Task DeleteAsync(string key, CancellationToken ct = default) =>
         await s3.DeleteObjectAsync(bucket, key, ct);
 

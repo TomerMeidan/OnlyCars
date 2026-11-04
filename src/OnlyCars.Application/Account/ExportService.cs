@@ -42,7 +42,7 @@ public class ExportService(IAppDbContext db)
         // Projected, so the storage key (FileUrl) is never read.
         var files = (await db.Attachments
                 .Where(a => a.ServiceRecord!.Vehicle!.UserId == userId || a.ChecklistRun!.VehicleChecklist!.Vehicle!.UserId == userId)
-                .Select(a => new { a.Id, a.ServiceRecordId, a.ChecklistRunId, File = new ExportFileDto(a.FileName, a.ContentType, a.SizeBytes, a.CreatedAt) })
+                .Select(a => new { a.Id, a.ServiceRecordId, a.ChecklistRunId, File = new ExportFileDto(a.FileName, a.ContentType, a.SizeBytes, a.CreatedAt) { Id = a.Id } })
                 .ToListAsync(ct))
             .OrderBy(a => a.File.CreatedAt).ThenBy(a => a.Id).ToList();
         var recordFiles = files.Where(a => a.ServiceRecordId != null).ToLookup(a => a.ServiceRecordId!.Value, a => a.File);

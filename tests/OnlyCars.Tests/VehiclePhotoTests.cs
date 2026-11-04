@@ -50,6 +50,22 @@ public class FakeFileStorage : IFileStorage
         }
     }
 
+    /// <summary>When set, reads come from it instead of <see cref="Objects"/>, so a test can stream large or slow files.</summary>
+    public Func<string, Task<Stream?>>? OnOpen { get; set; }
+
+    public Task<Stream?> OpenReadAsync(string key, CancellationToken ct = default)
+    {
+        if (OnOpen is { } onOpen)
+        {
+            return onOpen(key);
+        }
+
+        lock (Objects)
+        {
+            return Task.FromResult<Stream?>(Objects.TryGetValue(key, out var o) ? new MemoryStream(o.Content, writable: false) : null);
+        }
+    }
+
     public List<string> DeletedPrefixes { get; } = [];
 
     public Task DeletePrefixAsync(string prefix, CancellationToken ct = default)
@@ -237,6 +253,7 @@ public abstract class FileTestBase
             c.ProblemDetails.Extensions.TryAdd("code", GlobalExceptionHandler.FallbackCode(c.ProblemDetails.Status)));
         builder.Services.AddApplication();
         builder.Services.AddScoped<IAppDbContext>(_ => NewDb());
+        builder.Services.AddSingleton<OnlyCars.Application.Auth.IJwtTokenService, FakeJwtTokenService>(); // MeController (EXP-1a)
         if (withStorage)
         {
             builder.Services.AddSingleton<IFileStorage>(storage);

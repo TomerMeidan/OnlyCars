@@ -5,6 +5,9 @@ public interface IFileStorage
 {
     Task PutAsync(string key, byte[] content, string contentType, CancellationToken ct = default);
 
+    /// <summary>A read stream of one stored object (EXP-1a), or null when no object has that key; the caller disposes it.</summary>
+    Task<Stream?> OpenReadAsync(string key, CancellationToken ct = default);
+
     Task DeleteAsync(string key, CancellationToken ct = default);
 
     /// <summary>Deletes every object under <paramref name="prefix"/>, which must be exactly <c>users/{guid}/</c> (ACC-2); anything else throws <see cref="ArgumentException"/>.</summary>
