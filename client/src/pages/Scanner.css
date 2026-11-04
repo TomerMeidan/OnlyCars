@@ -15,7 +15,7 @@ button.corner, button.corner:is(:hover, :active) {
   position: absolute;
   inline-size: 2.75rem;
   block-size: 2.75rem;
-  translate: -50% -50%; /* centred on its corner; the stage is always LTR */
+  margin: -1.375rem 0 0 -1.375rem; /* centred on its corner (half its size); the stage is always LTR. Not `translate`: the dot sat off-centre on a real phone */
   padding: 0;
   background: none;
   border: none;
