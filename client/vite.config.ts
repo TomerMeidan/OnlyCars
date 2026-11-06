@@ -38,6 +38,8 @@ export default defineConfig({
       },
     }),
   ],
+  // ERR-1b: Sentry's release; Render passes the commit as a Docker build arg.
+  define: { __RELEASE__: JSON.stringify(process.env.RENDER_GIT_COMMIT ?? '') },
   // Same-origin /api in dev (and in vite preview, which reuses this proxy), so no CORS or hardcoded API URL in the client.
   server: { proxy: { '/api': 'http://localhost:5150' } },
   // shortcut: one bundle (~500 kB, ~150 kB gzip) passed Vite's 500 kB default with FILE-1; split pages with lazy() when it nears 600 kB.

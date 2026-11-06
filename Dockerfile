@@ -4,6 +4,9 @@ WORKDIR /client
 COPY client/package.json client/package-lock.json ./
 RUN npm ci
 COPY client/ ./
+# ERR-1: Render passes the service's env vars to the build as build args; Vite reads them while building. Empty: no Sentry, no release.
+ARG VITE_SENTRY_DSN
+ARG RENDER_GIT_COMMIT
 RUN npm run build
 
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS api

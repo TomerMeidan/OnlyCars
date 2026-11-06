@@ -49,7 +49,8 @@ if (process.env.SMOKE_ALL) setups.push(
 // PWA-1: a fresh production build served by vite preview (it reuses the /api proxy), for the pwa-install step.
 const PREVIEW = 'http://localhost:4173'
 const vite = ['node_modules/vite/bin/vite.js']
-execFileSync(process.execPath, [...vite, 'build', '--logLevel', 'error'], { stdio: 'inherit' })
+// No DSN, even one from the environment or a .env file: smoke's crash-page must never reach Sentry.
+execFileSync(process.execPath, [...vite, 'build', '--logLevel', 'error'], { stdio: 'inherit', env: { ...process.env, VITE_SENTRY_DSN: '' } })
 const answers = () => fetch(PREVIEW).then((r) => r.ok, () => false)
 // An orphan from an earlier run would answer in place of this build (--strictPort makes ours exit).
 if (await answers()) throw new Error(`${PREVIEW} is already in use: stop that process first`)
@@ -72,6 +73,8 @@ for (const s of setups) {
   const run = { setup: s.name, steps: [], consoleErrors: [], badResponses: [] }
   page.on('console', (m) => m.type() === 'error' && run.consoleErrors.push(m.text()))
   page.on('pageerror', (e) => run.consoleErrors.push(String(e)))
+  const sentryRequests = []
+  ctx.on('request', (r) => /sentry/i.test(new URL(r.url()).host) && sentryRequests.push(new URL(r.url()).host))
   // A signed photo URL's query is a credential: never printed.
   page.on('response', (r) => r.status() >= 400 && run.badResponses.push(`${r.status()} ${r.request().method()} ${r.url().replace(/\?.*X-Amz-.*/s, '?<signed>')}`))
 
@@ -6261,6 +6264,45 @@ for (const s of setups) {
     }
     await tall(box.locator('xpath=..'), 'the email reminders label')
   })
+  // ERR-1b: a render error (the dev-only test button) shows the error page; no sideways scroll at 360px; Reload by keyboard brings the app back.
+  await step('crash-page', async () => {
+    const logged = run.consoleErrors.length
+    // Off Settings first (settings-email-reminders leaves us there), so openSettings navigates and moves focus.
+    await page.goto(`${BASE}/`)
+    await page.locator('main h1').waitFor()
+    const h1 = page.locator('main [role=alert] h1')
+    const crash = async () => {
+      await openSettings()
+      await page.getByRole('button', { name: 'Throw test error', exact: true }).click()
+      await h1.waitFor()
+    }
+    // Back after a crash leaves the error page for the page before.
+    await crash()
+    await page.goBack()
+    await page.locator('main h1').filter({ hasNotText: key('crashTitle') }).waitFor()
+    if (await h1.count()) throw new Error('error page still shown after Back')
+    await crash()
+    if (plain(await h1.textContent()) !== key('crashTitle')) throw new Error(`h1 "${await h1.textContent()}"`)
+    await titleIs(key('crashTitle'))
+    const vp = page.viewportSize()
+    await page.setViewportSize({ width: 360, height: vp.height })
+    const over = await overflowPx()
+    await page.screenshot({ path: `${OUT}/${s.name}-crash-360.png`, fullPage: true })
+    await page.setViewportSize(vp)
+    if (over > 0) throw new Error(`${over}px sideways scroll at 360px`)
+    await focusIs('main h1', 'h1 after the crash')
+    await page.keyboard.press('Tab')
+    await focusIs('main .actions button', 'Reload after Tab')
+    if (plain(await page.locator('main .actions button').textContent()) !== key('reload')) throw new Error('Reload label')
+    await tall(page.locator('main .actions button'), 'Reload')
+    const home = page.locator('main .actions a')
+    if (plain(await home.textContent()) !== key('goToDashboard') || (await home.getAttribute('href')) !== '/') throw new Error('Go to dashboard link')
+    await tall(home, 'Go to dashboard')
+    await Promise.all([page.waitForEvent('load'), page.keyboard.press('Enter')])
+    await page.locator('input[name=emailReminders]').waitFor()
+    // React logs the caught test error; it is expected here.
+    run.consoleErrors.splice(logged, Infinity, ...run.consoleErrors.slice(logged).filter((e) => !/ERR-1 test error|error boundary|CrashBoundary/.test(e)))
+  })
   await step('documents-archived', async () => {
     await apiCall('POST', `/vehicles/${ntCarId}/archive`)
     await page.goto(`${BASE}/cars/${ntCarId}`)
@@ -7014,6 +7056,10 @@ for (const s of setups) {
     }
     // From 40em up the header is as before: no bar.
     if (s.viewport.width > 640) await page.locator('.tabs').waitFor({ state: 'detached', timeout: 3000 })
+  })
+  // ERR-1b criterion 1: smoke runs without VITE_SENTRY_DSN, so nothing on this setup's pages asked Sentry.
+  await step('no-sentry-requests', async () => {
+    if (sentryRequests.length) throw new Error(`Sentry requests (start dev without VITE_SENTRY_DSN, in the environment or a .env file): ${sentryRequests.join(', ')}`)
   })
   await step('logout', async () => {
     await more(page)

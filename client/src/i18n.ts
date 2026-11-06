@@ -274,6 +274,11 @@ const en = {
   serviceWord: 'Service',
   showMore: 'Show more',
   retry: 'Retry',
+  // ERR-1b: the page a render error shows
+  crashTitle: 'Something went wrong',
+  crashText: 'This screen ran into an error. Reloading usually fixes it.',
+  reload: 'Reload',
+  goToDashboard: 'Go to dashboard',
   reports: 'Reports',
   reportYear: 'Year',
   // the empty choice for a year that isn't in the list (L145)
@@ -1110,6 +1115,10 @@ const he: typeof en = {
   serviceWord: 'טיפול',
   showMore: 'הצגת עוד',
   retry: 'ניסיון חוזר',
+  crashTitle: 'משהו השתבש',
+  crashText: 'אירעה שגיאה במסך הזה. רענון הדף בדרך כלל פותר את הבעיה.',
+  reload: 'רענון הדף',
+  goToDashboard: 'מעבר ללוח הבקרה',
   reports: 'דוחות',
   reportYear: 'שנה',
   noYear: 'ללא שנה',

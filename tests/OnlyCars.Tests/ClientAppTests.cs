@@ -40,6 +40,10 @@ public class ClientAppTests
         Assert.Equal(NoSniff.ContentSecurityPolicy, headers.GetValues("Content-Security-Policy").Single());
         var scripts = NoSniff.ContentSecurityPolicy.Split("; ").Single(d => d.StartsWith("script-src "));
         Assert.DoesNotContain("unsafe", scripts); // only scripts from the site and Google's sign-in run, never inline code
+        // ERR-1: the one Sentry ingest host from decisions.md, and no wildcard host the page could send data to.
+        var connect = NoSniff.ContentSecurityPolicy.Split("; ").Single(d => d.StartsWith("connect-src ")).Split(' ');
+        Assert.Equal(["https://o4512371247677440.ingest.de.sentry.io"], connect.Where(h => h.Contains("sentry")));
+        Assert.DoesNotContain(connect, h => h.Contains('*'));
 
         await app.StopAsync();
         Directory.Delete(root, true);

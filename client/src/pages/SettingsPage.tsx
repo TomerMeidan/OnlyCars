@@ -257,6 +257,14 @@ export default function SettingsPage() {
         <p className="muted">{t('checklistTemplatesHint')}</p>
         <div className="actions"><Link to="/settings/checklists">{t('checklistTemplates')}</Link></div>
       </section>
+      {import.meta.env.DEV && <ThrowTest />}
     </div>
   )
+}
+
+// ERR-1b: dev builds only (English, not in i18n.ts), to see a render error reach the error page and Sentry.
+function ThrowTest() {
+  const [thrown, setThrown] = useState(false)
+  if (thrown) throw new Error('ERR-1 test error from Settings')
+  return <div className="actions"><button className="danger" onClick={() => setThrown(true)}>Throw test error</button></div>
 }

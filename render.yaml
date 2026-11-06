@@ -26,3 +26,8 @@ services:
         sync: false
       - key: R2__BucketName
         sync: false
+      # ERR-1: the onlycars-api DSN (read at runtime) and the onlycars-web DSN (a build arg of the Docker client stage). Empty: Sentry off.
+      - key: Sentry__Dsn
+        sync: false
+      - key: VITE_SENTRY_DSN
+        sync: false

@@ -6,8 +6,11 @@ public static class NoSniff
     /// What the web app may load (2026-11-02): its own files; Google Fonts; Google's sign-in script, button and its frame; car photos
     /// from R2's signed links. No inline script anywhere (index.html's boot code is public/boot.js), so an injected script can't run
     /// and read the sign-in token. Inline styles are allowed: Google's sign-in script adds a style block, and a style can't run code
-    /// or read the token, which is in localStorage, not the page. connect-src has the fonts because the service worker fetches them.
+    /// or read the token, which is in localStorage, not the page. connect-src has the fonts because the service worker fetches them,
+    /// and the one Sentry ingest host the web app reports its crashes to (ERR-1, decisions.md "Sentry projects for ERR-1").
     /// </summary>
+    public const string SentryIngest = "https://o4512371247677440.ingest.de.sentry.io";
+
     public const string ContentSecurityPolicy =
         "default-src 'self'; " +
         "script-src 'self' https://accounts.google.com/gsi/client; " +
@@ -15,7 +18,7 @@ public static class NoSniff
         "font-src 'self' https://fonts.gstatic.com; " +
         "img-src 'self' data: blob: https://*.r2.cloudflarestorage.com; " + // blob: the scanner's photo and pages, made in the browser
 
-        "connect-src 'self' https://accounts.google.com/gsi/ https://fonts.googleapis.com https://fonts.gstatic.com; " +
+        "connect-src 'self' https://accounts.google.com/gsi/ https://fonts.googleapis.com https://fonts.gstatic.com " + SentryIngest + "; " +
         "frame-src https://accounts.google.com/gsi/; " +
         "object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'";
 

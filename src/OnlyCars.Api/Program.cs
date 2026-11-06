@@ -26,6 +26,7 @@ const string ClientCorsPolicy = "ClientCors";
 
 // No "Server: Kestrel" on responses: it only tells a scanner what to try (security audit 2026-10-30).
 builder.WebHost.ConfigureKestrel(o => o.AddServerHeader = false);
+builder.AddErrorReporting(); // ERR-1a: Sentry, only when Sentry:Dsn is set
 
 builder.Services.AddControllers()
     .AddJsonOptions(ApiJson.Configure)
@@ -125,7 +126,9 @@ if (app.Configuration.GetValue<bool>("Database:MigrateOnStartup"))
             }
             catch (Exception ex)
             {
-                app.Logger.LogError("Database update, try {Attempt} of 5, failed: {Error}: {Message}", attempt, ex.GetType().Name, ex.Message);
+                // No message: SQL Server's can quote row values (ERR-1a). One Sentry event per outage: only the last try is an Error.
+                app.Logger.Log(attempt < 5 ? LogLevel.Warning : LogLevel.Error, "Database update, try {Attempt} of 5, failed: {Error}, SQL error {Number}",
+                    attempt, ex.GetType().Name, ErrorReporting.SqlNumber(ex));
                 await Task.Delay(TimeSpan.FromSeconds(20));
             }
         }
@@ -137,6 +140,7 @@ app.UseExceptionHandler(_ => { });
 
 // Forwarded headers, CORS, authentication and the rate limiter, in the order they must run. Before HTTPS redirection, which needs X-Forwarded-Proto.
 app.UseRequestLimits(ClientCorsPolicy);
+app.UseErrorReportingUser();
 
 if (app.Environment.IsDevelopment())
 {
@@ -154,6 +158,7 @@ app.UseHttpsRedirection();
 app.UseAuthorization(); // authentication runs inside UseRequestLimits, before the limiter
 
 app.MapClientApp();
+app.MapDevThrow();
 
 app.MapControllers();
 

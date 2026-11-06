@@ -17,18 +17,7 @@ public class GlobalExceptionHandler(ILogger<GlobalExceptionHandler> logger) : IE
             exception = new ConflictException("concurrency.conflict", "This was changed at the same time somewhere else. Reload and try again.");
         }
 
-        var (statusCode, title) = exception switch
-        {
-            NotFoundException or LinkExpiredException => (StatusCodes.Status404NotFound, "Not found"),
-            ConflictException => (StatusCodes.Status409Conflict, "Conflict"),
-            ValidationFailedException => (StatusCodes.Status400BadRequest, "Validation failed"),
-            UnauthorizedException or UnauthorizedAccessException => (StatusCodes.Status401Unauthorized, "Unauthorized"),
-            TooManyRequestsException => (StatusCodes.Status429TooManyRequests, "Too many requests"),
-            PayloadTooLargeException => (StatusCodes.Status413PayloadTooLarge, "Payload too large"),
-            ServiceUnavailableException => (StatusCodes.Status503ServiceUnavailable, "Service unavailable"),
-            BadHttpRequestException bad => (bad.StatusCode, "Bad request"), // e.g. 413 from the body size limit
-            _ => (StatusCodes.Status500InternalServerError, "Unexpected error")
-        };
+        var (statusCode, title) = StatusFor(exception);
 
         if (statusCode == StatusCodes.Status500InternalServerError)
         {
@@ -61,6 +50,20 @@ public class GlobalExceptionHandler(ILogger<GlobalExceptionHandler> logger) : IE
 
         return true;
     }
+
+    /// <summary>The status and title an exception answers with. Error reporting (ERR-1a) sends only the 5xx.</summary>
+    public static (int Status, string Title) StatusFor(Exception exception) => exception switch
+    {
+        NotFoundException or LinkExpiredException => (StatusCodes.Status404NotFound, "Not found"),
+        ConflictException or DbUpdateConcurrencyException => (StatusCodes.Status409Conflict, "Conflict"),
+        ValidationFailedException => (StatusCodes.Status400BadRequest, "Validation failed"),
+        UnauthorizedException or UnauthorizedAccessException => (StatusCodes.Status401Unauthorized, "Unauthorized"),
+        TooManyRequestsException => (StatusCodes.Status429TooManyRequests, "Too many requests"),
+        PayloadTooLargeException => (StatusCodes.Status413PayloadTooLarge, "Payload too large"),
+        ServiceUnavailableException => (StatusCodes.Status503ServiceUnavailable, "Service unavailable"),
+        BadHttpRequestException bad => (bad.StatusCode, "Bad request"), // e.g. 413 from the body size limit
+        _ => (StatusCodes.Status500InternalServerError, "Unexpected error")
+    };
 
     /// <summary>Code for a ProblemDetails that no AppException produced (model binding, 500s); the client shows a generic message.</summary>
     public static string FallbackCode(int? statusCode) => $"http.{statusCode ?? 500}";
