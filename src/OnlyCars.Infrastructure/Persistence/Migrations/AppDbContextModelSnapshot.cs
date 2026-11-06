@@ -630,6 +630,11 @@ namespace OnlyCars.Infrastructure.Persistence.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)");
 
+                    b.Property<string>("NameHe")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
                     b.Property<DateTimeOffset>("UpdatedAt")
                         .HasColumnType("datetimeoffset");
 
@@ -653,6 +658,7 @@ namespace OnlyCars.Infrastructure.Persistence.Migrations
                             DefaultIntervalKm = 10000,
                             Key = "oilChange",
                             Name = "Engine oil and filter",
+                            NameHe = "שמן מנוע ופילטר שמן",
                             UpdatedAt = new DateTimeOffset(new DateTime(2026, 10, 14, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0))
                         },
                         new
@@ -664,6 +670,7 @@ namespace OnlyCars.Infrastructure.Persistence.Migrations
                             DefaultIntervalKm = 20000,
                             Key = "airFilter",
                             Name = "Air filter",
+                            NameHe = "פילטר אוויר",
                             UpdatedAt = new DateTimeOffset(new DateTime(2026, 10, 14, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0))
                         },
                         new
@@ -675,6 +682,7 @@ namespace OnlyCars.Infrastructure.Persistence.Migrations
                             DefaultIntervalKm = 15000,
                             Key = "cabinFilter",
                             Name = "Cabin filter",
+                            NameHe = "פילטר מזגן",
                             UpdatedAt = new DateTimeOffset(new DateTime(2026, 10, 14, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0))
                         },
                         new
@@ -686,6 +694,7 @@ namespace OnlyCars.Infrastructure.Persistence.Migrations
                             DefaultIntervalKm = 20000,
                             Key = "brakePads",
                             Name = "Brake pads check",
+                            NameHe = "בדיקת רפידות בלמים",
                             UpdatedAt = new DateTimeOffset(new DateTime(2026, 10, 14, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0))
                         },
                         new
@@ -696,6 +705,7 @@ namespace OnlyCars.Infrastructure.Persistence.Migrations
                             DefaultIntervalDays = 730,
                             Key = "brakeFluid",
                             Name = "Brake fluid",
+                            NameHe = "נוזל בלמים",
                             UpdatedAt = new DateTimeOffset(new DateTime(2026, 10, 14, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0))
                         },
                         new
@@ -707,6 +717,7 @@ namespace OnlyCars.Infrastructure.Persistence.Migrations
                             DefaultIntervalKm = 60000,
                             Key = "coolant",
                             Name = "Coolant",
+                            NameHe = "נוזל קירור",
                             UpdatedAt = new DateTimeOffset(new DateTime(2026, 10, 14, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0))
                         },
                         new
@@ -717,6 +728,7 @@ namespace OnlyCars.Infrastructure.Persistence.Migrations
                             DefaultIntervalKm = 60000,
                             Key = "transmissionFluid",
                             Name = "Transmission fluid",
+                            NameHe = "שמן גיר",
                             UpdatedAt = new DateTimeOffset(new DateTime(2026, 10, 14, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0))
                         },
                         new
@@ -727,6 +739,7 @@ namespace OnlyCars.Infrastructure.Persistence.Migrations
                             DefaultIntervalKm = 60000,
                             Key = "sparkPlugs",
                             Name = "Spark plugs",
+                            NameHe = "מצתים",
                             UpdatedAt = new DateTimeOffset(new DateTime(2026, 10, 14, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0))
                         },
                         new
@@ -738,6 +751,7 @@ namespace OnlyCars.Infrastructure.Persistence.Migrations
                             DefaultIntervalKm = 100000,
                             Key = "timingBelt",
                             Name = "Timing belt",
+                            NameHe = "רצועת טיימינג",
                             UpdatedAt = new DateTimeOffset(new DateTime(2026, 10, 14, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0))
                         },
                         new
@@ -748,6 +762,7 @@ namespace OnlyCars.Infrastructure.Persistence.Migrations
                             DefaultIntervalKm = 10000,
                             Key = "tireRotation",
                             Name = "Tire rotation",
+                            NameHe = "רוטציית צמיגים",
                             UpdatedAt = new DateTimeOffset(new DateTime(2026, 10, 14, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0))
                         },
                         new
@@ -758,6 +773,7 @@ namespace OnlyCars.Infrastructure.Persistence.Migrations
                             DefaultIntervalDays = 365,
                             Key = "battery",
                             Name = "Battery check",
+                            NameHe = "בדיקת מצבר",
                             UpdatedAt = new DateTimeOffset(new DateTime(2026, 10, 14, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0))
                         },
                         new
@@ -768,6 +784,7 @@ namespace OnlyCars.Infrastructure.Persistence.Migrations
                             DefaultIntervalDays = 365,
                             Key = "wiperBlades",
                             Name = "Wiper blades",
+                            NameHe = "מגבים",
                             UpdatedAt = new DateTimeOffset(new DateTime(2026, 10, 14, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0))
                         });
                 });
@@ -1365,7 +1382,7 @@ namespace OnlyCars.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("OnlyCars.Domain.Entities.Tire", b =>
                 {
                     b.HasOne("OnlyCars.Domain.Entities.ServiceRecord", "ServiceRecord")
-                        .WithMany()
+                        .WithMany("Tires")
                         .HasForeignKey("ServiceRecordId")
                         .OnDelete(DeleteBehavior.NoAction);
 
@@ -1481,6 +1498,8 @@ namespace OnlyCars.Infrastructure.Persistence.Migrations
                     b.Navigation("Items");
 
                     b.Navigation("Tasks");
+
+                    b.Navigation("Tires");
                 });
 
             modelBuilder.Entity("OnlyCars.Domain.Entities.Tire", b =>

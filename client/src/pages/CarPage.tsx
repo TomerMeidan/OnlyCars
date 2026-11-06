@@ -147,7 +147,7 @@ export default function CarPage() {
 
 // The car's photo, or nothing. Its signed URL lasts an hour: when a URL fails to load, the car is fetched again once for a fresh one,
 // so a page left open recovers each time. A fresh URL that fails before it ever loaded is not retried (no loop while storage is down).
-export function CarPhoto({ car, setCar }: { car: Vehicle; setCar: (car: Vehicle) => void }) {
+export function CarPhoto({ car, setCar, alt = car.nickname }: { car: Vehicle; setCar: (car: Vehicle) => void; alt?: string }) {
   const fresh = useRef<string | null>(null)
   const [broken, setBroken] = useState<string | null>(null)
   const url = car.photoUrl
@@ -161,7 +161,7 @@ export function CarPhoto({ car, setCar }: { car: Vehicle; setCar: (car: Vehicle)
       setCar(v)
     }, () => setBroken(url))
   }
-  return <img className="car-photo" src={url} alt={car.nickname} onError={failed} onLoad={() => { fresh.current = null }} />
+  return <img className="car-photo" src={url} alt={alt} onError={failed} onLoad={() => { fresh.current = null }} />
 }
 
 // Error state of a car route: the message is the h1 (titled without its full stop), under the back link.

@@ -150,6 +150,17 @@ export default function ReportsPage() {
       <>
         <section className="card" aria-labelledby={`${id}year`}>
           <h2 id={`${id}year`}><bdi>{y}</bdi></h2>
+          {/* aria-hidden: the total, the count and the top month and category repeat the summary line and the rows below. */}
+          <div aria-hidden="true">
+            <div className="big-number">{amount(r.total)}</div>
+            {r.recordCount > 0 && (
+              <dl className="stats">
+                <div><dt>{t('statServices')}</dt><dd><bdi>{r.recordCount.toLocaleString(lng)}</bdi></dd></div>
+                {topMonth > 0 && <div><dt>{t('statTopMonth')}</dt><dd>{month(r.byMonth.find((m) => m.total === topMonth)!.month)}</dd></div>}
+                {topCategory > 0 && <div><dt>{t('statTopCategory')}</dt><dd>{category(r.byCategory.find((c) => c.total === topCategory)!.category)}</dd></div>}
+              </dl>
+            )}
+          </div>
           <p>{r.recordCount ? <Link to={historyLink(`${y}-01-01`, `${y}-12-31`, vehicleId)}>{summary}</Link> : summary}</p>
           {r.unpricedCount > 0 && <p className="muted">{t('unpricedCount', { count: r.unpricedCount })}</p>}
         </section>

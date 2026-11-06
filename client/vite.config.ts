@@ -13,8 +13,8 @@ export default defineConfig({
         scope: '/',
         name: 'OnlyCars',
         short_name: 'OnlyCars',
-        theme_color: '#0F1A1F',
-        background_color: '#E6E9E3',
+        theme_color: '#E7EDEA', // the light theme-color meta in index.html; the dark one applies once the page loads
+        background_color: '#E7EDEA',
         display: 'standalone',
         // Rendered from favicon.svg by scripts/icons.mjs.
         icons: [

@@ -55,15 +55,16 @@ public record ResetTaskResponse(Guid ServiceRecordId, MaintenanceTaskDto Task);
 
 public record ServiceRecordTaskDto(Guid Id, string Name, TaskCategory Category);
 
-// A null ShopName is DIY; a null TotalCost was skipped. Tasks are the linked tasks that still exist.
+// A null ShopName is DIY; a null TotalCost was skipped. Tasks are the linked tasks that still exist. TireCount > 0 marks a tire change.
 public record ServiceRecordDto(Guid Id, DateOnly Date, decimal OdometerKm, string? ShopName, decimal? TotalCost, string? Notes,
-    List<ServiceRecordTaskDto> Tasks, List<ServiceItemDto> Items, Guid VehicleId, List<AttachmentDto> Attachments);
+    List<ServiceRecordTaskDto> Tasks, List<ServiceItemDto> Items, Guid VehicleId, List<AttachmentDto> Attachments, int TireCount);
 
 // Url is a signed GET URL valid for 1 hour (inline, with FileName), or null without storage; the storage key is never returned.
 public record AttachmentDto(Guid Id, string FileName, string ContentType, long SizeBytes, string? Url);
 
-// One page of GET /api/service-records; TotalCount and TotalCost (null costs as 0) cover every match, not just the page.
-public record ServiceRecordPageDto(List<ServiceRecordDto> Items, int TotalCount, decimal TotalCost);
+// One page of GET /api/service-records; the totals cover every match, not just the page. TotalCost counts null costs as 0;
+// AverageCost leaves them out (null when no match has a cost) and is rounded to cents; LastDate is null when nothing matches.
+public record ServiceRecordPageDto(List<ServiceRecordDto> Items, int TotalCount, decimal TotalCost, decimal? AverageCost, DateOnly? LastDate);
 
 // In the user's order. On a labour row Quantity is hours.
 public record ServiceItemDto(Guid Id, string Description, string? Brand, string? PartNumber, decimal Quantity, decimal UnitCost, bool IsLabor);

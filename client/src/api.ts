@@ -108,9 +108,13 @@ export interface ServiceRecord {
   tasks: Pick<MaintenanceTask, 'id' | 'name' | 'category'>[]
   items: ServiceItem[] // when not empty, totalCost is their sum
   attachments: Attachment[] // upload order
+  tireCount: number // tires this record fitted (a tire change); 0 for a normal service
 }
 
 // FILE-2: a file on a service record. url is a signed GET URL valid for an hour (a credential: never log or store it), null without storage.
+// When each file's signed URL arrived (set by whoever received it first), so an Open after 55 minutes fetches a fresh one.
+export const signedAt = new WeakMap<Attachment, number>()
+
 export interface Attachment {
   id: string
   fileName: string
@@ -124,6 +128,8 @@ export interface ServiceRecordPage {
   items: ServiceRecord[]
   totalCount: number
   totalCost: number
+  averageCost: number | null // total / the matches with a cost; null when none has one
+  lastDate: string | null // the latest date of every match
 }
 
 // GET /dashboard: active cars, most urgent first, each with all its enabled tasks; the month figures equal /history's for the same dates.
@@ -497,6 +503,13 @@ export const runPath = (carId: string, checklistId: string) => `/cars/${encodeUR
 export function localToday() {
   const d = new Date()
   return new Date(d.getTime() - d.getTimezoneOffset() * 60_000).toISOString().slice(0, 10)
+}
+
+// A year before today plus one day, so Last 12 months never holds the same date twice; a year before Feb 29 is Feb 28.
+export function yearAgo(today: string) {
+  const [y, m, d] = today.split('-').map(Number)
+  const last = new Date(Date.UTC(y - 1, m, 0)).getUTCDate() // that month's last day, a year back
+  return new Date(Date.UTC(y - 1, m - 1, Math.min(d, last) + 1)).toISOString().slice(0, 10)
 }
 
 // The browser blocks an out-of-range number or a third decimal before any request, with this message on the field.

@@ -50,8 +50,8 @@ public class MaintenanceTasksController(MaintenanceTaskService taskService) : Co
 
     [HttpGet("service-records")]
     public async Task<ActionResult<ServiceRecordPageDto>> SearchRecords(Guid? vehicleId, Guid? taskId, DateOnly? from, DateOnly? to,
-        string? q, CancellationToken ct, int skip = 0, int take = 50) =>
-        Ok(await taskService.SearchRecordsAsync(User.GetUserId(), vehicleId, taskId, from, to, q, skip, take, ct));
+        string? q, string? sort, string? dir, CancellationToken ct, int skip = 0, int take = 50) =>
+        Ok(await taskService.SearchRecordsAsync(User.GetUserId(), vehicleId, taskId, from, to, q, skip, take, ct, sort, dir));
 
     [HttpGet("dashboard")]
     public async Task<ActionResult<DashboardDto>> Dashboard(DateOnly? today, CancellationToken ct) =>

@@ -4,12 +4,13 @@ using OnlyCars.Application.Maintenance;
 using OnlyCars.Application.Maintenance.Dtos;
 using OnlyCars.Application.Vehicles;
 using OnlyCars.Application.Vehicles.Dtos;
+using OnlyCars.Domain;
 using OnlyCars.Domain.Entities;
 using OnlyCars.Infrastructure.Persistence;
 
 namespace OnlyCars.Tests;
 
-/// <summary>MVP3-C: GET /api/service-records filters, search, paging and totals. Criterion numbers refer to the ticket.</summary>
+/// <summary>MVP3-C and SRCH-1a: GET /api/service-records filters, search, sort, paging and totals. Criterion numbers refer to MVP3-C.</summary>
 public class ServiceRecordSearchTests
 {
     private static readonly DateOnly D = new(2025, 6, 15);
@@ -20,6 +21,7 @@ public class ServiceRecordSearchTests
 
     public ServiceRecordSearchTests()
     {
+        db.Database.EnsureCreated(); // the 12 starter templates, for SRCH-1a's template-name search
         vehicles = new VehicleService(db);
         tasks = new MaintenanceTaskService(db, vehicles);
     }
@@ -48,8 +50,8 @@ public class ServiceRecordSearchTests
     }
 
     private Task<ServiceRecordPageDto> SearchAsync(Guid? vehicleId = null, Guid? taskId = null, DateOnly? from = null, DateOnly? to = null,
-        string? q = null, int skip = 0, int take = 50, Guid? owner = null) =>
-        tasks.SearchRecordsAsync(owner ?? userId, vehicleId, taskId, from, to, q, skip, take);
+        string? q = null, int skip = 0, int take = 50, Guid? owner = null, string? sort = null, string? dir = null) =>
+        tasks.SearchRecordsAsync(owner ?? userId, vehicleId, taskId, from, to, q, skip, take, default, sort, dir);
 
     private static List<Guid> Ids(ServiceRecordPageDto page) => page.Items.Select(r => r.Id).ToList();
 
@@ -306,5 +308,178 @@ public class ServiceRecordSearchTests
 
         Assert.Contains(@"N'%50\%\_\[x%'", text);
         Assert.Contains(@"ESCAPE N'\'", text);
+    }
+
+    // --- SRCH-1a: words, task and template names, tire changes, sort, average and last date ---
+
+    private static readonly Guid OilTemplate = Guid.Parse("7a5c0000-0000-4000-8000-000000000001");
+
+    private async Task<Guid> CreateTaskAsync(Guid car, Guid? templateId, string name, Guid? owner = null) =>
+        (await tasks.CreateAsync(owner ?? userId, car, new CreateMaintenanceTaskRequest(templateId, name, "Other", 5_000, 365, 40_000, D))).Id;
+
+    private async Task<ServiceRecord> SeedTireChangeAsync(Guid car, DateOnly date, int tires, string? shop = null)
+    {
+        var record = await SeedAsync(car, date, shop: shop);
+        for (var i = 0; i < tires; i++)
+        {
+            db.Tires.Add(new Tire { VehicleId = car, Position = (TirePosition)i, Brand = "Pirelli", FittedAt = date, ServiceRecordId = record.Id });
+        }
+        await db.SaveChangesAsync();
+        return record;
+    }
+
+    [Theory]
+    [InlineData("oil")]
+    [InlineData("OIL")]
+    [InlineData("שמן")]
+    [InlineData("filter")]
+    public async Task Q_FindsATaskByItsTemplatesNamesInBothLanguages_KeptRenamedOrTypedInHebrew(string q)
+    {
+        var car = await CreateCarAsync();
+        var kept = await SeedAsync(car, D, taskId: await CreateTaskAsync(car, OilTemplate, "Engine oil and filter"));
+        var renamed = await SeedAsync(car, D.AddDays(-1), taskId: await CreateTaskAsync(car, OilTemplate, "Shemen"));
+        var hebrew = await SeedAsync(car, D.AddDays(-2), taskId: await CreateTaskAsync(car, OilTemplate, "שמן מנוע ופילטר שמן"));
+        await SeedAsync(car, D.AddDays(-3), shop: "Garage", taskId: await CreateTaskAsync(car, null, "Brakes"));
+        var other = Guid.NewGuid();
+        var theirCar = await CreateCarAsync(other);
+        await SeedAsync(theirCar, D, taskId: await CreateTaskAsync(theirCar, OilTemplate, "Engine oil and filter", other));
+
+        Assert.Equal([kept.Id, renamed.Id, hebrew.Id], Ids(await SearchAsync(q: q)));
+    }
+
+    [Fact]
+    public async Task Q_FindsATaskByItsOwnName_WithoutATemplate()
+    {
+        var car = await CreateCarAsync();
+        var brakes = await SeedAsync(car, D, taskId: await CreateTaskAsync(car, null, "Front brakes"));
+        await SeedAsync(car, D, taskId: await CreateTaskAsync(car, null, "Wipers"));
+
+        Assert.Equal([brakes.Id], Ids(await SearchAsync(q: "BRAKES")));
+    }
+
+    [Theory]
+    [InlineData("tire")]
+    [InlineData("Tire change")]
+    [InlineData("Tires")] // the English Tires chip
+    [InlineData("צמיג")] // the Hebrew chip
+    [InlineData("צמיגים")]
+    [InlineData("החלפת צמיגים")]
+    public async Task Q_FindsATireChangeByItsLabels_InBothLanguages_WithTireCount(string q)
+    {
+        var car = await CreateCarAsync();
+        var change = await SeedTireChangeAsync(car, D, tires: 2);
+        await SeedAsync(car, D, shop: "Garage");
+        var other = Guid.NewGuid();
+        await SeedTireChangeAsync(await CreateCarAsync(other), D, tires: 4);
+
+        var page = await SearchAsync(q: q);
+
+        Assert.Equal([change.Id], Ids(page));
+        Assert.Equal(2, page.Items[0].TireCount);
+    }
+
+    [Fact]
+    public async Task TireCount_IsZeroForANormalService_AndOnTheCarsRecordList()
+    {
+        var car = await CreateCarAsync();
+        var change = await SeedTireChangeAsync(car, D, tires: 4);
+        var normal = await SeedAsync(car, D.AddDays(-1));
+
+        Assert.Equal([(change.Id, 4), (normal.Id, 0)], (await SearchAsync()).Items.Select(r => (r.Id, r.TireCount)));
+        Assert.Equal([4, 0], (await tasks.ListRecordsAsync(userId, car)).Select(r => r.TireCount));
+    }
+
+    [Fact]
+    public async Task Q_EveryWordMustMatch_InAnyField_InAnyOrder()
+    {
+        var car = await CreateCarAsync();
+        var item = await SeedAsync(car, D, item: new ServiceItem { Description = "Oil filter", Quantity = 1, UnitCost = 1 });
+        var acrossFields = await SeedAsync(car, D.AddDays(-1), shop: "Filter House", taskId: await CreateTaskAsync(car, null, "Oil"));
+        await SeedAsync(car, D.AddDays(-2), notes: "oil only");
+        await SeedAsync(car, D.AddDays(-3), notes: "filter only");
+
+        Assert.Equal([item.Id, acrossFields.Id], Ids(await SearchAsync(q: "oil filter")));
+        Assert.Equal([item.Id, acrossFields.Id], Ids(await SearchAsync(q: "  filter \t OIL ")));
+        Assert.Empty((await SearchAsync(q: "oil filter missing")).Items);
+    }
+
+    [Fact]
+    public async Task Q_MoreThan10Words_IsSearchTooManyWords_And10AreAllowed()
+    {
+        var ex = await Assert.ThrowsAsync<ValidationFailedException>(() => SearchAsync(q: "a b c d e f g h i j k"));
+        Assert.Equal("serviceRecord.searchTooManyWords", ex.Code);
+
+        Assert.Equal(0, (await SearchAsync(q: "a b c d e f g h i  j")).TotalCount);
+    }
+
+    // Five records; r3 and r5 tie on cost, r2 and r4 have none.
+    private async Task<Guid[]> SeedSortCaseAsync()
+    {
+        var car = await CreateCarAsync();
+        (int Days, decimal Km, decimal? Cost)[] rows = [(-4, 10_000, 300), (-3, 40_000, null), (-2, 20_000, 200), (-1, 30_000, null), (0, 50_000, 200)];
+        var ids = new List<Guid>();
+        foreach (var (days, km, cost) in rows)
+        {
+            ids.Add((await SeedAsync(car, D.AddDays(days), km: km, cost: cost)).Id);
+        }
+        return [.. ids];
+    }
+
+    [Theory]
+    [InlineData(null, null, new[] { 5, 4, 3, 2, 1 })]
+    [InlineData("date", "desc", new[] { 5, 4, 3, 2, 1 })]
+    [InlineData("date", "asc", new[] { 1, 2, 3, 4, 5 })]
+    [InlineData("cost", "desc", new[] { 1, 5, 3, 4, 2 })]   // tie 5/3 newest first, no cost last
+    [InlineData("cost", "asc", new[] { 5, 3, 1, 4, 2 })]    // no cost still last
+    [InlineData("odometer", "desc", new[] { 5, 2, 4, 3, 1 })]
+    [InlineData("odometer", "asc", new[] { 1, 3, 4, 2, 5 })]
+    public async Task Sort_OrdersEveryMatch_AcrossPages_WithNoRowMissingOrRepeated(string? sort, string? dir, int[] expected)
+    {
+        var r = await SeedSortCaseAsync();
+
+        var paged = new List<Guid>();
+        for (var skip = 0; skip < 5; skip += 2)
+        {
+            paged.AddRange(Ids(await SearchAsync(skip: skip, take: 2, sort: sort, dir: dir)));
+        }
+
+        Assert.Equal(expected.Select(n => r[n - 1]), paged);
+    }
+
+    [Theory]
+    [InlineData("price", "desc")]
+    [InlineData("Date", "desc")]
+    [InlineData("date", "up")]
+    [InlineData("", "asc")]
+    public async Task BadSortOrDir_IsInvalidSort(string sort, string dir)
+    {
+        var ex = await Assert.ThrowsAsync<ValidationFailedException>(() => SearchAsync(sort: sort, dir: dir));
+        Assert.Equal("serviceRecord.invalidSort", ex.Code);
+    }
+
+    [Fact]
+    public async Task AverageCostAndLastDate_CoverEveryMatch_NotJustThePage_LeavingOutNoCost()
+    {
+        await SeedSortCaseAsync();
+
+        var page = await SearchAsync(take: 1, sort: "date", dir: "asc");
+
+        Assert.Single(page.Items);
+        Assert.Equal((5, 700m, D), (page.TotalCount, page.TotalCost, page.LastDate));
+        Assert.Equal(233.33m, page.AverageCost); // 700 / 3 with a cost (not / 5), rounded to cents
+    }
+
+    [Fact]
+    public async Task AverageCostIsNull_WhenNoMatchHasACost_AndBothNull_WhenNothingMatches()
+    {
+        var car = await CreateCarAsync();
+        await SeedAsync(car, D.AddDays(-1), shop: "Garage");
+        await SeedAsync(car, D, shop: "Garage");
+
+        var noCost = await SearchAsync(q: "garage");
+        var none = await SearchAsync(q: "nothing");
+
+        Assert.Equal((2, 0m, (decimal?)null, (DateOnly?)D), (noCost.TotalCount, noCost.TotalCost, noCost.AverageCost, noCost.LastDate));
+        Assert.Equal((0, 0m, (decimal?)null, (DateOnly?)null), (none.TotalCount, none.TotalCost, none.AverageCost, none.LastDate));
     }
 }

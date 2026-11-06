@@ -6,5 +6,5 @@ try {
 } catch (e) {}
 // Both scripts' faces even when the page shows one (a phone keeps the other in More), so the service worker caches both for offline.
 // The fonts stylesheet is above this script, and a script runs only once the stylesheets before it have loaded.
-document.fonts.load('1em Noto Sans', 'a')
-document.fonts.load('1em Noto Sans Hebrew', 'א')
+document.fonts.load('1em Assistant', 'aא')
+document.fonts.load('1em Rubik', 'aא')

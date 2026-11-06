@@ -25,7 +25,7 @@ public class TireConfiguration : IEntityTypeConfiguration<Tire>
 
         // The car already cascades to its records, so this path can't (SQL Server): MaintenanceTaskService.VoidAsync nulls it in code.
         builder.HasOne(t => t.ServiceRecord)
-            .WithMany()
+            .WithMany(r => r.Tires)
             .HasForeignKey(t => t.ServiceRecordId)
             .OnDelete(DeleteBehavior.NoAction);
 

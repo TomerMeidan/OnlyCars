@@ -76,6 +76,37 @@ public class MaintenanceSchemaTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Migrations_SeedTheHebrewTemplateNames_AndTheSearchRunsOnSqlServer()
+    {
+        // SRCH-1a: NameHe equals the Hebrew templates.* texts in client/src/i18n.ts.
+        Assert.Equal(["שמן מנוע ופילטר שמן", "פילטר אוויר", "פילטר מזגן", "בדיקת רפידות בלמים", "נוזל בלמים", "נוזל קירור", "שמן גיר", "מצתים",
+            "רצועת טיימינג", "רוטציית צמיגים", "בדיקת מצבר", "מגבים"], await db.TaskTemplates.OrderBy(t => t.Id).Select(t => t.NameHe).ToListAsync());
+
+        // The words, the tire-change test, the totals and each sort (a repeated ORDER BY column fails on SQL Server) translate and run.
+        var tasks = new MaintenanceTaskService(db, new VehicleService(db));
+        var car = await AddCarAsync();
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var oil = new MaintenanceTask { VehicleId = car.Id, TemplateId = Guid.Parse("7a5c0000-0000-4000-8000-000000000001"), Name = "Shemen", IntervalKm = 1 };
+        var oilRecord = new ServiceRecord { VehicleId = car.Id, Date = today, OdometerKm = 1_000, TotalCost = 100.50m };
+        oilRecord.Tasks.Add(new ServiceRecordTask { MaintenanceTask = oil, PreviousLastDoneDate = today });
+        var tireRecord = new ServiceRecord { VehicleId = car.Id, Date = today.AddDays(-1), OdometerKm = 900 };
+        db.AddRange(oil, oilRecord, tireRecord, new Tire { VehicleId = car.Id, Position = TirePosition.FL, Brand = "X", FittedAt = today, ServiceRecord = tireRecord });
+        await db.SaveChangesAsync();
+
+        var oilPage = await tasks.SearchRecordsAsync(car.UserId, null, null, null, null, "שמן OIL", 0, 10);
+        Assert.Equal((oilRecord.Id, 1, 100.50m, 100.50m, today), (Assert.Single(oilPage.Items).Id, oilPage.TotalCount, oilPage.TotalCost,
+            oilPage.AverageCost, oilPage.LastDate));
+        var tirePage = await tasks.SearchRecordsAsync(car.UserId, null, null, null, null, "צמיגים", 0, 10);
+        Assert.Equal((tireRecord.Id, 1), (Assert.Single(tirePage.Items).Id, tirePage.Items[0].TireCount));
+        foreach (var sort in new[] { "date", "cost", "odometer" })
+        {
+            Assert.Equal(2, (await tasks.SearchRecordsAsync(car.UserId, null, null, null, null, null, 0, 10, default, sort, "asc")).Items.Count);
+        }
+        Assert.Equal([oilRecord.Id, tireRecord.Id],
+            (await tasks.SearchRecordsAsync(car.UserId, null, null, null, null, null, 0, 10, default, "cost", "asc")).Items.Select(r => r.Id));
+    }
+
+    [Fact]
     public async Task ServiceRecords_DeletingATaskKeepsTheRecordAndReading_AndVehicleDeleteCascadesWithoutCycles()
     {
         // MVP2-C criterion 9, through the real services: delete removes the join row, keeps the record and its reading.

@@ -23,7 +23,7 @@ namespace OnlyCars.Tests;
 public class DocumentAttachmentTests : FileTestBase
 {
     private static readonly byte[] Pdf = AttachmentTests.Pdf;
-    private static readonly DateOnly Today = new(2026, 11, 4);
+    private static readonly DateOnly Today = DateOnly.FromDateTime(DateTime.UtcNow); // a fixed day fails the "date must be today" rule two days later
     private readonly VehicleDocumentService documents;
 
     public DocumentAttachmentTests() => documents = new VehicleDocumentService(db, vehicles);

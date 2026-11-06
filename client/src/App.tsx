@@ -74,11 +74,12 @@ export default function App() {
     <>
       <header>
         <Link to="/" className="brand">
-          {/* The dial from the favicon; the name next to it is the link's text. */}
+          {/* The dial from the favicon on the deep teal tile (fixed colors, the same in both themes); the name next to it is the link's text. */}
           <svg viewBox="0 0 48 48" aria-hidden="true">
-            <path d="M10 31a14 14 0 1 1 28 0" fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round" />
-            <path d="M24 31 32.5 20" stroke="var(--cluster-ink)" strokeWidth="3.5" strokeLinecap="round" />
-            <circle cx="24" cy="31" r="3.5" fill="var(--cluster-ink)" />
+            <rect width="48" height="48" rx="14" fill="#0b6b5a" />
+            <path d="M10 31a14 14 0 1 1 28 0" fill="none" stroke="#f2a516" strokeWidth="4" strokeLinecap="round" />
+            <path d="M24 31 32.5 20" stroke="#fff" strokeWidth="3.5" strokeLinecap="round" />
+            <circle cx="24" cy="31" r="3.5" fill="#fff" />
           </svg>
           {t('appName')}
         </Link>
@@ -86,9 +87,9 @@ export default function App() {
         {phone && user ? (
           // Keyed apart, so crossing 40em never turns one nav's link into the other's mid-click.
           <nav key="tabs" className="tabs">
-            <NavLink to="/" end>{t('dashboard')}</NavLink>
-            <NavLink to="/spending">{t('spending')}</NavLink>
-            <NavLink to="/tires">{t('tires')}</NavLink>
+            <NavLink to="/" end><TabIcon d={icons.dashboard} />{t('dashboard')}</NavLink>
+            <NavLink to="/spending"><TabIcon d={icons.spending} />{t('spending')}</NavLink>
+            <NavLink to="/tires"><TabIcon d={icons.tires} />{t('tires')}</NavLink>
             <button
               ref={moreButton}
               aria-expanded={moreOpen}
@@ -96,7 +97,7 @@ export default function App() {
               aria-current={location.pathname.startsWith('/settings') ? 'page' : undefined}
               onClick={() => setMoreOpen(!moreOpen)}
             >
-              {t('more')}
+              <TabIcon d={icons.more} />{t('more')}
             </button>
             {/* After More in the tab order; any choice closes it (a click bubbles here after the item's own handler). */}
             {moreOpen && (
@@ -142,6 +143,21 @@ export default function App() {
         )}
       </main>
     </>
+  )
+}
+
+// The tab bar's icons (24px, stroked); none points a direction, so none is mirrored in Hebrew. The label beside each is the name.
+const icons = {
+  dashboard: 'M4.5 16a7.5 7.5 0 1 1 15 0M12 16l3.5-4.5M12 16h.01M3 20h18',
+  spending: 'M6 3h12v18l-3-2-3 2-3-2-3 2zM9 8h6M9 12h6M9 16h3',
+  tires: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7zM12 3v5.5M12 15.5V21M3 12h5.5M15.5 12H21',
+  more: 'M4 6h16M4 12h16M4 18h16',
+}
+function TabIcon({ d }: { d: string }) {
+  return (
+    <span className="tab-icon">
+      <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d={d} /></svg>
+    </span>
   )
 }
 

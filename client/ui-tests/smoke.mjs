@@ -8,6 +8,7 @@ import { join } from 'node:path'
 import { execFileSync, spawn } from 'node:child_process'
 import assert from 'node:assert/strict'
 import { toCsv } from '../src/csv.ts'
+import { yearAgo as yearBack } from '../src/api.ts'
 
 // RPT-3: the CSV builder's RFC 4180 quoting, CRLF, BOM and formula guard (text only; numbers stay as they are).
 assert.equal(toCsv([['a,b', 'say "hi"', 'x\r\ny', 5, -5], ['=1', '+1', '-1', '@a', '\tt', '\rr', 'ok']]),
@@ -177,18 +178,20 @@ for (const s of setups) {
   // MVP3-C: /history, every car's services. Before any car exists, it shows the empty state.
   const HS = he
     ? { title: 'היסטוריית טיפולים', empty: 'עדיין לא נרשמו טיפולים.', noMatches: 'אין טיפולים שתואמים לסינון.', clear: 'ניקוי הסינון', showMore: 'הצגת עוד', retry: 'ניסיון חוזר',
-        archived: 'בארכיון', searchAll: 'חיפוש בכל ההיסטוריה', labels: ['רכב', 'משימה', 'מתאריך', 'עד תאריך', 'חיפוש'],
+        archived: 'בארכיון', searchAll: 'חיפוש בכל ההיסטוריה', labels: ['חיפוש', 'משימה', 'מתאריך', 'עד תאריך'], allCars: 'כל הרכבים',
         dates: 'תאריך ההתחלה לא יכול להיות אחרי תאריך הסיום.', tooLong: 'יש להזין חיפוש של עד 100 תווים.', generic: 'משהו השתבש. אפשר לנסות שוב.',
         summary: (n, total) => `${n === 1 ? 'טיפול אחד' : n === 2 ? 'שני טיפולים' : `${n.toLocaleString('he')} טיפולים`}, סה״כ ${total}` }
     : { title: 'Service history', empty: 'No services recorded yet.', noMatches: 'No services match these filters.', clear: 'Clear filters', showMore: 'Show more', retry: 'Retry',
-        archived: 'Archived', searchAll: 'Search all history', labels: ['Car', 'Task', 'From date', 'To date', 'Search'],
+        archived: 'Archived', searchAll: 'Search all history', labels: ['Search', 'Task', 'From date', 'To date'], allCars: 'All cars',
         dates: 'The start date must not be after the end date.', tooLong: 'Enter a search of up to 100 characters.', generic: 'Something went wrong. Please try again.',
         summary: (n, total) => `${n.toLocaleString('en')} service${n === 1 ? '' : 's'}, total ${total}` }
   const histStatus = page.locator('main .card > p[role=status]')
-  const histRows = page.locator('main .services > li')
+  // SRCH-1b: a table row per service; the car is a row of pills (one pressed), the task the only select.
+  const histRows = page.locator('main tr.record')
   const filterBar = page.locator('main .filters')
-  const carFilter = filterBar.locator('select').nth(0)
-  const taskFilter = filterBar.locator('select').nth(1)
+  const carPill = (name) => filterBar.locator('fieldset button').filter({ hasText: name }).first()
+  const carPressed = () => filterBar.locator('fieldset button[aria-pressed=true]').textContent().then((x) => x.replace(/[⁦-⁩]/g, '').trim()) // plain() is defined later
+  const taskFilter = filterBar.locator('select')
   const fromFilter = filterBar.locator('input[type=date]').nth(0)
   const toFilter = filterBar.locator('input[type=date]').nth(1)
   const searchBox = filterBar.locator('input[type=search]')
@@ -203,6 +206,7 @@ for (const s of setups) {
     // Every filter has a visible label and is 44px tall; the task select waits for a car.
     const labels = await filterBar.locator('label').evaluateAll((ls) => ls.map((l) => l.firstChild.textContent.trim()))
     if (labels.join('|') !== HS.labels.join('|')) throw new Error(`labels ${labels}`)
+    if ((await carPressed()) !== HS.allCars) throw new Error(`car pill ${await carPressed()}`)
     for (const c of await filterBar.locator('select, input').all()) await tall(c, 'a filter')
     if (!(await taskFilter.isDisabled())) throw new Error('task select enabled without a car')
     await noOverflow('the header and the empty history')
@@ -2024,6 +2028,7 @@ for (const s of setups) {
         await r.fulfill({ response: res, json: { ...body, items: body.items.map((x) => (x.id === fileRecord.id ? { ...x, attachments: [file(1), file(2, null)] } : x)) } })
       })
       await page.goto(`${BASE}/history?vehicleId=${photoCarId}`)
+      await page.locator(`tr.record[data-id="${fileRecord.id}"] button.open`).click()
       await page.locator(FILES()).waitFor()
       if (await page.locator(`${FILES()} button`).count()) throw new Error('/history has file buttons')
       if ((await page.locator(`${FILES()} li a`).count()) !== 1) throw new Error('/history: want one link')
@@ -2279,17 +2284,19 @@ for (const s of setups) {
       // The car's records, which the stale link reloads: the service is gone.
       await p.route(`**/api${filesPath}`, (r) => r.fulfill({ contentType: 'application/json', body: '[]' }))
       await p.goto(`${BASE}/history?vehicleId=${photoCarId}`)
-      const items = p.locator('.services > li')
+      const items = p.locator('tr.record')
       await items.nth(49).waitFor()
       for (const n of [100, 150]) {
-        await p.click('button.more')
+        await p.click('main .card > button.more') // chips and car pills are .more too
         await items.nth(n - 1).waitFor()
       }
+      // Opened after the links' 56 minutes: the page stamped them when the rows arrived.
       rows = rows.filter((r) => r.id !== goneId)
       await p.clock.fastForward('56:00')
+      await p.locator(`tr.record[data-id="${goneId}"] button.open`).click()
       const [tab] = await Promise.all([p.waitForEvent('popup'), p.locator(`.services > li[data-id="${goneId}"] .files li a`).click()])
       if (!tab.isClosed()) await tab.waitForEvent('close', { timeout: 5000 }) // it may close before the listener is on
-      await p.locator(`.services > li[data-id="${goneId}"]`).waitFor({ state: 'detached', timeout: 5000 })
+      await p.locator(`tr.record[data-id="${goneId}"]`).waitFor({ state: 'detached', timeout: 5000 })
       if ((await items.count()) !== 150) throw new Error(`${await items.count()} rows after the reload, want 150`)
       const NOTE = '.card > p[tabindex="-1"]'
       const note = plain(await p.locator(NOTE).textContent())
@@ -2309,7 +2316,7 @@ for (const s of setups) {
   const SE = he ? { settings: 'הגדרות', saved: 'נשמר', hint: key('currencyHint') } : { settings: 'Settings', saved: 'Saved', hint: key('currencyHint') }
   const osTheme = s.colorScheme === 'light' ? 'Light' : 'Dark'
   const forced = osTheme === 'Light' ? 'Dark' : 'Light'
-  const BG = { Light: 'rgb(230, 233, 227)', Dark: 'rgb(12, 18, 21)' } // --bg
+  const BG = { Light: 'rgb(231, 237, 234)', Dark: 'rgb(12, 20, 18)' } // --bg
   const looks = () => page.evaluate(() => ({
     attr: document.documentElement.dataset.theme ?? null,
     bg: getComputedStyle(document.documentElement).backgroundColor,
@@ -2744,10 +2751,10 @@ for (const s of setups) {
   const moneyText = async (v) => { const u = await histUser(); return page.evaluate(([v, lng, c]) => v.toLocaleString(lng, { style: 'currency', currency: c }), [v, s.lng, u.currency]) }
   const summaryIs = async (n, cost) => {
     const want = HS.summary(n, await moneyText(cost))
-    await page.waitForFunction((w) => document.querySelector('main .card > p[role=status]')?.textContent.replace(/[⁦-⁩]/g, '') === w, want, { timeout: 5000 })
+    await page.waitForFunction((w) => document.querySelector('main .card > p[role=status]')?.textContent.replace(/[⁦-⁩]/g, '').split(' · ')[0] === w, want, { timeout: 5000 })
       .catch(async () => { throw new Error(`summary "${plain(await histStatus.textContent())}", want "${want}"`) })
   }
-  // Counts the list requests while fn runs, plus a pause longer than the search's 300 ms.
+  // Counts the list requests while fn runs, plus a pause longer than the search's 150 ms.
   const historyGets = async (fn) => {
     let n = 0
     const count = (r) => isHistoryGet(r.url()) && n++
@@ -2791,14 +2798,17 @@ for (const s of setups) {
     const dates = await histRows.locator('time').evaluateAll((ts) => ts.map((t) => t.dateTime))
     if (dates.some((d, i) => i && d > dates[i - 1])) throw new Error(`not newest first: ${dates}`)
     // Criterion 12: each row names its car, linking to it; archived cars carry the tag; no Edit, Delete or Record anywhere.
-    const archivedRow = histRows.filter({ has: page.getByRole('link', { name: 'Renamed Corolla', exact: true }) }).first()
-    if ((await archivedRow.locator('.row .badge').textContent()) !== HS.archived) throw new Error('no Archived tag')
+    const archivedRow = histRows.filter({ hasText: 'Renamed Corolla' }).first()
+    if ((await archivedRow.locator('.c-car .badge').textContent()) !== HS.archived) throw new Error('no Archived tag')
     const civicRow = histRows.filter({ hasText: 'Speedy Garage' })
-    if (await civicRow.locator('.row .badge').count()) throw new Error('Archived tag on an active car')
-    if ((await civicRow.locator('a.car').getAttribute('href')) !== `/cars/${civicId}`) throw new Error('car link')
-    if (await page.locator('main .services button, main .services input').count()) throw new Error('a row has a button')
+    if (await civicRow.locator('.c-car .badge').count()) throw new Error('Archived tag on an active car')
+    // SRCH-1b: the row opens its service card, which links to the car; no Edit, Delete or Record anywhere.
+    await civicRow.locator('button.open').click()
+    const civicCard = page.locator('main tr.detail')
+    if ((await civicCard.locator('a.car').getAttribute('href')) !== `/cars/${civicId}`) throw new Error('car link')
+    if (await page.locator('main .results .services button, main .results .services input').count()) throw new Error('the service card has a button')
     // Criterion 13: km and the user's currency, as on the car page.
-    const civicText = plain(await civicRow.textContent())
+    const civicText = plain(await civicRow.textContent() + ' ' + await civicCard.textContent())
     for (const want of ['50,000', SV.km, plain(await moneyText(45.5)), 'Civic oil', 'Fixed a rattle', 'W 712/75', 'Mann']) if (!civicText.includes(want)) throw new Error(`row lacks "${want}": ${civicText}`)
     // Criteria 10 and 11: a failed Show more keeps the rows, with the error and Retry; Retry appends the next page and focuses its first row.
     const more = page.getByRole('button', { name: HS.showMore, exact: true })
@@ -2809,11 +2819,12 @@ for (const s of setups) {
     if ((await alert.textContent()) !== HS.generic) throw new Error(`error "${await alert.textContent()}"`)
     if ((await histRows.count()) !== 50) throw new Error('rows lost on a failed Show more')
     // The error and Retry take Show more's place below the rows, with focus on Retry.
-    if (!(await page.locator('main .services ~ .row [role=alert]').count())) throw new Error('Show more error not below the rows')
-    await focusIs('main .services ~ .row button', 'after a failed Show more')
+    if (!(await page.locator('main .results ~ .row [role=alert]').count())) throw new Error('Show more error not below the rows')
+    await focusIs('main .results ~ .row button', 'after a failed Show more')
     forgetExpected(500)
     await page.getByRole('button', { name: HS.retry, exact: true }).click()
-    await focusIs('main .services > li:nth-child(51) a.car', 'after Show more')
+    await page.waitForFunction(() => document.activeElement === document.querySelectorAll('main tr.record button.open')[50], null, { timeout: 3000 })
+      .catch(async () => { throw new Error(`after Show more: focus is on ${await active()}`) })
     if ((await histRows.count()) !== histAll.totalCount) throw new Error(`${await histRows.count()} rows after Show more`)
     if (await more.count()) throw new Error('Show more still shown with every match listed')
     if (await alert.count()) throw new Error('error still shown')
@@ -2835,7 +2846,7 @@ for (const s of setups) {
     forgetExpected(500)
     await page.getByRole('button', { name: HS.retry, exact: true }).click()
     await histRows.first().waitFor()
-    if ((await carFilter.inputValue()) !== civicId || !(await taskFilter.locator('option', { hasText: 'Civic oil' }).count())) throw new Error('filters lost after Retry')
+    if ((await carPressed()) !== 'History Civic' || !(await taskFilter.locator('option', { hasText: 'Civic oil' }).count())) throw new Error('filters lost after Retry')
   })
   await step('history-filter', async () => {
     await page.setViewportSize({ width: 390, height: 844 })
@@ -2845,31 +2856,22 @@ for (const s of setups) {
     const params = () => Object.fromEntries(new URL(page.url()).searchParams)
     const same = (a, b) => JSON.stringify(a) === JSON.stringify(b)
     // Criterion 6: a car narrows the list and offers its tasks; a task narrows it further; another car resets the task.
-    await carFilter.selectOption(civicId)
+    await carPill('History Civic').click()
     await summaryIs(53, civicAll.totalCost)
     if (!same(params(), { vehicleId: civicId })) throw new Error(`URL ${page.url()}`)
     await taskFilter.locator('option', { hasText: 'Civic oil' }).waitFor({ state: 'attached' })
     await taskFilter.selectOption(civicTaskId)
     await summaryIs(1, 45.5)
     if (!same(params(), { vehicleId: civicId, taskId: civicTaskId })) throw new Error(`URL ${page.url()}`)
-    const corollaOption = carFilter.locator('option', { hasText: 'Renamed Corolla' })
-    if (!(await corollaOption.textContent()).includes(HS.archived.toLowerCase())) throw new Error('archived car not marked in the select')
-    const corolla = await corollaOption.getAttribute('value')
-    await carFilter.selectOption(corolla)
+    const corollaPill = carPill('Renamed Corolla')
+    if (!(await corollaPill.textContent()).includes(HS.archived.toLowerCase())) throw new Error('archived car not marked on its pill')
+    const corolla = (await apiCall('GET', '/vehicles?includeArchived=true')).find((c) => c.nickname === 'Renamed Corolla').id
+    await corollaPill.click()
     await page.waitForURL((u) => u.searchParams.get('vehicleId') === corolla)
-    await page.waitForFunction(() => !document.querySelectorAll('main .filters select')[1]?.value, null, { timeout: 2000 }).catch(() => {}) // the URL changes before React renders
+    await page.waitForFunction(() => !document.querySelector('main .filters select')?.value, null, { timeout: 2000 }).catch(() => {}) // the URL changes before React renders
     if (params().taskId || (await taskFilter.inputValue()) !== '') throw new Error('task not reset with the car')
-    // LOW-1 L4: at 390px the archived car's name and tag fit the select (the arrow takes about 24px).
-    const room = await carFilter.evaluate((el) => {
-      const cs = getComputedStyle(el), span = document.createElement('span')
-      span.style.cssText = `font: ${cs.font}; white-space: pre; position: absolute`
-      span.textContent = el.selectedOptions[0].text
-      document.body.append(span)
-      const left = el.clientWidth - parseFloat(cs.paddingInlineStart) - parseFloat(cs.paddingInlineEnd) - 24 - span.offsetWidth
-      span.remove()
-      return left
-    })
-    if (room < 0) throw new Error(`archived car name cut by ${-room}px`)
+    if ((await corollaPill.getAttribute('aria-pressed')) !== 'true' || (await carPill(HS.allCars).getAttribute('aria-pressed')) !== 'false') throw new Error('car pills not pressed as chosen')
+    await noOverflow('the car pills')
     // LOW-1 L2: at 1280px no filter sits alone on a row.
     await page.setViewportSize({ width: 1280, height: 800 })
     const tops = await filterBar.locator(':scope > label:not(.wide)').evaluateAll((ls) => ls.map((l) => Math.round(l.getBoundingClientRect().top)))
@@ -2878,7 +2880,7 @@ for (const s of setups) {
     // Criterion 9: Back restores the car, the task and their results.
     await page.goBack()
     await summaryIs(1, 45.5)
-    if ((await carFilter.inputValue()) !== civicId || (await taskFilter.inputValue()) !== civicTaskId) throw new Error('Back did not restore the filters')
+    if ((await carPressed()) !== 'History Civic' || (await taskFilter.inputValue()) !== civicTaskId) throw new Error('Back did not restore the filters')
     await taskFilter.selectOption('')
     // Criterion 7: the dates are inclusive at both ends; from after to is blocked on the dates, without a request.
     await fromFilter.fill(await histDay(-40))
@@ -2925,7 +2927,8 @@ for (const s of setups) {
     await summaryIs(1, 400)
     if (await searchAlert.count()) throw new Error('400 message outlived a good search')
     // Criteria 14 and 15: a long shop name and part number at 390px, in both languages, without overflow.
-    const row = histRows.first()
+    await histRows.first().locator('button.open').click()
+    const row = page.locator('main .results tbody')
     for (const want of [longGarage, longPart]) if (!plain(await row.textContent()).includes(want)) throw new Error(`row lacks ${want.slice(0, 10)}`)
     await noOverflow('a long shop name and part number')
     for (const c of await filterBar.locator('select, input, button').all()) await tall(c, `filter "${await c.evaluate((e) => e.closest('label')?.firstChild.textContent ?? e.textContent)}"`)
@@ -2934,7 +2937,7 @@ for (const s of setups) {
     const url = page.url()
     await page.reload()
     await summaryIs(1, 400)
-    if (page.url() !== url || (await carFilter.inputValue()) !== civicId || (await fromFilter.inputValue()) !== (await histDay(-40)) || (await toFilter.inputValue()) !== (await histDay(-10)) || (await searchBox.inputValue()) !== 'Brembo') throw new Error('reload lost the filters')
+    if (page.url() !== url || (await carPressed()) !== 'History Civic' || (await fromFilter.inputValue()) !== (await histDay(-40)) || (await toFilter.inputValue()) !== (await histDay(-10)) || (await searchBox.inputValue()) !== 'Brembo') throw new Error('reload lost the filters')
     await page.screenshot({ path: `${OUT}/${s.name}-history-filtered.png`, fullPage: true })
     // Criterion 11: a failed reload keeps the rows, with the error and Retry.
     await page.route((url) => isHistoryGet(url.href), (r) => r.fulfill({ status: 500, contentType: 'application/json', body: '{}' }), { times: 1 })
@@ -2961,14 +2964,14 @@ for (const s of setups) {
     await histStatus.filter({ hasText: HS.noMatches }).waitFor()
     await clearBtn.click()
     await summaryIs(histAll.totalCount, histAll.totalCost)
-    if (new URL(page.url()).search || (await carFilter.inputValue()) || (await fromFilter.inputValue()) || (await toFilter.inputValue()) || (await searchBox.inputValue())) throw new Error('Clear filters left a filter')
-    await focusIs('main .filters select', 'after Clear filters')
+    if (new URL(page.url()).search || (await carPressed()) !== HS.allCars || (await fromFilter.inputValue()) || (await toFilter.inputValue()) || (await searchBox.inputValue())) throw new Error('Clear filters left a filter')
+    await focusIs('main .filters input[type=search]', 'after Clear filters')
     // Criterion 9: "Search all history" on a car page opens /history with that car.
     await page.goto(`${BASE}/cars/${civicId}`)
     await services.getByRole('link', { name: HS.searchAll, exact: true }).click()
     await arrivedAt(HS.title)
     await summaryIs(53, civicAll.totalCost)
-    if ((await carFilter.inputValue()) !== civicId) throw new Error('car not selected')
+    if ((await carPressed()) !== 'History Civic') throw new Error('car not selected')
     // Review: a car that isn't the user's drops from the URL, with its task, instead of filtering under All cars.
     // LOW-1 L5: no tasks request for it, so no tasks error.
     let taskGets = 0
@@ -2976,12 +2979,258 @@ for (const s of setups) {
     page.on('request', countTasks)
     await page.goto(`${BASE}/history?vehicleId=${crypto.randomUUID()}&taskId=${civicTaskId}&q=a`)
     await page.waitForURL((u) => !u.searchParams.has('vehicleId'))
-    if (!same(params(), { q: 'a' }) || (await carFilter.inputValue()) !== '') throw new Error(`URL ${page.url()}`)
+    if (!same(params(), { q: 'a' }) || (await carPressed()) !== HS.allCars) throw new Error(`URL ${page.url()}`)
     await page.waitForLoadState('networkidle')
     page.off('request', countTasks)
     if (taskGets) throw new Error(`${taskGets} tasks requests for an unknown car`)
     if (await filterBar.locator('[role=alert]').count()) throw new Error('an error for an unknown car')
     await page.setViewportSize(s.viewport)
+  })
+  // SRCH-1b: the live search table. Search Golf's oil task is named in the other language, so only its starter template's
+  // name finds it by "oil" and "שמן". The car is archived at the end, so the dashboard steps don't see it.
+  await step('search', async () => {
+    const tpl = (await apiCall('GET', '/task-templates')).find((x) => x.key === 'oilChange')
+    const golf = (await apiCall('POST', '/vehicles', { nickname: 'Search Golf', initialOdometerKm: 10000, readingDate: await histDay(-500) })).id
+    try {
+      const golfTask = (await apiCall('POST', `/vehicles/${golf}/tasks`, { name: he ? 'Engine oil and filter' : 'שמן מנוע ופילטר שמן', category: 'Oil', templateId: tpl.id,
+        intervalKm: 10000, intervalDays: null, dueSoonPercent: 10, lastDoneOdometerKm: 10000, lastDoneDate: await histDay(-500) })).id
+      const golfRec = (await apiCall('POST', `/vehicles/${golf}/service-records`, { date: await histDay(-400), odometerKm: 20000, shopName: 'Golf Garage', totalCost: 300, taskIds: [golfTask] })).record.id
+      const apiIds = async (qs) => (await apiCall('GET', `/service-records?take=50&${qs}`)).items.map((r) => r.id)
+      const rowsAre = async (qs, what) => {
+        const want = (await apiIds(qs)).join()
+        await page.waitForFunction((w) => [...document.querySelectorAll('main tr.record')].map((r) => r.dataset.id).join() === w, want, { timeout: 5000 })
+          .catch(() => { throw new Error(`${what}: rows are not the server's answer to ${qs}`) })
+      }
+      const searching = page.locator('main .results-note > span')
+      const listGet = (url) => isHistoryGet(url.href)
+      await page.goto(`${BASE}/spending`)
+      await rowsAre('', 'first load')
+      // Grouped by year and month in date order, with sticky headers.
+      if (!(await page.locator('main tr.group.year').count()) || !(await page.locator('main tr.group.month').count())) throw new Error('no year and month headers')
+      if ((await page.locator('main tr.group.year > th').evaluate((el) => getComputedStyle(el.closest('tr')).position + getComputedStyle(el).position)).indexOf('sticky') < 0) throw new Error('year header not sticky')
+
+      // Criterion 1: each letter narrows the rows on screen at once, never to none, with Searching… while the slowed answers are out.
+      const slow = async (r) => { await new Promise((ok) => setTimeout(ok, 500)); await r.continue().catch(() => {}) }
+      await page.route(listGet, slow)
+      await page.evaluate(() => {
+        const w = (window.rowWatch = { min: Infinity, on: true })
+        const tick = () => { w.min = Math.min(w.min, document.querySelectorAll('main tr.record').length); if (w.on) requestAnimationFrame(tick) }
+        tick()
+      })
+      const counts = [await histRows.count()]
+      for (const ch of 'oil') {
+        await searchBox.press(ch)
+        await page.waitForTimeout(60)
+        counts.push(await histRows.count())
+        if (!(await searching.isVisible())) throw new Error(`no Searching… after "${ch}"`)
+      }
+      if (counts.some((c, i) => i && c > counts[i - 1]) || counts[3] >= counts[0]) throw new Error(`rows while typing: ${counts}`)
+      await rowsAre('q=oil', 'oil')
+      await page.unroute(listGet, slow)
+      const min = await page.evaluate(() => { window.rowWatch.on = false; return window.rowWatch.min })
+      if (!min) throw new Error('the rows went blank while typing')
+      await searching.waitFor({ state: 'hidden' })
+      if (!(await apiIds(`q=oil&vehicleId=${golf}`)).includes(golfRec)) throw new Error('"oil" did not find the oil change named in the other language')
+      if (!(await page.locator('main .results-note > p').textContent())) throw new Error('no Sorted by note')
+      // Several words in any order; Hebrew finds the same oil change.
+      await searchBox.fill('oil filter')
+      await rowsAre('q=oil+filter', 'oil filter')
+      const oilFilter = await apiIds('q=oil+filter')
+      await searchBox.fill('filter oil')
+      await rowsAre('q=filter+oil', 'filter oil')
+      if ((await apiIds('q=filter+oil')).join() !== oilFilter.join()) throw new Error('word order changed the matches')
+      await searchBox.fill('שמן')
+      await rowsAre(`q=${encodeURIComponent('שמן')}`, 'שמן')
+      if (!(await apiIds(`q=${encodeURIComponent('שמן')}&vehicleId=${golf}`)).includes(golfRec)) throw new Error('"שמן" did not find the oil change')
+
+      // Criterion 1: a 30-character phrase typed a letter at a time (slower than the debounce, so about one request a letter) gets no 429.
+      await searchBox.fill('')
+      await rowsAre('', 'cleared')
+      const statuses = []
+      const onRes = (r) => isHistoryGet(r.url()) && statuses.push(r.status())
+      page.on('response', onRes)
+      await searchBox.pressSequentially('engine oil and filter changed!', { delay: 200 })
+      await page.waitForTimeout(600)
+      page.off('response', onRes)
+      if (statuses.length > 31 || statuses.some((x) => x !== 200)) throw new Error(`30 letters: ${statuses.length} requests, statuses ${[...new Set(statuses)]}`)
+      run.searchRequestsFor30Letters = statuses.length
+
+      // Criterion 3: a chip searches in one tap and shows pressed; again clears.
+      await searchBox.fill('')
+      const chips = filterBar.locator('.quick[role=group]').first().locator('button')
+      const word = he ? 'שמן' : 'oil'
+      await chips.first().click()
+      await page.waitForURL((u) => u.searchParams.get('q') === word)
+      if ((await searchBox.inputValue()) !== word || (await chips.first().getAttribute('aria-pressed')) !== 'true') throw new Error('chip not applied')
+      await rowsAre(`q=${encodeURIComponent(word)}`, 'chip')
+      await chips.first().click()
+      await page.waitForURL((u) => !u.searchParams.has('q'))
+      if ((await searchBox.inputValue()) || (await chips.first().getAttribute('aria-pressed')) !== 'false') throw new Error('chip not cleared')
+      // Quick ranges set From and To in one tap; a hand-edited date unpresses them; All time clears both.
+      const ranges = filterBar.locator('.quick[role=group]').nth(1).locator('button')
+      const pressed = () => ranges.evaluateAll((bs) => bs.map((b) => b.getAttribute('aria-pressed')).join())
+      const pressedIs = async (want, what) => { // the URL changes just before React renders
+        for (let i = 0; i < 30 && (await pressed()) !== want; i++) await page.waitForTimeout(100)
+        if ((await pressed()) !== want) throw new Error(`${what} pressed ${await pressed()}`)
+      }
+      const today = await histDay(0)
+      await ranges.nth(0).click()
+      await page.waitForURL((u) => u.searchParams.get('from') === `${today.slice(0, 4)}-01-01` && u.searchParams.get('to') === today)
+      await pressedIs('true,false,false', 'This year')
+      const yearAgo = yearBack(today) // its Feb 29 cases: ui-tests/today.test.mjs
+      await ranges.nth(1).click()
+      await page.waitForURL((u) => u.searchParams.get('from') === yearAgo && u.searchParams.get('to') === today)
+      await rowsAre(`from=${yearAgo}&to=${today}`, 'Last 12 months')
+      await pressedIs('false,true,false', 'Last 12 months')
+      await fromFilter.fill(await histDay(-40))
+      await pressedIs('false,false,false', 'hand-edited date')
+      await ranges.nth(2).click()
+      await page.waitForURL((u) => !u.searchParams.has('from') && !u.searchParams.has('to'))
+      await pressedIs('false,false,true', 'All time')
+
+      // Criterion 3: the totals have count, total, average and the last date.
+      await searchBox.fill('golf garage')
+      await rowsAre('q=golf+garage', 'golf garage')
+      const m300 = await moneyText(300)
+      const lastDate = await page.evaluate(([d, l]) => new Date(d).toLocaleDateString(l, { dateStyle: 'medium', timeZone: 'UTC' }), [await histDay(-400), s.lng])
+      const wantTotals = [HS.summary(1, m300), key('averageIs').replace('{{amount}}', m300), key('lastOn').replace('{{date}}', lastDate)].map(plain).join(' · ')
+      await page.waitForFunction((w) => document.querySelector('main .card > p[role=status]')?.textContent.replace(/[⁦-⁩]/g, '').replace(/\s+/g, ' ').trim() === w, wantTotals, { timeout: 5000 })
+        .catch(async () => { throw new Error(`totals "${plain(await histStatus.textContent())}", want "${wantTotals}"`) })
+      // Criterion 2: the words are marked in Car and Shop.
+      const golfRow = histRows.filter({ hasText: 'Golf Garage' })
+      const marks = await golfRow.locator('mark').allTextContents()
+      if (marks.join() !== 'Golf,Golf,Garage') throw new Error(`marks ${marks}`)
+      // A record with no tasks and no tires opens without a stray "0" (tireCount 0 rendered by &&).
+      const wash = (await apiCall('POST', `/vehicles/${golf}/service-records`, { date: await histDay(-390), odometerKm: 20100, shopName: 'Golf Wash', totalCost: 20, taskIds: [],
+        items: [{ description: 'Wash', quantity: 1, unitCost: 20, isLabor: false }] })).record.id
+      await searchBox.fill('golf wash')
+      await rowsAre('q=golf+wash', 'golf wash')
+      await page.locator(`main tr.record[data-id="${wash}"] button.open`).click()
+      const washCard = page.locator('main tr.detail .services > li')
+      await washCard.waitFor()
+      if (await washCard.evaluate((li) => [...li.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim() === '0'))) throw new Error('a "0" in the card of a record without tasks')
+      if (await washCard.locator('.tires-bought').count()) throw new Error('a Tires line for a record without tires')
+      await searchBox.fill('golf garage')
+      await rowsAre('q=golf+garage', 'golf garage again')
+      // A row opens its service card and closes again, by tap and by keyboard.
+      await golfRow.locator('.c-shop').click()
+      const detail = page.locator('main tr.detail')
+      await detail.locator('a.car').waitFor()
+      if ((await golfRow.locator('button.open').getAttribute('aria-expanded')) !== 'true') throw new Error('row not expanded')
+      await golfRow.locator('.c-shop').click()
+      await detail.waitFor({ state: 'detached' })
+      await golfRow.locator('button.open').focus()
+      await page.keyboard.press('Enter')
+      await detail.waitFor()
+      await page.keyboard.press('Enter')
+      await detail.waitFor({ state: 'detached' })
+
+      // Criterion 2: Cost sorts descending, then ascending, with aria-sort; flat (no groups); reload and Back keep it.
+      await searchBox.fill('')
+      await rowsAre('', 'cleared')
+      const head = (name) => page.locator('main .results thead th').filter({ hasText: name })
+      const costHead = head(key('colCost'))
+      await costHead.locator('button').click()
+      await page.waitForURL((u) => u.searchParams.get('sort') === 'cost' && !u.searchParams.has('dir'))
+      await rowsAre('sort=cost', 'cost, highest first')
+      if ((await costHead.getAttribute('aria-sort')) !== 'descending' || (await head(key('csvDate')).getAttribute('aria-sort')) !== null) throw new Error('aria-sort after one tap')
+      if (await page.locator('main tr.group').count()) throw new Error('groups in cost order')
+      await costHead.locator('button').click()
+      await page.waitForURL((u) => u.searchParams.get('dir') === 'asc')
+      await rowsAre('sort=cost&dir=asc', 'cost, lowest first')
+      if ((await costHead.getAttribute('aria-sort')) !== 'ascending') throw new Error('aria-sort after two taps')
+      await page.reload()
+      await rowsAre('sort=cost&dir=asc', 'cost after a reload')
+      await page.goBack()
+      await rowsAre('sort=cost', 'cost after Back')
+      await page.goForward()
+      await rowsAre('sort=cost&dir=asc', 'cost after Forward')
+      const odoHead = head(key('odometer'))
+      await odoHead.locator('button').click()
+      await rowsAre('sort=odometer', 'odometer, highest first')
+      await odoHead.locator('button').click()
+      await rowsAre('sort=odometer&dir=asc', 'odometer, lowest first')
+      await costHead.locator('button').click()
+      await costHead.locator('button').click()
+      await rowsAre('sort=cost&dir=asc', 'cost, lowest first again')
+
+      // Criterion 3: Export CSV has every match (more than the 50 loaded), in the current sort, Hebrew readable.
+      const all = []
+      for (let total = 1; all.length < total;) {
+        const pg = await apiCall('GET', `/service-records?take=100&skip=${all.length}&sort=cost&dir=asc`)
+        all.push(...pg.items)
+        total = pg.items.length ? pg.totalCount : 0
+      }
+      if (all.length <= 50) throw new Error(`${all.length} matches: too few to prove the export pages`)
+      const [dl] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: key('exportCsv'), exact: true }).click()])
+      if (!/^onlycars-search-\d{4}-\d{2}-\d{2}\.csv$/.test(dl.suggestedFilename())) throw new Error(`file ${dl.suggestedFilename()}`)
+      const csvText = readFileSync(await dl.path(), 'utf8')
+      if (!csvText.startsWith('﻿')) throw new Error('no BOM')
+      const lines = csvText.slice(1).split('\r\n').filter(Boolean)
+      if (lines.length !== all.length + 1) throw new Error(`${lines.length - 1} CSV rows, want ${all.length}`)
+      if (!lines[0].startsWith(`${key('csvDate')},${key('car')},${key('whatWasDone')},`)) throw new Error(`header ${lines[0]}`)
+      const costs = lines.slice(1).map((l) => l.split(',').at(-1))
+      if (costs.join() !== all.map((r) => r.totalCost?.toFixed(2) ?? '').join()) throw new Error('CSV not in the cost order')
+      const golfLine = lines.find((l) => l.includes('Golf Garage'))
+      if (!golfLine?.includes(he ? 'Engine oil and filter' : 'שמן מנוע ופילטר שמן')) throw new Error(`golf line ${golfLine}`)
+
+      // The export stops at 5,000 rows (50 requests), and says so: here the server is made to report 6,000 matches.
+      const exportGet = (u) => isHistoryGet(u.href) && u.searchParams.get('take') === '100'
+      const capRequests = []
+      const fake = async (r) => {
+        capRequests.push(r.request().url())
+        const pg = await (await r.fetch({ url: r.request().url().replace(/skip=\d+/, 'skip=0') })).json() // real rows for every fake page
+        await r.fulfill({ json: { ...pg, totalCount: 6000, items: Array.from({ length: 100 }, (_, i) => pg.items[i % pg.items.length]) } })
+      }
+      await page.route(exportGet, fake)
+      try {
+        const [big] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: key('exportCsv'), exact: true }).click()])
+        const bigLines = readFileSync(await big.path(), 'utf8').slice(1).split('\r\n').filter(Boolean)
+        if (bigLines.length !== 5001 || capRequests.length !== 50) throw new Error(`capped export: ${bigLines.length - 1} rows in ${capRequests.length} requests`)
+        const cut = page.locator('main .export p[role=status]')
+        await cut.waitFor()
+        if (!(await cut.textContent()).includes((6000).toLocaleString(s.lng))) throw new Error(`cut note "${await cut.textContent()}"`)
+      } finally { await page.unroute(exportGet, fake) }
+
+      // The archived car's dashed pill gets the 3px focus ring on Tab, like every pill.
+      const archivedPill = filterBar.locator('button.archived-car').first()
+      if (await archivedPill.count()) {
+        await archivedPill.focus()
+        await page.keyboard.press('Shift+Tab')
+        await page.keyboard.press('Tab')
+        const ring = await archivedPill.evaluate((el) => el.matches(':focus-visible') && getComputedStyle(el).outlineWidth + ' ' + getComputedStyle(el).outlineStyle)
+        if (ring !== '3px solid') throw new Error(`archived pill focus ring: ${ring}`)
+        await page.screenshot({ path: `${OUT}/${s.name}-archived-focus.png` })
+      } else throw new Error('no archived car pill to check')
+
+      // Criterion 4: nothing matches, with Clear in place; Clear keeps the sort.
+      await searchBox.fill('nothing-matches-this-search')
+      await histStatus.filter({ hasText: HS.noMatches }).waitFor()
+      if ((await page.getByRole('button', { name: key('exportCsv'), exact: true }).getAttribute('aria-disabled')) !== 'true') throw new Error('Export CSV enabled with no match')
+      await page.locator('main .card').nth(1).getByRole('button', { name: HS.clear, exact: true }).click()
+      await page.waitForURL((u) => !u.searchParams.has('q') && u.searchParams.get('sort') === 'cost')
+
+      // Criterion 5: at 360px the two-line cards, no sideways scroll, 44px targets.
+      await page.setViewportSize({ width: 360, height: 800 })
+      await page.goto(`${BASE}/spending?q=golf`)
+      await rowsAre('q=golf', 'golf at 360')
+      const top = (sel) => histRows.first().locator(sel).evaluate((el) => Math.round(el.getBoundingClientRect().top))
+      // Date and cost; the car on its own line; what was done; shop and odometer.
+      const [dTop, cTop, carTop, wTop, sTop, oTop] = await Promise.all(['.c-date', '.c-cost', '.c-car', '.c-what', '.c-shop', '.c-odo'].map(top))
+      if (Math.abs(dTop - cTop) > 12 || carTop <= dTop || wTop <= carTop || sTop <= wTop || Math.abs(sTop - oTop) > 12) throw new Error(`card lines: date ${dTop}, cost ${cTop}, car ${carTop}, what ${wTop}, shop ${sTop}, odometer ${oTop}`)
+      // Car and shop names on one line each, not word by word.
+      for (const c of ['.c-car', '.c-shop']) if (await histRows.first().locator(c).evaluate((el) => el.getBoundingClientRect().height > 2.2 * parseFloat(getComputedStyle(el).fontSize))) throw new Error(`${c} wraps at 360px`)
+      await noOverflow('the search at 360px')
+      await sweep('the search at 360px')
+      await page.screenshot({ path: `${OUT}/${s.name}-search-360.png`, fullPage: true })
+      await page.setViewportSize({ width: 1280, height: 800 })
+      await page.goto(`${BASE}/spending?q=golf`)
+      await rowsAre('q=golf', 'golf at 1280')
+      await page.screenshot({ path: `${OUT}/${s.name}-search-1280.png`, fullPage: true })
+    } finally {
+      await page.setViewportSize(s.viewport)
+      await apiCall('POST', `/vehicles/${golf}/archive`).catch(() => {})
+    }
   })
   // MVP4-A: the dashboard on `/`. A car with four tasks (overdue, due soon, two OK) and one with none, beside History Civic.
   const D = he
@@ -3321,7 +3570,7 @@ for (const s of setups) {
     if (!(await page.evaluate(() => window.noReload))) throw new Error('the page reloaded')
     await page.screenshot({ path: `${OUT}/${s.name}-predicted-dashboard.png`, fullPage: true })
     // LOW-10 AC6 (L205): Mark done centred on the whole task, with a date (Oil, which now has Undo) and without (Belt, Wipers);
-    // a task without a date keeps its two rows; Undo spans the row.
+    // a task without a date keeps its rows (name, progress bar, remaining: 3 since the 2026-11-06 redesign); Undo spans the row.
     const layout = (name) => row(card, name).evaluate((li) => {
       const box = (el) => el.getBoundingClientRect()
       const parts = [...li.children].filter((c) => !c.matches('button.done, .undo, .error')).map(box)
@@ -3332,7 +3581,7 @@ for (const s of setups) {
     })
     for (const w of [...new Set([s.viewport.width, 390, 360])]) {
       await page.setViewportSize({ width: w, height: s.viewport.height })
-      for (const [name, rows] of [['Oil', 3], ['Belt', 2], ['Wipers', 2]]) {
+      for (const [name, rows] of [['Oil', 4], ['Belt', 3], ['Wipers', 3]]) {
         const l = await layout(name)
         if (l.off > 1.5 || l.rows !== rows || l.undoShort > 1) throw new Error(`${name} at ${w}px: ${JSON.stringify(l)}, want ${rows} rows`)
       }
@@ -6390,7 +6639,7 @@ for (const s of setups) {
       await pctx.setOffline(true)
       await pp.reload()
       await pp.locator('header a.brand').waitFor()
-      const fonts = await pp.evaluate(() => Promise.all([['Noto Sans', 'a'], ['Noto Sans Hebrew', 'א']].map(async ([f, ch]) =>
+      const fonts = await pp.evaluate(() => Promise.all([['Assistant', 'a'], ['Assistant', 'א'], ['Rubik', 'a'], ['Rubik', 'א']].map(async ([f, ch]) =>
         `${f}: ${(await document.fonts.load(`16px "${f}"`, ch).catch(() => [])).length > 0 && document.fonts.check(`16px "${f}"`, ch)}`)))
       if (fonts.some((f) => f.endsWith('false'))) throw new Error(`offline fonts ${fonts.join(', ')}`)
       // AC4: the dashboard's own error with Retry, not cached data; it says the browser is offline (LOW-9, L191).

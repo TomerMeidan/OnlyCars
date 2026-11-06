@@ -22,6 +22,7 @@ public partial class MaintenanceTaskService
             .Include(r => r.Tasks).ThenInclude(j => j.MaintenanceTask)
             .Include(r => r.Items)
             .Include(r => r.Attachments)
+            .Include(r => r.Tires)
             .AsSplitQuery()
             .FirstOrDefaultAsync(r => r.Id == recordId && r.VehicleId == vehicle.Id && !r.IsVoided, ct)
             ?? throw new NotFoundException(nameof(ServiceRecord), recordId);

@@ -26,4 +26,7 @@ public class ServiceRecord : Entity
     public ICollection<ServiceRecordTask> Tasks { get; set; } = new List<ServiceRecordTask>();
     public ICollection<ServiceItem> Items { get; set; } = new List<ServiceItem>();
     public ICollection<Attachment> Attachments { get; set; } = new List<Attachment>();
+
+    /// <summary>The tires fitted by this record (a tire change); empty for a normal service.</summary>
+    public ICollection<Tire> Tires { get; set; } = new List<Tire>();
 }

@@ -175,6 +175,7 @@ public partial class MaintenanceTaskService(IAppDbContext db, VehicleService veh
             .Include(r => r.Tasks).ThenInclude(j => j.MaintenanceTask)
             .Include(r => r.Items)
             .Include(r => r.Attachments)
+            .Include(r => r.Tires)
             .AsSplitQuery()
             .Where(r => r.VehicleId == vehicleId && !r.IsVoided))
             .ToListAsync(ct);
@@ -183,21 +184,31 @@ public partial class MaintenanceTaskService(IAppDbContext db, VehicleService veh
     }
 
     // One order for the car page and /history, so same-day records line up on both.
-    private static IOrderedQueryable<ServiceRecord> NewestFirst(IQueryable<ServiceRecord> query) => query
-        .OrderByDescending(r => r.Date)
+    private static IOrderedQueryable<ServiceRecord> NewestFirst(IQueryable<ServiceRecord> query) =>
+        ThenNewestFirst(query.OrderByDescending(r => r.Date));
+
+    // The tie-break of every sort; EF leaves out a column already in the ORDER BY, so repeating the sort key is harmless.
+    private static IOrderedQueryable<ServiceRecord> ThenNewestFirst(IOrderedQueryable<ServiceRecord> query) => query
+        .ThenByDescending(r => r.Date)
         .ThenByDescending(r => r.OdometerKm)
         .ThenByDescending(r => r.CreatedAt)
         .ThenBy(r => r.Id); // unique tie-break so pages never overlap or skip a row
 
     public const int MaxSearchLength = 100;
+    public const int MaxSearchWords = 10;
     public const int MaxPageSize = 100;
 
+    // A tire change (a record a Tire points to) matches these, as if they were its task name; lower case.
+    private static readonly string[] TireChangeLabels = ["tire change", "tires", "החלפת צמיגים"];
+
     /// <summary>
-    /// Non-voided records of all the caller's cars (archived included), filtered with AND, newest first by
-    /// (date, odometer, creation time). Another user's vehicleId or taskId just matches nothing, so no id is confirmed.
+    /// Non-voided records of all the caller's cars (archived included), filtered with AND, in the chosen sort (date, cost or odometer;
+    /// ties newest first by date, odometer, creation time; no cost last both ways). Every word of <paramref name="q"/> must be found in
+    /// the shop, notes, an item, a linked task's name or its template's English or Hebrew name, or a tire change's labels.
+    /// Another user's vehicleId or taskId just matches nothing, so no id is confirmed.
     /// </summary>
     public async Task<ServiceRecordPageDto> SearchRecordsAsync(Guid userId, Guid? vehicleId, Guid? taskId, DateOnly? from, DateOnly? to,
-        string? q, int skip, int take, CancellationToken ct = default)
+        string? q, int skip, int take, CancellationToken ct = default, string? sort = null, string? dir = null)
     {
         if (from > to)
         {
@@ -208,9 +219,20 @@ public partial class MaintenanceTaskService(IAppDbContext db, VehicleService veh
         {
             throw new ValidationFailedException("serviceRecord.searchTooLong", $"The search can be up to {MaxSearchLength} characters.");
         }
+        var words = term?.ToLower().Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries) ?? [];
+        if (words.Length > MaxSearchWords)
+        {
+            throw new ValidationFailedException("serviceRecord.searchTooManyWords", $"The search can have up to {MaxSearchWords} words.");
+        }
         if (skip < 0 || take < 1 || take > MaxPageSize)
         {
             throw new ValidationFailedException("serviceRecord.invalidPaging", $"Skip must be 0 or more and take 1 to {MaxPageSize}.");
+        }
+        sort ??= "date";
+        dir ??= "desc";
+        if (sort is not ("date" or "cost" or "odometer") || dir is not ("asc" or "desc"))
+        {
+            throw new ValidationFailedException("serviceRecord.invalidSort", "Sort must be date, cost or odometer, and dir asc or desc.");
         }
 
         var query = db.ServiceRecords.Where(r => r.Vehicle!.UserId == userId && !r.IsVoided);
@@ -218,30 +240,52 @@ public partial class MaintenanceTaskService(IAppDbContext db, VehicleService veh
         if (taskId is { } t) query = query.Where(r => r.Tasks.Any(j => j.MaintenanceTaskId == t));
         if (from is { } f) query = query.Where(r => r.Date >= f);
         if (to is { } u) query = query.Where(r => r.Date <= u);
-        if (term is not null)
+        // shortcut: unindexed LIKE '%word%' over the user's records, items, task and template names, once per word (up to 10);
+        // fine at personal-app scale, add full-text search if it gets slow.
+        // ToLower on both sides keeps it case-insensitive on any collation (and on the case-sensitive InMemory test provider).
+        foreach (var word in words)
         {
-            // shortcut: unindexed LIKE '%term%' scans the user's records, fine at personal-app scale; add full-text search if it gets slow.
-            // ToLower on both sides keeps it case-insensitive on any collation (and on the case-sensitive InMemory test provider).
-            var lower = term.ToLower();
+            var tireLabel = TireChangeLabels.Any(l => l.Contains(word)); // decided here, so SQL only asks "is it a tire change"
             query = query.Where(r =>
-                (r.ShopName != null && r.ShopName.ToLower().Contains(lower)) ||
-                (r.Notes != null && r.Notes.ToLower().Contains(lower)) ||
-                r.Items.Any(i => i.Description.ToLower().Contains(lower) ||
-                    (i.Brand != null && i.Brand.ToLower().Contains(lower)) ||
-                    (i.PartNumber != null && i.PartNumber.ToLower().Contains(lower))));
+                (r.ShopName != null && r.ShopName.ToLower().Contains(word)) ||
+                (r.Notes != null && r.Notes.ToLower().Contains(word)) ||
+                r.Items.Any(i => i.Description.ToLower().Contains(word) ||
+                    (i.Brand != null && i.Brand.ToLower().Contains(word)) ||
+                    (i.PartNumber != null && i.PartNumber.ToLower().Contains(word))) ||
+                r.Tasks.Any(j => j.MaintenanceTask!.Name.ToLower().Contains(word) ||
+                    (j.MaintenanceTask.Template != null && (j.MaintenanceTask.Template.Name.ToLower().Contains(word) ||
+                        j.MaintenanceTask.Template.NameHe.ToLower().Contains(word)))) ||
+                (tireLabel && r.Tires.Any()));
         }
 
-        var totalCount = await query.CountAsync(ct);
-        var totalCost = await query.SumAsync(r => r.TotalCost ?? 0, ct);
-        var page = await NewestFirst(query
+        var totals = await query.GroupBy(_ => 1).Select(g => new
+        {
+            Count = g.Count(),
+            Cost = g.Sum(r => r.TotalCost ?? 0),
+            Average = g.Average(r => r.TotalCost), // SQL AVG and LINQ Average both skip nulls, and give null when all are
+            Last = g.Max(r => (DateOnly?)r.Date)
+        }).FirstOrDefaultAsync(ct);
+
+        var asc = dir == "asc";
+        var sorted = sort switch
+        {
+            "cost" => ThenNewestFirst(asc
+                ? query.OrderBy(r => r.TotalCost == null).ThenBy(r => r.TotalCost)
+                : query.OrderBy(r => r.TotalCost == null).ThenByDescending(r => r.TotalCost)),
+            "odometer" => ThenNewestFirst(asc ? query.OrderBy(r => r.OdometerKm) : query.OrderByDescending(r => r.OdometerKm)),
+            _ => ThenNewestFirst(asc ? query.OrderBy(r => r.Date) : query.OrderByDescending(r => r.Date))
+        };
+        var page = await sorted
             .Include(r => r.Tasks).ThenInclude(j => j.MaintenanceTask)
             .Include(r => r.Items)
             .Include(r => r.Attachments)
-            .AsSplitQuery())
+            .Include(r => r.Tires)
+            .AsSplitQuery()
             .Skip(skip).Take(take)
             .ToListAsync(ct);
 
-        return new(page.Select(r => ToDto(r, userId)).ToList(), totalCount, totalCost);
+        return new(page.Select(r => ToDto(r, userId)).ToList(), totals?.Count ?? 0, totals?.Cost ?? 0,
+            totals?.Average is { } avg ? Math.Round(avg, 2, MidpointRounding.AwayFromZero) : null, totals?.Last);
     }
 
     /// <summary>
@@ -386,6 +430,7 @@ public partial class MaintenanceTaskService(IAppDbContext db, VehicleService veh
             .Include(r => r.Tasks).ThenInclude(j => j.MaintenanceTask)
             .Include(r => r.Items)
             .Include(r => r.Attachments)
+            .Include(r => r.Tires)
             .AsSplitQuery()
             .FirstOrDefaultAsync(r => r.Id == recordId && r.VehicleId == vehicle.Id, ct)
             ?? throw new NotFoundException(nameof(ServiceRecord), recordId);
@@ -765,7 +810,7 @@ public partial class MaintenanceTaskService(IAppDbContext db, VehicleService veh
         r.Items.OrderBy(i => i.SortOrder)
             .Select(i => new ServiceItemDto(i.Id, i.Description, i.Brand, i.PartNumber, i.Quantity, i.UnitCost, i.IsLabor)).ToList(),
         r.VehicleId,
-        attachmentFiles.ToDtos(r.Attachments, AttachmentFiles.ServiceRecordPrefix(userId, r.VehicleId, r.Id)));
+        attachmentFiles.ToDtos(r.Attachments, AttachmentFiles.ServiceRecordPrefix(userId, r.VehicleId, r.Id)), r.Tires.Count);
 
     // Scoped to the owned vehicle, so another car's task id is simply not found.
     private async Task<MaintenanceTask> FindAsync(Guid vehicleId, Guid taskId, CancellationToken ct) =>

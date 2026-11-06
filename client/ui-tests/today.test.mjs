@@ -2,7 +2,7 @@
 // Usage: node --test ui-tests/today.test.mjs
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { todayCalls } from '../src/api.ts'
+import { todayCalls, yearAgo } from '../src/api.ts'
 
 const id = '6757a6dd-0000-4000-8000-000000000000'
 test('every call in the contract gets today', () => {
@@ -15,4 +15,8 @@ test('other calls, and paths that already have a query, are left alone', () => {
   for (const c of [`GET /vehicles/${id}`, `GET /vehicles/${id}/service-records`, `DELETE /vehicles/${id}/tasks/${id}`, `GET /vehicle-checklists/${id}/runs`,
     `DELETE /vehicle-checklists/${id}`, `POST /vehicles/${id}/service-records/${id}/attachments`, `GET /vehicles/${id}/documents`, 'GET /service-records',
     'POST /reminders/snooze', 'GET /dashboard?today=2026-10-24', `GET /vehicles/${id}/tasks?x=1`, 'GET /me/export']) assert.ok(!todayCalls.test(c), c)
+})
+test('Last 12 months starts the day after a year ago, Feb 29 included', () => {
+  for (const [today, from] of [['2026-11-06', '2025-11-07'], ['2028-02-29', '2027-03-01'], ['2029-02-28', '2028-02-29'], ['2027-12-31', '2027-01-01']])
+    assert.equal(yearAgo(today), from, today)
 })

@@ -8,7 +8,8 @@ import { usePage } from '../usePage'
 import { useRow } from '../useRow'
 import { discard, enqueue, MAX_QUEUE, newRequestId, readQueue, saveAsCorrection, saveCars, savedCars, sendQueue, useQueue, type Queued } from '../offline'
 import { RemindersCard } from './RemindersCard'
-import { Predicted, Remaining, StatusBadge, UndoBar, type TaskUndo } from './TasksSection'
+import { CarPhoto } from './CarPage'
+import { Due, Predicted, Remaining, StatusBadge, UndoBar, type TaskUndo } from './TasksSection'
 
 // The dashboard on `/`: the summary, the reminders, then one card per active car in the server's urgency order, then archived cars if shown.
 export default function CarsPage() {
@@ -125,7 +126,11 @@ export default function CarsPage() {
     <>
       <div className="row">
         <h1 tabIndex={-1}>{t('dashboard')}</h1>
-        <Link to="/cars/new" className="button">{t('addCar')}</Link>
+        {/* On a phone it floats above the tab bar (.fab), with its label; the plus is decoration. */}
+        <Link to="/cars/new" className="button fab">
+          <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M12 5v14M5 12h14" /></svg>
+          {t('addCar')}
+        </Link>
       </div>
       {retryFailed}
       {queue.items.length > 0 && <QueueCard names={new Map((data?.cars ?? savedCars(user!.id)?.cars ?? []).map((c) => [c.id, c.nickname]))} />}
@@ -153,6 +158,8 @@ export default function CarsPage() {
       <ul className="cars" onClick={(e) => (e.target as Element).closest('button, input') && !(e.target as Element).closest('.undo') && setUndo(null)}>
         {cards?.map(({ car, dash }) => (
           <li key={car.id} data-id={car.id} className={`card${car.isArchived ? ' archived' : ''}`}>
+            {/* A thumbnail beside the name (alt="": the h2 names the car); an expired photo link reloads the dashboard for fresh ones. */}
+            <CarPhoto car={car} setCar={() => load()} alt="" />
             <div className="row">
               <h2><Link to={`/cars/${car.id}`}>{car.nickname}</Link></h2>
               {car.isArchived && <span className="badge">{t('archived')}</span>}
@@ -238,7 +245,8 @@ function DashTask({ task, onReset, onUndo }: { task: DashboardTask; onReset: () 
         <span className="name">{task.name}</span>
         <StatusBadge status={task.status} />
       </div>
-      <p><Remaining km={task.remainingKm} days={task.remainingDays} /></p>
+      {task.progress != null ? <Due name={task.name} progress={task.progress} km={task.remainingKm} days={task.remainingDays} />
+        : <p><Remaining km={task.remainingKm} days={task.remainingDays} /></p>}
       <Predicted date={task.predictedDueDate} />
       <button className="done" aria-label={t('markDoneTask', { name: task.name })} disabled={busy} onClick={(e) => run(onReset, e.currentTarget)}>{t('markDone')}</button>
       {onUndo && <UndoBar id={task.id} busy={busy} onClick={(e) => run(onUndo, e.currentTarget)} />}

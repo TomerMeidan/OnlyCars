@@ -1,7 +1,7 @@
 import { lazy, Suspense, useEffect, useId, useLayoutEffect, useRef, useState, type FormEvent, type MouseEvent, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
-import { api, ApiError, attachmentTypes, fileError, isGoneRecord, photoTypes, isOrderError, itemsTotal, limit, localToday, type Attachment, type MaintenanceTask, type ServiceItem, type ServiceRecord, type Vehicle, type VehicleTires } from '../api'
+import { api, ApiError, attachmentTypes, signedAt, fileError, isGoneRecord, photoTypes, isOrderError, itemsTotal, limit, localToday, type Attachment, type MaintenanceTask, type ServiceItem, type ServiceRecord, type Vehicle } from '../api'
 import { useAuth, useDistance } from '../auth'
 import { errorMessage, fmtDate, money } from '../i18n'
 import { useItemErrors } from '../useItemErrors'
@@ -47,9 +47,6 @@ const toItem = (i: ServiceItem | null, isLabor = false): Item => ({
 export function ServiceHistory({ car, logFor, onChanged }: { car: Vehicle; logFor?: { taskId: string; n: number } | null; onChanged: () => void }) {
   const { t } = useTranslation()
   const [records, setRecords] = useState<ServiceRecord[] | null>(null)
-  // TIRE-2b: how many tires each record bought, so a Replace record (no tasks) reads as the tires purchase.
-  // A count, not wheels: a rotation moves tires after the purchase.
-  const [tireCounts, setTireCounts] = useState<Map<string, number>>(new Map())
   const [error, setError] = useState<unknown>(null)
   // "Already deleted": a row action found its record gone and reloaded the list.
   const [gone, setGone] = useState(false)
@@ -69,12 +66,6 @@ export function ServiceHistory({ car, logFor, onChanged }: { car: Vehicle; logFo
       (rs) => live && (setRecords(rs), setError(null)),
       (err) => live && ((focusNext.current = null), setError(err)),
     )
-    // Without them the records still show, only without the Tires line.
-    api<VehicleTires>(`/vehicles/${encodeURIComponent(car.id)}/tires`).then((x) => {
-      const m = new Map<string, number>()
-      for (const y of [...x.current, ...x.removed]) if (y.serviceRecordId) m.set(y.serviceRecordId, (m.get(y.serviceRecordId) ?? 0) + 1)
-      if (live) setTireCounts(m)
-    }, () => {})
     return () => { live = false }
   }, [path, car])
 
@@ -145,7 +136,6 @@ export function ServiceHistory({ car, logFor, onChanged }: { car: Vehicle; logFo
               record={r}
               url={`${path}/${encodeURIComponent(r.id)}`}
               readOnly={readOnly}
-              tires={tireCounts.get(r.id)}
               onEdited={(record) => {
                 // A new date, odometer or tasks can move the row, the car's odometer and the tasks: everything reloads, as after Record.
                 focusNext.current = [`li[data-id="${record.id}"] button.edit-service`]
@@ -376,10 +366,9 @@ function RecordForm({ car, url, row, record, preselect, onSaved, onGone, onTaskG
 }
 
 // Also the rows of /history, read-only, with the car's name and tag as `head`.
-export function ServiceRow({ car, record: r, url, readOnly, openOnly, onEdited, onFiles, onDeleted, onGone, onTaskGone, onEditing, head, tires }: {
+export function ServiceRow({ car, record: r, url, readOnly, openOnly, onEdited, onFiles, onDeleted, onGone, onTaskGone, onEditing, head }: {
   car: Vehicle
   record: ServiceRecord
-  tires?: number // how many tires this record bought
   head?: ReactNode
   url: string
   readOnly: boolean
@@ -410,7 +399,7 @@ export function ServiceRow({ car, record: r, url, readOnly, openOnly, onEdited, 
   const date = fmtDate(r.date, lng)
   // Each action is named by date, odometer and shop, and described by the row's cost and tasks (MVP3-A QA Low 1).
   const vars = { date, value: d.fmt(r.odometerKm), ...d.vars, shop: r.shopName ?? t('diy') }
-  const describedBy = [r.totalCost != null && `${id}cost`, (r.tasks.length > 0 || tires) && `${id}tasks`].filter(Boolean).join(' ') || undefined
+  const describedBy = [r.totalCost != null && `${id}cost`, (r.tasks.length > 0 || r.tireCount > 0) && `${id}tasks`].filter(Boolean).join(' ') || undefined
 
   if (mode === 'edit') {
     return (
@@ -435,7 +424,7 @@ export function ServiceRow({ car, record: r, url, readOnly, openOnly, onEdited, 
         {r.totalCost != null && user && <> · <bdi id={`${id}cost`}>{money(r.totalCost, lng, user.currency)}</bdi></>}
       </p>
       {r.tasks.length > 0 ? <p className="muted" id={`${id}tasks`}>{taskList(r, lng)}</p>
-        : tires && <p className="muted tires-bought" id={`${id}tasks`}>{t('tiresRecord', { count: tires })}</p>}
+        : r.tireCount > 0 ? <p className="muted tires-bought" id={`${id}tasks`}>{t('tiresRecord', { count: r.tireCount })}</p> : null}
       {r.notes && <p className="notes" dir="auto">{r.notes}</p>}
       {r.items.length > 0 && (
         <ul className="service-items">
@@ -496,7 +485,6 @@ function ScanFailed({ onClose }: { onClose: () => void }) {
   return <p className="error" role="alert">{t('scanUnavailable')} <button type="button" className="link" onClick={onClose}>{t('close')}</button></p>
 }
 // When each file's signed URL arrived. The URL lasts an hour, so an Open after 55 minutes fetches a fresh one first.
-const signedAt = new WeakMap<Attachment, number>()
 const isStale = (a: Attachment) => Date.now() - (signedAt.get(a) ?? 0) >= 55 * 60_000
 // Signed storage links are https; anything else (javascript:, data:, http:) is never opened.
 const isHttps = (u: string) => { try { return new URL(u).protocol === 'https:' } catch { return false } }

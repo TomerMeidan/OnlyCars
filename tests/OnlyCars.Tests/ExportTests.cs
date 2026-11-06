@@ -49,7 +49,7 @@ public class ExportTests
             CreatedAt = DateTimeOffset.UtcNow.AddDays(-2) };
         var archived = new Vehicle { Id = Id("archived"), UserId = owner, Nickname = $"Old-{tag}", IsArchived = true,
             ArchivedAt = DateTimeOffset.UtcNow, CurrentOdometerKm = 200_000, CreatedAt = DateTimeOffset.UtcNow.AddDays(-1) };
-        var template = new TaskTemplate { Key = $"oil-{tag}", Name = "Oil change", Category = TaskCategory.Oil, DefaultIntervalKm = 10_000 };
+        var template = new TaskTemplate { Key = $"oil-{tag}", Name = "Oil change", NameHe = "החלפת שמן", Category = TaskCategory.Oil, DefaultIntervalKm = 10_000 };
         var task = new MaintenanceTask { Id = Id("task"), VehicleId = car.Id, Template = template, Name = $"Oil-{tag}", Category = TaskCategory.Oil,
             IntervalKm = 10_000, LastDoneOdometerKm = 60_000, LastDoneDate = Day };
         var offTask = new MaintenanceTask { Id = Id("offTask"), VehicleId = car.Id, Name = $"Off-{tag}", IntervalDays = 365, IsEnabled = false,
