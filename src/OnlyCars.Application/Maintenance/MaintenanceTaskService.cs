@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using OnlyCars.Application.Checklists;
@@ -7,6 +8,7 @@ using OnlyCars.Application.Common.Exceptions;
 using OnlyCars.Application.Maintenance.Dtos;
 using OnlyCars.Application.Odometer;
 using OnlyCars.Application.Reminders;
+using OnlyCars.Application.Reports;
 using OnlyCars.Application.Vehicles;
 using OnlyCars.Domain;
 using OnlyCars.Domain.Entities;
@@ -32,7 +34,9 @@ public partial class MaintenanceTaskService(IAppDbContext db, VehicleService veh
         var tasks = await db.MaintenanceTasks
             .Where(t => t.VehicleId == vehicleId)
             .OrderByDescending(t => t.IsEnabled)
-            .ThenBy(t => t.Name)
+            .ThenBy(t => Regex.Replace(t.Name.ToLower(), TextRules.IgnoredInSort, ""))
+            .ThenBy(t => t.Name.Length)
+            .ThenBy(t => t.Id) // names equal but for case: a stable order, since Postgres moves a row when it is updated
             .ToListAsync(ct);
 
         return tasks.Select(t => ToDto(t, vehicle, day)).ToList();
@@ -214,6 +218,11 @@ public partial class MaintenanceTaskService(IAppDbContext db, VehicleService veh
         {
             throw new ValidationFailedException("serviceRecord.invalidDateRange", "The start date must not be after the end date.");
         }
+        // Postgres text can't hold NUL, so the query would fail (DB-1b).
+        if (q?.Contains('\0') == true)
+        {
+            throw new ValidationFailedException("serviceRecord.invalidSearch", "The search contains a character that is not allowed.");
+        }
         var term = string.IsNullOrWhiteSpace(q) ? null : q.Trim();
         if (term?.Length > MaxSearchLength)
         {
@@ -242,19 +251,20 @@ public partial class MaintenanceTaskService(IAppDbContext db, VehicleService veh
         if (to is { } u) query = query.Where(r => r.Date <= u);
         // shortcut: unindexed LIKE '%word%' over the user's records, items, task and template names, once per word (up to 10);
         // fine at personal-app scale, add full-text search if it gets slow.
-        // ToLower on both sides keeps it case-insensitive on any collation (and on the case-sensitive InMemory test provider).
+        // The pattern keeps it case-insensitive on any collation, with the final letters and invisible marks the old collation looked through.
         foreach (var word in words)
         {
             var tireLabel = TireChangeLabels.Any(l => l.Contains(word)); // decided here, so SQL only asks "is it a tire change"
+            var pattern = TextRules.SearchPattern(word);
             query = query.Where(r =>
-                (r.ShopName != null && r.ShopName.ToLower().Contains(word)) ||
-                (r.Notes != null && r.Notes.ToLower().Contains(word)) ||
-                r.Items.Any(i => i.Description.ToLower().Contains(word) ||
-                    (i.Brand != null && i.Brand.ToLower().Contains(word)) ||
-                    (i.PartNumber != null && i.PartNumber.ToLower().Contains(word))) ||
-                r.Tasks.Any(j => j.MaintenanceTask!.Name.ToLower().Contains(word) ||
-                    (j.MaintenanceTask.Template != null && (j.MaintenanceTask.Template.Name.ToLower().Contains(word) ||
-                        j.MaintenanceTask.Template.NameHe.ToLower().Contains(word)))) ||
+                (r.ShopName != null && Regex.IsMatch(r.ShopName, pattern, RegexOptions.IgnoreCase)) ||
+                (r.Notes != null && Regex.IsMatch(r.Notes, pattern, RegexOptions.IgnoreCase)) ||
+                r.Items.Any(i => Regex.IsMatch(i.Description, pattern, RegexOptions.IgnoreCase) ||
+                    (i.Brand != null && Regex.IsMatch(i.Brand, pattern, RegexOptions.IgnoreCase)) ||
+                    (i.PartNumber != null && Regex.IsMatch(i.PartNumber, pattern, RegexOptions.IgnoreCase))) ||
+                r.Tasks.Any(j => Regex.IsMatch(j.MaintenanceTask!.Name, pattern, RegexOptions.IgnoreCase) ||
+                    (j.MaintenanceTask.Template != null && (Regex.IsMatch(j.MaintenanceTask.Template.Name, pattern, RegexOptions.IgnoreCase) ||
+                        Regex.IsMatch(j.MaintenanceTask.Template.NameHe, pattern, RegexOptions.IgnoreCase)))) ||
                 (tireLabel && r.Tires.Any()));
         }
 
@@ -284,7 +294,7 @@ public partial class MaintenanceTaskService(IAppDbContext db, VehicleService veh
             .Skip(skip).Take(take)
             .ToListAsync(ct);
 
-        return new(page.Select(r => ToDto(r, userId)).ToList(), totals?.Count ?? 0, totals?.Cost ?? 0,
+        return new(page.Select(r => ToDto(r, userId)).ToList(), totals?.Count ?? 0, totals is null ? 0 : ReportService.InCents(totals.Cost),
             totals?.Average is { } avg ? Math.Round(avg, 2, MidpointRounding.AwayFromZero) : null, totals?.Last);
     }
 
@@ -300,7 +310,7 @@ public partial class MaintenanceTaskService(IAppDbContext db, VehicleService veh
         var monthStart = new DateOnly(localToday.Year, localToday.Month, 1);
         var month = db.ServiceRecords.Where(r => r.Vehicle!.UserId == userId && !r.IsVoided && r.Date >= monthStart && r.Date <= localToday);
         var monthCount = await month.CountAsync(ct);
-        var monthCost = await month.SumAsync(r => r.TotalCost ?? 0, ct);
+        var monthCost = ReportService.InCents(await month.SumAsync(r => r.TotalCost ?? 0, ct));
 
         var vehicles = await db.Vehicles.Where(v => v.UserId == userId && !v.IsArchived).ToListAsync(ct);
         var tasks = (await db.MaintenanceTasks
@@ -600,7 +610,8 @@ public partial class MaintenanceTaskService(IAppDbContext db, VehicleService veh
         record.UpdatedAt = now;
 
         var taskIds = record.Tasks.Select(j => j.MaintenanceTaskId).ToList();
-        var tasks = await db.MaintenanceTasks.Where(t => taskIds.Contains(t.Id)).OrderBy(t => t.Name).ToListAsync(ct);
+        var tasks = await db.MaintenanceTasks.Where(t => taskIds.Contains(t.Id))
+            .OrderBy(t => Regex.Replace(t.Name.ToLower(), TextRules.IgnoredInSort, "")).ThenBy(t => t.Name.Length).ThenBy(t => t.Id).ToListAsync(ct);
         // Every link of these tasks, voided ones included (a snapshot can point at an earlier voided record).
         var links = await db.ServiceRecordTasks.Include(j => j.ServiceRecord)
             .Where(j => taskIds.Contains(j.MaintenanceTaskId)).ToListAsync(ct);

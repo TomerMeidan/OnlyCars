@@ -33,7 +33,7 @@ public class ReportService(IAppDbContext db)
 
         // shortcut: loads all of the user's non-voided records into memory, fine at personal-app scale; group in SQL if it gets slow.
         var records = await db.ServiceRecords.Where(r => ids.Contains(r.VehicleId) && !r.IsVoided)
-            .Select(r => new { r.VehicleId, r.Date, Cost = r.TotalCost ?? 0, Priced = r.TotalCost != null,
+            .Select(r => new { r.VehicleId, r.Date, Cost = InCents(r.TotalCost ?? 0), Priced = r.TotalCost != null,
                 Categories = r.Tasks.Select(j => j.MaintenanceTask!.Category).ToList(),
                 HasTires = db.Tires.Any(t => t.ServiceRecordId == r.Id) })
             .ToListAsync(ct);
@@ -75,6 +75,9 @@ public class ReportService(IAppDbContext db)
         return new CostReportDto(years, y, inYear.Sum(r => r.Cost), inYear.Count, inYear.Count(r => !r.Priced),
             byMonth, byCategory, byVehicle, cars);
     }
+
+    /// <summary>Money with its cents in the JSON: Postgres gives the 0 of a coalesce as 0.0, which SQL Server typed as 0.00. Adding 0.00 changes only the scale.</summary>
+    public static decimal InCents(decimal value) => value + 0.00m;
 
     /// <summary>
     /// Splits a cost equally over the distinct categories (2 decimals, the remainder cents on the first category by name),

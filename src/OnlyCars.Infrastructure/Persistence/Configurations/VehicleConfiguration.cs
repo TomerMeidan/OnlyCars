@@ -11,7 +11,8 @@ public class VehicleConfiguration : IEntityTypeConfiguration<Vehicle>
         builder.Property(v => v.Nickname).IsRequired().HasMaxLength(100);
         builder.Property(v => v.Make).HasMaxLength(100);
         builder.Property(v => v.Model).HasMaxLength(100);
-        builder.Property(v => v.Vin).HasMaxLength(32).UseCollation(AppDbContext.CaseInsensitiveCollation);
+        builder.Property(v => v.Vin).HasMaxLength(32).UseCollation(AppDbContext.CaseInsensitiveCollation)
+            .HasConversion(v => v.TrimEnd(' '), v => v); // SQL Server's = and unique index ignored trailing spaces; saved values and query parameters both go through this
         builder.Property(v => v.Plate).HasMaxLength(32);
         builder.Property(v => v.PurchasePrice).HasColumnType("decimal(12,2)");
         builder.Property(v => v.CurrentOdometerKm).HasColumnType("decimal(12,2)");

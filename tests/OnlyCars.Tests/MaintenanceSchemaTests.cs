@@ -305,6 +305,40 @@ public class MaintenanceSchemaTests : IAsyncLifetime
         Assert.Equal((0, 0), (await db.Tires.CountAsync(), await db.TireMeasurements.CountAsync()));
     }
 
+    // DB-1b: UpdatedAt keeps 100 ns in memory and microseconds in the database, and MoveAsync saves twice with it as the token.
+    [Fact]
+    public async Task Tires_OnPostgres_TheDoubleSaveMatchesItsOwnToken_AndARealConflictIsConcurrencyConflict()
+    {
+        var car = await AddCarAsync();
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        await using var context = Context();
+        var vehicles = new VehicleService(context);
+        var tires = new TireService(context, vehicles, new MaintenanceTaskService(context, vehicles));
+        await tires.ReplaceAsync(car.UserId, car.Id, new ReplaceTiresRequest([TirePosition.FL, TirePosition.FR], today.AddDays(-20), 100, "A", null, null, TireSeason.Summer, null, null, null, null, null));
+        TireRotationRequest Swap(int i) => new(today.AddDays(-19 + i), 100 + i, null, [new(TirePosition.FL, TirePosition.FR), new(TirePosition.FR, TirePosition.FL)]);
+
+        // Many tries, so at least one UtcNow isn't a whole microsecond.
+        for (var i = 0; i < 10; i++)
+        {
+            await tires.AddRotationAsync(car.UserId, car.Id, Swap(i));
+        }
+        Assert.Equal(10, await db.TireRotations.CountAsync());
+
+        var race = new BeforeSave();
+        await using var racing = Context(race);
+        var racingVehicles = new VehicleService(racing);
+        var rotations = new TireService(racing, racingVehicles, new MaintenanceTaskService(racing, racingVehicles));
+        race.Next = async () =>
+        {
+            await using var other = Context();
+            var otherVehicles = new VehicleService(other);
+            await new TireService(other, otherVehicles, new MaintenanceTaskService(other, otherVehicles)).AddRotationAsync(car.UserId, car.Id, Swap(10));
+        };
+
+        Assert.Equal("concurrency.conflict", await CodeAsync(() => rotations.AddRotationAsync(car.UserId, car.Id, Swap(11))));
+        Assert.Equal(11, await db.TireRotations.CountAsync()); // the winner's, and nothing of the loser's
+    }
+
     // --- LOW-4: races on the real database. Each "other request" runs on its own context just before this request's save. ---
 
     private AppDbContext Context(BeforeSave? race = null) => new(TestDbContextFactory.PostgresOptions(db.Database.GetConnectionString()!).AddInterceptors(race is null ? [] : [race]).Options);

@@ -149,7 +149,7 @@ public abstract class FileTestBase
     }
 
     // One store shared by name: the HTTP host gets its own contexts, since DI disposes what it creates.
-    protected AppDbContext NewDb() => new(new DbContextOptionsBuilder<AppDbContext>().UseInMemoryDatabase(dbName).Options);
+    protected virtual AppDbContext NewDb() => new(new DbContextOptionsBuilder<AppDbContext>().UseInMemoryDatabase(dbName).Options);
 
     // A real 1x1 PNG.
     protected static readonly byte[] Png1x1 = Convert.FromBase64String(
@@ -248,7 +248,8 @@ public abstract class FileTestBase
             ["RateLimiting:GlobalPermitLimit"] = "1000", ["RateLimiting:GlobalWindowSeconds"] = "60",
             ["RateLimiting:FailedLoginLimit"] = "100", ["RateLimiting:UploadPermitLimit"] = uploadLimit.ToString(),
         });
-        builder.Services.AddControllers().AddJsonOptions(ApiJson.Configure).AddApplicationPart(typeof(VehiclesController).Assembly);
+        builder.Services.AddControllers().AddJsonOptions(ApiJson.Configure).AddApplicationPart(typeof(VehiclesController).Assembly)
+            .ConfigureApiBehaviorOptions(o => o.InvalidModelStateResponseFactory = GlobalExceptionHandler.InvalidModelStateResponse); // same as Program.cs
         builder.Services.AddProblemDetails(o => o.CustomizeProblemDetails = c =>
             c.ProblemDetails.Extensions.TryAdd("code", GlobalExceptionHandler.FallbackCode(c.ProblemDetails.Status)));
         builder.Services.AddApplication();

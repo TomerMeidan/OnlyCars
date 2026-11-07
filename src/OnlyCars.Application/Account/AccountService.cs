@@ -30,8 +30,9 @@ public class AccountService(IAppDbContext db, AuthService auth, IFileStorage? st
             throw new ValidationFailedException("auth.invalidCredentials", "The password is not correct.");
         }
 
-        await using (var transaction = await db.Database.BeginTransactionAsync(ct))
+        try
         {
+            await using var transaction = await db.Database.BeginTransactionAsync(ct);
             // Locks the user's runs first, so a racing run-photo save waits at its foreign key for the commit, then fails it: 409 (L173).
             // FOR UPDATE, not an UPDATE: a plain update's lock lets that key check through, and the save and the delete would then deadlock.
             await db.Database.ExecuteSqlAsync($"""
@@ -51,6 +52,11 @@ public class AccountService(IAppDbContext db, AuthService auth, IFileStorage? st
                 .ExecuteDeleteAsync(ct);
             await db.Users.Where(u => u.Id == userId).ExecuteDeleteAsync(ct);
             await transaction.CommitAsync(ct);
+        }
+        catch (Exception e) when (AttachmentFiles.IsLockConflict(e))
+        {
+            // Postgres has no deadlock priority, so the delete can be the victim. The whole transaction is gone, so asking again is safe.
+            throw new ConflictException("concurrency.conflict", "This was changed at the same time somewhere else. Reload and try again.");
         }
 
         // Listed by prefix, so files the database never recorded (an upload cut off midway) go too.

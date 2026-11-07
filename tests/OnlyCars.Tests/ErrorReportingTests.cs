@@ -95,6 +95,7 @@ public class ErrorReportingTests
                 "tooLarge" => new PayloadTooLargeException("file.tooLarge", "big"),
                 "bodyTooLarge" => new BadHttpRequestException("Request body too large.", 413),
                 "tooMany" => new TooManyRequestsException("auth.tooManyAttempts", "slow down", 60),
+                "pgReal" => RealDatabaseError!,
                 "pg22P02" => new DbUpdateException("An error occurred while saving the entity changes.",
                     new PostgresException("invalid input syntax for type uuid: \"nick-secret\"", "ERROR", "ERROR", "22P02")),
                 "pg23505" => new PostgresException("duplicate key value violates unique constraint \"IX_Vehicles_UserId_Vin\"", "ERROR", "ERROR", "23505",
@@ -248,6 +249,42 @@ public class ErrorReportingTests
         Assert.DoesNotContain(secret, json);
         Assert.DoesNotContain("owner@example.com", json);
         Assert.Contains(expected, e.GetProperty("exception").GetProperty("values").EnumerateArray().Select(v => v.GetProperty("value").GetString()));
+        await app.DisposeAsync();
+    }
+
+    private static Exception? RealDatabaseError;
+
+    // DB-1b: a real error from a deferred key at commit, on a connection that does put row values in Detail, which production's doesn't.
+    // It has to go out as the type and SQLSTATE alone, even then.
+    [Fact]
+    public async Task ARealPostgresError_AtCommit_ReachesSentry_AsTheTypeAndSqlStateOnly()
+    {
+        var connection = new Npgsql.NpgsqlConnectionStringBuilder(TestDbContextFactory.NewPostgresConnection()) { IncludeErrorDetail = true }.ConnectionString;
+        await using var db = new OnlyCars.Infrastructure.Persistence.AppDbContext(TestDbContextFactory.PostgresOptions(connection).Options);
+        await db.Database.MigrateAsync();
+        var missing = Guid.NewGuid();
+        var user = new OnlyCars.Domain.Entities.User { Email = "commit@example.test", PasswordHash = "x" };
+        var car = new OnlyCars.Domain.Entities.Vehicle { User = user, Nickname = "Car" };
+        db.AddRange(user, car);
+        await db.SaveChangesAsync();
+        db.AddRange(new OnlyCars.Domain.Entities.Issue { VehicleId = car.Id, Title = "row-secret", SourceRunItemId = missing }, new OnlyCars.Domain.Entities.Issue { VehicleId = car.Id, Title = "other" });
+        var error = await Assert.ThrowsAsync<Npgsql.PostgresException>(() => db.SaveChangesAsync());
+        Assert.Contains(missing.ToString(), error.Detail); // this exception does carry the value
+        Assert.Contains(missing.ToString(), error.ToString());
+        await db.Database.EnsureDeletedAsync();
+
+        RealDatabaseError = error;
+        var transport = new CapturingTransport();
+        var (app, client) = await StartAsync(transport);
+
+        Assert.Equal(HttpStatusCode.InternalServerError, (await client.GetAsync("/throw/pgReal")).StatusCode);
+
+        var e = Assert.Single(await FlushAsync(app, transport));
+        var json = e.GetRawText();
+        Assert.DoesNotContain(missing.ToString(), json);
+        Assert.DoesNotContain("row-secret", json);
+        Assert.DoesNotContain("FK_Issues", json);
+        Assert.Equal(["PostgresException, SQLSTATE 23503"], e.GetProperty("exception").GetProperty("values").EnumerateArray().Select(v => v.GetProperty("value").GetString()));
         await app.DisposeAsync();
     }
 

@@ -21,7 +21,10 @@ public class VehicleService(IAppDbContext db, IFileStorage? storage = null, ILog
             query = query.Where(v => !v.IsArchived);
         }
 
-        var vehicles = await query.OrderBy(v => v.Nickname).ToListAsync(ct);
+        var vehicles = await query.OrderBy(v => Regex.Replace(v.Nickname.ToLower(), TextRules.IgnoredInSort, ""))
+            .ThenBy(v => v.Nickname.Length)
+            .ThenBy(v => v.Id) // names equal but for case: a stable order, since Postgres moves a row when it is updated
+            .ToListAsync(ct);
         return vehicles.Select(ToDto).ToList();
     }
 

@@ -8,7 +8,8 @@ public class UserConfiguration : IEntityTypeConfiguration<User>
 {
     public void Configure(EntityTypeBuilder<User> builder)
     {
-        builder.Property(u => u.Email).IsRequired().HasMaxLength(256).UseCollation(AppDbContext.CaseInsensitiveCollation);
+        builder.Property(u => u.Email).IsRequired().HasMaxLength(256).UseCollation(AppDbContext.CaseInsensitiveCollation)
+            .HasConversion(e => e.TrimEnd(' '), e => e); // as Vehicle.Vin; AuthService trims first, so this only guards the unique index
         builder.Property(u => u.PasswordHash).IsRequired();
         builder.Property(u => u.Currency).IsRequired().HasMaxLength(3);
 

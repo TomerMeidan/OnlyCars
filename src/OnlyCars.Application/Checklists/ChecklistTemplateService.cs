@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
 using OnlyCars.Application.Checklists.Dtos;
 using OnlyCars.Application.Common;
@@ -14,7 +15,7 @@ public class ChecklistTemplateService(IAppDbContext db)
         var templates = await db.ChecklistTemplates
             .Where(t => t.UserId == userId)
             .Include(t => t.Items)
-            .OrderBy(t => t.Name).ThenBy(t => t.CreatedAt)
+            .OrderBy(t => Regex.Replace(t.Name.ToLower(), TextRules.IgnoredInSort, "")).ThenBy(t => t.Name.Length).ThenBy(t => t.CreatedAt)
             .ToListAsync(ct);
         return templates.Select(ToDto).ToList();
     }

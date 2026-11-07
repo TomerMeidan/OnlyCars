@@ -28,6 +28,7 @@ using OnlyCars.Application.Auth.Dtos;
 using OnlyCars.Application.Checklists;
 using OnlyCars.Application.Common;
 using OnlyCars.Application.Common.Exceptions;
+using OnlyCars.Application.Reminders;
 using OnlyCars.Application.Vehicles;
 using OnlyCars.Domain.Entities;
 using OnlyCars.Infrastructure.Auth;
@@ -220,6 +221,159 @@ public class AccountDeleteSqlTests : IAsyncLifetime
         Assert.False(await db.Users.AnyAsync(u => u.Id == mine));
         Assert.Equal(0, await db.Attachments.CountAsync());
         Assert.Equal([$"users/{mine}/"], storage.DeletedPrefixes);
+    }
+
+    // The same race on a document file (SCAN-2a), at each step of the delete.
+    [Theory]
+    [InlineData("FROM onlycars.\"VehicleDocuments\"")]
+    [InlineData("FROM onlycars.\"Attachments\"")]
+    [InlineData("FROM onlycars.\"Users\"")]
+    public async Task L173_ADocumentFileSavedMidDelete_Is409_AndTheDeleteGoesThrough(string step)
+    {
+        await SeedMineAsync();
+        var document = await db.VehicleDocuments.Where(d => d.Vehicle!.UserId == mine).Select(d => new { d.Id, d.VehicleId }).SingleAsync();
+        var connection = db.Database.GetConnectionString()!;
+
+        var save = new Gate("INSERT INTO onlycars.\"Attachments\"", nonQuery: false);
+        var deleteStep = new Gate(step, nonQuery: true) { OnReached = async () => { save.Release.TrySetResult(); await Task.Delay(1000); } };
+        deleteStep.Release.SetResult();
+        await using var uploading = new AppDbContext(TestDbContextFactory.PostgresOptions(connection).AddInterceptors(save).Options);
+        var upload = new VehicleDocumentService(uploading, new VehicleService(uploading, new FakeFileStorage()))
+            .AddAttachmentAsync(mine, document.VehicleId, document.Id, AttachmentTests.Webp(), "late.webp", null);
+        await save.Reached.Task.WaitAsync(TimeSpan.FromSeconds(30));
+        await using var deleting = new AppDbContext(TestDbContextFactory.PostgresOptions(connection).AddInterceptors(deleteStep).Options);
+
+        await new AccountService(deleting, AccountDeleteTests.Auth(deleting), storage, logger).DeleteAsync(mine, Password);
+
+        Assert.True(deleteStep.Reached.Task.IsCompleted);
+        await Assert.ThrowsAsync<DbUpdateConcurrencyException>(() => upload.WaitAsync(TimeSpan.FromSeconds(30)));
+        Assert.False(await db.Users.AnyAsync(u => u.Id == mine));
+        Assert.Equal(0, await db.Attachments.CountAsync());
+    }
+
+    private static string WithServerOption(string connection, string option) =>
+        new Npgsql.NpgsqlConnectionStringBuilder(connection) { Options = $"-c {option}" }.ConnectionString;
+
+    // The other request's deadlock check runs far later than the delete's, so Postgres picks the delete as the victim.
+    private static string SlowDeadlockCheck(string connection) => WithServerOption(connection, "deadlock_timeout=30s");
+
+    // A request holds a row the delete needs, then waits for one the delete has locked. No deadlock priority on Postgres: the delete can lose (DB-1b).
+    [Fact]
+    public async Task AccountDelete_AsTheDeadlockVictim_Is409_RollsBackWhole_AndAskingAgainWorks()
+    {
+        await SeedMineAsync();
+        var before = await CountsAsync();
+        var connection = db.Database.GetConnectionString()!;
+        var attachment = await db.Attachments.Where(a => a.ChecklistRunId != null).Select(a => new { a.Id, Run = a.ChecklistRunId }).SingleAsync();
+        db.ChangeTracker.Clear();
+
+        await using var other = new Npgsql.NpgsqlConnection(SlowDeadlockCheck(connection));
+        await other.OpenAsync();
+        await using var transaction = await other.BeginTransactionAsync();
+        await using (var hold = new Npgsql.NpgsqlCommand($"""SELECT 1 FROM onlycars."Attachments" WHERE "Id" = '{attachment.Id}' FOR UPDATE""", other, transaction))
+        {
+            await hold.ExecuteNonQueryAsync();
+        }
+
+        await using var deleting = new AppDbContext(TestDbContextFactory.PostgresOptions(WithServerOption(connection, "deadlock_timeout=2s")).Options);
+        var delete = new AccountService(deleting, AccountDeleteTests.Auth(deleting), storage, logger).DeleteAsync(mine, Password);
+        await Task.Delay(500); // the delete now holds the run and waits for the attachment
+
+        // The other request waits for the run: a cycle, which the delete's check finds first.
+        await using var wait = new Npgsql.NpgsqlCommand($"""SELECT 1 FROM onlycars."ChecklistRuns" WHERE "Id" = '{attachment.Run}' FOR UPDATE""", other, transaction);
+        var waiting = wait.ExecuteNonQueryAsync();
+
+        var conflict = await Assert.ThrowsAsync<ConflictException>(() => delete.WaitAsync(TimeSpan.FromSeconds(30)));
+        Assert.Equal("concurrency.conflict", conflict.Code);
+        await waiting; // the victim's locks are gone, so the other request goes on
+        await transaction.RollbackAsync();
+
+        Assert.Equal(before, await CountsAsync());
+        Assert.Empty(storage.DeletedPrefixes);
+
+        db.ChangeTracker.Clear();
+        await Service(storage).DeleteAsync(mine, Password);
+        Assert.False(await db.Users.AnyAsync(u => u.Id == mine));
+    }
+
+    [Fact]
+    public async Task AccountDelete_OnALockTimeout_Is409_RollsBackWhole()
+    {
+        await SeedMineAsync();
+        var before = await CountsAsync();
+        var connection = db.Database.GetConnectionString()!;
+        var attachment = await db.Attachments.Where(a => a.ChecklistRunId != null).Select(a => a.Id).SingleAsync();
+        db.ChangeTracker.Clear();
+
+        await using var other = new Npgsql.NpgsqlConnection(connection);
+        await other.OpenAsync();
+        await using var transaction = await other.BeginTransactionAsync();
+        await using var hold = new Npgsql.NpgsqlCommand($"""SELECT 1 FROM onlycars."Attachments" WHERE "Id" = '{attachment}' FOR UPDATE""", other, transaction);
+        await hold.ExecuteNonQueryAsync();
+
+        await using var deleting = new AppDbContext(TestDbContextFactory.PostgresOptions(WithServerOption(connection, "lock_timeout=300ms")).Options);
+        var conflict = await Assert.ThrowsAsync<ConflictException>(() => new AccountService(deleting, AccountDeleteTests.Auth(deleting), storage, logger).DeleteAsync(mine, Password));
+
+        Assert.Equal("concurrency.conflict", conflict.Code);
+        await transaction.RollbackAsync();
+        Assert.Equal(before, await CountsAsync());
+        Assert.Empty(storage.DeletedPrefixes);
+    }
+
+    // AttachmentFiles' own check, with real errors. The other request shares the parent row, the upload's save takes its key lock and waits to update it,
+    // and the other request's upgrade then waits for that key lock: the upload's check finds the cycle first.
+    [Theory]
+    [InlineData("run", "40P01")]
+    [InlineData("document", "40P01")]
+    [InlineData("run", "55P03")]
+    [InlineData("document", "55P03")]
+    public async Task AnUpload_LosingADeadlockOrLockTimeout_Is409_AndLeavesNoObjectOrRow(string parent, string sqlState)
+    {
+        await SeedMineAsync();
+        var connection = db.Database.GetConnectionString()!;
+        var (table, id, vehicleId) = parent == "run"
+            ? ("ChecklistRuns", await db.ChecklistRuns.Where(r => r.VehicleChecklist!.Vehicle!.UserId == mine).Select(r => r.Id).SingleAsync(), Guid.Empty)
+            : ("VehicleDocuments", await db.VehicleDocuments.Where(d => d.Vehicle!.UserId == mine).Select(d => d.Id).SingleAsync(),
+                await db.VehicleDocuments.Where(d => d.Vehicle!.UserId == mine).Select(d => d.VehicleId).SingleAsync());
+        var attachments = await db.Attachments.CountAsync();
+
+        await using var other = new Npgsql.NpgsqlConnection(SlowDeadlockCheck(connection));
+        await other.OpenAsync();
+        await using var transaction = await other.BeginTransactionAsync();
+        var lockMode = sqlState == "40P01" ? "SHARE" : "UPDATE";
+        await using (var share = new Npgsql.NpgsqlCommand($"""SELECT 1 FROM onlycars."{table}" WHERE "Id" = '{id}' FOR {lockMode}""", other, transaction))
+        {
+            await share.ExecuteNonQueryAsync();
+        }
+
+        var uploadOption = sqlState == "40P01" ? "deadlock_timeout=2s" : "lock_timeout=300ms";
+        var files = new FakeFileStorage();
+        await using var uploading = new AppDbContext(TestDbContextFactory.PostgresOptions(WithServerOption(connection, uploadOption)).Options);
+        var uploads = new VehicleService(uploading, files);
+        var upload = parent == "run"
+            ? new VehicleChecklistService(uploading, uploads).AddRunAttachmentAsync(mine, id, AttachmentTests.Webp(), "late.webp")
+            : (Task)new VehicleDocumentService(uploading, uploads).AddAttachmentAsync(mine, vehicleId, id, AttachmentTests.Webp(), "late.webp", null);
+
+        Task? waiting = null;
+        Npgsql.NpgsqlCommand? upgrade = null;
+        if (sqlState == "40P01")
+        {
+            await Task.Delay(500);
+            upgrade = new Npgsql.NpgsqlCommand($"""SELECT 1 FROM onlycars."{table}" WHERE "Id" = '{id}' FOR UPDATE""", other, transaction);
+            waiting = upgrade.ExecuteNonQueryAsync();
+        }
+
+        var error = await Assert.ThrowsAsync<DbUpdateConcurrencyException>(() => upload.WaitAsync(TimeSpan.FromSeconds(30)));
+        Assert.Equal(sqlState, Assert.IsType<Npgsql.PostgresException>(error.InnerException?.GetBaseException()).SqlState);
+        if (waiting is not null)
+        {
+            await waiting;
+            await upgrade!.DisposeAsync();
+        }
+        await transaction.RollbackAsync();
+
+        Assert.Equal(attachments, await db.Attachments.CountAsync());
+        Assert.Empty(files.Objects);
     }
 }
 

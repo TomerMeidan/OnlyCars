@@ -15,6 +15,12 @@ public static class UploadedFile
         {
             if (request.HasFormContentType && (await request.ReadFormAsync(ct)).Files.GetFile("file") is { } file)
             {
+                // Postgres text can't hold NUL. Refused, not cleaned away, by DB-1b's rule.
+                if (file.FileName.Contains('\0'))
+                {
+                    throw new ValidationFailedException("file.invalidName", "The file name contains a character that is not allowed.");
+                }
+
                 var content = new byte[file.Length]; // one copy, sized up front; RequestSizeLimit bounds it
                 await using var stream = file.OpenReadStream();
                 await stream.ReadExactlyAsync(content, ct);

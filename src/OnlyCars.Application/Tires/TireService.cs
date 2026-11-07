@@ -367,7 +367,7 @@ public class TireService(IAppDbContext db, VehicleService vehicleService, Mainte
             lastCheck, last is null ? null : new LastTireRotationDto(last.Id, last.Date, last.OdometerKm, Math.Max(0, vehicle.CurrentOdometerKm - last.OdometerKm)));
     }
 
-    // Removed tires newest removal first; tires on the car (RemovedAt null) sort last.
+    // Removed tires newest removal first. Where tires on the car (RemovedAt null) land differs by database, and the one caller that lists several splits them.
     private async Task<List<TireDto>> TireDtosAsync(IQueryable<Tire> tires, decimal currentKm, CancellationToken ct) =>
         (await tires.AsNoTracking()
             .OrderByDescending(t => t.RemovedAt).ThenByDescending(t => t.RemovedOdometerKm).ThenByDescending(t => t.CreatedAt)
