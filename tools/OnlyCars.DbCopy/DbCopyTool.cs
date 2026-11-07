@@ -114,7 +114,7 @@ public static class DbCopyTool
                 return CommitUnknownExit;
             }
 
-            await output.WriteLineAsync(mode == CopyMode.Write ? "Nothing was committed; the target is as it was." : mode == CopyMode.ApplyBaseline ? "The migration runs in one transaction, so the target is as it was." : "Nothing was written.");
+            await output.WriteLineAsync(mode == CopyMode.Write ? "Nothing was committed; the target is as it was." : mode == CopyMode.ApplyBaseline ? "The migration runs in one transaction, so it is wholly applied or not at all; if the link dropped, either is possible. Run --apply-baseline again: it skips a migration already applied." : "Nothing was written.");
             return 1;
         }
     }
