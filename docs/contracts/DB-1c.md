@@ -87,7 +87,7 @@ Every write to the output is in `tools/OnlyCars.DbCopy/DbCopyTool.cs`, and all o
 
 **Source:** the owner's LocalDB `OnlyCars`, read only and directly. Its last migration was already `20261106063910_TemplateHebrewNames`, so no backup or throwaway copy was needed. **Target:** container `onlycars-rehearsal-pg17`, `postgres:17`, its own Docker network `onlycars-rehearsal`, `127.0.0.1:5436` only, a generated password, TLS on with the image's certificate. The baseline was applied by `--apply-baseline` as `onlycars_app`, made by `scripts/app-db-user.sql`.
 
-**Results:** 208,223 rows in 22 tables, about 30.0 MB. `--write` took 10.0 s, including the verify; `--verify` alone 4.2 s; the dry run 2.6 s. No U+0000, no unpaired surrogates, no trimmed values, no collisions, every string column on the database's collation. All on this machine, so gate 5 will take longer, over the network to Azure and Supabase. Row and byte counts per table:
+**Results:** 208,223 rows in 22 tables, about 31.0 MB. `--write` took 10.0 s, including the verify; `--verify` alone 4.2 s; the dry run 2.6 s. No U+0000, no unpaired surrogates, no trimmed values, no collisions, every string column on the database's collation. All on this machine, so gate 5 will take longer, over the network to Azure and Supabase. Row and byte counts per table:
 
 | Table | Rows | Bytes |
 |---|---:|---:|
