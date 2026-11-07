@@ -132,7 +132,7 @@ public class LowThreeTests
         race.Next = async () =>
         {
             await Services(Context()).Checklists.AttachAsync(userId, car, new AttachChecklistRequest(t.Id, null, 30, Today));
-            // The in-memory provider has no unique index; this is what SQL Server does to the second insert.
+            // The in-memory provider has no unique index; this is what Postgres does to the second insert.
             throw new DbUpdateException("Cannot insert duplicate key row in object 'dbo.VehicleChecklists'.");
         };
 

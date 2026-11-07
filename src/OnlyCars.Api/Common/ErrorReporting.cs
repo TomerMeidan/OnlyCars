@@ -1,8 +1,8 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text.RegularExpressions;
-using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 using OnlyCars.Api.Middleware;
 using Sentry;
 using Sentry.AspNetCore;
@@ -94,13 +94,17 @@ public static partial class ErrorReporting
             message.Formatted = ScrubText(message.Formatted);
             message.Params = null;
         }
-        // SQL Server quotes row values in its messages (2627/2601 duplicate key, 2628 truncation): only the type and number go.
-        var databaseTypes = Chain(e.Exception).Where(x => x is SqlException or DbUpdateException).Select(x => x.GetType().FullName).ToHashSet();
-        var sqlNumber = SqlNumber(e.Exception);
+        // Postgres can quote row values in its messages and Detail (23505 duplicate key, 22P02 bad input): only the type and SQLSTATE go.
+        var databaseTypes = Chain(e.Exception).Where(x => x is PostgresException or DbUpdateException).Select(x => x.GetType().FullName).ToHashSet();
+        var sqlState = SqlState(e.Exception);
         foreach (var exception in e.SentryExceptions ?? [])
         {
+            if (databaseTypes.Contains(exception.Type))
+            {
+                exception.Mechanism?.Data.Clear(); // PostgresException copies its message and Detail into Exception.Data, which Sentry sends here
+            }
             exception.Value = databaseTypes.Contains(exception.Type)
-                ? $"{exception.Type?.Split('.')[^1]}{(sqlNumber is { } n ? $", SQL error {n}" : "")}"
+                ? $"{exception.Type?.Split('.')[^1]}{(sqlState is { } s ? $", SQLSTATE {s}" : "")}"
                 : ScrubText(exception.Value);
         }
         foreach (var (key, value) in e.Extra.ToList())
@@ -114,8 +118,8 @@ public static partial class ErrorReporting
         return e;
     }
 
-    /// <summary>The SQL Server error number in an exception or its inner ones, if any.</summary>
-    public static int? SqlNumber(Exception? ex) => Chain(ex).OfType<SqlException>().FirstOrDefault()?.Number;
+    /// <summary>The Postgres SQLSTATE in an exception or its inner ones, if any.</summary>
+    public static string? SqlState(Exception? ex) => Chain(ex).OfType<PostgresException>().FirstOrDefault()?.SqlState;
 
     private static IEnumerable<Exception> Chain(Exception? ex)
     {
@@ -127,13 +131,13 @@ public static partial class ErrorReporting
 
     /// <summary>
     /// A database or storage error can quote a value: emails, the query part of URLs (signed links, search words) and everything
-    /// after SQL Server's quoted row values go.
+    /// after Postgres's quoted row values go.
     /// </summary>
     public static string? ScrubText(string? text) =>
         text is null ? null : SqlValue().Replace(Email().Replace(UrlQuery().Replace(text, "$1?" + Scrubbed), Scrubbed), "$1" + Scrubbed);
 
     // To the end of the text: a quoted value can hold anything, newlines and quotes included.
-    [GeneratedRegex(@"(duplicate key value is |Truncated value: ).*", RegexOptions.IgnoreCase | RegexOptions.Singleline)]
+    [GeneratedRegex(@"(\bKey \(|Failing row contains ).*", RegexOptions.IgnoreCase | RegexOptions.Singleline)]
     private static partial Regex SqlValue();
 
     [GeneratedRegex(@"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}")]

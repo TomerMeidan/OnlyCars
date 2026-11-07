@@ -5,7 +5,7 @@ services:
     name: onlycars
     runtime: docker
     plan: free
-    region: frankfurt # the closest Render region to the database (Azure SQL, Israel Central)
+    region: frankfurt # stays as it was; the database moves to Supabase (Postgres) in DB-1
     branch: main
     autoDeploy: true
     healthCheckPath: /api/auth/providers

@@ -66,8 +66,8 @@ public class ServiceItemConfiguration : IEntityTypeConfiguration<ServiceItem>
 
         builder.ToTable(t =>
         {
-            t.HasCheckConstraint("CK_ServiceItems_Quantity", "[Quantity] > 0");
-            t.HasCheckConstraint("CK_ServiceItems_UnitCost", "[UnitCost] >= 0");
+            t.HasCheckConstraint("CK_ServiceItems_Quantity", "\"Quantity\" > 0");
+            t.HasCheckConstraint("CK_ServiceItems_UnitCost", "\"UnitCost\" >= 0");
         });
     }
 }
@@ -102,7 +102,7 @@ public class AttachmentConfiguration : IEntityTypeConfiguration<Attachment>
         builder.HasIndex(a => a.ChecklistRunId);
         builder.HasIndex(a => a.VehicleDocumentId);
         builder.ToTable(t => t.HasCheckConstraint("CK_Attachments_OneParent",
-            "(CASE WHEN [ServiceRecordId] IS NULL THEN 0 ELSE 1 END + CASE WHEN [ChecklistRunId] IS NULL THEN 0 ELSE 1 END"
-            + " + CASE WHEN [VehicleDocumentId] IS NULL THEN 0 ELSE 1 END) = 1"));
+            "(CASE WHEN \"ServiceRecordId\" IS NULL THEN 0 ELSE 1 END + CASE WHEN \"ChecklistRunId\" IS NULL THEN 0 ELSE 1 END"
+            + " + CASE WHEN \"VehicleDocumentId\" IS NULL THEN 0 ELSE 1 END) = 1"));
     }
 }

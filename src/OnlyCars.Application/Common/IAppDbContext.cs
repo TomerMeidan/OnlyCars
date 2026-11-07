@@ -6,7 +6,7 @@ namespace OnlyCars.Application.Common;
 
 /// <summary>
 /// Abstraction over the EF Core DbContext so Application can query/persist
-/// without taking a dependency on Infrastructure (which owns the SQL Server provider).
+/// without taking a dependency on Infrastructure (which owns the Postgres provider).
 /// </summary>
 public interface IAppDbContext
 {

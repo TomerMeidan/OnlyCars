@@ -38,7 +38,7 @@ public class ExportTests
     private Task<Dictionary<string, Guid>> SeedAsync(Guid owner, string tag) => SeedAsync(db, owner, tag);
 
     // One of everything (criterion 1); every free-text value carries the tag, so another user's data is easy to search for.
-    // Also seeds ACC-2's delete test on LocalDB.
+    // Also seeds ACC-2's delete test on Postgres.
     internal static async Task<Dictionary<string, Guid>> SeedAsync(AppDbContext db, Guid owner, string tag)
     {
         var ids = new Dictionary<string, Guid>();

@@ -11,13 +11,12 @@ using OnlyCars.Infrastructure.Persistence;
 namespace OnlyCars.Tests;
 
 /// <summary>
-/// OFF-1 idempotent odometer add on LocalDB: only SQL Server enforces the filtered unique (VehicleId, ClientRequestId) index.
-/// shortcut: needs SQL Server LocalDB on the machine, as MaintenanceSchemaTests.
+/// OFF-1 idempotent odometer add on Postgres: InMemory doesn't enforce the filtered unique (VehicleId, ClientRequestId) index.
 /// </summary>
 public class OfflineOdometerTests : IAsyncLifetime
 {
     private static readonly DateOnly Today = DateOnly.FromDateTime(DateTime.UtcNow);
-    private readonly string connection = $@"Server=(localdb)\mssqllocaldb;Database=OnlyCars_Test_{Guid.NewGuid():N};Trusted_Connection=True;TrustServerCertificate=True";
+    private readonly string connection = TestDbContextFactory.NewPostgresConnection();
     private readonly AppDbContext db;
     private readonly Guid me = Guid.NewGuid();
     private readonly Guid other = Guid.NewGuid();
@@ -25,7 +24,7 @@ public class OfflineOdometerTests : IAsyncLifetime
     public OfflineOdometerTests() => db = Context();
 
     private AppDbContext Context(params IInterceptor[] interceptors) =>
-        new(new DbContextOptionsBuilder<AppDbContext>().UseSqlServer(connection).AddInterceptors(interceptors).Options);
+        new(TestDbContextFactory.PostgresOptions(connection).AddInterceptors(interceptors).Options);
 
     public async Task InitializeAsync()
     {

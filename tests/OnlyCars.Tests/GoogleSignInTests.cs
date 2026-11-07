@@ -154,12 +154,10 @@ public class GoogleSignInTests
     }
 }
 
-/// <summary>The real delete for an account made with Google, and the filtered unique index, on LocalDB.</summary>
+/// <summary>The real delete for an account made with Google, and the filtered unique index, on Postgres.</summary>
 public class GoogleSignInSqlTests : IAsyncLifetime
 {
-    private readonly AppDbContext db = new(new DbContextOptionsBuilder<AppDbContext>()
-        .UseSqlServer($@"Server=(localdb)\mssqllocaldb;Database=OnlyCars_Test_{Guid.NewGuid():N};Trusted_Connection=True;TrustServerCertificate=True")
-        .Options);
+    private readonly AppDbContext db = new(TestDbContextFactory.PostgresOptions(TestDbContextFactory.NewPostgresConnection()).Options);
 
     public async Task InitializeAsync() => await db.Database.MigrateAsync();
 

@@ -19,7 +19,7 @@ public class VehicleDocumentConfiguration : IEntityTypeConfiguration<VehicleDocu
             .OnDelete(DeleteBehavior.Cascade);
 
         builder.HasIndex(d => new { d.VehicleId, d.ExpiryDate });
-        builder.ToTable(t => t.HasCheckConstraint("CK_VehicleDocuments_Cost", "[Cost] IS NULL OR [Cost] >= 0"));
+        builder.ToTable(t => t.HasCheckConstraint("CK_VehicleDocuments_Cost", "\"Cost\" IS NULL OR \"Cost\" >= 0"));
     }
 }
 
@@ -34,7 +34,7 @@ public class NotificationRuleConfiguration : IEntityTypeConfiguration<Notificati
 
         builder.HasIndex(r => new { r.UserId, r.Channel }).IsUnique();
         builder.ToTable(t => t.HasCheckConstraint("CK_NotificationRules_LeadDays",
-            $"[LeadDays] BETWEEN {NotificationRule.MinLeadDays} AND {NotificationRule.MaxLeadDays}"));
+            $"\"LeadDays\" BETWEEN {NotificationRule.MinLeadDays} AND {NotificationRule.MaxLeadDays}"));
     }
 }
 

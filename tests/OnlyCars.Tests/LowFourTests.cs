@@ -12,7 +12,7 @@ using OnlyCars.Infrastructure.Persistence;
 
 namespace OnlyCars.Tests;
 
-/// <summary>LOW-4 backend on InMemory: L66 (the rethrow path), L67, L70. The races on SQL Server are in MaintenanceSchemaTests.</summary>
+/// <summary>LOW-4 backend on InMemory: L66 (the rethrow path), L67, L70. The races on Postgres are in MaintenanceSchemaTests.</summary>
 public class LowFourTests
 {
     private static readonly DateOnly Today = DateOnly.FromDateTime(DateTime.UtcNow);

@@ -297,17 +297,18 @@ public class ServiceRecordSearchTests
     }
 
     [Fact]
-    public void Search_OnSqlServer_EscapesLikeWildcards()
+    public void Search_OnPostgres_EscapesLikeWildcards()
     {
         // Same predicate shape as SearchRecordsAsync; ToQueryString needs no database.
         using var sql = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>()
-            .UseSqlServer("Server=none;Database=none").Options);
+            .UseNpgsql("Host=none;Database=none").Options);
         var lower = "50%_[x".ToLower();
 
         var text = sql.ServiceRecords.Where(r => r.Notes != null && r.Notes.ToLower().Contains(lower)).ToQueryString();
 
-        Assert.Contains(@"N'%50\%\_\[x%'", text);
-        Assert.Contains(@"ESCAPE N'\'", text);
+        // Postgres's LIKE has no [ class and backslash is its default escape, so only % and _ need one.
+        Assert.Contains(@"='%50\%\_[x%'", text);
+        Assert.Contains("LIKE @lower_contains", text);
     }
 
     // --- SRCH-1a: words, task and template names, tire changes, sort, average and last date ---

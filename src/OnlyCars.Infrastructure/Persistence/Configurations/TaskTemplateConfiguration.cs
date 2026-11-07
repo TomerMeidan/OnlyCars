@@ -17,7 +17,7 @@ public class TaskTemplateConfiguration : IEntityTypeConfiguration<TaskTemplate>
         builder.Property(t => t.NameHe).IsRequired().HasMaxLength(MaintenanceTask.MaxNameLength);
         builder.HasIndex(t => t.Key).IsUnique();
         builder.ToTable(t => t.HasCheckConstraint("CK_TaskTemplates_Interval",
-            "[DefaultIntervalKm] IS NOT NULL OR [DefaultIntervalDays] IS NOT NULL"));
+            "\"DefaultIntervalKm\" IS NOT NULL OR \"DefaultIntervalDays\" IS NOT NULL"));
 
         // NameHe must stay equal to the Hebrew templates.* texts in client/src/i18n.ts (decisions.md, SRCH-1).
         (string Key, string Name, string NameHe, TaskCategory Category, int? Km, int? Days)[] seed =

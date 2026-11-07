@@ -30,10 +30,10 @@ public class TireConfiguration : IEntityTypeConfiguration<Tire>
             .OnDelete(DeleteBehavior.NoAction);
 
         // At most one tire on the car per wheel.
-        builder.HasIndex(t => new { t.VehicleId, t.Position }).IsUnique().HasFilter("[RemovedAt] IS NULL")
+        builder.HasIndex(t => new { t.VehicleId, t.Position }).IsUnique().HasFilter("\"RemovedAt\" IS NULL")
             .HasDatabaseName("IX_Tires_VehicleId_Position_OnCar");
         builder.ToTable(t => t.HasCheckConstraint("CK_Tires_Removal",
-            "([RemovedAt] IS NULL AND [RemovedOdometerKm] IS NULL) OR ([RemovedAt] >= [FittedAt] AND [RemovedOdometerKm] >= [FittedOdometerKm])"));
+            "(\"RemovedAt\" IS NULL AND \"RemovedOdometerKm\" IS NULL) OR (\"RemovedAt\" >= \"FittedAt\" AND \"RemovedOdometerKm\" >= \"FittedOdometerKm\")"));
     }
 }
 
@@ -52,7 +52,7 @@ public class TireMeasurementConfiguration : IEntityTypeConfiguration<TireMeasure
         // One measurement per tire per date; a simultaneous second one fails here.
         builder.HasIndex(m => new { m.TireId, m.MeasuredAt }).IsUnique();
         builder.ToTable(t => t.HasCheckConstraint("CK_TireMeasurements_Values",
-            "([PressureBar] IS NOT NULL OR [TreadDepthMm] IS NOT NULL) AND ([PressureBar] IS NULL OR [PressureBar] BETWEEN 0.5 AND 6.0) AND ([TreadDepthMm] IS NULL OR [TreadDepthMm] BETWEEN 0 AND 20)"));
+            "(\"PressureBar\" IS NOT NULL OR \"TreadDepthMm\" IS NOT NULL) AND (\"PressureBar\" IS NULL OR \"PressureBar\" BETWEEN 0.5 AND 6.0) AND (\"TreadDepthMm\" IS NULL OR \"TreadDepthMm\" BETWEEN 0 AND 20)"));
     }
 }
 

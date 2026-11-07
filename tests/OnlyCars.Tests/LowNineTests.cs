@@ -14,13 +14,13 @@ public class LowNineTests : FileTestBase
 {
     private readonly FailSave fail = new();
 
-    /// <summary>A SqlException stand-in: the attachment code reads its Number, as on Microsoft.Data.SqlClient.SqlException.</summary>
-    private sealed class FakeSqlException(int number) : DbException
+    /// <summary>A PostgresException stand-in: the attachment code reads the SqlState every DbException has.</summary>
+    private sealed class FakeDbException(string sqlState) : DbException
     {
-        public int Number => number;
+        public override string SqlState => sqlState;
     }
 
-    /// <summary>Throws <see cref="Next"/> from the next save, as SQL Server's error arrives through EF.</summary>
+    /// <summary>Throws <see cref="Next"/> from the next save, as Postgres's error arrives through EF.</summary>
     private sealed class FailSave : SaveChangesInterceptor
     {
         public Exception? Next { get; set; }
@@ -38,9 +38,9 @@ public class LowNineTests : FileTestBase
         }
     }
 
-    // As the non-retrying execution strategy wraps a transient SQL error: InvalidOperationException > DbUpdateException > SqlException.
-    private static Exception Wrapped(int number) =>
-        new InvalidOperationException("transient", new DbUpdateException("save failed", new FakeSqlException(number)));
+    // As the non-retrying execution strategy wraps a transient database error: InvalidOperationException > DbUpdateException > PostgresException.
+    private static Exception Wrapped(string sqlState) =>
+        new InvalidOperationException("transient", new DbUpdateException("save failed", new FakeDbException(sqlState)));
 
     private async Task<(VehicleChecklistService Service, Guid RunId)> RunAsync()
     {
@@ -57,12 +57,12 @@ public class LowNineTests : FileTestBase
     }
 
     [Theory]
-    [InlineData(1205)] // deadlock victim (the account delete, L173)
-    [InlineData(1222)] // lock request time-out
-    public async Task L183_ALockConflict_IsStill409_AndTheObjectIsDeleted(int number)
+    [InlineData("40P01")] // deadlock victim (the account delete, L173)
+    [InlineData("55P03")] // lock not available
+    public async Task L183_ALockConflict_IsStill409_AndTheObjectIsDeleted(string sqlState)
     {
         var (service, runId) = await RunAsync();
-        fail.Next = Wrapped(number);
+        fail.Next = Wrapped(sqlState);
 
         await Assert.ThrowsAsync<DbUpdateConcurrencyException>(() => service.AddRunAttachmentAsync(userId, runId, AttachmentTests.Webp(), "a.webp"));
 
@@ -70,12 +70,12 @@ public class LowNineTests : FileTestBase
     }
 
     [Theory]
-    [InlineData(-2)] // command timeout: transient, so it arrives wrapped like a deadlock
-    [InlineData(4060)] // cannot open database
-    public async Task L183_AnyOtherSaveError_IsRethrown_As500_AndTheObjectIsDeleted(int number)
+    [InlineData("57014")] // query cancelled: transient, so it arrives wrapped like a deadlock
+    [InlineData("3D000")] // no such database
+    public async Task L183_AnyOtherSaveError_IsRethrown_As500_AndTheObjectIsDeleted(string sqlState)
     {
         var (service, runId) = await RunAsync();
-        var error = Wrapped(number);
+        var error = Wrapped(sqlState);
         fail.Next = error;
 
         Assert.Same(error, await Assert.ThrowsAsync<InvalidOperationException>(() =>

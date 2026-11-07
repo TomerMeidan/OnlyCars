@@ -121,10 +121,8 @@ public class AttachmentFiles(IAppDbContext db, VehicleService vehicleService, IO
         }
     }
 
-    /// <summary>SQL Server 1205 (deadlock victim) or 1222 (lock time-out) at the root of the save error, however EF wrapped it.</summary>
-    // The number is read by name so Application needs no SqlClient reference.
-    private static bool IsLockConflict(Exception e) =>
-        e.GetBaseException() is System.Data.Common.DbException sql && sql.GetType().GetProperty("Number")?.GetValue(sql) is 1205 or 1222;
+    /// <summary>Postgres 40P01 (deadlock victim) or 55P03 (lock not available) at the root of the save error, however EF wrapped it.</summary>
+    private static bool IsLockConflict(Exception e) => e.GetBaseException() is System.Data.Common.DbException { SqlState: "40P01" or "55P03" };
 
     /// <summary>Every stored attachment of the user, through any parent (deleted parents' rows go with them, so every row counts).</summary>
     private Task<long> UsedBytesAsync(Guid userId, CancellationToken ct) => db.Attachments.Where(OwnedBy(userId)).SumAsync(a => a.SizeBytes, ct);

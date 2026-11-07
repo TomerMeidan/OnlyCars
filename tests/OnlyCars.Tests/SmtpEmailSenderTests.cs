@@ -12,7 +12,7 @@ public class SmtpEmailSenderTests
 {
     private static IEmailSender? SenderFor(Dictionary<string, string?> email)
     {
-        var settings = new Dictionary<string, string?> { ["ConnectionStrings:Default"] = "Server=none;Database=none" };
+        var settings = new Dictionary<string, string?> { ["ConnectionStrings:Default"] = "Host=none;Database=none" };
         foreach (var (k, v) in email) settings[$"Email:{k}"] = v;
         var services = new ServiceCollection().AddLogging();
         services.AddInfrastructure(new ConfigurationBuilder().AddInMemoryCollection(settings).Build());

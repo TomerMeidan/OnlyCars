@@ -25,6 +25,6 @@ public class MaintenanceTaskConfiguration : IEntityTypeConfiguration<Maintenance
         builder.HasIndex(t => new { t.VehicleId, t.IsEnabled });
 
         builder.ToTable(t => t.HasCheckConstraint("CK_MaintenanceTasks_Interval",
-            "[IntervalKm] IS NOT NULL OR [IntervalDays] IS NOT NULL"));
+            "\"IntervalKm\" IS NOT NULL OR \"IntervalDays\" IS NOT NULL"));
     }
 }

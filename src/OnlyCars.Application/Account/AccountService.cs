@@ -32,15 +32,20 @@ public class AccountService(IAppDbContext db, AuthService auth, IFileStorage? st
 
         await using (var transaction = await db.Database.BeginTransactionAsync(ct))
         {
-            // X-locks the user's runs first, so a racing run-photo save waits for the commit, then fails its run key or token: 409 (L173).
-            // A save that inserted its row before blocking deadlocks with the deletes below; it, not the delete, is the victim (also 409).
-            // The pool resets the priority when the connection is reused.
-            await db.Database.ExecuteSqlRawAsync("SET DEADLOCK_PRIORITY HIGH", ct);
-            await db.ChecklistRuns.Where(r => r.VehicleChecklist!.Vehicle!.UserId == userId)
-                .ExecuteUpdateAsync(s => s.SetProperty(r => r.UpdatedAt, DateTimeOffset.UtcNow), ct);
+            // Locks the user's runs first, so a racing run-photo save waits at its foreign key for the commit, then fails it: 409 (L173).
+            // FOR UPDATE, not an UPDATE: a plain update's lock lets that key check through, and the save and the delete would then deadlock.
+            await db.Database.ExecuteSqlAsync($"""
+                SELECT 1 FROM onlycars."ChecklistRuns" r
+                JOIN onlycars."VehicleChecklists" c ON c."Id" = r."VehicleChecklistId"
+                JOIN onlycars."Vehicles" v ON v."Id" = c."VehicleId"
+                WHERE v."UserId" = {userId} FOR UPDATE OF r
+                """, ct);
             // The documents too, for a racing document-file save (SCAN-2a).
-            await db.VehicleDocuments.Where(d => d.Vehicle!.UserId == userId)
-                .ExecuteUpdateAsync(s => s.SetProperty(d => d.UpdatedAt, DateTimeOffset.UtcNow), ct);
+            await db.Database.ExecuteSqlAsync($"""
+                SELECT 1 FROM onlycars."VehicleDocuments" d
+                JOIN onlycars."Vehicles" v ON v."Id" = d."VehicleId"
+                WHERE v."UserId" = {userId} FOR UPDATE OF d
+                """, ct);
             // Run photos and document files next: their parent links are NoAction, so the user's cascade would stop at them.
             await db.Attachments.Where(a => a.ChecklistRun!.VehicleChecklist!.Vehicle!.UserId == userId || a.VehicleDocument!.Vehicle!.UserId == userId)
                 .ExecuteDeleteAsync(ct);

@@ -23,8 +23,8 @@ public class IssueConfiguration : IEntityTypeConfiguration<Issue>
             .OnDelete(DeleteBehavior.NoAction);
 
         builder.HasIndex(i => i.VehicleId);
-        builder.HasIndex(i => i.SourceRunItemId).IsUnique().HasFilter("[SourceRunItemId] IS NOT NULL");
+        builder.HasIndex(i => i.SourceRunItemId).IsUnique().HasFilter("\"SourceRunItemId\" IS NOT NULL");
         builder.ToTable(t => t.HasCheckConstraint("CK_Issues_ResolvedAt",
-            "([Status] = 0 AND [ResolvedAt] IS NULL) OR ([Status] = 1 AND [ResolvedAt] IS NOT NULL)"));
+            "(\"Status\" = 0 AND \"ResolvedAt\" IS NULL) OR (\"Status\" = 1 AND \"ResolvedAt\" IS NOT NULL)"));
     }
 }

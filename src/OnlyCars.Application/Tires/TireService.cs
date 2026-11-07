@@ -325,7 +325,7 @@ public class TireService(IAppDbContext db, VehicleService vehicleService, Mainte
         await MoveAsync(rotation.Moves.Select(m => (m.Tire!, m.FromPosition)).ToList(), ct);
     }
 
-    // SQL Server checks the one-tire-per-wheel index after each row's UPDATE, so a swap would collide: the tires are parked on unused
+    // The database checks the one-tire-per-wheel index after each row's UPDATE, so a swap would collide: the tires are parked on unused
     // positions in a first save and placed in a second, in one transaction. The pending changes (the rotation) go with the first save.
     private async Task MoveAsync(List<(Tire Tire, TirePosition To)> moves, CancellationToken ct)
     {

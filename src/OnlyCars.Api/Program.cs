@@ -92,8 +92,8 @@ if (sweepOrphans)
 {
     using var scope = app.Services.CreateScope();
     // Names only, never credentials: the ratio guard can't catch a database that partly matches the bucket.
-    var sql = new Microsoft.Data.SqlClient.SqlConnectionStringBuilder(builder.Configuration.GetConnectionString("Default"));
-    Console.WriteLine($"Bucket '{builder.Configuration["R2:BucketName"]}', database '{sql.InitialCatalog}' on '{sql.DataSource}'.");
+    var sql = new Npgsql.NpgsqlConnectionStringBuilder(builder.Configuration.GetConnectionString("Default"));
+    Console.WriteLine($"Bucket '{builder.Configuration["R2:BucketName"]}', database '{sql.Database}' on '{sql.Host}'.");
     Environment.ExitCode = await OrphanSweep.RunAsync(scope.ServiceProvider.GetService<IFileStorage>(),
         scope.ServiceProvider.GetRequiredService<IAppDbContext>(), args[1..], Console.Out);
     return;
@@ -102,15 +102,14 @@ if (sweepOrphans)
 if (addUser)
 {
     using var scope = app.Services.CreateScope();
-    var sql = new Microsoft.Data.SqlClient.SqlConnectionStringBuilder(builder.Configuration.GetConnectionString("Default"));
-    Console.WriteLine($"Database '{sql.InitialCatalog}' on '{sql.DataSource}'.");
+    var sql = new Npgsql.NpgsqlConnectionStringBuilder(builder.Configuration.GetConnectionString("Default"));
+    Console.WriteLine($"Database '{sql.Database}' on '{sql.Host}'.");
     Environment.ExitCode = await AddUser.RunAsync(scope.ServiceProvider.GetRequiredService<AuthService>(), args[1..], Console.Out);
     return;
 }
 
-// Production creates and updates the tables itself (appsettings.Production.json): GitHub's runners can't reach Azure SQL, which only
-// lets Azure in, so the deploy can't run the migrations (2026-10-31). In the background once the app listens, with retries: the free
-// database pauses when idle and takes a while to wake, and a failure must not stop the app, or its error never reaches the log stream.
+// Production creates and updates the tables itself (appsettings.Production.json), so the deploy needs no database access (2026-10-31).
+// In the background once the app listens, with retries: a failure must not stop the app, or its error never reaches the log stream.
 if (app.Configuration.GetValue<bool>("Database:MigrateOnStartup"))
 {
     app.Lifetime.ApplicationStarted.Register(() => _ = Task.Run(async () =>
@@ -126,9 +125,9 @@ if (app.Configuration.GetValue<bool>("Database:MigrateOnStartup"))
             }
             catch (Exception ex)
             {
-                // No message: SQL Server's can quote row values (ERR-1a). One Sentry event per outage: only the last try is an Error.
-                app.Logger.Log(attempt < 5 ? LogLevel.Warning : LogLevel.Error, "Database update, try {Attempt} of 5, failed: {Error}, SQL error {Number}",
-                    attempt, ex.GetType().Name, ErrorReporting.SqlNumber(ex));
+                // No message: the database's can quote row values (ERR-1a). One Sentry event per outage: only the last try is an Error.
+                app.Logger.Log(attempt < 5 ? LogLevel.Warning : LogLevel.Error, "Database update, try {Attempt} of 5, failed: {Error}, SQLSTATE {SqlState}",
+                    attempt, ex.GetType().Name, ErrorReporting.SqlState(ex));
                 await Task.Delay(TimeSpan.FromSeconds(20));
             }
         }

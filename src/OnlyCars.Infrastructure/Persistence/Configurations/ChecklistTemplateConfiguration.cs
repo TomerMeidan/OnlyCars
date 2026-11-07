@@ -34,6 +34,6 @@ public class ChecklistTemplateItemConfiguration : IEntityTypeConfiguration<Check
             .OnDelete(DeleteBehavior.Cascade);
 
         builder.ToTable(t => t.HasCheckConstraint("CK_ChecklistTemplateItems_Range",
-            "[MinValue] IS NULL OR [MaxValue] IS NULL OR [MinValue] <= [MaxValue]"));
+            "\"MinValue\" IS NULL OR \"MaxValue\" IS NULL OR \"MinValue\" <= \"MaxValue\""));
     }
 }

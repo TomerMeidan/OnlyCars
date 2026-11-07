@@ -110,7 +110,7 @@ public class AuthService(
             }
 
             user = await db.Users.FirstOrDefaultAsync(u => u.Email == email, ct);
-            // SQL Server's collation calls look-alikes equal (a full-width ｍ = m): only the exact address may claim an account (audit 2026-11-02).
+            // The Email collation calls look-alikes equal (a full-width ｍ = m): only the exact address may claim an account (audit 2026-11-02).
             if (user is not null && !string.Equals(user.Email, email, StringComparison.Ordinal))
             {
                 throw GoogleFailed();

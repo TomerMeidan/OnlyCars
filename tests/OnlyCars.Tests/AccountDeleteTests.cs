@@ -48,15 +48,12 @@ public sealed class ListLogger<T> : ILogger<T>
 }
 
 /// <summary>
-/// ACC-2 database part on LocalDB: the real cascades and the NoAction run-photo key are only enforced by SQL Server.
-/// shortcut: needs SQL Server LocalDB on the machine, as MaintenanceSchemaTests.
+/// ACC-2 database part on Postgres: InMemory enforces neither the real cascades nor the NoAction run-photo key.
 /// </summary>
 public class AccountDeleteSqlTests : IAsyncLifetime
 {
     private const string Password = "right-password-1";
-    private readonly AppDbContext db = new(new DbContextOptionsBuilder<AppDbContext>()
-        .UseSqlServer($@"Server=(localdb)\mssqllocaldb;Database=OnlyCars_Test_{Guid.NewGuid():N};Trusted_Connection=True;TrustServerCertificate=True")
-        .Options);
+    private readonly AppDbContext db = new(TestDbContextFactory.PostgresOptions(TestDbContextFactory.NewPostgresConnection()).Options);
     private readonly FakeFileStorage storage = new();
     private readonly ListLogger<AccountService> logger = new();
     private readonly Guid mine = Guid.NewGuid();
@@ -72,9 +69,7 @@ public class AccountDeleteSqlTests : IAsyncLifetime
 
     private async Task SeedMineAsync()
     {
-        var ids = await ExportTests.SeedAsync(db, mine, "mine");
-        // TIRE-2: rows kept in the renamed old tire tables go with the account too.
-        await TireMigrationTests.InsertOldTiresAsync(db, "Legacy_", mine, ids["car"]);
+        await ExportTests.SeedAsync(db, mine, "mine");
         var user = await db.Users.SingleAsync(u => u.Id == mine);
         user.PasswordHash = new PasswordHasher<User>().HashPassword(user, Password);
         await db.SaveChangesAsync();
@@ -84,11 +79,10 @@ public class AccountDeleteSqlTests : IAsyncLifetime
     private async Task<Dictionary<string, int>> CountsAsync()
     {
         var counts = new Dictionary<string, int>();
-        foreach (var table in db.Model.GetEntityTypes().Select(t => t.GetTableName()!).Distinct()
-                     .Concat(TireMigrationTests.OldTables.Select(t => "Legacy_" + t)))
+        foreach (var table in db.Model.GetEntityTypes().Select(t => t.GetTableName()!).Distinct())
         {
 #pragma warning disable EF1003 // table names come from the EF model, not from input, and can't be parameters
-            counts[table] = await db.Database.SqlQueryRaw<int>("SELECT COUNT(*) AS [Value] FROM [" + table + "]").SingleAsync();
+            counts[table] = await db.Database.SqlQueryRaw<int>("SELECT COUNT(*)::int AS \"Value\" FROM onlycars.\"" + table + "\"").SingleAsync();
 #pragma warning restore EF1003
         }
         return counts;
@@ -200,9 +194,9 @@ public class AccountDeleteSqlTests : IAsyncLifetime
     // An upload has read the run and is saving its photo when the delete has done each step (L173): the save waits for the commit,
     // then fails as a run deleted during an upload (409 concurrency.conflict); the delete never fails.
     [Theory]
-    [InlineData("FROM [ChecklistRuns]")]
-    [InlineData("FROM [Attachments]")]
-    [InlineData("FROM [Users]")]
+    [InlineData("FROM onlycars.\"ChecklistRuns\"")]
+    [InlineData("FROM onlycars.\"Attachments\"")]
+    [InlineData("FROM onlycars.\"Users\"")]
     public async Task L173_ARunPhotoSavedMidDelete_Is409_AndTheDeleteGoesThrough(string step)
     {
         await SeedMineAsync();
@@ -210,14 +204,14 @@ public class AccountDeleteSqlTests : IAsyncLifetime
         var connection = db.Database.GetConnectionString()!;
 
         // The upload stops just before its save; the delete lets it go right after the step, then gives it a second to reach the locks.
-        var save = new Gate("INSERT INTO [Attachments]", nonQuery: false);
+        var save = new Gate("INSERT INTO onlycars.\"Attachments\"", nonQuery: false);
         var deleteStep = new Gate(step, nonQuery: true) { OnReached = async () => { save.Release.TrySetResult(); await Task.Delay(1000); } };
         deleteStep.Release.SetResult();
-        await using var uploading = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>().UseSqlServer(connection).AddInterceptors(save).Options);
+        await using var uploading = new AppDbContext(TestDbContextFactory.PostgresOptions(connection).AddInterceptors(save).Options);
         var uploads = new VehicleService(uploading, new FakeFileStorage());
         var upload = new VehicleChecklistService(uploading, uploads).AddRunAttachmentAsync(mine, runId, AttachmentTests.Webp(), "late.webp");
         await save.Reached.Task.WaitAsync(TimeSpan.FromSeconds(30));
-        await using var deleting = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>().UseSqlServer(connection).AddInterceptors(deleteStep).Options);
+        await using var deleting = new AppDbContext(TestDbContextFactory.PostgresOptions(connection).AddInterceptors(deleteStep).Options);
 
         await new AccountService(deleting, AccountDeleteTests.Auth(deleting), storage, logger).DeleteAsync(mine, Password);
 

@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Npgsql.EntityFrameworkCore.PostgreSQL.Infrastructure;
 using OnlyCars.Application.Common;
 using OnlyCars.Domain.Entities;
 
@@ -6,6 +7,18 @@ namespace OnlyCars.Infrastructure.Persistence;
 
 public class AppDbContext : DbContext, IAppDbContext
 {
+    // Private on purpose: Supabase serves its public schema over a REST API to anyone with the project's public key (DB-1).
+    public const string Schema = "onlycars";
+
+    // ICU's root locale, built into Postgres: the sort order doesn't depend on the server's locale.
+    private const string DefaultCollation = "und-x-icu";
+
+    /// <summary>Case-insensitive, for Email and Vin only: Postgres 17 has no LIKE on a non-deterministic collation, so never on a searched column.</summary>
+    public const string CaseInsensitiveCollation = "und_ci";
+
+    /// <summary>Goes with every UseNpgsql: the history table is a provider option, not part of the model.</summary>
+    public static void NpgsqlOptions(NpgsqlDbContextOptionsBuilder options) => options.MigrationsHistoryTable("__EFMigrationsHistory", Schema);
+
     public AppDbContext(DbContextOptions<AppDbContext> options) : base(options)
     {
     }
@@ -33,8 +46,13 @@ public class AppDbContext : DbContext, IAppDbContext
     public DbSet<NotificationRule> NotificationRules => Set<NotificationRule>();
     public DbSet<Notification> Notifications => Set<Notification>();
 
+    protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder) =>
+        configurationBuilder.Properties<string>().UseCollation(DefaultCollation);
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        modelBuilder.HasDefaultSchema(Schema);
+        modelBuilder.HasCollation(Schema, CaseInsensitiveCollation, locale: "und-u-ks-level2", provider: "icu", deterministic: false);
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(AppDbContext).Assembly);
         base.OnModelCreating(modelBuilder);
     }

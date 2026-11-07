@@ -1,17 +1,16 @@
 using System.Collections.Concurrent;
 using System.Net;
-using System.Reflection;
 using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
-using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Npgsql;
 using OnlyCars.Api.Common;
 using OnlyCars.Api.Middleware;
 using OnlyCars.Application.Common.Exceptions;
@@ -96,10 +95,10 @@ public class ErrorReportingTests
                 "tooLarge" => new PayloadTooLargeException("file.tooLarge", "big"),
                 "bodyTooLarge" => new BadHttpRequestException("Request body too large.", 413),
                 "tooMany" => new TooManyRequestsException("auth.tooManyAttempts", "slow down", 60),
-                "sql2628" => new DbUpdateException("An error occurred while saving the entity changes.", FakeSql(2628,
-                    "String or binary data would be truncated in table 'OnlyCars.dbo.Vehicles', column 'Nickname'. Truncated value: 'nick-secret'.")),
-                "sql2627" => FakeSql(2627, "Violation of UNIQUE KEY constraint 'UQ_Vin'. Cannot insert duplicate key in object 'dbo.Vehicles'. " +
-                    "The duplicate key value is (vin-secret, owner@example.com).\r\nThe statement has been terminated."),
+                "pg22P02" => new DbUpdateException("An error occurred while saving the entity changes.",
+                    new PostgresException("invalid input syntax for type uuid: \"nick-secret\"", "ERROR", "ERROR", "22P02")),
+                "pg23505" => new PostgresException("duplicate key value violates unique constraint \"IX_Vehicles_UserId_Vin\"", "ERROR", "ERROR", "23505",
+                    detail: "Key (\"UserId\", \"Vin\")=(owner@example.com, vin-secret) already exists."),
                 _ => new InvalidOperationException(kind),
             };
         });
@@ -234,29 +233,10 @@ public class ErrorReportingTests
         await app.DisposeAsync();
     }
 
-    /// <summary>SqlException has no public constructor: built the way SqlClient builds it, through its internal members.</summary>
-    private static SqlException FakeSql(int number, string message)
-    {
-        const BindingFlags Internal = BindingFlags.NonPublic | BindingFlags.Instance;
-        var errorCtor = typeof(SqlError).GetConstructors(Internal).OrderByDescending(c => c.GetParameters().Length).First();
-        var error = (SqlError)errorCtor.Invoke(errorCtor.GetParameters().Select(p => p.Name switch
-        {
-            "infoNumber" => number,
-            "errorMessage" => message,
-            _ when p.ParameterType == typeof(string) => "",
-            _ => p.ParameterType.IsValueType ? Activator.CreateInstance(p.ParameterType) : null,
-        }).ToArray());
-        var errors = (SqlErrorCollection)Activator.CreateInstance(typeof(SqlErrorCollection), nonPublic: true)!;
-        typeof(SqlErrorCollection).GetMethod("Add", Internal)!.Invoke(errors, [error]);
-        var create = typeof(SqlException).GetMethods(BindingFlags.NonPublic | BindingFlags.Static)
-            .First(m => m.Name == "CreateException" && m.GetParameters().Select(p => p.ParameterType).SequenceEqual([typeof(SqlErrorCollection), typeof(string)]));
-        return (SqlException)create.Invoke(null, [errors, "16.0"])!;
-    }
-
     [Theory]
-    [InlineData("/throw/sql2628", "DbUpdateException, SQL error 2628", "nick-secret")]
-    [InlineData("/throw/sql2627", "SqlException, SQL error 2627", "vin-secret")]
-    public async Task ASqlError_SendsOnlyTheTypeAndNumber_NotTheRowValues(string path, string expected, string secret)
+    [InlineData("/throw/pg22P02", "DbUpdateException, SQLSTATE 22P02", "nick-secret")]
+    [InlineData("/throw/pg23505", "PostgresException, SQLSTATE 23505", "vin-secret")]
+    public async Task ADatabaseError_SendsOnlyTheTypeAndSqlState_NotTheRowValues(string path, string expected, string secret)
     {
         var transport = new CapturingTransport();
         var (app, client) = await StartAsync(transport);
@@ -275,8 +255,8 @@ public class ErrorReportingTests
     [InlineData("see owner.name+cars@mail.example.co.il now", "see [scrubbed] now")]
     [InlineData("GET https://a.test/p?X-Amz-Signature=abc&b=1 failed", "GET https://a.test/p?[scrubbed] failed")]
     [InlineData("no url or email", "no url or email")]
-    [InlineData("Cannot insert duplicate key row in object 'dbo.T' with unique index 'IX'. The duplicate key value is (a), b).", "Cannot insert duplicate key row in object 'dbo.T' with unique index 'IX'. The duplicate key value is [scrubbed]")]
-    [InlineData("column 'Notes'. Truncated value: 'it's\nsecret'.", "column 'Notes'. Truncated value: [scrubbed]")]
+    [InlineData("DETAIL: Key (\"Vin\")=(a), b) already exists.", "DETAIL: Key ([scrubbed]")]
+    [InlineData("DETAIL: Failing row contains (it's\nsecret).", "DETAIL: Failing row contains [scrubbed]")]
     public void ScrubText_RemovesEmailsUrlQueriesAndSqlRowValues(string text, string expected) =>
         Assert.Equal(expected, ErrorReporting.ScrubText(text));
 }

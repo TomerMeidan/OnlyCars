@@ -2,9 +2,9 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
-using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
+using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using OnlyCars.Infrastructure.Persistence;
 
 #nullable disable
@@ -12,46 +12,106 @@ using OnlyCars.Infrastructure.Persistence;
 namespace OnlyCars.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    [Migration("20261017054806_AddTireMeasurements")]
-    partial class AddTireMeasurements
+    [Migration("20261107081932_Baseline")]
+    partial class Baseline
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
+                .HasDefaultSchema("onlycars")
+                .HasAnnotation("Npgsql:CollationDefinition:onlycars.und_ci", "und-u-ks-level2,und-u-ks-level2,icu,False")
                 .HasAnnotation("ProductVersion", "10.0.13")
-                .HasAnnotation("Relational:MaxIdentifierLength", 128);
+                .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
-            SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
+            NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
+
+            modelBuilder.Entity("OnlyCars.Domain.Entities.Attachment", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("ChecklistRunId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ContentType")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .UseCollation("und-x-icu");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("FileName")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)")
+                        .UseCollation("und-x-icu");
+
+                    b.Property<string>("FileUrl")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)")
+                        .UseCollation("und-x-icu");
+
+                    b.Property<Guid?>("ServiceRecordId")
+                        .HasColumnType("uuid");
+
+                    b.Property<long>("SizeBytes")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("VehicleDocumentId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ChecklistRunId");
+
+                    b.HasIndex("ServiceRecordId");
+
+                    b.HasIndex("VehicleDocumentId");
+
+                    b.ToTable("Attachments", "onlycars", t =>
+                        {
+                            t.HasCheckConstraint("CK_Attachments_OneParent", "(CASE WHEN \"ServiceRecordId\" IS NULL THEN 0 ELSE 1 END + CASE WHEN \"ChecklistRunId\" IS NULL THEN 0 ELSE 1 END + CASE WHEN \"VehicleDocumentId\" IS NULL THEN 0 ELSE 1 END) = 1");
+                        });
+                });
 
             modelBuilder.Entity("OnlyCars.Domain.Entities.ChecklistRun", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uuid");
 
                     b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("datetimeoffset");
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("Notes")
                         .HasMaxLength(1000)
-                        .HasColumnType("nvarchar(1000)");
+                        .HasColumnType("character varying(1000)")
+                        .UseCollation("und-x-icu");
 
                     b.Property<decimal>("OdometerKm")
                         .HasColumnType("decimal(12,2)");
 
                     b.Property<Guid?>("OdometerReadingId")
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uuid");
 
                     b.Property<DateOnly>("RunAt")
                         .HasColumnType("date");
 
                     b.Property<DateTimeOffset>("UpdatedAt")
-                        .HasColumnType("datetimeoffset");
+                        .IsConcurrencyToken()
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<Guid>("VehicleChecklistId")
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uuid");
 
                     b.HasKey("Id");
 
@@ -60,28 +120,29 @@ namespace OnlyCars.Infrastructure.Persistence.Migrations
                     b.HasIndex("VehicleChecklistId", "RunAt")
                         .IsDescending(false, true);
 
-                    b.ToTable("ChecklistRuns");
+                    b.ToTable("ChecklistRuns", "onlycars");
                 });
 
             modelBuilder.Entity("OnlyCars.Domain.Entities.ChecklistRunItem", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uuid");
 
                     b.Property<bool?>("BoolValue")
-                        .HasColumnType("bit");
+                        .HasColumnType("boolean");
 
                     b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("datetimeoffset");
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<bool>("IsFlagged")
-                        .HasColumnType("bit");
+                        .HasColumnType("boolean");
 
                     b.Property<string>("LabelSnapshot")
                         .IsRequired()
                         .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
+                        .HasColumnType("character varying(100)")
+                        .UseCollation("und-x-icu");
 
                     b.Property<decimal?>("MaxValue")
                         .HasColumnType("decimal(12,2)");
@@ -93,27 +154,29 @@ namespace OnlyCars.Infrastructure.Persistence.Migrations
                         .HasColumnType("decimal(12,2)");
 
                     b.Property<Guid>("RunId")
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uuid");
 
                     b.Property<int>("SortOrder")
-                        .HasColumnType("int");
+                        .HasColumnType("integer");
 
                     b.Property<Guid?>("TemplateItemId")
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uuid");
 
                     b.Property<string>("TextValue")
                         .HasMaxLength(500)
-                        .HasColumnType("nvarchar(500)");
+                        .HasColumnType("character varying(500)")
+                        .UseCollation("und-x-icu");
 
                     b.Property<int>("Type")
-                        .HasColumnType("int");
+                        .HasColumnType("integer");
 
                     b.Property<string>("Unit")
                         .HasMaxLength(20)
-                        .HasColumnType("nvarchar(20)");
+                        .HasColumnType("character varying(20)")
+                        .UseCollation("und-x-icu");
 
                     b.Property<DateTimeOffset>("UpdatedAt")
-                        .HasColumnType("datetimeoffset");
+                        .HasColumnType("timestamp with time zone");
 
                     b.HasKey("Id");
 
@@ -121,50 +184,52 @@ namespace OnlyCars.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("TemplateItemId");
 
-                    b.ToTable("ChecklistRunItems");
+                    b.ToTable("ChecklistRunItems", "onlycars");
                 });
 
             modelBuilder.Entity("OnlyCars.Domain.Entities.ChecklistTemplate", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uuid");
 
                     b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("datetimeoffset");
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
+                        .HasColumnType("character varying(100)")
+                        .UseCollation("und-x-icu");
 
                     b.Property<DateTimeOffset>("UpdatedAt")
                         .IsConcurrencyToken()
-                        .HasColumnType("datetimeoffset");
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<Guid>("UserId")
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uuid");
 
                     b.HasKey("Id");
 
                     b.HasIndex("UserId");
 
-                    b.ToTable("ChecklistTemplates");
+                    b.ToTable("ChecklistTemplates", "onlycars");
                 });
 
             modelBuilder.Entity("OnlyCars.Domain.Entities.ChecklistTemplateItem", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uuid");
 
                     b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("datetimeoffset");
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("Label")
                         .IsRequired()
                         .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
+                        .HasColumnType("character varying(100)")
+                        .UseCollation("und-x-icu");
 
                     b.Property<decimal?>("MaxValue")
                         .HasColumnType("decimal(12,2)");
@@ -173,28 +238,29 @@ namespace OnlyCars.Infrastructure.Persistence.Migrations
                         .HasColumnType("decimal(12,2)");
 
                     b.Property<int>("SortOrder")
-                        .HasColumnType("int");
+                        .HasColumnType("integer");
 
                     b.Property<Guid>("TemplateId")
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uuid");
 
                     b.Property<int>("Type")
-                        .HasColumnType("int");
+                        .HasColumnType("integer");
 
                     b.Property<string>("Unit")
                         .HasMaxLength(20)
-                        .HasColumnType("nvarchar(20)");
+                        .HasColumnType("character varying(20)")
+                        .UseCollation("und-x-icu");
 
                     b.Property<DateTimeOffset>("UpdatedAt")
-                        .HasColumnType("datetimeoffset");
+                        .HasColumnType("timestamp with time zone");
 
                     b.HasKey("Id");
 
                     b.HasIndex("TemplateId");
 
-                    b.ToTable("ChecklistTemplateItems", t =>
+                    b.ToTable("ChecklistTemplateItems", "onlycars", t =>
                         {
-                            t.HasCheckConstraint("CK_ChecklistTemplateItems_Range", "[MinValue] IS NULL OR [MaxValue] IS NULL OR [MinValue] <= [MaxValue]");
+                            t.HasCheckConstraint("CK_ChecklistTemplateItems_Range", "\"MinValue\" IS NULL OR \"MaxValue\" IS NULL OR \"MinValue\" <= \"MaxValue\"");
                         });
                 });
 
@@ -202,46 +268,48 @@ namespace OnlyCars.Infrastructure.Persistence.Migrations
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uuid");
 
                     b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("datetimeoffset");
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("Description")
                         .HasMaxLength(1000)
-                        .HasColumnType("nvarchar(1000)");
+                        .HasColumnType("character varying(1000)")
+                        .UseCollation("und-x-icu");
 
                     b.Property<DateOnly?>("ResolvedAt")
                         .HasColumnType("date");
 
                     b.Property<Guid?>("SourceRunItemId")
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uuid");
 
                     b.Property<int>("Status")
-                        .HasColumnType("int");
+                        .HasColumnType("integer");
 
                     b.Property<string>("Title")
                         .IsRequired()
                         .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
+                        .HasColumnType("character varying(100)")
+                        .UseCollation("und-x-icu");
 
                     b.Property<DateTimeOffset>("UpdatedAt")
-                        .HasColumnType("datetimeoffset");
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<Guid>("VehicleId")
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uuid");
 
                     b.HasKey("Id");
 
                     b.HasIndex("SourceRunItemId")
                         .IsUnique()
-                        .HasFilter("[SourceRunItemId] IS NOT NULL");
+                        .HasFilter("\"SourceRunItemId\" IS NOT NULL");
 
                     b.HasIndex("VehicleId");
 
-                    b.ToTable("Issues", t =>
+                    b.ToTable("Issues", "onlycars", t =>
                         {
-                            t.HasCheckConstraint("CK_Issues_ResolvedAt", "([Status] = 0 AND [ResolvedAt] IS NULL) OR ([Status] = 1 AND [ResolvedAt] IS NOT NULL)");
+                            t.HasCheckConstraint("CK_Issues_ResolvedAt", "(\"Status\" = 0 AND \"ResolvedAt\" IS NULL) OR (\"Status\" = 1 AND \"ResolvedAt\" IS NOT NULL)");
                         });
                 });
 
@@ -249,25 +317,25 @@ namespace OnlyCars.Infrastructure.Persistence.Migrations
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uuid");
 
                     b.Property<int>("Category")
-                        .HasColumnType("int");
+                        .HasColumnType("integer");
 
                     b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("datetimeoffset");
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<int>("DueSoonPercent")
-                        .HasColumnType("int");
+                        .HasColumnType("integer");
 
                     b.Property<int?>("IntervalDays")
-                        .HasColumnType("int");
+                        .HasColumnType("integer");
 
                     b.Property<int?>("IntervalKm")
-                        .HasColumnType("int");
+                        .HasColumnType("integer");
 
                     b.Property<bool>("IsEnabled")
-                        .HasColumnType("bit");
+                        .HasColumnType("boolean");
 
                     b.Property<DateOnly>("LastDoneDate")
                         .HasColumnType("date");
@@ -278,16 +346,17 @@ namespace OnlyCars.Infrastructure.Persistence.Migrations
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
+                        .HasColumnType("character varying(100)")
+                        .UseCollation("und-x-icu");
 
                     b.Property<Guid?>("TemplateId")
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uuid");
 
                     b.Property<DateTimeOffset>("UpdatedAt")
-                        .HasColumnType("datetimeoffset");
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<Guid>("VehicleId")
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uuid");
 
                     b.HasKey("Id");
 
@@ -295,9 +364,85 @@ namespace OnlyCars.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("VehicleId", "IsEnabled");
 
-                    b.ToTable("MaintenanceTasks", t =>
+                    b.ToTable("MaintenanceTasks", "onlycars", t =>
                         {
-                            t.HasCheckConstraint("CK_MaintenanceTasks_Interval", "[IntervalKm] IS NOT NULL OR [IntervalDays] IS NOT NULL");
+                            t.HasCheckConstraint("CK_MaintenanceTasks_Interval", "\"IntervalKm\" IS NOT NULL OR \"IntervalDays\" IS NOT NULL");
+                        });
+                });
+
+            modelBuilder.Entity("OnlyCars.Domain.Entities.Notification", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("Kind")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid>("RefId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset?>("SentAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateOnly?>("SnoozedUntil")
+                        .HasColumnType("date");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("VehicleId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId", "Kind", "RefId")
+                        .IsUnique();
+
+                    b.ToTable("Notifications", "onlycars");
+                });
+
+            modelBuilder.Entity("OnlyCars.Domain.Entities.NotificationRule", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Channel")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("IsEnabled")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateOnly?>("LastSentOn")
+                        .HasColumnType("date");
+
+                    b.Property<int>("LeadDays")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId", "Channel")
+                        .IsUnique();
+
+                    b.ToTable("NotificationRules", "onlycars", t =>
+                        {
+                            t.HasCheckConstraint("CK_NotificationRules_LeadDays", "\"LeadDays\" BETWEEN 1 AND 365");
                         });
                 });
 
@@ -305,88 +450,98 @@ namespace OnlyCars.Infrastructure.Persistence.Migrations
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("ClientRequestId")
+                        .HasColumnType("uuid");
 
                     b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("datetimeoffset");
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<DateOnly>("ReadingDate")
                         .HasColumnType("date");
 
                     b.Property<Guid?>("ServiceRecordId")
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uuid");
 
                     b.Property<int>("Source")
-                        .HasColumnType("int");
+                        .HasColumnType("integer");
 
                     b.Property<DateTimeOffset>("UpdatedAt")
-                        .HasColumnType("datetimeoffset");
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<decimal>("ValueKm")
                         .HasColumnType("decimal(12,2)");
 
                     b.Property<Guid>("VehicleId")
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uuid");
 
                     b.HasKey("Id");
 
                     b.HasIndex("ServiceRecordId");
 
+                    b.HasIndex("VehicleId", "ClientRequestId")
+                        .IsUnique()
+                        .HasFilter("\"ClientRequestId\" IS NOT NULL");
+
                     b.HasIndex("VehicleId", "ReadingDate")
                         .IsDescending(false, true);
 
-                    b.ToTable("OdometerReadings");
+                    b.ToTable("OdometerReadings", "onlycars");
                 });
 
             modelBuilder.Entity("OnlyCars.Domain.Entities.ServiceItem", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uuid");
 
                     b.Property<string>("Brand")
                         .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
+                        .HasColumnType("character varying(100)")
+                        .UseCollation("und-x-icu");
 
                     b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("datetimeoffset");
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("Description")
                         .IsRequired()
                         .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
+                        .HasColumnType("character varying(100)")
+                        .UseCollation("und-x-icu");
 
                     b.Property<bool>("IsLabor")
-                        .HasColumnType("bit");
+                        .HasColumnType("boolean");
 
                     b.Property<string>("PartNumber")
                         .HasMaxLength(50)
-                        .HasColumnType("nvarchar(50)");
+                        .HasColumnType("character varying(50)")
+                        .UseCollation("und-x-icu");
 
                     b.Property<decimal>("Quantity")
                         .HasColumnType("decimal(9,2)");
 
                     b.Property<Guid>("ServiceRecordId")
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uuid");
 
                     b.Property<int>("SortOrder")
-                        .HasColumnType("int");
+                        .HasColumnType("integer");
 
                     b.Property<decimal>("UnitCost")
                         .HasColumnType("decimal(12,2)");
 
                     b.Property<DateTimeOffset>("UpdatedAt")
-                        .HasColumnType("datetimeoffset");
+                        .HasColumnType("timestamp with time zone");
 
                     b.HasKey("Id");
 
                     b.HasIndex("ServiceRecordId");
 
-                    b.ToTable("ServiceItems", t =>
+                    b.ToTable("ServiceItems", "onlycars", t =>
                         {
-                            t.HasCheckConstraint("CK_ServiceItems_Quantity", "[Quantity] > 0");
+                            t.HasCheckConstraint("CK_ServiceItems_Quantity", "\"Quantity\" > 0");
 
-                            t.HasCheckConstraint("CK_ServiceItems_UnitCost", "[UnitCost] >= 0");
+                            t.HasCheckConstraint("CK_ServiceItems_UnitCost", "\"UnitCost\" >= 0");
                         });
                 });
 
@@ -394,57 +549,59 @@ namespace OnlyCars.Infrastructure.Persistence.Migrations
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uuid");
 
                     b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("datetimeoffset");
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<DateOnly>("Date")
                         .HasColumnType("date");
 
                     b.Property<bool>("IsVoided")
-                        .HasColumnType("bit");
+                        .HasColumnType("boolean");
 
                     b.Property<string>("Notes")
                         .HasMaxLength(1000)
-                        .HasColumnType("nvarchar(1000)");
+                        .HasColumnType("character varying(1000)")
+                        .UseCollation("und-x-icu");
 
                     b.Property<decimal>("OdometerKm")
                         .HasColumnType("decimal(12,2)");
 
                     b.Property<string>("ShopName")
                         .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
+                        .HasColumnType("character varying(100)")
+                        .UseCollation("und-x-icu");
 
                     b.Property<decimal?>("TotalCost")
                         .HasColumnType("decimal(12,2)");
 
                     b.Property<DateTimeOffset>("UpdatedAt")
                         .IsConcurrencyToken()
-                        .HasColumnType("datetimeoffset");
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<Guid>("VehicleId")
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uuid");
 
                     b.HasKey("Id");
 
                     b.HasIndex("VehicleId", "Date")
                         .IsDescending(false, true);
 
-                    b.ToTable("ServiceRecords");
+                    b.ToTable("ServiceRecords", "onlycars");
                 });
 
             modelBuilder.Entity("OnlyCars.Domain.Entities.ServiceRecordTask", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uuid");
 
                     b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("datetimeoffset");
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<Guid>("MaintenanceTaskId")
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uuid");
 
                     b.Property<DateOnly>("PreviousLastDoneDate")
                         .HasColumnType("date");
@@ -453,10 +610,10 @@ namespace OnlyCars.Infrastructure.Persistence.Migrations
                         .HasColumnType("decimal(12,2)");
 
                     b.Property<Guid>("ServiceRecordId")
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uuid");
 
                     b.Property<DateTimeOffset>("UpdatedAt")
-                        .HasColumnType("datetimeoffset");
+                        .HasColumnType("timestamp with time zone");
 
                     b.HasKey("Id");
 
@@ -465,48 +622,56 @@ namespace OnlyCars.Infrastructure.Persistence.Migrations
                     b.HasIndex("ServiceRecordId", "MaintenanceTaskId")
                         .IsUnique();
 
-                    b.ToTable("ServiceRecordTasks");
+                    b.ToTable("ServiceRecordTasks", "onlycars");
                 });
 
             modelBuilder.Entity("OnlyCars.Domain.Entities.TaskTemplate", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uuid");
 
                     b.Property<int>("Category")
-                        .HasColumnType("int");
+                        .HasColumnType("integer");
 
                     b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("datetimeoffset");
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<int?>("DefaultIntervalDays")
-                        .HasColumnType("int");
+                        .HasColumnType("integer");
 
                     b.Property<int?>("DefaultIntervalKm")
-                        .HasColumnType("int");
+                        .HasColumnType("integer");
 
                     b.Property<string>("Key")
                         .IsRequired()
                         .HasMaxLength(50)
-                        .HasColumnType("nvarchar(50)");
+                        .HasColumnType("character varying(50)")
+                        .UseCollation("und-x-icu");
 
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
+                        .HasColumnType("character varying(100)")
+                        .UseCollation("und-x-icu");
+
+                    b.Property<string>("NameHe")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .UseCollation("und-x-icu");
 
                     b.Property<DateTimeOffset>("UpdatedAt")
-                        .HasColumnType("datetimeoffset");
+                        .HasColumnType("timestamp with time zone");
 
                     b.HasKey("Id");
 
                     b.HasIndex("Key")
                         .IsUnique();
 
-                    b.ToTable("TaskTemplates", t =>
+                    b.ToTable("TaskTemplates", "onlycars", t =>
                         {
-                            t.HasCheckConstraint("CK_TaskTemplates_Interval", "[DefaultIntervalKm] IS NOT NULL OR [DefaultIntervalDays] IS NOT NULL");
+                            t.HasCheckConstraint("CK_TaskTemplates_Interval", "\"DefaultIntervalKm\" IS NOT NULL OR \"DefaultIntervalDays\" IS NOT NULL");
                         });
 
                     b.HasData(
@@ -519,6 +684,7 @@ namespace OnlyCars.Infrastructure.Persistence.Migrations
                             DefaultIntervalKm = 10000,
                             Key = "oilChange",
                             Name = "Engine oil and filter",
+                            NameHe = "שמן מנוע ופילטר שמן",
                             UpdatedAt = new DateTimeOffset(new DateTime(2026, 10, 14, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0))
                         },
                         new
@@ -530,6 +696,7 @@ namespace OnlyCars.Infrastructure.Persistence.Migrations
                             DefaultIntervalKm = 20000,
                             Key = "airFilter",
                             Name = "Air filter",
+                            NameHe = "פילטר אוויר",
                             UpdatedAt = new DateTimeOffset(new DateTime(2026, 10, 14, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0))
                         },
                         new
@@ -541,6 +708,7 @@ namespace OnlyCars.Infrastructure.Persistence.Migrations
                             DefaultIntervalKm = 15000,
                             Key = "cabinFilter",
                             Name = "Cabin filter",
+                            NameHe = "פילטר מזגן",
                             UpdatedAt = new DateTimeOffset(new DateTime(2026, 10, 14, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0))
                         },
                         new
@@ -552,6 +720,7 @@ namespace OnlyCars.Infrastructure.Persistence.Migrations
                             DefaultIntervalKm = 20000,
                             Key = "brakePads",
                             Name = "Brake pads check",
+                            NameHe = "בדיקת רפידות בלמים",
                             UpdatedAt = new DateTimeOffset(new DateTime(2026, 10, 14, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0))
                         },
                         new
@@ -562,6 +731,7 @@ namespace OnlyCars.Infrastructure.Persistence.Migrations
                             DefaultIntervalDays = 730,
                             Key = "brakeFluid",
                             Name = "Brake fluid",
+                            NameHe = "נוזל בלמים",
                             UpdatedAt = new DateTimeOffset(new DateTime(2026, 10, 14, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0))
                         },
                         new
@@ -573,6 +743,7 @@ namespace OnlyCars.Infrastructure.Persistence.Migrations
                             DefaultIntervalKm = 60000,
                             Key = "coolant",
                             Name = "Coolant",
+                            NameHe = "נוזל קירור",
                             UpdatedAt = new DateTimeOffset(new DateTime(2026, 10, 14, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0))
                         },
                         new
@@ -583,6 +754,7 @@ namespace OnlyCars.Infrastructure.Persistence.Migrations
                             DefaultIntervalKm = 60000,
                             Key = "transmissionFluid",
                             Name = "Transmission fluid",
+                            NameHe = "שמן גיר",
                             UpdatedAt = new DateTimeOffset(new DateTime(2026, 10, 14, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0))
                         },
                         new
@@ -593,6 +765,7 @@ namespace OnlyCars.Infrastructure.Persistence.Migrations
                             DefaultIntervalKm = 60000,
                             Key = "sparkPlugs",
                             Name = "Spark plugs",
+                            NameHe = "מצתים",
                             UpdatedAt = new DateTimeOffset(new DateTime(2026, 10, 14, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0))
                         },
                         new
@@ -604,6 +777,7 @@ namespace OnlyCars.Infrastructure.Persistence.Migrations
                             DefaultIntervalKm = 100000,
                             Key = "timingBelt",
                             Name = "Timing belt",
+                            NameHe = "רצועת טיימינג",
                             UpdatedAt = new DateTimeOffset(new DateTime(2026, 10, 14, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0))
                         },
                         new
@@ -614,6 +788,7 @@ namespace OnlyCars.Infrastructure.Persistence.Migrations
                             DefaultIntervalKm = 10000,
                             Key = "tireRotation",
                             Name = "Tire rotation",
+                            NameHe = "רוטציית צמיגים",
                             UpdatedAt = new DateTimeOffset(new DateTime(2026, 10, 14, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0))
                         },
                         new
@@ -624,6 +799,7 @@ namespace OnlyCars.Infrastructure.Persistence.Migrations
                             DefaultIntervalDays = 365,
                             Key = "battery",
                             Name = "Battery check",
+                            NameHe = "בדיקת מצבר",
                             UpdatedAt = new DateTimeOffset(new DateTime(2026, 10, 14, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0))
                         },
                         new
@@ -634,120 +810,127 @@ namespace OnlyCars.Infrastructure.Persistence.Migrations
                             DefaultIntervalDays = 365,
                             Key = "wiperBlades",
                             Name = "Wiper blades",
+                            NameHe = "מגבים",
                             UpdatedAt = new DateTimeOffset(new DateTime(2026, 10, 14, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0))
                         });
                 });
 
-            modelBuilder.Entity("OnlyCars.Domain.Entities.TireCheck", b =>
+            modelBuilder.Entity("OnlyCars.Domain.Entities.Tire", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Brand")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .UseCollation("und-x-icu");
 
                     b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("datetimeoffset");
+                        .HasColumnType("timestamp with time zone");
 
-                    b.Property<DateOnly>("MeasuredAt")
+                    b.Property<string>("DotCode")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .UseCollation("und-x-icu");
+
+                    b.Property<DateOnly>("FittedAt")
                         .HasColumnType("date");
 
-                    b.Property<Guid>("TireMountId")
-                        .HasColumnType("uniqueidentifier");
+                    b.Property<decimal>("FittedOdometerKm")
+                        .HasColumnType("decimal(12,2)");
+
+                    b.Property<string>("Model")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .UseCollation("und-x-icu");
+
+                    b.Property<string>("Notes")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .UseCollation("und-x-icu");
+
+                    b.Property<int>("Position")
+                        .HasColumnType("integer");
+
+                    b.Property<DateOnly?>("PurchaseDate")
+                        .HasColumnType("date");
+
+                    b.Property<DateOnly?>("RemovedAt")
+                        .HasColumnType("date");
+
+                    b.Property<decimal?>("RemovedOdometerKm")
+                        .HasColumnType("decimal(12,2)");
+
+                    b.Property<int>("Season")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid?>("ServiceRecordId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Size")
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .UseCollation("und-x-icu");
 
                     b.Property<DateTimeOffset>("UpdatedAt")
-                        .HasColumnType("datetimeoffset");
+                        .IsConcurrencyToken()
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("VehicleId")
+                        .HasColumnType("uuid");
 
                     b.HasKey("Id");
 
-                    b.HasIndex("TireMountId", "MeasuredAt")
-                        .IsUnique();
+                    b.HasIndex("ServiceRecordId");
 
-                    b.ToTable("TireChecks");
+                    b.HasIndex("VehicleId", "Position")
+                        .IsUnique()
+                        .HasDatabaseName("IX_Tires_VehicleId_Position_OnCar")
+                        .HasFilter("\"RemovedAt\" IS NULL");
+
+                    b.ToTable("Tires", "onlycars", t =>
+                        {
+                            t.HasCheckConstraint("CK_Tires_Removal", "(\"RemovedAt\" IS NULL AND \"RemovedOdometerKm\" IS NULL) OR (\"RemovedAt\" >= \"FittedAt\" AND \"RemovedOdometerKm\" >= \"FittedOdometerKm\")");
+                        });
                 });
 
             modelBuilder.Entity("OnlyCars.Domain.Entities.TireMeasurement", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uuid");
 
                     b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("datetimeoffset");
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateOnly>("MeasuredAt")
+                        .HasColumnType("date");
 
                     b.Property<int>("Position")
-                        .HasColumnType("int");
+                        .HasColumnType("integer");
 
                     b.Property<decimal?>("PressureBar")
                         .HasColumnType("decimal(4,2)");
 
-                    b.Property<Guid>("TireCheckId")
-                        .HasColumnType("uniqueidentifier");
+                    b.Property<Guid>("TireId")
+                        .HasColumnType("uuid");
 
                     b.Property<decimal?>("TreadDepthMm")
                         .HasColumnType("decimal(4,1)");
 
                     b.Property<DateTimeOffset>("UpdatedAt")
-                        .HasColumnType("datetimeoffset");
+                        .HasColumnType("timestamp with time zone");
 
                     b.HasKey("Id");
 
-                    b.HasIndex("TireCheckId", "Position")
+                    b.HasIndex("TireId", "MeasuredAt")
                         .IsUnique();
 
-                    b.ToTable("TireMeasurements", t =>
+                    b.ToTable("TireMeasurements", "onlycars", t =>
                         {
-                            t.HasCheckConstraint("CK_TireMeasurements_Values", "([PressureBar] IS NOT NULL OR [TreadDepthMm] IS NOT NULL) AND ([PressureBar] IS NULL OR [PressureBar] BETWEEN 0.5 AND 6.0) AND ([TreadDepthMm] IS NULL OR [TreadDepthMm] BETWEEN 0 AND 20)");
-                        });
-                });
-
-            modelBuilder.Entity("OnlyCars.Domain.Entities.TireMount", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("datetimeoffset");
-
-                    b.Property<decimal>("MountOdometerKm")
-                        .HasColumnType("decimal(12,2)");
-
-                    b.Property<DateOnly>("MountedAt")
-                        .HasColumnType("date");
-
-                    b.Property<Guid>("TireSetId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<decimal?>("UnmountOdometerKm")
-                        .HasColumnType("decimal(12,2)");
-
-                    b.Property<DateOnly?>("UnmountedAt")
-                        .HasColumnType("date");
-
-                    b.Property<DateTimeOffset>("UpdatedAt")
-                        .HasColumnType("datetimeoffset");
-
-                    b.Property<Guid>("VehicleId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("TireSetId")
-                        .IsUnique()
-                        .HasDatabaseName("IX_TireMounts_TireSetId_Open")
-                        .HasFilter("[UnmountedAt] IS NULL");
-
-                    b.HasIndex("VehicleId")
-                        .IsUnique()
-                        .HasDatabaseName("IX_TireMounts_VehicleId_Open")
-                        .HasFilter("[UnmountedAt] IS NULL");
-
-                    b.HasIndex("TireSetId", "MountedAt");
-
-                    b.HasIndex("VehicleId", "MountedAt");
-
-                    b.ToTable("TireMounts", t =>
-                        {
-                            t.HasCheckConstraint("CK_TireMounts_Unmount", "([UnmountedAt] IS NULL AND [UnmountOdometerKm] IS NULL) OR ([UnmountedAt] >= [MountedAt] AND [UnmountOdometerKm] >= [MountOdometerKm])");
+                            t.HasCheckConstraint("CK_TireMeasurements_Values", "(\"PressureBar\" IS NOT NULL OR \"TreadDepthMm\" IS NOT NULL) AND (\"PressureBar\" IS NULL OR \"PressureBar\" BETWEEN 0.5 AND 6.0) AND (\"TreadDepthMm\" IS NULL OR \"TreadDepthMm\" BETWEEN 0 AND 20)");
                         });
                 });
 
@@ -755,169 +938,172 @@ namespace OnlyCars.Infrastructure.Persistence.Migrations
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uuid");
 
                     b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("datetimeoffset");
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<DateOnly>("Date")
                         .HasColumnType("date");
 
                     b.Property<string>("Notes")
                         .HasMaxLength(500)
-                        .HasColumnType("nvarchar(500)");
+                        .HasColumnType("character varying(500)")
+                        .UseCollation("und-x-icu");
 
                     b.Property<decimal>("OdometerKm")
                         .HasColumnType("decimal(12,2)");
 
-                    b.Property<Guid>("TireMountId")
-                        .HasColumnType("uniqueidentifier");
-
                     b.Property<DateTimeOffset>("UpdatedAt")
-                        .HasColumnType("datetimeoffset");
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("VehicleId")
+                        .HasColumnType("uuid");
 
                     b.HasKey("Id");
 
-                    b.HasIndex("TireMountId", "Date");
+                    b.HasIndex("VehicleId", "Date");
 
-                    b.ToTable("TireRotations");
+                    b.ToTable("TireRotations", "onlycars");
                 });
 
-            modelBuilder.Entity("OnlyCars.Domain.Entities.TireSet", b =>
+            modelBuilder.Entity("OnlyCars.Domain.Entities.TireRotationMove", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<string>("Brand")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("nvarchar(50)");
+                        .HasColumnType("uuid");
 
                     b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("datetimeoffset");
+                        .HasColumnType("timestamp with time zone");
 
-                    b.Property<string>("DotCode")
-                        .HasMaxLength(20)
-                        .HasColumnType("nvarchar(20)");
+                    b.Property<int>("FromPosition")
+                        .HasColumnType("integer");
 
-                    b.Property<string>("Model")
-                        .HasMaxLength(50)
-                        .HasColumnType("nvarchar(50)");
+                    b.Property<Guid>("TireId")
+                        .HasColumnType("uuid");
 
-                    b.Property<string>("Notes")
-                        .HasMaxLength(1000)
-                        .HasColumnType("nvarchar(1000)");
+                    b.Property<Guid>("TireRotationId")
+                        .HasColumnType("uuid");
 
-                    b.Property<DateOnly?>("PurchaseDate")
-                        .HasColumnType("date");
-
-                    b.Property<int>("Season")
-                        .HasColumnType("int");
-
-                    b.Property<string>("Size")
-                        .HasMaxLength(30)
-                        .HasColumnType("nvarchar(30)");
+                    b.Property<int>("ToPosition")
+                        .HasColumnType("integer");
 
                     b.Property<DateTimeOffset>("UpdatedAt")
-                        .HasColumnType("datetimeoffset");
-
-                    b.Property<Guid>("UserId")
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("timestamp with time zone");
 
                     b.HasKey("Id");
 
-                    b.HasIndex("UserId");
+                    b.HasIndex("TireId");
 
-                    b.ToTable("TireSets");
+                    b.HasIndex("TireRotationId", "TireId")
+                        .IsUnique();
+
+                    b.ToTable("TireRotationMoves", "onlycars");
                 });
 
             modelBuilder.Entity("OnlyCars.Domain.Entities.User", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uuid");
 
                     b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("datetimeoffset");
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("Currency")
                         .IsRequired()
                         .HasMaxLength(3)
-                        .HasColumnType("nvarchar(3)");
+                        .HasColumnType("character varying(3)")
+                        .UseCollation("und-x-icu");
 
                     b.Property<int>("DistanceUnit")
-                        .HasColumnType("int");
+                        .HasColumnType("integer");
 
                     b.Property<string>("Email")
                         .IsRequired()
                         .HasMaxLength(256)
-                        .HasColumnType("nvarchar(256)");
+                        .HasColumnType("character varying(256)")
+                        .UseCollation("und_ci");
+
+                    b.Property<string>("GoogleSubject")
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)")
+                        .UseCollation("und-x-icu");
 
                     b.Property<int>("Locale")
-                        .HasColumnType("int");
+                        .HasColumnType("integer");
 
                     b.Property<string>("PasswordHash")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                        .HasColumnType("text")
+                        .UseCollation("und-x-icu");
 
                     b.Property<int>("Theme")
-                        .HasColumnType("int");
+                        .HasColumnType("integer");
 
                     b.Property<DateTimeOffset>("UpdatedAt")
-                        .HasColumnType("datetimeoffset");
+                        .HasColumnType("timestamp with time zone");
 
                     b.HasKey("Id");
 
                     b.HasIndex("Email")
                         .IsUnique();
 
-                    b.ToTable("Users");
+                    b.HasIndex("GoogleSubject")
+                        .IsUnique()
+                        .HasFilter("\"GoogleSubject\" IS NOT NULL");
+
+                    b.ToTable("Users", "onlycars");
                 });
 
             modelBuilder.Entity("OnlyCars.Domain.Entities.Vehicle", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uuid");
 
                     b.Property<DateTimeOffset?>("ArchivedAt")
-                        .HasColumnType("datetimeoffset");
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<decimal?>("AvgKmPerDay")
                         .HasColumnType("decimal(12,2)");
 
                     b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("datetimeoffset");
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<decimal>("CurrentOdometerKm")
                         .HasColumnType("decimal(12,2)");
 
                     b.Property<int?>("FuelType")
-                        .HasColumnType("int");
+                        .HasColumnType("integer");
 
                     b.Property<bool>("IsArchived")
-                        .HasColumnType("bit");
+                        .HasColumnType("boolean");
 
                     b.Property<string>("Make")
                         .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
+                        .HasColumnType("character varying(100)")
+                        .UseCollation("und-x-icu");
 
                     b.Property<string>("Model")
                         .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
+                        .HasColumnType("character varying(100)")
+                        .UseCollation("und-x-icu");
 
                     b.Property<string>("Nickname")
                         .IsRequired()
                         .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
+                        .HasColumnType("character varying(100)")
+                        .UseCollation("und-x-icu");
 
                     b.Property<string>("PhotoUrl")
-                        .HasColumnType("nvarchar(max)");
+                        .HasColumnType("text")
+                        .UseCollation("und-x-icu");
 
                     b.Property<string>("Plate")
                         .HasMaxLength(32)
-                        .HasColumnType("nvarchar(32)");
+                        .HasColumnType("character varying(32)")
+                        .UseCollation("und-x-icu");
 
                     b.Property<DateOnly?>("PurchaseDate")
                         .HasColumnType("date");
@@ -926,44 +1112,45 @@ namespace OnlyCars.Infrastructure.Persistence.Migrations
                         .HasColumnType("decimal(12,2)");
 
                     b.Property<DateTimeOffset>("UpdatedAt")
-                        .HasColumnType("datetimeoffset");
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<Guid>("UserId")
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uuid");
 
                     b.Property<string>("Vin")
                         .HasMaxLength(32)
-                        .HasColumnType("nvarchar(32)");
+                        .HasColumnType("character varying(32)")
+                        .UseCollation("und_ci");
 
                     b.Property<int?>("Year")
-                        .HasColumnType("int");
+                        .HasColumnType("integer");
 
                     b.HasKey("Id");
 
                     b.HasIndex("UserId", "Vin")
                         .IsUnique()
-                        .HasFilter("[Vin] IS NOT NULL");
+                        .HasFilter("\"Vin\" IS NOT NULL");
 
-                    b.ToTable("Vehicles");
+                    b.ToTable("Vehicles", "onlycars");
                 });
 
             modelBuilder.Entity("OnlyCars.Domain.Entities.VehicleChecklist", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uuid");
 
                     b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("datetimeoffset");
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<int?>("IntervalDays")
-                        .HasColumnType("int");
+                        .HasColumnType("integer");
 
                     b.Property<int?>("IntervalKm")
-                        .HasColumnType("int");
+                        .HasColumnType("integer");
 
                     b.Property<bool>("IsEnabled")
-                        .HasColumnType("bit");
+                        .HasColumnType("boolean");
 
                     b.Property<DateOnly>("LastRunDate")
                         .HasColumnType("date");
@@ -978,13 +1165,13 @@ namespace OnlyCars.Infrastructure.Persistence.Migrations
                         .HasColumnType("decimal(12,2)");
 
                     b.Property<Guid>("TemplateId")
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uuid");
 
                     b.Property<DateTimeOffset>("UpdatedAt")
-                        .HasColumnType("datetimeoffset");
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<Guid>("VehicleId")
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uuid");
 
                     b.HasKey("Id");
 
@@ -993,7 +1180,71 @@ namespace OnlyCars.Infrastructure.Persistence.Migrations
                     b.HasIndex("VehicleId", "TemplateId")
                         .IsUnique();
 
-                    b.ToTable("VehicleChecklists");
+                    b.ToTable("VehicleChecklists", "onlycars");
+                });
+
+            modelBuilder.Entity("OnlyCars.Domain.Entities.VehicleDocument", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<decimal?>("Cost")
+                        .HasColumnType("decimal(12,2)");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateOnly>("ExpiryDate")
+                        .HasColumnType("date");
+
+                    b.Property<string>("Notes")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .UseCollation("und-x-icu");
+
+                    b.Property<int>("Type")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .IsConcurrencyToken()
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("VehicleId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("VehicleId", "ExpiryDate");
+
+                    b.ToTable("VehicleDocuments", "onlycars", t =>
+                        {
+                            t.HasCheckConstraint("CK_VehicleDocuments_Cost", "\"Cost\" IS NULL OR \"Cost\" >= 0");
+                        });
+                });
+
+            modelBuilder.Entity("OnlyCars.Domain.Entities.Attachment", b =>
+                {
+                    b.HasOne("OnlyCars.Domain.Entities.ChecklistRun", "ChecklistRun")
+                        .WithMany("Attachments")
+                        .HasForeignKey("ChecklistRunId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("OnlyCars.Domain.Entities.ServiceRecord", "ServiceRecord")
+                        .WithMany("Attachments")
+                        .HasForeignKey("ServiceRecordId")
+                        .OnDelete(DeleteBehavior.Cascade);
+
+                    b.HasOne("OnlyCars.Domain.Entities.VehicleDocument", "VehicleDocument")
+                        .WithMany("Attachments")
+                        .HasForeignKey("VehicleDocumentId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.Navigation("ChecklistRun");
+
+                    b.Navigation("ServiceRecord");
+
+                    b.Navigation("VehicleDocument");
                 });
 
             modelBuilder.Entity("OnlyCars.Domain.Entities.ChecklistRun", b =>
@@ -1090,6 +1341,28 @@ namespace OnlyCars.Infrastructure.Persistence.Migrations
                     b.Navigation("Vehicle");
                 });
 
+            modelBuilder.Entity("OnlyCars.Domain.Entities.Notification", b =>
+                {
+                    b.HasOne("OnlyCars.Domain.Entities.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("OnlyCars.Domain.Entities.NotificationRule", b =>
+                {
+                    b.HasOne("OnlyCars.Domain.Entities.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("User");
+                });
+
             modelBuilder.Entity("OnlyCars.Domain.Entities.OdometerReading", b =>
                 {
                     b.HasOne("OnlyCars.Domain.Entities.ServiceRecord", "ServiceRecord")
@@ -1149,67 +1422,63 @@ namespace OnlyCars.Infrastructure.Persistence.Migrations
                     b.Navigation("ServiceRecord");
                 });
 
-            modelBuilder.Entity("OnlyCars.Domain.Entities.TireCheck", b =>
+            modelBuilder.Entity("OnlyCars.Domain.Entities.Tire", b =>
                 {
-                    b.HasOne("OnlyCars.Domain.Entities.TireMount", "TireMount")
-                        .WithMany("Checks")
-                        .HasForeignKey("TireMountId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("TireMount");
-                });
-
-            modelBuilder.Entity("OnlyCars.Domain.Entities.TireMeasurement", b =>
-                {
-                    b.HasOne("OnlyCars.Domain.Entities.TireCheck", "TireCheck")
-                        .WithMany("Measurements")
-                        .HasForeignKey("TireCheckId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("TireCheck");
-                });
-
-            modelBuilder.Entity("OnlyCars.Domain.Entities.TireMount", b =>
-                {
-                    b.HasOne("OnlyCars.Domain.Entities.TireSet", "TireSet")
-                        .WithMany("Mounts")
-                        .HasForeignKey("TireSetId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
+                    b.HasOne("OnlyCars.Domain.Entities.ServiceRecord", "ServiceRecord")
+                        .WithMany("Tires")
+                        .HasForeignKey("ServiceRecordId")
+                        .OnDelete(DeleteBehavior.NoAction);
 
                     b.HasOne("OnlyCars.Domain.Entities.Vehicle", "Vehicle")
                         .WithMany()
                         .HasForeignKey("VehicleId")
-                        .OnDelete(DeleteBehavior.NoAction)
+                        .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.Navigation("TireSet");
+                    b.Navigation("ServiceRecord");
 
                     b.Navigation("Vehicle");
                 });
 
-            modelBuilder.Entity("OnlyCars.Domain.Entities.TireRotation", b =>
+            modelBuilder.Entity("OnlyCars.Domain.Entities.TireMeasurement", b =>
                 {
-                    b.HasOne("OnlyCars.Domain.Entities.TireMount", "TireMount")
-                        .WithMany("Rotations")
-                        .HasForeignKey("TireMountId")
+                    b.HasOne("OnlyCars.Domain.Entities.Tire", "Tire")
+                        .WithMany("Measurements")
+                        .HasForeignKey("TireId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.Navigation("TireMount");
+                    b.Navigation("Tire");
                 });
 
-            modelBuilder.Entity("OnlyCars.Domain.Entities.TireSet", b =>
+            modelBuilder.Entity("OnlyCars.Domain.Entities.TireRotation", b =>
                 {
-                    b.HasOne("OnlyCars.Domain.Entities.User", "User")
+                    b.HasOne("OnlyCars.Domain.Entities.Vehicle", "Vehicle")
                         .WithMany()
-                        .HasForeignKey("UserId")
+                        .HasForeignKey("VehicleId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.Navigation("User");
+                    b.Navigation("Vehicle");
+                });
+
+            modelBuilder.Entity("OnlyCars.Domain.Entities.TireRotationMove", b =>
+                {
+                    b.HasOne("OnlyCars.Domain.Entities.Tire", "Tire")
+                        .WithMany()
+                        .HasForeignKey("TireId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.HasOne("OnlyCars.Domain.Entities.TireRotation", "TireRotation")
+                        .WithMany("Moves")
+                        .HasForeignKey("TireRotationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Tire");
+
+                    b.Navigation("TireRotation");
                 });
 
             modelBuilder.Entity("OnlyCars.Domain.Entities.Vehicle", b =>
@@ -1242,8 +1511,21 @@ namespace OnlyCars.Infrastructure.Persistence.Migrations
                     b.Navigation("Vehicle");
                 });
 
+            modelBuilder.Entity("OnlyCars.Domain.Entities.VehicleDocument", b =>
+                {
+                    b.HasOne("OnlyCars.Domain.Entities.Vehicle", "Vehicle")
+                        .WithMany()
+                        .HasForeignKey("VehicleId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Vehicle");
+                });
+
             modelBuilder.Entity("OnlyCars.Domain.Entities.ChecklistRun", b =>
                 {
+                    b.Navigation("Attachments");
+
                     b.Navigation("Items");
                 });
 
@@ -1254,26 +1536,23 @@ namespace OnlyCars.Infrastructure.Persistence.Migrations
 
             modelBuilder.Entity("OnlyCars.Domain.Entities.ServiceRecord", b =>
                 {
+                    b.Navigation("Attachments");
+
                     b.Navigation("Items");
 
                     b.Navigation("Tasks");
+
+                    b.Navigation("Tires");
                 });
 
-            modelBuilder.Entity("OnlyCars.Domain.Entities.TireCheck", b =>
+            modelBuilder.Entity("OnlyCars.Domain.Entities.Tire", b =>
                 {
                     b.Navigation("Measurements");
                 });
 
-            modelBuilder.Entity("OnlyCars.Domain.Entities.TireMount", b =>
+            modelBuilder.Entity("OnlyCars.Domain.Entities.TireRotation", b =>
                 {
-                    b.Navigation("Checks");
-
-                    b.Navigation("Rotations");
-                });
-
-            modelBuilder.Entity("OnlyCars.Domain.Entities.TireSet", b =>
-                {
-                    b.Navigation("Mounts");
+                    b.Navigation("Moves");
                 });
 
             modelBuilder.Entity("OnlyCars.Domain.Entities.User", b =>
@@ -1291,6 +1570,11 @@ namespace OnlyCars.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("OnlyCars.Domain.Entities.VehicleChecklist", b =>
                 {
                     b.Navigation("Runs");
+                });
+
+            modelBuilder.Entity("OnlyCars.Domain.Entities.VehicleDocument", b =>
+                {
+                    b.Navigation("Attachments");
                 });
 #pragma warning restore 612, 618
         }

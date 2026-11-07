@@ -234,7 +234,7 @@ public class VehicleService(IAppDbContext db, IFileStorage? storage = null, ILog
             return;
         }
 
-        // The InMemory provider (tests only) has no ExecuteUpdate: a plain tracked save. The race itself is tested on LocalDB.
+        // The InMemory provider (tests only) has no ExecuteUpdate: a plain tracked save. The race itself is tested on Postgres.
         vehicle.PhotoUrl = newKey;
         vehicle.UpdatedAt = now;
         await db.SaveChangesAsync(ct);

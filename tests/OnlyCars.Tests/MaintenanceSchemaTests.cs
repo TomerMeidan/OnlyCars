@@ -1,9 +1,9 @@
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
-using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Options;
+using Npgsql;
 using OnlyCars.Application.Auth;
 using OnlyCars.Application.Auth.Dtos;
 using OnlyCars.Application.Checklists;
@@ -24,15 +24,12 @@ using OnlyCars.Infrastructure.Persistence;
 namespace OnlyCars.Tests;
 
 /// <summary>
-/// Runs the real migrations on a throwaway LocalDB database, because the InMemory provider
+/// Runs the real migrations on a throwaway Postgres database, because the InMemory provider
 /// enforces neither check constraints nor database cascades.
-/// shortcut: needs SQL Server LocalDB on the machine; switch to a container or CI database when there is a CI.
 /// </summary>
 public class MaintenanceSchemaTests : IAsyncLifetime
 {
-    private readonly AppDbContext db = new(new DbContextOptionsBuilder<AppDbContext>()
-        .UseSqlServer($@"Server=(localdb)\mssqllocaldb;Database=OnlyCars_Test_{Guid.NewGuid():N};Trusted_Connection=True;TrustServerCertificate=True")
-        .Options);
+    private readonly AppDbContext db = new(TestDbContextFactory.PostgresOptions(TestDbContextFactory.NewPostgresConnection()).Options);
 
     public async Task InitializeAsync() => await db.Database.MigrateAsync();
 
@@ -76,13 +73,13 @@ public class MaintenanceSchemaTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Migrations_SeedTheHebrewTemplateNames_AndTheSearchRunsOnSqlServer()
+    public async Task Migrations_SeedTheHebrewTemplateNames_AndTheSearchRunsOnPostgres()
     {
         // SRCH-1a: NameHe equals the Hebrew templates.* texts in client/src/i18n.ts.
         Assert.Equal(["שמן מנוע ופילטר שמן", "פילטר אוויר", "פילטר מזגן", "בדיקת רפידות בלמים", "נוזל בלמים", "נוזל קירור", "שמן גיר", "מצתים",
             "רצועת טיימינג", "רוטציית צמיגים", "בדיקת מצבר", "מגבים"], await db.TaskTemplates.OrderBy(t => t.Id).Select(t => t.NameHe).ToListAsync());
 
-        // The words, the tire-change test, the totals and each sort (a repeated ORDER BY column fails on SQL Server) translate and run.
+        // The words, the tire-change test, the totals and each sort (a repeated ORDER BY column failed on SQL Server, kept as a check) translate and run.
         var tasks = new MaintenanceTaskService(db, new VehicleService(db));
         var car = await AddCarAsync();
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
@@ -171,7 +168,7 @@ public class MaintenanceSchemaTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Attachments_OnSqlServer_AreIndexedByRecord_AndCascadeFromRecordAndVehicle()
+    public async Task Attachments_OnPostgres_AreIndexedByRecord_AndCascadeFromRecordAndVehicle()
     {
         // FILE-2: rows go with their record, and with the vehicle; IX_Attachments_ServiceRecordId exists.
         var car = await AddCarAsync();
@@ -191,7 +188,7 @@ public class MaintenanceSchemaTests : IAsyncLifetime
         Assert.Equal(0, await db.Attachments.CountAsync());
 
         var index = await db.Database.SqlQuery<string>(
-            $"SELECT c.name AS Value FROM sys.indexes i JOIN sys.index_columns ic ON ic.object_id = i.object_id AND ic.index_id = i.index_id JOIN sys.columns c ON c.object_id = ic.object_id AND c.column_id = ic.column_id WHERE i.name = 'IX_Attachments_ServiceRecordId'")
+            $"SELECT a.attname::text AS \"Value\" FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey) WHERE c.relname = 'IX_Attachments_ServiceRecordId'")
             .ToListAsync();
         Assert.Equal(["ServiceRecordId"], index);
     }
@@ -199,7 +196,7 @@ public class MaintenanceSchemaTests : IAsyncLifetime
     [Fact]
     public async Task Checklists_ClearTheRunItemLinkOnItemDelete_DeleteRunReadings_AndCascadeVehicleDeleteWithoutCycles()
     {
-        // MVP5-B: the no-cascade paths (template item and reading) are handled by the services on SQL Server too.
+        // MVP5-B: the no-cascade paths (template item and reading) are handled by the services on Postgres too.
         var vehicles = new VehicleService(db);
         var templates = new ChecklistTemplateService(db);
         var checklists = new VehicleChecklistService(db, vehicles);
@@ -229,7 +226,7 @@ public class MaintenanceSchemaTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Tires_OnSqlServer_ReplaceAndSwaps_PassTheOneTirePerWheelIndex_AndUserDeleteCascades()
+    public async Task Tires_OnPostgres_ReplaceAndSwaps_PassTheOneTirePerWheelIndex_AndUserDeleteCascades()
     {
         // TIRE-2: Replace closes and fits in one save, and a rotation swaps wheels, past the filtered unique (car, position) index.
         var vehicles = new VehicleService(db);
@@ -284,7 +281,7 @@ public class MaintenanceSchemaTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task TireMeasurements_OnSqlServer_SameTireAndDateRefusedByTheIndex_ValuesChecked_AndTireDeleteCascades()
+    public async Task TireMeasurements_OnPostgres_SameTireAndDateRefusedByTheIndex_ValuesChecked_AndTireDeleteCascades()
     {
         var vehicles = new VehicleService(db);
         var tires = new TireService(db, vehicles, new MaintenanceTaskService(db, vehicles));
@@ -310,15 +307,14 @@ public class MaintenanceSchemaTests : IAsyncLifetime
 
     // --- LOW-4: races on the real database. Each "other request" runs on its own context just before this request's save. ---
 
-    private AppDbContext Context(BeforeSave? race = null) => new(new DbContextOptionsBuilder<AppDbContext>()
-        .UseSqlServer(db.Database.GetConnectionString()).AddInterceptors(race is null ? [] : [race]).Options);
+    private AppDbContext Context(BeforeSave? race = null) => new(TestDbContextFactory.PostgresOptions(db.Database.GetConnectionString()!).AddInterceptors(race is null ? [] : [race]).Options);
 
     private static async Task<string> CodeAsync(Func<Task> act) => (await Assert.ThrowsAnyAsync<AppException>(act)).Code;
 
     [Fact]
-    public async Task ServiceRecord_OnSqlServer_VoidRacingAnEdit_ThrowsDbUpdateConcurrencyException_ANoOpEditDoesNot()
+    public async Task ServiceRecord_OnPostgres_VoidRacingAnEdit_ThrowsDbUpdateConcurrencyException_ANoOpEditDoesNot()
     {
-        // L69: the UpdatedAt token on SQL Server. This checks the EF exception only; its 409 concurrency.conflict mapping is
+        // L69: the UpdatedAt token on Postgres. This checks the EF exception only; its 409 concurrency.conflict mapping is
         // GlobalExceptionHandlerTests.ConcurrencyException_Returns409_ConcurrencyConflict_WithoutEfDetails (L89).
         var car = await AddCarAsync();
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
@@ -353,7 +349,7 @@ public class MaintenanceSchemaTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Vin_And_Email_OnSqlServer_SimultaneousDuplicate_IsTheNormalConflictCode()
+    public async Task Vin_And_Email_OnPostgres_SimultaneousDuplicate_IsTheNormalConflictCode()
     {
         // L66: the second insert fails on the real unique index and gets the same code as a non-simultaneous duplicate.
         var car = await AddCarAsync();
@@ -445,7 +441,7 @@ public class MaintenanceSchemaTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Attachment_OnSqlServer_AVoidThatSavesDuringTheUpload_Wins_TheUploadIsAConcurrencyException_AndItsObjectIsDeleted()
+    public async Task Attachment_OnPostgres_AVoidThatSavesDuringTheUpload_Wins_TheUploadIsAConcurrencyException_AndItsObjectIsDeleted()
     {
         var (car, record) = await RecordWithFilesAsync(0);
         storage.PutGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -464,7 +460,7 @@ public class MaintenanceSchemaTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Attachment_OnSqlServer_TwoSimultaneousUploadsAtNineFiles_OnlyOneSaves_TheOthersObjectIsDeleted()
+    public async Task Attachment_OnPostgres_TwoSimultaneousUploadsAtNineFiles_OnlyOneSaves_TheOthersObjectIsDeleted()
     {
         var (car, record) = await RecordWithFilesAsync(Attachment.MaxPerParent - 1);
         storage.PutGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -486,7 +482,7 @@ public class MaintenanceSchemaTests : IAsyncLifetime
     // --- L116: car photo replacements racing on the real database (the conditional update needs a relational provider). ---
 
     [Fact]
-    public async Task Photo_OnSqlServer_TwoSimultaneousReplacements_OneWins_TheOtherIsAConflict_ExactlyOneObjectRemains()
+    public async Task Photo_OnPostgres_TwoSimultaneousReplacements_OneWins_TheOtherIsAConflict_ExactlyOneObjectRemains()
     {
         var car = await AddCarAsync();
         await new VehicleService(Context(), storage).SetPhotoAsync(car.UserId, car.Id, Png);
@@ -506,7 +502,7 @@ public class MaintenanceSchemaTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Photo_OnSqlServer_ARemoveThatSavesDuringAReplacement_Wins_TheReplacementIsAConflict_NoObjectRemains()
+    public async Task Photo_OnPostgres_ARemoveThatSavesDuringAReplacement_Wins_TheReplacementIsAConflict_NoObjectRemains()
     {
         var car = await AddCarAsync();
         await new VehicleService(Context(), storage).SetPhotoAsync(car.UserId, car.Id, Png);
@@ -551,7 +547,7 @@ public class MaintenanceSchemaTests : IAsyncLifetime
         "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==");
 
     [Fact]
-    public async Task RunAttachments_OnSqlServer_HaveExactlyOneParent_AreIndexedByRun_AndGoWithTheCarAndTheUser()
+    public async Task RunAttachments_OnPostgres_HaveExactlyOneParent_AreIndexedByRun_AndGoWithTheCarAndTheUser()
     {
         var (car, run) = await RunWithPhotosAsync(1);
         var record = (await Racer().CreateRecordAsync(car.UserId, car.Id, new CreateServiceRecordRequest(null, 1_000, null, null, null, []))).Record.Id;
@@ -566,13 +562,12 @@ public class MaintenanceSchemaTests : IAsyncLifetime
         }
 
         var index = await db.Database.SqlQuery<string>(
-            $"SELECT c.name AS Value FROM sys.indexes i JOIN sys.index_columns ic ON ic.object_id = i.object_id AND ic.index_id = i.index_id JOIN sys.columns c ON c.object_id = ic.object_id AND c.column_id = ic.column_id WHERE i.name = 'IX_Attachments_ChecklistRunId'")
+            $"SELECT a.attname::text AS \"Value\" FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey) WHERE c.relname = 'IX_Attachments_ChecklistRunId'")
             .ToListAsync();
         Assert.Equal(["ChecklistRunId"], index);
 
-        // The run link doesn't cascade (one cascade path per table), so a raw car or user delete must remove the run photo rows first,
-        // as scripts/cleanup-test-users.sql does; the app has no car or account delete yet.
-        var blocked = await Assert.ThrowsAsync<SqlException>(() => db.Users.Where(u => u.Id == car.UserId).ExecuteDeleteAsync());
+        // The run link doesn't cascade (one cascade path per table), so a raw car or user delete must remove the run photo rows first.
+        var blocked = await Assert.ThrowsAsync<PostgresException>(() => db.Users.Where(u => u.Id == car.UserId).ExecuteDeleteAsync());
         Assert.Contains("FK_Attachments_ChecklistRuns_ChecklistRunId", blocked.Message);
         await db.Attachments.Where(a => a.ChecklistRun!.VehicleChecklist!.Vehicle!.UserId == car.UserId).ExecuteDeleteAsync();
         await db.Users.Where(u => u.Id == car.UserId).ExecuteDeleteAsync();
@@ -581,7 +576,7 @@ public class MaintenanceSchemaTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task RunAttachment_OnSqlServer_ARunDeleteThatSavesDuringTheUpload_Wins_TheUploadFails_AndItsObjectIsDeleted()
+    public async Task RunAttachment_OnPostgres_ARunDeleteThatSavesDuringTheUpload_Wins_TheUploadFails_AndItsObjectIsDeleted()
     {
         var (car, run) = await RunWithPhotosAsync(1);
         storage.PutGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -600,7 +595,7 @@ public class MaintenanceSchemaTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task RunAttachment_OnSqlServer_TwoSimultaneousUploadsAtNinePhotos_OnlyOneSaves_TheOthersObjectIsDeleted()
+    public async Task RunAttachment_OnPostgres_TwoSimultaneousUploadsAtNinePhotos_OnlyOneSaves_TheOthersObjectIsDeleted()
     {
         var (car, run) = await RunWithPhotosAsync(Attachment.MaxPerParent - 1);
         storage.PutGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -620,7 +615,7 @@ public class MaintenanceSchemaTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task RunDelete_OnSqlServer_AfterAnUploadSavedSinceItsRead_IsAConcurrencyException_AndKeepsEverything()
+    public async Task RunDelete_OnPostgres_AfterAnUploadSavedSinceItsRead_IsAConcurrencyException_AndKeepsEverything()
     {
         var (car, run) = await RunWithPhotosAsync(0);
         var interceptor = new BeforeSave();
@@ -638,7 +633,7 @@ public class MaintenanceSchemaTests : IAsyncLifetime
     // --- NOT-1: two first saves of one unique row; the loser updates the winner's row instead of a 500. ---
 
     [Fact]
-    public async Task Snooze_OnSqlServer_TwoFirstSnoozesOfOneItem_OneRow_TheLaterDateWins()
+    public async Task Snooze_OnPostgres_TwoFirstSnoozesOfOneItem_OneRow_TheLaterDateWins()
     {
         var car = await AddCarAsync();
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
@@ -661,7 +656,7 @@ public class MaintenanceSchemaTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task LeadDays_OnSqlServer_TwoFirstSaves_OneRule_TheLaterValueAndTheOtherSettingsSave()
+    public async Task LeadDays_OnPostgres_TwoFirstSaves_OneRule_TheLaterValueAndTheOtherSettingsSave()
     {
         var car = await AddCarAsync();
         var race = new BeforeSave();
@@ -683,7 +678,7 @@ public class MaintenanceSchemaTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Export_OnSqlServer_SameNumberOfQueriesForOneCarAndThree_NoStorageKeyRead()
+    public async Task Export_OnPostgres_SameNumberOfQueriesForOneCarAndThree_NoStorageKeyRead()
     {
         // ACC-1 criterion 3: one query per table, not one per car.
         var car = await AddCarAsync();
@@ -692,8 +687,7 @@ public class MaintenanceSchemaTests : IAsyncLifetime
         db.AddRange(record, new Attachment { ServiceRecord = record, FileUrl = "users/x/receipts/key.pdf", FileName = "r.pdf", ContentType = "application/pdf" });
         await db.SaveChangesAsync();
         var commands = new CommandCounter();
-        await using var context = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>()
-            .UseSqlServer(db.Database.GetConnectionString()).AddInterceptors(commands).Options);
+        await using var context = new AppDbContext(TestDbContextFactory.PostgresOptions(db.Database.GetConnectionString()!).AddInterceptors(commands).Options);
 
         var one = await new Application.Account.ExportService(context).ExportAsync(car.UserId);
         var queriesForOne = commands.Texts.Count;
@@ -706,8 +700,8 @@ public class MaintenanceSchemaTests : IAsyncLifetime
         Assert.Equal("r.pdf", Assert.Single(Assert.Single(one.Vehicles).ServiceRecords).Attachments.Single().FileName);
         Assert.Equal(20, queriesForOne); // the user, lead days, then one per table
         Assert.Equal(queriesForOne, commands.Texts.Count);
-        Assert.DoesNotContain(commands.Texts, t => t.Contains("[PasswordHash]") || t.Contains("[FileUrl]")
-            || System.Text.RegularExpressions.Regex.IsMatch(t, @"\[PhotoUrl\](?! IS NOT NULL)")); // only tested for null, never read
+        Assert.DoesNotContain(commands.Texts, t => t.Contains("\"PasswordHash\"") || t.Contains("\"FileUrl\"")
+            || System.Text.RegularExpressions.Regex.IsMatch(t, @"""PhotoUrl""(?! IS NOT NULL)")); // only tested for null, never read
     }
 
     private sealed class CommandCounter : DbCommandInterceptor
@@ -744,7 +738,7 @@ public class MaintenanceSchemaTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task DocumentAttachments_OnSqlServer_HaveExactlyOneOfThreeParents_AreIndexed_AndBlockARawDocumentDelete()
+    public async Task DocumentAttachments_OnPostgres_HaveExactlyOneOfThreeParents_AreIndexed_AndBlockARawDocumentDelete()
     {
         var (car, document) = await DocumentWithFilesAsync(1);
         var record = (await Racer().CreateRecordAsync(car.UserId, car.Id, new CreateServiceRecordRequest(null, 1_000, null, null, null, []))).Record.Id;
@@ -759,12 +753,12 @@ public class MaintenanceSchemaTests : IAsyncLifetime
         }
 
         var index = await db.Database.SqlQuery<string>(
-            $"SELECT c.name AS Value FROM sys.indexes i JOIN sys.index_columns ic ON ic.object_id = i.object_id AND ic.index_id = i.index_id JOIN sys.columns c ON c.object_id = ic.object_id AND c.column_id = ic.column_id WHERE i.name = 'IX_Attachments_VehicleDocumentId'")
+            $"SELECT a.attname::text AS \"Value\" FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey) WHERE c.relname = 'IX_Attachments_VehicleDocumentId'")
             .ToListAsync();
         Assert.Equal(["VehicleDocumentId"], index);
 
         // NoAction: the database never deletes a document's files by itself; the services do.
-        var blocked = await Assert.ThrowsAsync<SqlException>(() => db.VehicleDocuments.Where(d => d.Id == document).ExecuteDeleteAsync());
+        var blocked = await Assert.ThrowsAsync<PostgresException>(() => db.VehicleDocuments.Where(d => d.Id == document).ExecuteDeleteAsync());
         Assert.Contains("FK_Attachments_VehicleDocuments_VehicleDocumentId", blocked.Message);
         await DocumentRacer().DeleteAsync(car.UserId, car.Id, document);
         await using var check = Context();
@@ -773,7 +767,7 @@ public class MaintenanceSchemaTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task DocumentAttachment_OnSqlServer_TwoSimultaneousUploadsAtNineFiles_OnlyOneSaves_TheOthersObjectIsDeleted()
+    public async Task DocumentAttachment_OnPostgres_TwoSimultaneousUploadsAtNineFiles_OnlyOneSaves_TheOthersObjectIsDeleted()
     {
         var (car, document) = await DocumentWithFilesAsync(Attachment.MaxPerParent - 1);
         storage.PutGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -794,7 +788,7 @@ public class MaintenanceSchemaTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task DocumentAttachment_OnSqlServer_ADocumentDeleteThatSavesDuringTheUpload_Wins_TheUploadIsAConflict_AndItsObjectIsDeleted()
+    public async Task DocumentAttachment_OnPostgres_ADocumentDeleteThatSavesDuringTheUpload_Wins_TheUploadIsAConflict_AndItsObjectIsDeleted()
     {
         var (car, document) = await DocumentWithFilesAsync(1);
         storage.PutGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -812,7 +806,7 @@ public class MaintenanceSchemaTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task DocumentDelete_OnSqlServer_AfterAnUploadSavedSinceItsRead_IsAConcurrencyException_AndKeepsEverything()
+    public async Task DocumentDelete_OnPostgres_AfterAnUploadSavedSinceItsRead_IsAConcurrencyException_AndKeepsEverything()
     {
         var (car, document) = await DocumentWithFilesAsync(0);
         var interceptor = new BeforeSave();
