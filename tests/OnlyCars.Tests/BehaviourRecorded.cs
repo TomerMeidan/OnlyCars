@@ -112,6 +112,16 @@ public static class BehaviourRecorded
         @"void (:603) => (paren) | _under | 1st | alpha | Alpha1 | ALPHA2 | apple | Ärger | arger2 | banana | beta check | Beta check 2 | car 1 | Car 10 | car 2 | car1 | Car-1 | coop | co-op | Coop2 | Éclair | eclair2 | Eclair3 | oneil | o'neil | Zed | אבג | אבד | בית | בית־ספר | ביתא | ביתספר | טויוטה | מאזדה | מכון | מכוניות | מכונית | ץ | צ׳רי | צבי | צרי | צ'רי | קיה | שלומ | שלום | ש\u05B8\u05C1לו\u05B9ם | שלונ | תשע",
     ];
 
+    /// <summary>The same scenario with SeparatorSortNames.</summary>
+    public static readonly string[] SeparatorSort =
+    [
+        @"vehicles => aa | ab | a--b | abb | abc | a-b-c | abcd | a-b-c-d | abce | abd | A-B-D | ac | co-op2 | co-op-2 | coop3 | l | m | --m-- | n | oneik | oneil | o'n'e'i'l | o'ne'il | oneim | rocknrolk | rocknroll | rock'n'roll | rock-'n'-roll | rocknrolm | xyy | xyz | x-y'z | xyzz | x'y-z-z | גוא | גוב | ג'ו'ב | גוג | תל | ת-ל-א | תלב",
+        @"templates => aa | ab | a--b | abb | abc | a-b-c | abcd | a-b-c-d | abce | abd | A-B-D | ac | co-op2 | co-op-2 | coop3 | l | m | --m-- | n | oneik | oneil | o'n'e'i'l | o'ne'il | oneim | rocknrolk | rocknroll | rock'n'roll | rock-'n'-roll | rocknrolm | xyy | xyz | x-y'z | xyzz | x'y-z-z | גוא | גוב | ג'ו'ב | גוג | תל | ת-ל-א | תלב",
+        @"tasks => aa | ab | a--b | abb | abc | a-b-c | abcd | a-b-c-d | abce | abd | A-B-D | ac | co-op2 | co-op-2 | coop3 | l | m | --m-- | n | oneik | oneil | o'n'e'i'l | o'ne'il | oneim | rocknrolk | rocknroll | rock'n'roll | rock-'n'-roll | rocknrolm | xyy | xyz | x-y'z | xyzz | x'y-z-z | גוא | גוב | ג'ו'ב | גוג | תל | ת-ל-א | תלב",
+        @"record tasks (:415) => --m-- | a--b | a-b-c | a-b-c-d | A-B-D | aa | ab | abb | abc | abcd | abce | abd | ac | co-op-2 | co-op2 | coop3 | l | m | n | o'n'e'i'l | o'ne'il | oneik | oneil | oneim | rock-'n'-roll | rock'n'roll | rocknrolk | rocknroll | rocknrolm | x-y'z | x'y-z-z | xyy | xyz | xyzz | ג'ו'ב | גוא | גוב | גוג | ת-ל-א | תל | תלב",
+        @"void (:603) => aa | ab | a--b | abb | abc | a-b-c | abcd | a-b-c-d | abce | abd | A-B-D | ac | co-op2 | co-op-2 | coop3 | l | m | --m-- | n | oneik | oneil | o'n'e'i'l | o'ne'il | oneim | rocknrolk | rocknroll | rock'n'roll | rock-'n'-roll | rocknrolm | xyy | xyz | x-y'z | xyzz | x'y-z-z | גוא | גוב | ג'ו'ב | גוג | תל | ת-ל-א | תלב",
+    ];
+
     public static readonly string[] CaseOnlySort =
     [
         @"templates created Beta | beta | BETA => Beta | beta | BETA",

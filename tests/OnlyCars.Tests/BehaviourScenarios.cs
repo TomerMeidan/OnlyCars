@@ -144,9 +144,19 @@ public static class BehaviourScenarios
         "טויוטה", "מאזדה", "אבג", "אבד", "בית", "ביתא", "מכונית", "מכוניות", "שלום", "שלומ", "שָׁלוֹם", "שלונ", "ץ", "צבי", "\u05DE\u05DB\u05D5\u05DF", "קיה", "תשע",
     ];
 
+    // Two or more hyphens, apostrophes, or both, between names that show whether every one is ignored.
+    public static readonly string[] SeparatorSortNames =
+    [
+        "abb", "a-b-c", "abd", "A-B-D", "abc", "a-b-c-d", "abcd", "abce", "aa", "ab", "a--b", "ac",
+        "o'ne'il", "o'n'e'i'l", "oneik", "oneil", "oneim",
+        "rock-'n'-roll", "rock'n'roll", "rocknroll", "rocknrolk", "rocknrolm", "x-y'z", "xyy", "xyz", "xyzz", "x'y-z-z",
+        "--m--", "l", "m", "n", "co-op-2", "co-op2", "coop3",
+        "ג'ו'ב", "גוא", "גוב", "גוג", "ת-ל-א", "תל", "תלב",
+    ];
+
     private static readonly string[] CaseOnly = ["Beta", "beta", "BETA"];
 
-    public static async Task<List<string>> SortAsync(AppDbContext db)
+    public static async Task<List<string>> SortAsync(AppDbContext db, string[]? names = null)
     {
         var (user, _) = await CarAsync(db, "seed");
         var vehicles = new VehicleService(db);
@@ -154,7 +164,7 @@ public static class BehaviourScenarios
         var templates = new ChecklistTemplateService(db);
         var car = await vehicles.CreateAsync(user, new CreateVehicleRequest("Tasks", null, null, null, null, null, null, null, null, null, 50_000));
         var taskIds = new List<Guid>();
-        foreach (var name in SortNames)
+        foreach (var name in names ?? SortNames)
         {
             await vehicles.CreateAsync(user, new CreateVehicleRequest(name, null, null, null, null, null, null, null, null, null, null));
             await templates.CreateAsync(user, new ChecklistTemplateRequest(name, []));

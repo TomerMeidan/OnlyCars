@@ -21,7 +21,7 @@ public class VehicleService(IAppDbContext db, IFileStorage? storage = null, ILog
             query = query.Where(v => !v.IsArchived);
         }
 
-        var vehicles = await query.OrderBy(v => Regex.Replace(v.Nickname.ToLower(), TextRules.IgnoredInSort, ""))
+        var vehicles = await query.OrderBy(v => v.Nickname.ToLower().Replace("-", "").Replace("'", "")) // the old word sort ignored these. Not Regex.Replace: Npgsql sends it without the g flag, so only the first goes
             .ThenBy(v => v.Nickname.Length)
             .ThenBy(v => v.Id) // names equal but for case: a stable order, since Postgres moves a row when it is updated
             .ToListAsync(ct);

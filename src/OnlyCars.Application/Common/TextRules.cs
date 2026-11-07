@@ -8,9 +8,6 @@ namespace OnlyCars.Application.Common;
 /// </summary>
 public static class TextRules
 {
-    /// <summary>For a sort key: the old word sort ignored hyphens and apostrophes, so "co-op" comes right after "coop".</summary>
-    public const string IgnoredInSort = "[-']";
-
     // No weight in the old collation, so a search looked through them. U+200B, U+200C and U+00AD were recorded as not ignored.
     private const string IgnoredMarks = "\u034F\u061C\u200D\u200E\u200F\u202A-\u202E\u2060\u2066-\u2069\uFEFF";
 

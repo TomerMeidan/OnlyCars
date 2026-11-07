@@ -1,4 +1,3 @@
-using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
 using OnlyCars.Application.Checklists.Dtos;
 using OnlyCars.Application.Common;
@@ -15,7 +14,7 @@ public class ChecklistTemplateService(IAppDbContext db)
         var templates = await db.ChecklistTemplates
             .Where(t => t.UserId == userId)
             .Include(t => t.Items)
-            .OrderBy(t => Regex.Replace(t.Name.ToLower(), TextRules.IgnoredInSort, "")).ThenBy(t => t.Name.Length).ThenBy(t => t.CreatedAt)
+            .OrderBy(t => t.Name.ToLower().Replace("-", "").Replace("'", "")).ThenBy(t => t.Name.Length).ThenBy(t => t.CreatedAt) // the old word sort ignored these. Not Regex.Replace: Npgsql sends it without the g flag, so only the first goes
             .ToListAsync(ct);
         return templates.Select(ToDto).ToList();
     }

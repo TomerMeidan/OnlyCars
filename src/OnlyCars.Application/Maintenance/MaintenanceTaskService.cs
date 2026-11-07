@@ -34,7 +34,7 @@ public partial class MaintenanceTaskService(IAppDbContext db, VehicleService veh
         var tasks = await db.MaintenanceTasks
             .Where(t => t.VehicleId == vehicleId)
             .OrderByDescending(t => t.IsEnabled)
-            .ThenBy(t => Regex.Replace(t.Name.ToLower(), TextRules.IgnoredInSort, ""))
+            .ThenBy(t => t.Name.ToLower().Replace("-", "").Replace("'", "")) // the old word sort ignored these. Not Regex.Replace: Npgsql sends it without the g flag, so only the first goes
             .ThenBy(t => t.Name.Length)
             .ThenBy(t => t.Id) // names equal but for case: a stable order, since Postgres moves a row when it is updated
             .ToListAsync(ct);
@@ -249,7 +249,7 @@ public partial class MaintenanceTaskService(IAppDbContext db, VehicleService veh
         if (taskId is { } t) query = query.Where(r => r.Tasks.Any(j => j.MaintenanceTaskId == t));
         if (from is { } f) query = query.Where(r => r.Date >= f);
         if (to is { } u) query = query.Where(r => r.Date <= u);
-        // shortcut: unindexed LIKE '%word%' over the user's records, items, task and template names, once per word (up to 10);
+        // shortcut: an unindexed regular-expression match (~*) over the user's records, items, task and template names, once per word (up to 10);
         // fine at personal-app scale, add full-text search if it gets slow.
         // The pattern keeps it case-insensitive on any collation, with the final letters and invisible marks the old collation looked through.
         foreach (var word in words)
@@ -611,7 +611,7 @@ public partial class MaintenanceTaskService(IAppDbContext db, VehicleService veh
 
         var taskIds = record.Tasks.Select(j => j.MaintenanceTaskId).ToList();
         var tasks = await db.MaintenanceTasks.Where(t => taskIds.Contains(t.Id))
-            .OrderBy(t => Regex.Replace(t.Name.ToLower(), TextRules.IgnoredInSort, "")).ThenBy(t => t.Name.Length).ThenBy(t => t.Id).ToListAsync(ct);
+            .OrderBy(t => t.Name.ToLower().Replace("-", "").Replace("'", "")).ThenBy(t => t.Name.Length).ThenBy(t => t.Id).ToListAsync(ct); // the old word sort ignored these. Not Regex.Replace: Npgsql sends it without the g flag, so only the first goes
         // Every link of these tasks, voided ones included (a snapshot can point at an earlier voided record).
         var links = await db.ServiceRecordTasks.Include(j => j.ServiceRecord)
             .Where(j => taskIds.Contains(j.MaintenanceTaskId)).ToListAsync(ct);

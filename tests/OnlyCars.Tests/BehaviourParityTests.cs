@@ -120,6 +120,16 @@ public class BehaviourParityTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Criterion2_NamesWithSeveralHyphensOrApostrophes_KeepTheRecordedOrder()
+    {
+        // One difference: names equal but for their separators. SQL Server orders them by where the separators are; here the shorter comes first.
+        var differences = BehaviourRecorded.SeparatorSort.Where(l => !l.StartsWith("record tasks")).ToDictionary(l => l, l => l
+            .Replace("o'n'e'i'l | o'ne'il", "o'ne'il | o'n'e'i'l"));
+
+        AssertRecorded(BehaviourRecorded.SeparatorSort, await BehaviourScenarios.SortAsync(db, BehaviourScenarios.SeparatorSortNames), differences);
+    }
+
+    [Fact]
     public async Task Criterion2_TemplatesEqualButForCase_AreInCreationOrder() =>
         AssertRecorded(BehaviourRecorded.CaseOnlySort, await BehaviourScenarios.CaseOnlySortAsync(db));
 
