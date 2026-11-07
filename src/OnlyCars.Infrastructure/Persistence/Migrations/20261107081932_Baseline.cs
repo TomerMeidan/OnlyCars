@@ -1063,6 +1063,9 @@ namespace OnlyCars.Infrastructure.Persistence.Migrations
             migrationBuilder.DropTable(
                 name: "Users",
                 schema: "onlycars");
+
+            migrationBuilder.AlterDatabase()
+                .OldAnnotation("Npgsql:CollationDefinition:onlycars.und_ci", "und-u-ks-level2,und-u-ks-level2,icu,False");
         }
     }
 }

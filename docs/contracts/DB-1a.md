@@ -7,9 +7,30 @@ Published by backend-engineer on branch `db-1`. No endpoint, request, response o
 ```
 docker run -d --name onlycars-dev-pg17 -p 127.0.0.1:5433:5432 -e POSTGRES_HOST_AUTH_METHOD=trust postgres:17
 dotnet ef database update --project src/OnlyCars.Infrastructure --startup-project src/OnlyCars.Api
+dotnet run --launch-profile http   # in src/OnlyCars.Api
 ```
 
-`appsettings.json` holds `Host=127.0.0.1;Port=5433;Database=onlycars;Username=postgres`, with no password because the container uses trust auth and binds only to 127.0.0.1. `onlycars-pg` (Postgres 18, port 5432) is not used.
+These run in Development, the default for `dotnet ef` and the launch profile. `appsettings.Development.json` holds `Host=127.0.0.1;Port=5433;Database=onlycars;Username=postgres`, with no password because the container uses trust auth and binds only to 127.0.0.1. Development also loads the owner's user-secrets. `onlycars-pg` (Postgres 18, port 5432) is not used.
+
+**Without user-secrets, as agents must run:** any other environment needs its own string with `SSL Mode=Require` or stronger, so it needs a database with TLS. Use a container with the image's own certificate, on a port of your choice:  In Git Bash, prefix `docker run` with `MSYS_NO_PATHCONV=1`, or it rewrites the certificate paths.
+
+```
+docker run -d --name onlycars-tls-pg17 -p 127.0.0.1:5434:5432 -e POSTGRES_HOST_AUTH_METHOD=trust postgres:17 -c ssl=on -c ssl_cert_file=/etc/ssl/certs/ssl-cert-snakeoil.pem -c ssl_key_file=/etc/ssl/private/ssl-cert-snakeoil.key
+ASPNETCORE_ENVIRONMENT=Staging
+ConnectionStrings__Default="Host=127.0.0.1;Port=5434;Database=onlycars;Username=postgres;SSL Mode=Require"
+Jwt__SigningKey=<any dummy of 32 or more characters>
+```
+
+## Startup checks
+
+`RequireDatabaseConnection` (`DependencyInjection.cs`, called from `Program.cs`) stops the app when:
+- `ConnectionStrings:Default` is missing or blank, in any environment. `appsettings.json` no longer holds a string, so a production deploy can't fall back to localhost.
+- the string can't be parsed.
+- outside Development, its SSL Mode is weaker than `Require`. A string with no SSL Mode counts as weak, because Npgsql's default is `Prefer`.
+
+No error message quotes the string. **The string for DB-1d must say `SSL Mode=Require`,** or the site won't start.
+
+`VerifyCA` and `VerifyFull` with `Root Certificate=<path>` pass the check, and the provider handles them with no code change. **Neither is turned on or required. `VerifyFull` with Supabase's CA stays open under L259 for DB-1d,** because it needs the CA from the owner and can't be tested until then.
 
 Tests need Docker running and nothing else: `dotnet test tests/OnlyCars.Tests -c Release`.
 
@@ -33,7 +54,7 @@ Tests need Docker running and nothing else: `dotnet test tests/OnlyCars.Tests -c
 | SQL errors 1205, 1222 read by reflection | `DbException.SqlState` `40P01`, `55P03` | `AttachmentFiles.cs` |
 | `SqlException`, number in Sentry and the start-up log | `PostgresException`, SQLSTATE | `ErrorReporting.cs`, `Program.cs` |
 | `SqlConnectionStringBuilder` | `NpgsqlConnectionStringBuilder` | `Program.cs` |
-| `scripts/app-db-user.sql`, T-SQL user | Role `onlycars_app`, which owns schema `onlycars` and has no other grants | `scripts/app-db-user.sql` |
+| `scripts/app-db-user.sql`, T-SQL user | Role `onlycars_app`, which owns schema `onlycars` and has no other grants. One transaction, works for a CREATEROLE non-superuser. It sets no password: the role can't sign in until the separate `ALTER ROLE ... PASSWORD` step. | `scripts/app-db-user.sql` |
 | `scripts/cleanup-test-users.sql` | Retired | deleted |
 | LocalDB in tests | `Testcontainers.PostgreSql`, `postgres:17`, random port, one container per run, a new database per test instance as before | `TestDbContextFactory.cs` |
 
@@ -50,11 +71,11 @@ Tests need Docker running and nothing else: `dotnet test tests/OnlyCars.Tests -c
 3. **Default collation is the built-in `und-x-icu`,** not a created `und`: same ICU locale, nothing to create, and the name always resolves.
 4. **`SET LOCAL search_path = onlycars` in the baseline.** The provider writes `COLLATE und_ci` without a schema. It lasts only for that migration's transaction, so no connection string or role setting depends on it. A later migration that adds an `und_ci` column needs the same line, and fails loudly without it.
 5. **Sentry: `PostgresException` copies its message and `Detail` into `Exception.Data`,** which Sentry sends in `mechanism.data`. It would have leaked row values even with `Include Error Detail` off. `Scrub` now clears it for database exceptions, and `ADatabaseError_...` proves it.
-6. **The `dotnet ef` commands in this ticket ran with `ASPNETCORE_ENVIRONMENT=Staging`,** so no user-secrets were loaded.
+6. **The `dotnet ef` commands in this ticket ran with `ASPNETCORE_ENVIRONMENT=Staging`,** so no user-secrets were loaded. `dotnet ef` runs `Program.cs`, so under Staging it also needs a dummy `Jwt__SigningKey` and a `ConnectionStrings__Default` with `SSL Mode=Require`. `has-pending-model-changes` and `migrations script` don't connect, so a dummy host works for them.
 
 ## Tests compared with the ticket's 929
 
-929 - 1 removed + 10 new = 938.
+Counted at the first commit: 929 - 1 removed + 10 new = 938. The fix round added 11 test cases to `PostgresBaselineTests`, all listed below; none removed.
 
 **Removed (1):** `TireMigrationTests.Up_CopiesEveryMountCheckAndRotation_KeepsTheOldTablesAsLegacy_AndDownThenUpWorks`, because it tests a migration that no longer exists.
 
@@ -69,6 +90,13 @@ Tests need Docker running and nothing else: `dotnet test tests/OnlyCars.Tests -c
 - `ARoleWithNoGrants_CantReadTheSchema`
 - `TheAppRole_HasNoRightsOutsideItsSchema`
 - `TheTests_RunOnlyOnTheirOwnContainer`
+
+**Added in the fix round, `PostgresBaselineTests`:**
+- `Baseline_Down_RemovesTheTablesAndTheCollation_AndCanBeAppliedAgain` (1)
+- `Startup_OutsideDevelopment_RefusesAWeakSslMode_WithoutPrintingTheString` (4)
+- `Startup_OutsideDevelopment_AcceptsRequireAndStronger` (3)
+- `Startup_RefusesAMissingString_InEveryEnvironment` (2)
+- `Startup_RefusesAStringItCantParse_WithoutPrintingIt` (1)
 
 **Rewritten, same count, same behaviour checked:**
 

@@ -1,13 +1,20 @@
 using System.Runtime.CompilerServices;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.Extensions.Configuration;
 using Npgsql;
 using OnlyCars.Domain;
 using OnlyCars.Domain.Entities;
+using OnlyCars.Infrastructure;
 using OnlyCars.Infrastructure.Persistence;
 
 namespace OnlyCars.Tests;
 
-/// <summary>DB-1a: one empty database with scripts/app-db-user.sql run as the admin, and the baseline applied as the non-admin onlycars_app.</summary>
+/// <summary>
+/// DB-1a: one empty database with scripts/app-db-user.sql run as a CREATEROLE non-superuser that owns the database (as Supabase's postgres is
+/// believed to be), and the baseline applied as the non-admin onlycars_app.
+/// </summary>
 public sealed class AppRoleDatabase : IAsyncLifetime
 {
     public string Admin { get; } = TestDbContextFactory.NewPostgresConnection();
@@ -18,18 +25,30 @@ public sealed class AppRoleDatabase : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
-        await using (var maintenance = new NpgsqlConnection(TestDbContextFactory.AdminConnection))
-        {
-            await maintenance.OpenAsync();
-            await using var create = new NpgsqlCommand($"CREATE DATABASE \"{new NpgsqlConnectionStringBuilder(Admin).Database}\"", maintenance);
-            await create.ExecuteNonQueryAsync();
-        }
+        var adminPassword = Guid.NewGuid().ToString("N");
+        var database = new NpgsqlConnectionStringBuilder(Admin).Database!;
+        var clash = database + "_clash";
+        await ExecuteAsync(TestDbContextFactory.AdminConnection, $"CREATE ROLE script_admin LOGIN CREATEROLE PASSWORD '{adminPassword}'");
+        await ExecuteAsync(TestDbContextFactory.AdminConnection, $"CREATE DATABASE \"{database}\" OWNER script_admin");
+        await ExecuteAsync(TestDbContextFactory.AdminConnection, $"CREATE DATABASE \"{clash}\" OWNER script_admin");
+        var scriptAdmin = new NpgsqlConnectionStringBuilder(Admin) { Username = "script_admin", Password = adminPassword }.ConnectionString;
+        var script = await File.ReadAllTextAsync(ScriptPath());
+
+        // All or nothing: failing at the schema leaves no role, so the next run works.
+        var clashing = new NpgsqlConnectionStringBuilder(scriptAdmin) { Database = clash }.ConnectionString;
+        await ExecuteAsync(clashing, "CREATE SCHEMA onlycars");
+        Assert.Equal("42P06", (await Assert.ThrowsAsync<PostgresException>(() => ExecuteAsync(clashing, script))).SqlState);
+        Assert.Equal([0L], await QueryAsync<long>(Admin, "SELECT COUNT(*) FROM pg_roles WHERE rolname = 'onlycars_app'"));
+
+        await ExecuteAsync(scriptAdmin, script);
+
+        // The script sets no password, so nothing can sign in until step 2.
+        var noLogin = new NpgsqlConnectionStringBuilder(scriptAdmin) { Username = "onlycars_app", Password = "REPLACE-WITH-A-LONG-RANDOM-PASSWORD" }.ConnectionString;
+        Assert.Equal("28P01", (await Assert.ThrowsAsync<PostgresException>(() => ExecuteAsync(noLogin, "SELECT 1"))).SqlState);
 
         var password = Guid.NewGuid().ToString("N");
-        var script = await File.ReadAllTextAsync(ScriptPath());
-        Assert.Contains("REPLACE-WITH-A-LONG-RANDOM-PASSWORD", script);
-        await ExecuteAsync(Admin, script.Replace("REPLACE-WITH-A-LONG-RANDOM-PASSWORD", password));
-        App = new NpgsqlConnectionStringBuilder(Admin) { Username = "onlycars_app", Password = password }.ConnectionString;
+        await ExecuteAsync(scriptAdmin, $"ALTER ROLE onlycars_app PASSWORD '{password}'");
+        App = new NpgsqlConnectionStringBuilder(scriptAdmin) { Username = "onlycars_app", Password = password }.ConnectionString;
 
         await using var db = new AppDbContext(TestDbContextFactory.PostgresOptions(App).Options);
         await db.Database.MigrateAsync();
@@ -263,6 +282,66 @@ public class PostgresBaselineTests(AppRoleDatabase database) : IClassFixture<App
         Assert.Equal("42501", refused.SqlState);
         Assert.Equal([false], await AppRoleDatabase.QueryAsync<bool>(database.App,
             "SELECT rolsuper OR rolcreaterole OR rolcreatedb OR rolbypassrls FROM pg_roles WHERE rolname = current_user"));
+    }
+
+    [Fact]
+    public async Task Baseline_Down_RemovesTheTablesAndTheCollation_AndCanBeAppliedAgain()
+    {
+        var connection = TestDbContextFactory.NewPostgresConnection();
+        await using var db = new AppDbContext(TestDbContextFactory.PostgresOptions(connection).Options);
+        await db.Database.MigrateAsync();
+
+        await db.GetService<IMigrator>().MigrateAsync(Migration.InitialDatabase);
+
+        Assert.Equal(["__EFMigrationsHistory"], await AppRoleDatabase.QueryAsync<string>(connection, "SELECT tablename::text FROM pg_tables WHERE schemaname = 'onlycars'"));
+        Assert.Equal([0L], await AppRoleDatabase.QueryAsync<long>(connection, "SELECT COUNT(*) FROM pg_collation WHERE collname = 'und_ci'"));
+        await db.Database.MigrateAsync();
+        Assert.Equal(12, await db.TaskTemplates.CountAsync());
+        await db.Database.EnsureDeletedAsync();
+    }
+
+    private const string Secret = "Host=db.example.test;Username=u;Password=do-not-print-me";
+
+    private static void Require(string? connection, bool isDevelopment) =>
+        new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?> { ["ConnectionStrings:Default"] = connection }).Build()
+            .RequireDatabaseConnection(isDevelopment);
+
+    [Theory]
+    [InlineData("")] // the default, Prefer
+    [InlineData(";SSL Mode=Disable")]
+    [InlineData(";SSL Mode=Allow")]
+    [InlineData(";SSL Mode=Prefer")]
+    public void Startup_OutsideDevelopment_RefusesAWeakSslMode_WithoutPrintingTheString(string mode)
+    {
+        var error = Assert.Throws<InvalidOperationException>(() => Require(Secret + mode, isDevelopment: false));
+
+        Assert.Contains("must be Require", error.Message);
+        Assert.DoesNotContain("do-not-print-me", error.ToString());
+        Require(Secret + mode, isDevelopment: true); // the local container has no TLS
+    }
+
+    [Theory]
+    [InlineData("Require")]
+    [InlineData("VerifyCA;Root Certificate=/etc/ssl/ca.pem")]
+    [InlineData("VerifyFull;Root Certificate=/etc/ssl/ca.pem")]
+    public void Startup_OutsideDevelopment_AcceptsRequireAndStronger(string mode) => Require($"{Secret};SSL Mode={mode}", isDevelopment: false);
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("  ")]
+    public void Startup_RefusesAMissingString_InEveryEnvironment(string? connection)
+    {
+        Assert.Contains("not configured", Assert.Throws<InvalidOperationException>(() => Require(connection, isDevelopment: true)).Message);
+        Assert.Contains("not configured", Assert.Throws<InvalidOperationException>(() => Require(connection, isDevelopment: false)).Message);
+    }
+
+    [Fact]
+    public void Startup_RefusesAStringItCantParse_WithoutPrintingIt()
+    {
+        var error = Assert.Throws<InvalidOperationException>(() => Require("Password=do-not-print-me;SSL Mode=do-not-print-me;NoSuchKey=do-not-print-me", isDevelopment: false));
+
+        Assert.Contains("could not be parsed", error.Message);
+        Assert.DoesNotContain("do-not-print-me", error.ToString());
     }
 
     [Fact]

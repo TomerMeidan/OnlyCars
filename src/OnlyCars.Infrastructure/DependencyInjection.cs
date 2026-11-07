@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Npgsql;
 using OnlyCars.Application.Auth;
 using OnlyCars.Application.Common;
 using OnlyCars.Application.Reminders;
@@ -13,6 +14,34 @@ namespace OnlyCars.Infrastructure;
 
 public static class DependencyInjection
 {
+    /// <summary>
+    /// Stops the app at startup without a database string, or outside Development with one that allows an unencrypted connection.
+    /// VerifyCA and VerifyFull pass, and the provider reads their Root Certificate from the string itself. No message quotes the string.
+    /// </summary>
+    public static void RequireDatabaseConnection(this IConfiguration configuration, bool isDevelopment)
+    {
+        var connection = configuration.GetConnectionString("Default");
+        if (string.IsNullOrWhiteSpace(connection))
+        {
+            throw new InvalidOperationException("ConnectionStrings:Default is not configured.");
+        }
+
+        SslMode mode;
+        try
+        {
+            mode = new NpgsqlConnectionStringBuilder(connection).SslMode;
+        }
+        catch (Exception e) when (e is ArgumentException or FormatException or InvalidCastException)
+        {
+            throw new InvalidOperationException("ConnectionStrings:Default could not be parsed."); // no inner exception: its message can quote the string
+        }
+
+        if (!isDevelopment && mode < SslMode.Require)
+        {
+            throw new InvalidOperationException($"ConnectionStrings:Default has SSL Mode {mode}; outside Development it must be Require or stronger.");
+        }
+    }
+
     public static IServiceCollection AddInfrastructure(this IServiceCollection services, IConfiguration configuration)
     {
         services.AddDbContext<AppDbContext>(options =>

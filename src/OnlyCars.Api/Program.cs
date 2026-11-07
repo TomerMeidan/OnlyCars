@@ -36,6 +36,7 @@ builder.Services.AddSwaggerGen();
 
 builder.Services.AddApplication();
 builder.Services.Configure<AuthOptions>(builder.Configuration.GetSection(AuthOptions.SectionName));
+builder.Configuration.RequireDatabaseConnection(builder.Environment.IsDevelopment());
 builder.Services.AddInfrastructure(builder.Configuration);
 // The daily reminder email's timer only when email can be sent (NOT-2); the job endpoint covers the days the host was asleep.
 if (builder.Configuration["Email:ResendApiKey"] is { Length: > 0 } || builder.Configuration["Email:SmtpPassword"] is { Length: > 0 })
