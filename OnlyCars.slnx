@@ -5,6 +5,9 @@
     <Project Path="src/OnlyCars.Domain/OnlyCars.Domain.csproj" />
     <Project Path="src/OnlyCars.Infrastructure/OnlyCars.Infrastructure.csproj" />
   </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/OnlyCars.DbCopy/OnlyCars.DbCopy.csproj" />
+  </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/OnlyCars.Tests/OnlyCars.Tests.csproj" />
   </Folder>
