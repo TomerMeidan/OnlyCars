@@ -13,9 +13,15 @@ dotnet tools/OnlyCars.DbCopy/bin/Release/net10.0/OnlyCars.DbCopy.dll --write    
 dotnet tools/OnlyCars.DbCopy/bin/Release/net10.0/OnlyCars.DbCopy.dll --verify            # compares again, writes nothing
 ```
 
-Exit code 0: it did its job and found nothing that stops a `--write`. Exit code 1: it stopped, and printed why. Any unknown option stops it.
+Exit code 0: it did its job and found nothing that stops a `--write`. Exit code 1: it stopped, and printed why. **Exit code 2: `--write`'s commit failed, and the server may have committed all the same (see gate 5).** Any unknown option stops it.
 
-**Connections.** With no key options it reads `ConnectionStrings:AzureSource` and `ConnectionStrings:SupabaseApp` from the user-secrets of `src/OnlyCars.Api`. With `--source-key A --target-key B` it reads only the environment variables `ConnectionStrings__A` and `ConnectionStrings__B`, and never opens the secrets file.
+**Connections.** With no key options it reads `ConnectionStrings:AzureSource` and `ConnectionStrings:SupabaseApp` from the user-secrets of `src/OnlyCars.Api`. With `--source-key A --target-key B` it reads only the environment variables `ConnectionStrings__A` and `ConnectionStrings__B`, and never opens the secrets file. The value of a key is never printed, so a string pasted in its place shows nothing.
+
+**TLS, before any connection, in every mode.** It stops on a target with SSL Mode below `Require` (Npgsql's default is `Prefer`), a source with `Encrypt=false` or `Optional`, or a source with `TrustServerCertificate=true`: the app's rule (`DependencyInjection.RequireDatabaseConnection`). Only loopback (`localhost`, `127.x`, `::1`) and LocalDB are exempt. If Azure's string from gate 2 has `TrustServerCertificate=True`, the tool names that setting: the owner corrects it in user-secrets.
+
+**`--target-root-cert <file>`** connects to the target with `SSL Mode=VerifyFull` and that PEM file, on top of the string, which stays where it is. Without it, the string's own SSL Mode is used. Nothing requires it.
+
+**Timeouts.** Every command on both sides has 600 s (`CommandTimeoutSeconds`), replacing the drivers' 30 s. The longest is one read of the largest table, about 30 MB of UTF-16, which is 4 minutes at 1 Mbit/s. The target's transaction also sets `idle_in_transaction_session_timeout` and `statement_timeout` to 0 with `SET LOCAL`, as it sits idle during every source read.
 
 ## The commands for DB-1d
 
@@ -23,8 +29,9 @@ These assume gates 1 and 2 are done, so both strings are in user-secrets. No str
 
 | Gate | Command | What to look at |
 |---|---|---|
-| 3 | the dry run above | `Source migration` is `20261106063910_TemplateHebrewNames`; `Source collation` is `SQL_Latin1_General_CP1_CI_AS` with `different one: none`, else stop for the PM; counts and bytes against the 500 MB limit; U+0000, unpaired surrogates, trailing spaces, collisions. A target without the baseline is expected at this gate and isn't a stop. |
-| 5 | `--apply-baseline`, then a dry run, then `--write` | `Target: empty, apart from 12 TaskTemplates`, then `Verify passed` and `Committed N rows in 22 tables`. A failure prints `Nothing was committed`, and the target is as it was. |
+| 3 | the dry run above | `Source migration` is `20261106063910_TemplateHebrewNames`; `Source collation` is `SQL_Latin1_General_CP1_CI_AS` with `different one: none`, else stop for the PM; counts and bytes against the 500 MB limit; U+0000, unpaired surrogates, trailing spaces, collisions. A target without the baseline is expected at this gate and isn't a stop. `Not in the model`, `Not nvarchar` or a TLS stop: stop for the PM. |
+| 3, the `VerifyFull` trial (L259), right after that dry run | the dry run above, with `--target-root-cert <path to Supabase's CA file from gate 1>` | **Works:** exit 0, `Target: ... SSL Mode VerifyFull`, `Dry run done`. The CA file goes in the Docker image on `db-1`, and gate 6's string uses `VerifyFull`. **Fails:** exit 1, `db-copy stopped: NpgsqlException, from AuthenticationException` (certificate refused) or `from FileNotFoundException` (wrong path: correct it and try again). Then gate 6 keeps `SSL Mode=Require`, L259 stays open as a small BE ticket after the move, and the move goes on (PM's decision). Nothing is written either way, and the string in user-secrets doesn't change. |
+| 5 | `--apply-baseline`, then a dry run, then `--write` | `Target: empty, apart from 12 TaskTemplates`, then `Verify passed` and `Committed N rows in 22 tables`. A failure (exit 1) prints `Nothing was committed`, and the target is as it was. **Exit 2 prints `Commit result unknown, run --verify`:** the link failed during the commit, so don't resume or retry yet, and run `--verify` alone. `Verify passed` on all 22 tables: it committed, go on. `Verify <Table>: source N, target 0` on every table but `TaskTemplates`: it didn't, and `--write` can be run again. Anything else: stop for the PM. Running `--write` again is safe in any case, as a non-empty target is refused. |
 | 5, afterwards, and DB-1d AC2 | `--verify` | `differences 0` on all 22 tables and `Verify passed`. Keep this output in the sign-off. |
 
 `--verify` needs Azure unchanged and the site not yet writing to Supabase, so run it before gate 7. After that, any new row is a difference.
@@ -35,8 +42,10 @@ These assume gates 1 and 2 are done, so both strings are in user-secrets. No str
 
 Each line, for every run but `--apply-baseline`; `--verify` prints only the first group and the `Verify` lines.
 
-- `Source:` and `Target:` database and host names. `Mode:`.
+- `Source:` and `Target:` database and host names, and the target's SSL Mode. `Mode:`.
 - `Source migration:`. Any other last migration stops every mode. A model column missing from the source stops every mode.
+- `Not in the model: <schema>.<table>.<column>, ...` stops every mode: any base-table column in any schema that the model doesn't have, as it wouldn't be copied. Only `dbo.Legacy_*` and `dbo.__EFMigrationsHistory` are allowed. Views are ignored, as they hold no data.
+- `Not nvarchar: <schema>.<table>.<column> <type>, ...` stops every mode: a text column outside those two, or a column the model reads as text, of any other type. A `varchar` would be garbled by the raw UTF-16 read, the same on both sides, and the verify would pass.
 - `Source collation:`, and string columns with a different one.
 - `Not copied: Legacy_*, N rows`.
 - `<Table>: N rows, B bytes`, per model table. Bytes are the row's values as UTF-8 text, a guide to what it takes on the target.
@@ -45,22 +54,24 @@ Each line, for every run but `--apply-baseline`; `--verify` prints only the firs
 - `Collisions after trimming: Users.Email: N (id = id, ...)`, the same for `Vehicles.Vin`, per `UserId`. Any stops `--write`.
 - `Target:` not at the baseline, or empty apart from `TaskTemplates`, or not empty, with the tables and counts. Not empty stops `--write`.
 - `Verify <Table>: source N, target N, differences N`, `Difference: <Table> <id>: different | missing from the target | not in the source`, `Verify passed` or `Verify FAILED`.
-- `db-copy stopped:` with a stop's own text, or an exception's type with its SQL number, or SQLSTATE and constraint name. `Time:`.
+- `db-copy stopped:` with a stop's own text, or an exception's type with its SQL number, or SQLSTATE and constraint name, or with its inner exception's type (`NpgsqlException, from TimeoutException`). `Commit result unknown, run --verify`. `Time:`.
 
 ## Choices made in this ticket
 
 1. **Collisions use .NET's ICU, not the target's collation.** Gate 3's dry run comes before the target has `und_ci`, and creating even a temporary collation would be a write. `CopyPlan.CollisionKey` is a sort key at the same strength. `CollisionKey_AgreesWithTheCollationInPostgres` compares the two on real Postgres for case, full width, `ß`, a decomposed accent, an ignorable mark, blank, accents, leading space, tab, a final Hebrew letter and niqqud. **The limit:** the two ICU versions could differ on a rare character. The target's unique index still refuses it, and the copy rolls back, but with an index name in place of ids.
-2. **Text is read from the source as raw UTF-16** (`CAST(... AS varbinary(max))`). SqlClient turns an unpaired surrogate into U+FFFD when it decodes, and the verify would then pass over a changed value. Postgres can't store one, so it is listed and stops `--write`, as U+0000 does. The ticket names only U+0000. A test pins that every text column in the pinned source is `nvarchar`, as this depends on it.
+2. **Text is read from the source as raw UTF-16** (`CAST(... AS varbinary(max))`). SqlClient turns an unpaired surrogate into U+FFFD when it decodes, and the verify would then pass over a changed value. Postgres can't store one, so it is listed and stops `--write`, as U+0000 does. The ticket names only U+0000. A test pins that every text column in the pinned source is `nvarchar`, and the tool checks the live source at runtime, as this depends on it.
 3. **No second pass for a foreign-key cycle.** The model has none, and `TheModel_HasNoForeignKeyCycle_...` pins it. A cycle stops the tool, so it can't go wrong unnoticed.
 4. **The verify in `--write` reads the source again,** so a write that reaches the source during the copy also fails it.
 5. **The dry run and `--verify` hold a `READ ONLY` transaction on the target,** so Postgres itself refuses a write. The source has no such guard; AC3's test does that job.
 6. **`dotnet ef migrations script --idempotent`,** for the committed schema at `tests/OnlyCars.Tests/DbCopy/sqlserver-schema-20261106063910.sql`. The plain script has one batch per migration and fails on SQL Server, because a batch uses a column it adds. The idempotent one has one batch per statement. Made from a temporary worktree of `15df39e`, since removed.
 7. **`DbCopyTests` uses LocalDB,** the one test class that does, because the copy's source has to be real SQL Server. This changes DB-1a AC1's "LocalDB unused": `dotnet test` now needs LocalDB as well as Docker. Each test has its own `OnlyCars_Test_<guid>` database, which it drops. It never connects to `OnlyCars`.
-8. **The target's password travels only in the connection string.** The tool doesn't require `SSL Mode=Require`; gate 1's string has it.
+8. **The target's password travels only in the connection string,** and the tool now refuses a string that would send it unencrypted (see TLS above).
+9. **`--target-root-cert` wasn't in the ticket.** Gate 3's trial needs `VerifyFull` without moving the string out of user-secrets or editing it.
+10. **Any failure once the commit has started counts as unknown,** including one the server refused outright, and one from closing the dead connection afterwards. `--verify` settles each the same way.
 
 ## Tests compared with 991
 
-991 + 51 = 1042, none removed or rewritten. All 51 are in `DbCopyTests`.
+991 + 88 = 1079, none removed or rewritten. All 88 are in `DbCopyTests`: 51 from the first round, 37 from the fix round.
 
 | Criterion | Tests |
 |---|---|
@@ -69,6 +80,7 @@ Each line, for every run but `--apply-baseline`; `--verify` prints only the firs
 | AC3 | `AC3_TheSourceReceivesOnlySelects_...`: an Extended Events session on the server records every batch and RPC from the tool's connection through a dry run, a write and a verify. Each is a single `SELECT`, with the source database set `READ_ONLY` throughout. |
 | Secrets | `WithoutKeys_ItReadsTheTwoSecrets_...` (a real process, a fake `APPDATA`, fake values, dead ports, no real secret read), `AMissingOrUnreadableString_...` (4, one with invalid JSON), `WithKeys_ItReadsTheEnvironmentOnly_...` (the secrets file holds invalid JSON), `TheToolUsesTheApisUserSecretsId` |
 | Other | `CollisionKey_...` (14), `TheSameVinOnTwoUsers_...`, `AModelColumnMissing...`, `ADryRun_ReportsAColumnWithAnotherCollation`, `AValuePostgresCantHold_...` (2), `ApplyBaseline_...`, `TheModel_...`, `ThePinnedSource_...`, `TheHash_...` (2), `TheRead_RetriesWhileAzureWakes_...`, `ABadCommandLine_...` (4) |
+| Fix round | `AFailureDuringTheCommit_...` (2: the server refuses, the connection dies, both inside `COMMIT`), `ASlowSourceAndASlowTarget_...` (a 33 s source read and a 33 s insert, with the role's timeouts at 1 s, so this test takes over a minute), `ASourceColumnOutsideTheModel_...` (3), `AModelTextColumnThatIsNotNvarchar_...` (3), `LegacyTablesAndTheMigrationHistory_...`, `AWeakTargetString_...` (8), `AWeakSourceString_...` (6), `StrongStringsAndLocalOnes_Pass` (7), `AWeakString_StopsEveryMode_...` (4), `TheRootCertificateOption_...`, `AConnectionStringPastedAsAKey_...` |
 
 The retry on 40613 is tested with a fake error, as no public way exists to build a `SqlException`. Real Azure wakes aren't tested until gate 3.
 
@@ -76,8 +88,8 @@ The retry on 40613 is tested with a fake error, as no public way exists to build
 
 Every write to the output is in `tools/OnlyCars.DbCopy/DbCopyTool.cs`, and all of them hold only names, counts, sizes, ids or times.
 
-- No exception message is ever printed. `DbCopyTool.Safe` is the only route, and it prints `CopyStop`'s own text, or a type with `SqlException.Number`, `PostgresException.SqlState` and `ConstraintName`. `CliAsync` and `RunAsync` catch everything, so a bad connection string prints only `ArgumentException` or similar, and no stack trace.
-- `CopyStop` messages are built from column and table names, migration ids, a CLR type name and connection-string key names.
+- No exception message is ever printed. `DbCopyTool.Safe` is the only route, and it prints `CopyStop`'s own text, or a type with `SqlException.Number`, `PostgresException.SqlState` and `ConstraintName`, or an exception's type and its inner exception's type. `CliAsync` and `RunAsync` catch everything, so a bad connection string prints only `ArgumentException` or similar, and no stack trace.
+- `CopyStop` messages are built from column and table names, SQL type names, migration ids, a CLR type name, SSL modes and connection-string key names. The value of `--source-key` or `--target-key` is never in one.
 - Host and database names come from the connection-string builders. Passwords are never read from them.
 - The tests search the output for a value marker on the copy, the verify and the failure paths, and for fake passwords on every connection failure.
 
@@ -87,7 +99,7 @@ Every write to the output is in `tools/OnlyCars.DbCopy/DbCopyTool.cs`, and all o
 
 **Source:** the owner's LocalDB `OnlyCars`, read only and directly. Its last migration was already `20261106063910_TemplateHebrewNames`, so no backup or throwaway copy was needed. **Target:** container `onlycars-rehearsal-pg17`, `postgres:17`, its own Docker network `onlycars-rehearsal`, `127.0.0.1:5436` only, a generated password, TLS on with the image's certificate. The baseline was applied by `--apply-baseline` as `onlycars_app`, made by `scripts/app-db-user.sql`.
 
-**Results:** 208,223 rows in 22 tables, about 31.0 MB. `--write` took 10.0 s, including the verify; `--verify` alone 4.2 s; the dry run 2.6 s. No U+0000, no unpaired surrogates, no trimmed values, no collisions, every string column on the database's collation. All on this machine, so gate 5 will take longer, over the network to Azure and Supabase. Row and byte counts per table:
+**Results, re-run on the fixed tool:** 208,223 rows in 22 tables, about 31.0 MB. `--write` took 10.1 s, including the verify, and `--verify` alone 4.2 s, with `differences 0` on all 22 tables; the dry run 2.6 s. No U+0000, no unpaired surrogates, no trimmed values, no collisions, every string column on the database's collation. All on this machine, so gate 5 will take longer, over the network to Azure and Supabase. Row and byte counts per table:
 
 | Table | Rows | Bytes |
 |---|---:|---:|
@@ -116,6 +128,29 @@ Every write to the output is in `tools/OnlyCars.DbCopy/DbCopyTool.cs`, and all o
 
 Not copied: `Legacy_TireChecks` 29, `Legacy_TireMeasurements` 59, `Legacy_TireMounts` 40, `Legacy_TireRotations` 16, `Legacy_TireSets` 91.
 
+**`VerifyFull`:** tried on a second throwaway container with its own CA and a certificate for `127.0.0.1`, by dry run only, so no row reached it. The right CA: exit 0, `SSL Mode VerifyFull`. The wrong CA: exit 1, `from AuthenticationException`. A missing file: exit 1, `from FileNotFoundException`. A server without TLS is refused too (`TheRootCertificateOption_...`). Supabase's own certificate can't be tried before gate 3.
+
+### Creating it
+
+In Git Bash, from the worktree's root. `MSYS_NO_PATHCONV=1` is needed: without it, Git Bash rewrites the `/etc/ssl` paths and Postgres doesn't start. `-e POSTGRES_PASSWORD` with no value takes it from the environment, so it isn't on a command line.
+
+```
+export MSYS_NO_PATHCONV=1 POSTGRES_PASSWORD="$(openssl rand -hex 24)"
+docker network create onlycars-rehearsal
+docker run -d --name onlycars-rehearsal-pg17 --network onlycars-rehearsal -p 127.0.0.1:5436:5432 \
+  -e POSTGRES_PASSWORD -e POSTGRES_DB=onlycars postgres:17 \
+  -c ssl=on -c ssl_cert_file=/etc/ssl/certs/ssl-cert-snakeoil.pem -c ssl_key_file=/etc/ssl/private/ssl-cert-snakeoil.key
+for i in $(seq 60); do docker exec onlycars-rehearsal-pg17 pg_isready -q -h 127.0.0.1 && break; sleep 1; done    # TCP: only the image's real start listens on it, not its first one
+docker port onlycars-rehearsal-pg17    # must show only 5432/tcp -> 127.0.0.1:5436
+docker exec -i onlycars-rehearsal-pg17 psql -q -U postgres -d onlycars -v ON_ERROR_STOP=1 < scripts/app-db-user.sql
+printf "ALTER ROLE onlycars_app PASSWORD '%s';\n" "$POSTGRES_PASSWORD" | docker exec -i onlycars-rehearsal-pg17 psql -q -U postgres -d onlycars -v ON_ERROR_STOP=1
+
+export 'ConnectionStrings__RehearsalSource=Server=(localdb)\mssqllocaldb;Database=OnlyCars;Integrated Security=true;TrustServerCertificate=true'
+export "ConnectionStrings__RehearsalTarget=Host=127.0.0.1;Port=5436;Database=onlycars;Username=onlycars_app;Password=$POSTGRES_PASSWORD;SSL Mode=Require"
+TOOL="dotnet tools/OnlyCars.DbCopy/bin/Release/net10.0/OnlyCars.DbCopy.dll"; KEYS="--source-key RehearsalSource --target-key RehearsalTarget"
+$TOOL --apply-baseline $KEYS && $TOOL $KEYS && $TOOL --write $KEYS && $TOOL --verify $KEYS
+```
+
 ### Starting it, for QA (AC5)
 
 The password stays in the container. In Git Bash, from `src/OnlyCars.Api` in the worktree:
@@ -138,7 +173,13 @@ Don't print the string or commit it. Don't use ports 5150, 5173, 5432 or 5433. C
 
 ### Removing it, after AC5
 
+`-v` matters: the image's data folder is an anonymous volume, and it holds the owner's real data. Note its name first, as nothing else leads to it once the container is gone.
+
 ```
-docker rm -f onlycars-rehearsal-pg17
+VOLUME=$(docker inspect -f '{{range .Mounts}}{{.Name}}{{end}}' onlycars-rehearsal-pg17); echo "$VOLUME"    # must not be blank
+docker rm -fv onlycars-rehearsal-pg17
 docker network rm onlycars-rehearsal
+docker ps -a --filter name=onlycars-rehearsal -q         # must print nothing
+docker network ls --filter name=onlycars-rehearsal -q    # must print nothing
+docker volume ls -q | grep "$VOLUME"                     # must print nothing
 ```

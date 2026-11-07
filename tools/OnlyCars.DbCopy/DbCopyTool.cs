@@ -1,4 +1,6 @@
 using System.Diagnostics;
+using System.Net;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
@@ -18,7 +20,11 @@ public static class DbCopyTool
 {
     public const string UserSecretsId = "c89723e4-171d-41cf-a030-c2738362f890"; // src/OnlyCars.Api's
     public const string PinnedMigration = "20261106063910_TemplateHebrewNames";
+    public const int CommitUnknownExit = 2; // gate 5 acts on this differently from a failure, which leaves the target as it was
     private const int BatchRows = 500;
+
+    // The longest statement reads one table: about 30 MB of UTF-16 for the largest (rehearsal), 4 minutes at 1 Mbit/s. This allows for half of that speed.
+    private const int CommandTimeoutSeconds = 600;
     private static readonly TimeSpan WakeStep = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan WakeLimit = TimeSpan.FromMinutes(2);
 
@@ -34,7 +40,7 @@ public static class DbCopyTool
         try
         {
             var mode = CopyMode.DryRun;
-            string? sourceKey = null, targetKey = null;
+            string? sourceKey = null, targetKey = null, rootCertificate = null;
             for (var i = 0; i < args.Length; i++)
             {
                 switch (args[i])
@@ -44,7 +50,8 @@ public static class DbCopyTool
                     case "--apply-baseline" when mode == CopyMode.DryRun: mode = CopyMode.ApplyBaseline; break;
                     case "--source-key" when i + 1 < args.Length: sourceKey = args[++i]; break;
                     case "--target-key" when i + 1 < args.Length: targetKey = args[++i]; break;
-                    default: throw new CopyStop("Usage: [--write | --verify | --apply-baseline] [--source-key <name> --target-key <name>]");
+                    case "--target-root-cert" when i + 1 < args.Length: rootCertificate = args[++i]; break;
+                    default: throw new CopyStop("Usage: [--write | --verify | --apply-baseline] [--source-key <name> --target-key <name>] [--target-root-cert <file>]");
                 }
             }
 
@@ -64,7 +71,15 @@ public static class DbCopyTool
                 read = name => Environment.GetEnvironmentVariable($"ConnectionStrings__{name}");
             }
 
-            return await RunAsync(mode, Required(read, sourceKey ?? "AzureSource"), Required(read, targetKey ?? "SupabaseApp"), output, Task.Delay);
+            var source = Required(read, sourceKey, "--source-key", "AzureSource");
+            var target = Required(read, targetKey, "--target-key", "SupabaseApp");
+            if (rootCertificate is not null)
+            {
+                // Gate 3's trial of VerifyFull, with the string left where it is, in the user-secrets.
+                target = new NpgsqlConnectionStringBuilder(target) { SslMode = SslMode.VerifyFull, RootCertificate = rootCertificate }.ConnectionString;
+            }
+
+            return await RunAsync(mode, source, target, output, Task.Delay);
         }
         catch (Exception e)
         {
@@ -73,34 +88,50 @@ public static class DbCopyTool
         }
     }
 
-    private static string Required(Func<string, string?> read, string name) =>
-        read(name) is { Length: > 0 } value ? value : throw new CopyStop($"Connection string {name} is not set.");
+    // A key's value is never printed: a string pasted in its place would show its password.
+    private static string Required(Func<string, string?> read, string? key, string option, string secret) =>
+        read(key ?? secret) is { Length: > 0 } value ? value
+        : throw new CopyStop(key is null ? $"Connection string {secret} is not set." : $"The connection string named by {option} is not set.");
 
-    /// <summary>The run itself. 0 when it did its job and found nothing that stops a --write; 1 otherwise, with the reason printed.</summary>
+    /// <summary>The run itself. 0 when it did its job and found nothing that stops a --write; CommitUnknownExit when the commit's result can't be known; 1 otherwise, with the reason printed.</summary>
     public static async Task<int> RunAsync(CopyMode mode, string sourceConnection, string targetConnection, TextWriter output, Func<TimeSpan, Task> delay)
     {
+        var commitStarted = new StrongBox<bool>();
         try
         {
             var timer = Stopwatch.StartNew();
-            var exit = await RunCheckedAsync(mode, sourceConnection, targetConnection, output, delay);
+            var exit = await RunCheckedAsync(mode, sourceConnection, targetConnection, output, delay, commitStarted);
             await output.WriteLineAsync($"Time: {timer.Elapsed.TotalSeconds:F1} s");
             return exit;
         }
         catch (Exception e)
         {
             await output.WriteLineAsync($"db-copy stopped: {Safe(e)}");
+            if (commitStarted.Value)
+            {
+                // The link can drop after the server committed. Disposing a dead connection can land here too, so this isn't only a catch around the commit.
+                await output.WriteLineAsync("Commit result unknown, run --verify: the target may hold the whole copy, or nothing.");
+                return CommitUnknownExit;
+            }
+
             await output.WriteLineAsync(mode == CopyMode.Write ? "Nothing was committed; the target is as it was." : mode == CopyMode.ApplyBaseline ? "The migration runs in one transaction, so the target is as it was." : "Nothing was written.");
             return 1;
         }
     }
 
-    private static async Task<int> RunCheckedAsync(CopyMode mode, string sourceConnection, string targetConnection, TextWriter output, Func<TimeSpan, Task> delay)
+    private static async Task<int> RunCheckedAsync(CopyMode mode, string sourceConnection, string targetConnection, TextWriter output, Func<TimeSpan, Task> delay, StrongBox<bool> commitStarted)
     {
-        var sourceNames = new SqlConnectionStringBuilder(sourceConnection);
-        var targetNames = new NpgsqlConnectionStringBuilder(targetConnection);
+        var sourceNames = new SqlConnectionStringBuilder(sourceConnection) { CommandTimeout = CommandTimeoutSeconds };
+        var targetNames = new NpgsqlConnectionStringBuilder(targetConnection) { CommandTimeout = CommandTimeoutSeconds };
+        (sourceConnection, targetConnection) = (sourceNames.ConnectionString, targetNames.ConnectionString);
         await output.WriteLineAsync($"Source: database {sourceNames.InitialCatalog} on {sourceNames.DataSource}");
-        await output.WriteLineAsync($"Target: database {targetNames.Database} on {targetNames.Host}");
+        await output.WriteLineAsync($"Target: database {targetNames.Database} on {targetNames.Host}, SSL Mode {targetNames.SslMode}");
         await output.WriteLineAsync($"Mode: {(mode == CopyMode.DryRun ? "dry run, nothing is written" : mode.ToString().ToLowerInvariant())}");
+
+        if (TlsStops(sourceConnection, targetConnection) is { Count: > 0 } weak)
+        {
+            throw new CopyStop(string.Join(" ", weak));
+        }
 
         if (mode == CopyMode.ApplyBaseline)
         {
@@ -118,6 +149,8 @@ public static class DbCopyTool
         await using var target = new NpgsqlConnection(targetConnection);
         await target.OpenAsync();
         await using var transaction = await target.BeginTransactionAsync(); // disposed without a commit, it rolls back
+        // It sits idle through every read of the source, however long a slow link takes, and the role's own limits may be short.
+        await ExecuteAsync(target, transaction, "SET LOCAL idle_in_transaction_session_timeout = 0; SET LOCAL statement_timeout = 0");
         var state = await ReadTargetStateAsync(target, transaction, tables, readOnly: mode != CopyMode.Write);
 
         if (mode == CopyMode.Verify)
@@ -156,10 +189,42 @@ public static class DbCopyTool
             return 1;
         }
 
+        commitStarted.Value = true;
         await transaction.CommitAsync();
         await output.WriteLineAsync($"Committed {rows.Values.Sum(r => r.Count)} rows in {tables.Count} tables.");
         return 0;
     }
+
+    /// <summary>The app's rule (DependencyInjection.RequireDatabaseConnection), for both strings: encrypted and not trusting blindly, unless the link stays on this machine. Names only, never the string.</summary>
+    public static List<string> TlsStops(string sourceConnection, string targetConnection)
+    {
+        var (source, target) = (new SqlConnectionStringBuilder(sourceConnection), new NpgsqlConnectionStringBuilder(targetConnection));
+        var stops = new List<string>();
+        if (target.SslMode < SslMode.Require && target.Host?.Split(',').All(IsLoopback) != true)
+        {
+            stops.Add($"The target has SSL Mode {target.SslMode}; it must be Require or stronger.");
+        }
+
+        var name = source.DataSource;
+        if (!name.StartsWith(@"(localdb)\", StringComparison.OrdinalIgnoreCase)
+            && !IsLoopback((name.StartsWith("tcp:", StringComparison.OrdinalIgnoreCase) ? name[4..] : name).Split(',', '\\')[0]))
+        {
+            if (source.Encrypt == SqlConnectionEncryptOption.Optional)
+            {
+                stops.Add("The source has Encrypt=false; it must be true or Strict.");
+            }
+
+            if (source.TrustServerCertificate)
+            {
+                stops.Add("The source has TrustServerCertificate=true; it must be false.");
+            }
+        }
+
+        return stops;
+    }
+
+    private static bool IsLoopback(string host) =>
+        host.Equals("localhost", StringComparison.OrdinalIgnoreCase) || (IPAddress.TryParse(host, out var address) && IPAddress.IsLoopback(address));
 
     private static string ExpectedTargetMigration()
     {
@@ -178,16 +243,33 @@ public static class DbCopyTool
 
         await output.WriteLineAsync($"Source migration: {last}");
 
-        var columns = await source.QueryAsync("SELECT [TABLE_NAME], [COLUMN_NAME], [COLLATION_NAME] FROM [INFORMATION_SCHEMA].[COLUMNS] WHERE [TABLE_SCHEMA] = 'dbo'");
-        var present = columns.Select(c => $"{c[0]}.{c[1]}").ToHashSet(StringComparer.Ordinal);
-        var missing = tables.SelectMany(t => t.Columns).Select(c => $"{c.Table}.{c.Name}").Where(c => !present.Contains(c)).ToList();
+        // Base tables only: a view holds no data of its own.
+        var everyColumn = await source.QueryAsync("""
+            SELECT c.[TABLE_SCHEMA], c.[TABLE_NAME], c.[COLUMN_NAME], c.[COLLATION_NAME], c.[DATA_TYPE] FROM [INFORMATION_SCHEMA].[COLUMNS] c
+            JOIN [INFORMATION_SCHEMA].[TABLES] t ON t.[TABLE_SCHEMA] = c.[TABLE_SCHEMA] AND t.[TABLE_NAME] = c.[TABLE_NAME] WHERE t.[TABLE_TYPE] = 'BASE TABLE'
+            """);
+        var columns = everyColumn.Where(c => (string)c[0]! == "dbo").ToList();
+        var present = columns.Select(c => $"{c[1]}.{c[2]}").ToHashSet(StringComparer.Ordinal);
+        var model = tables.SelectMany(t => t.Columns).ToDictionary(c => $"{c.Table}.{c.Name}", StringComparer.Ordinal);
+        var missing = model.Keys.Where(c => !present.Contains(c)).ToList();
         if (missing.Count > 0)
         {
             throw new CopyStop($"Missing from the source: {string.Join(", ", missing)}.");
         }
 
+        // The tool copies only the model's columns, so anything else here would be lost without a word.
+        var compared = everyColumn.Where(c => (string)c[0]! != "dbo" || !(((string)c[1]!).StartsWith("Legacy_", StringComparison.Ordinal) || (string)c[1]! == "__EFMigrationsHistory")).ToList();
+        var extra = compared.Where(c => (string)c[0]! != "dbo" || !model.ContainsKey($"{c[1]}.{c[2]}")).Select(c => $"{c[0]}.{c[1]}.{c[2]}").ToList();
+        // A varchar read as raw UTF-16 is garbled, the same on both sides of the verify, so the verify would pass.
+        var notNvarchar = compared.Where(c => (string)c[4]! != "nvarchar" && (c[3] is not null || model.GetValueOrDefault($"{c[1]}.{c[2]}")?.Clr == typeof(string)))
+            .Select(c => $"{c[0]}.{c[1]}.{c[2]} {c[4]}").ToList();
+        if (extra.Count > 0 || notNvarchar.Count > 0)
+        {
+            throw new CopyStop(string.Join(" ", new[] { ("Not in the model", extra), ("Not nvarchar", notNvarchar) }.Where(p => p.Item2.Count > 0).Select(p => $"{p.Item1}: {string.Join(", ", p.Item2)}.")));
+        }
+
         var collation = (string)(await source.QueryAsync("SELECT CONVERT(nvarchar(128), DATABASEPROPERTYEX(DB_NAME(), 'Collation'))"))[0][0]!;
-        var different = columns.Where(c => c[2] is string name && name != collation).Select(c => $"{c[0]}.{c[1]} {c[2]}").ToList();
+        var different = columns.Where(c => c[3] is string name && name != collation).Select(c => $"{c[1]}.{c[2]} {c[3]}").ToList();
         await output.WriteLineAsync($"Source collation: {collation}; string columns with a different one: {(different.Count == 0 ? "none" : string.Join(", ", different))}");
 
         foreach (var row in await source.QueryAsync("SELECT [name] FROM [sys].[tables] WHERE [name] LIKE 'Legacy[_]%' ORDER BY [name]"))
@@ -432,7 +514,7 @@ public static class DbCopyTool
         CopyStop => e.Message,
         SqlException sql => $"SqlException, number {sql.Number}",
         PostgresException postgres => $"PostgresException, SQLSTATE {postgres.SqlState}{(postgres.ConstraintName is { } name ? $", constraint {name}" : "")}",
-        _ => e.GetType().Name,
+        _ => e.InnerException is { } inner ? $"{e.GetType().Name}, from {inner.GetType().Name}" : e.GetType().Name, // tells a refused certificate from a dead link
     };
 
     /// <summary>Azure's free database answers 40613 for about a minute while it wakes.</summary>

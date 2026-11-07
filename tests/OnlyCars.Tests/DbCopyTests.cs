@@ -413,6 +413,212 @@ public class DbCopyTests : IAsyncLifetime
         Assert.Equal(before, await TargetFingerprintAsync());
     }
 
+    // Fires inside COMMIT: one the server refuses, and one where the connection dies, as a dropped link would.
+    [Theory]
+    [InlineData("RAISE EXCEPTION 'refused'")]
+    [InlineData("PERFORM pg_terminate_backend(pg_backend_pid()); PERFORM pg_sleep(5)")]
+    public async Task AFailureDuringTheCommit_SaysTheResultIsUnknown_WithItsOwnExitCode_AndNeverThatNothingWasCommitted(string body)
+    {
+        await SeedAsync();
+        await PgAsync(TargetAdmin, $"""
+            CREATE FUNCTION onlycars.fail_at_commit() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN {body}; RETURN NULL; END $$;
+            CREATE CONSTRAINT TRIGGER fail_at_commit AFTER INSERT ON onlycars."Users" DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION onlycars.fail_at_commit();
+            """);
+
+        var (exit, output) = await RunAsync(CopyMode.Write);
+
+        Assert.True(exit == DbCopyTool.CommitUnknownExit, output);
+        Assert.NotEqual(1, DbCopyTool.CommitUnknownExit);
+        Assert.Contains("Verify passed", output);
+        Assert.Contains("Commit result unknown, run --verify", output);
+        Assert.DoesNotContain("Nothing was committed", output);
+        Assert.DoesNotContain("Committed ", output);
+        Assert.DoesNotContain(Sentinel, output);
+
+        // What gate 5 tells the operator to do next: here it wasn't committed, and --verify shows that.
+        var (verify, text) = await RunAsync(CopyMode.Verify);
+        Assert.Equal(1, verify);
+        Assert.Contains("Verify Users: source 1, target 0", text);
+    }
+
+    // Both drivers default to 30 s, and the target's role can set its own limits (Supabase's do): past all of them, the copy still finishes.
+    [Fact]
+    public async Task ASlowSourceAndASlowTarget_OutlastTheDriverDefaults_AndTheRolesOwnTimeouts()
+    {
+        await SeedAsync();
+        var role = new NpgsqlConnectionStringBuilder(Target).Username;
+        await PgAsync(TargetAdmin, $"""
+            ALTER ROLE {role} SET idle_in_transaction_session_timeout = '1s';
+            ALTER ROLE {role} SET statement_timeout = '1s';
+            CREATE FUNCTION onlycars.slow() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN PERFORM pg_sleep(33); RETURN NULL; END $$;
+            CREATE TRIGGER slow AFTER INSERT ON onlycars."Users" FOR EACH STATEMENT EXECUTE FUNCTION onlycars.slow();
+            """);
+        await using var locker = new SqlConnection(Source);
+        await locker.OpenAsync();
+        var hold = locker.BeginTransaction();
+        await using (var take = new SqlCommand("SELECT TOP 0 * FROM [Users] WITH (TABLOCKX, HOLDLOCK)", locker, hold))
+        {
+            await take.ExecuteNonQueryAsync();
+        }
+
+        var write = RunAsync(CopyMode.Write);
+        await Task.Delay(TimeSpan.FromSeconds(33)); // the read of Users waits this long, with the target's transaction idle
+        Assert.False(write.IsCompleted);
+        await hold.RollbackAsync();
+        var (exit, output) = await write;
+
+        Assert.True(exit == 0, output);
+        Assert.Contains("Verify passed", output);
+    }
+
+    [Theory]
+    [InlineData("ALTER TABLE [Vehicles] ADD [Extra] nvarchar(10) NULL", "dbo.Vehicles.Extra")]
+    [InlineData("CREATE TABLE [Other] ([Id] int NOT NULL)", "dbo.Other.Id")]
+    [InlineData("EXEC('CREATE SCHEMA [side]'); EXEC('CREATE TABLE [side].[Legacy_Other] ([Id] int NOT NULL)')", "side.Legacy_Other.Id")] // Legacy_ is allowed only where the tool looks for it
+    public async Task ASourceColumnOutsideTheModel_StopsEveryMode_ByNameOnly(string sql, string name)
+    {
+        await SqlAsync(Source, sql);
+
+        foreach (var mode in new[] { CopyMode.DryRun, CopyMode.Write, CopyMode.Verify })
+        {
+            var (exit, output) = await RunAsync(mode);
+            Assert.Equal(1, exit);
+            Assert.Contains($"Not in the model: {name}", output);
+        }
+
+        Assert.Equal(0, await PgCountAsync("Users"));
+    }
+
+    // A varchar would pass the verify garbled on both sides, as the read takes every text column for raw UTF-16.
+    [Theory]
+    [InlineData("varchar(32)", "varchar")]
+    [InlineData("nchar(32)", "nchar")]
+    [InlineData("varbinary(32)", "varbinary")] // not text at the source, but the model reads it as text
+    public async Task AModelTextColumnThatIsNotNvarchar_StopsEveryMode_ByNameAndType(string type, string name)
+    {
+        await SqlAsync(Source, $"ALTER TABLE [Vehicles] DROP COLUMN [Plate]; ALTER TABLE [Vehicles] ADD [Plate] {type} NULL");
+
+        foreach (var mode in new[] { CopyMode.DryRun, CopyMode.Write, CopyMode.Verify })
+        {
+            var (exit, output) = await RunAsync(mode);
+            Assert.Equal(1, exit);
+            Assert.Contains($"Not nvarchar: dbo.Vehicles.Plate {name}", output);
+        }
+    }
+
+    [Fact]
+    public async Task LegacyTablesAndTheMigrationHistory_MayHoldAnything()
+    {
+        await SqlAsync(Source, "ALTER TABLE [Legacy_TireSets] ADD [Note] varchar(10) NULL; CREATE TABLE [Legacy_New] ([Name] varchar(10) NULL); ALTER TABLE [__EFMigrationsHistory] ADD [Extra] varchar(10) NULL");
+        await SqlAsync(Source, "CREATE VIEW [AView] AS SELECT [Id] AS [Shown] FROM [Users]"); // a view holds no data
+
+        var (exit, output) = await RunAsync(CopyMode.DryRun);
+
+        Assert.True(exit == 0, output);
+        Assert.Contains("Not copied: Legacy_New, 0 rows", output);
+    }
+
+    [Theory]
+    [InlineData("Host=db.example.test;Password=FakeSecret", "SSL Mode Prefer")] // Npgsql's default
+    [InlineData("Host=db.example.test;Password=FakeSecret;SSL Mode=Disable", "SSL Mode Disable")]
+    [InlineData("Host=db.example.test;Password=FakeSecret;SSL Mode=Allow", "SSL Mode Allow")]
+    [InlineData("Host=db.example.test;Password=FakeSecret;SSL Mode=Prefer", "SSL Mode Prefer")]
+    [InlineData("Host=127.0.0.1.example.test;Password=FakeSecret;SSL Mode=Disable", "SSL Mode Disable")]
+    [InlineData("Host=localhost.example.test;Password=FakeSecret;SSL Mode=Disable", "SSL Mode Disable")]
+    [InlineData("Host=127.0.0.1,db.example.test;Password=FakeSecret;SSL Mode=Disable", "SSL Mode Disable")]
+    [InlineData("Database=x;Password=FakeSecret", "SSL Mode Prefer")]
+    public void AWeakTargetString_IsRefused_WithNoSecret(string target, string expected)
+    {
+        var stop = Assert.Single(DbCopyTool.TlsStops("Server=x.database.windows.net;Password=FakeSecret1", target));
+        Assert.Contains(expected, stop);
+        Assert.DoesNotContain("FakeSecret", stop);
+    }
+
+    [Theory]
+    [InlineData("Server=x.database.windows.net;Password=FakeSecret;Encrypt=false", "Encrypt=false")]
+    [InlineData("Server=x.database.windows.net;Password=FakeSecret;Encrypt=no", "Encrypt=false")]
+    [InlineData("Server=x.database.windows.net;Password=FakeSecret;Encrypt=Optional", "Encrypt=false")]
+    [InlineData("Server=tcp:x.database.windows.net,1433;Password=FakeSecret;TrustServerCertificate=true", "TrustServerCertificate=true")]
+    [InlineData("Server=127.0.0.1.example.test;Password=FakeSecret;Encrypt=false", "Encrypt=false")]
+    [InlineData("Server=np:\\\\x\\pipe\\sql;Password=FakeSecret;Encrypt=false", "Encrypt=false")]
+    public void AWeakSourceString_IsRefused_WithNoSecret(string source, string expected)
+    {
+        var stop = Assert.Single(DbCopyTool.TlsStops(source, "Host=db.example.test;Password=FakeSecret1;SSL Mode=Require"));
+        Assert.Contains(expected, stop);
+        Assert.DoesNotContain("FakeSecret", stop);
+    }
+
+    [Theory]
+    [InlineData("Server=x.database.windows.net;User Id=u;Password=p", "Host=h;SSL Mode=Require")] // Encrypt is on by default
+    [InlineData("Server=tcp:x.database.windows.net,1433;Encrypt=True;TrustServerCertificate=False", "Host=h;SSL Mode=VerifyCA;Root Certificate=c.pem")]
+    [InlineData("Server=x;Encrypt=Strict", "Host=h;SSL Mode=VerifyFull;Root Certificate=c.pem")]
+    [InlineData(@"Server=(localdb)\mssqllocaldb;Encrypt=false;TrustServerCertificate=true", "Host=localhost;SSL Mode=Disable")]
+    [InlineData(@"Server=(LocalDB)\Other;Encrypt=false", "Host=127.0.0.1;SSL Mode=Prefer")]
+    [InlineData("Server=127.0.0.1,1433;Encrypt=false", "Host=::1;SSL Mode=Disable")]
+    [InlineData(@"Server=tcp:localhost\SQLEXPRESS;TrustServerCertificate=true", "Host=127.0.0.1,localhost")]
+    public void StrongStringsAndLocalOnes_Pass(string source, string target)
+    {
+        Assert.Empty(DbCopyTool.TlsStops(source, target));
+    }
+
+    // Nothing listens at these hosts, so a stop that came after connecting would show as a driver's error instead.
+    [Theory]
+    [InlineData(CopyMode.DryRun)]
+    [InlineData(CopyMode.Write)]
+    [InlineData(CopyMode.Verify)]
+    [InlineData(CopyMode.ApplyBaseline)]
+    public async Task AWeakString_StopsEveryMode_BeforeAnyConnection(CopyMode mode)
+    {
+        var output = new StringWriter();
+
+        var exit = await DbCopyTool.RunAsync(mode, "Server=db.invalid;Password=FakeSecret1;Encrypt=false", "Host=db.invalid;Password=FakeSecret2;SSL Mode=Prefer", output, _ => Task.CompletedTask);
+
+        Assert.Equal(1, exit);
+        var text = output.ToString();
+        Assert.Contains("db-copy stopped: ", text);
+        Assert.Contains("Encrypt=false", text);
+        Assert.Contains("SSL Mode Prefer", text);
+        Assert.DoesNotContain("Exception", text);
+        Assert.DoesNotContain("FakeSecret", text);
+    }
+
+    // The test container has no TLS, so this also proves VerifyFull never falls back to an unencrypted link.
+    [Fact]
+    public async Task TheRootCertificateOption_MakesTheTargetVerifyFull_AndAFailedTrialStopsWithNoSecretAndNothingWritten()
+    {
+        var key = Guid.NewGuid().ToString("N");
+        Environment.SetEnvironmentVariable($"ConnectionStrings__S{key}", Source);
+        Environment.SetEnvironmentVariable($"ConnectionStrings__T{key}", Target);
+        await SeedAsync();
+        var output = new StringWriter();
+        var password = new NpgsqlConnectionStringBuilder(Target).Password!;
+
+        var exit = await DbCopyTool.CliAsync(["--write", "--source-key", $"S{key}", "--target-key", $"T{key}", "--target-root-cert", SchemaScript()], output, () => throw new InvalidOperationException("no secrets here"));
+
+        Assert.Equal(1, exit);
+        var text = output.ToString();
+        Assert.Contains("SSL Mode VerifyFull", text);
+        Assert.Contains("db-copy stopped: ", text);
+        Assert.Contains("Nothing was committed", text);
+        Assert.DoesNotContain(password, text);
+        Assert.Equal(0, await PgCountAsync("Users"));
+    }
+
+    [Fact]
+    public async Task AConnectionStringPastedAsAKey_IsNotEchoed()
+    {
+        var pasted = "Host=x;Password=FakeSecret";
+        var set = $"Set{Guid.NewGuid():N}";
+        Environment.SetEnvironmentVariable($"ConnectionStrings__{set}", Source);
+
+        var (source, target) = (new StringWriter(), new StringWriter());
+        Assert.Equal(1, await DbCopyTool.CliAsync(["--source-key", pasted, "--target-key", pasted], source, () => throw new InvalidOperationException("no secrets here")));
+        Assert.Equal(1, await DbCopyTool.CliAsync(["--source-key", set, "--target-key", pasted], target, () => throw new InvalidOperationException("no secrets here")));
+
+        Assert.Equal("db-copy stopped: The connection string named by --source-key is not set.", source.ToString().Trim());
+        Assert.Equal("db-copy stopped: The connection string named by --target-key is not set.", target.ToString().Trim());
+    }
+
     [Fact]
     public async Task AC3_TheSourceReceivesOnlySelects_CapturedOnTheServer_EvenWhenItIsReadOnly()
     {
