@@ -19,6 +19,8 @@ WORKDIR /app
 COPY --from=api /app ./
 COPY --from=client /client/dist ./wwwroot
 # Render sends traffic to port 10000 unless told otherwise.
+# Npgsql looks for Kerberos at startup and logs an error without it (L279); it isn't used.
+RUN apt-get update && apt-get install -y --no-install-recommends libgssapi-krb5-2 && rm -rf /var/lib/apt/lists/*
 ENV ASPNETCORE_HTTP_PORTS=10000
 EXPOSE 10000
 # The image's own unprivileged user, not root (audit 2026-11-02).
