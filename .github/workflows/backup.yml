@@ -1,0 +1,49 @@
+# Nightly backup of the live database (Supabase, schema "onlycars") to a private Cloudflare R2 bucket (2026-11-08).
+# Supabase's free plan keeps no backups (L258). Reads with the read-only role from scripts/backup-db-user.sql.
+# Restore: download a file from the bucket, then: pg_restore -d <target> --no-owner --no-privileges <file>
+# GitHub emails the repository owner when a scheduled run fails.
+name: Nightly database backup
+
+on:
+  schedule:
+    - cron: "30 0 * * *" # 00:30 UTC, the middle of the night in Israel, far from the 08:00 digest
+  workflow_dispatch: # "Run workflow" on the Actions tab, for a test or an extra backup
+
+permissions: {} # needs nothing from the repository
+
+concurrency:
+  group: backup
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      BACKUP_DATABASE_URL: ${{ secrets.BACKUP_DATABASE_URL }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.R2_BACKUP_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_BACKUP_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION: auto
+      # R2 doesn't take the newer default checksums of the AWS CLI.
+      AWS_REQUEST_CHECKSUM_CALCULATION: WHEN_REQUIRED
+      AWS_RESPONSE_CHECKSUM_VALIDATION: WHEN_REQUIRED
+      R2_ENDPOINT: https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
+      BUCKET: onlycars-backups
+    steps:
+      - name: Dump the database
+        run: |
+          # pg_dump must be at least the server's version (17); the runner's own client is older.
+          docker run --rm -e BACKUP_DATABASE_URL -v "$PWD:/out" postgres:17 \
+            sh -c 'pg_dump "$BACKUP_DATABASE_URL" -Fc -n onlycars -f /out/backup.dump'
+
+      - name: Check the file is a complete backup
+        run: |
+          docker run --rm -v "$PWD:/out" postgres:17 pg_restore --list /out/backup.dump > contents.txt
+          grep -q 'TABLE DATA onlycars Users' contents.txt
+          echo "$(grep -c 'TABLE DATA' contents.txt) tables, $(wc -c < backup.dump) bytes"
+
+      - name: Upload to R2
+        run: |
+          name="onlycars-$(date -u +%Y-%m-%d_%H%M).dump"
+          aws s3 cp backup.dump "s3://$BUCKET/$name" --endpoint-url "$R2_ENDPOINT" --only-show-errors
+          echo "Uploaded $name"
