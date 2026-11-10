@@ -45,6 +45,7 @@ public class AppDbContext : DbContext, IAppDbContext
     public DbSet<VehicleDocument> VehicleDocuments => Set<VehicleDocument>();
     public DbSet<NotificationRule> NotificationRules => Set<NotificationRule>();
     public DbSet<Notification> Notifications => Set<Notification>();
+    public DbSet<DeviceToken> DeviceTokens => Set<DeviceToken>();
 
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder) =>
         configurationBuilder.Properties<string>().UseCollation(DefaultCollation);

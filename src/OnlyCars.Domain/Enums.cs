@@ -34,7 +34,9 @@ public enum OdometerSource
     Manual,
     Service,
     Checklist,
-    Fuel
+    Fuel,
+    /// <summary>Sent by the OBD adapter app with a device token (OBD-1).</summary>
+    Obd
 }
 
 public enum TaskCategory

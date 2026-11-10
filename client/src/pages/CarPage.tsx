@@ -126,8 +126,8 @@ export default function CarPage() {
                 key={r.id}
                 reading={r}
                 url={`${path}/odometer/${r.id}`}
-                // History is read-only on archived cars; non-manual readings are fixed on their source record.
-                editable={!car.isArchived && r.source === 'Manual'}
+                // History is read-only on archived cars; a service's or run's reading is fixed on its source record.
+                editable={!car.isArchived && (r.source === 'Manual' || r.source === 'Obd')}
                 // The only reading can't be deleted (the API answers 409); the user edits it instead.
                 deletable={readings.length > 1}
                 // Newest first, in the server's order: the neighbours it compares an edit against.

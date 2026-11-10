@@ -28,7 +28,8 @@ public class OdometerService(IAppDbContext db, VehicleService vehicleService)
         return readings.Select(ToDto).ToList();
     }
 
-    public async Task<OdometerReadingDto> AddAsync(Guid userId, Guid vehicleId, AddOdometerReadingRequest request, CancellationToken ct = default)
+    public async Task<OdometerReadingDto> AddAsync(Guid userId, Guid vehicleId, AddOdometerReadingRequest request, CancellationToken ct = default,
+        OdometerSource source = OdometerSource.Manual)
     {
         var vehicle = await vehicleService.FindOwnedAsync(userId, vehicleId, ct);
         // An all-zero id would make every such reading on the car "the same" one (L194).
@@ -51,7 +52,7 @@ public class OdometerService(IAppDbContext db, VehicleService vehicleService)
             VehicleId = vehicle.Id,
             ValueKm = request.ValueKm,
             ReadingDate = request.ReadingDate ?? DateOnly.FromDateTime(DateTime.UtcNow),
-            Source = OdometerSource.Manual,
+            Source = source,
             ClientRequestId = request.ClientRequestId
         };
         Validate(readings, reading, reading.ValueKm, reading.ReadingDate, request.ConfirmCorrection);
@@ -127,7 +128,8 @@ public class OdometerService(IAppDbContext db, VehicleService vehicleService)
         var reading = readings.FirstOrDefault(r => r.Id == readingId)
             ?? throw new NotFoundException(nameof(OdometerReading), readingId);
 
-        if (reading.Source != OdometerSource.Manual)
+        // An adapter's reading has no record of its own, so it is corrected or removed here like a typed one (OBD-1).
+        if (reading.Source is not (OdometerSource.Manual or OdometerSource.Obd))
         {
             throw new ConflictException("odometer.notManual", "This reading belongs to another record and can't be changed here.");
         }
