@@ -32,6 +32,7 @@ public interface IAppDbContext
     DbSet<VehicleDocument> VehicleDocuments { get; }
     DbSet<NotificationRule> NotificationRules { get; }
     DbSet<Notification> Notifications { get; }
+    DbSet<DeviceToken> DeviceTokens { get; }
 
     DatabaseFacade Database { get; }
 

@@ -70,7 +70,9 @@ builder.Services
             ClockSkew = TimeSpan.FromMinutes(1)
         };
         options.Events = new JwtBearerEvents { OnTokenValidated = CurrentUserExtensions.RejectDeletedUserAsync };
-    });
+    })
+    // OBD-1: device tokens, asked for by DeviceController only.
+    .AddScheme<Microsoft.AspNetCore.Authentication.AuthenticationSchemeOptions, DeviceTokenAuthHandler>(DeviceTokenAuthHandler.SchemeName, null);
 
 builder.Services.AddAuthorization();
 

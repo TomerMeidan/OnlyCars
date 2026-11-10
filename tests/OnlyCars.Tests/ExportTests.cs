@@ -98,6 +98,8 @@ public class ExportTests
         db.AddRange(removedTire, tire, rotation,
             new TireMeasurement { TireId = removedTire.Id, Position = TirePosition.FL, MeasuredAt = Day.AddDays(5), PressureBar = 2.2m },
             new TireMeasurement { TireId = tire.Id, Position = TirePosition.FR, MeasuredAt = Day.AddDays(5), PressureBar = 2.3m, TreadDepthMm = 6 });
+        // A device token (OBD-1): not part of the export (a credential), deleted with the account.
+        db.DeviceTokens.Add(new DeviceToken { UserId = owner, Name = $"{tag} phone", TokenHash = Guid.NewGuid().ToString("N") });
         await db.SaveChangesAsync();
         return ids;
     }

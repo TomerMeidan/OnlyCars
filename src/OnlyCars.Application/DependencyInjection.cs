@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using OnlyCars.Application.Account;
 using OnlyCars.Application.Auth;
 using OnlyCars.Application.Checklists;
+using OnlyCars.Application.Devices;
 using OnlyCars.Application.Issues;
 using OnlyCars.Application.Maintenance;
 using OnlyCars.Application.Odometer;
@@ -39,6 +40,7 @@ public static class DependencyInjection
         services.AddScoped<FullExportService>();
         services.AddSingleton<ExportLinks>();
         services.AddScoped<AccountService>();
+        services.AddScoped<DeviceTokenService>();
 
         return services;
     }

@@ -46,7 +46,7 @@ export type VehicleInput = Omit<Vehicle, 'id' | 'photoUrl' | 'currentOdometerKm'
   readingDate?: string // the first reading's date, the client's local today (as quick-add)
 }
 
-export type OdometerSource = 'Manual' | 'Service' | 'Checklist' | 'Fuel'
+export type OdometerSource = 'Manual' | 'Service' | 'Checklist' | 'Fuel' | 'Obd'
 
 export interface OdometerReading {
   id: string

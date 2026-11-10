@@ -6,6 +6,7 @@ import { useAuth } from '../auth'
 import { GoogleButton } from '../google'
 import { errorMessage } from '../i18n'
 import { usePage } from '../usePage'
+import DevicesSection from './DevicesSection'
 
 type Field = 'locale' | 'theme' | 'currency' | 'distanceUnit' | 'reminderLeadDays' | 'emailReminders'
 
@@ -252,6 +253,7 @@ export default function SettingsPage() {
           </form>
         )}
       </section>
+      <DevicesSection />
       <section className="field" aria-labelledby="checklist-templates">
         <h2 id="checklist-templates">{t('checklistTemplates')}</h2>
         <p className="muted">{t('checklistTemplatesHint')}</p>

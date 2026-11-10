@@ -24,10 +24,14 @@ public static class CopyPlan
     public static AppDbContext NewContext() =>
         new(new DbContextOptionsBuilder<AppDbContext>().UseNpgsql(AppDbContext.NpgsqlOptions).Options);
 
+    /// <summary>Tables made after the move to Postgres (2026-11-08): the Azure source never had them, so they are not copied.</summary>
+    private static readonly HashSet<string> AddedAfterTheMove = ["DeviceTokens"];
+
     public static IReadOnlyList<CopyTable> Tables()
     {
         using var db = NewContext();
-        var left = db.GetService<IDesignTimeModel>().Model.GetEntityTypes().OrderBy(t => t.GetTableName(), StringComparer.Ordinal).ToList();
+        var left = db.GetService<IDesignTimeModel>().Model.GetEntityTypes().Where(t => !AddedAfterTheMove.Contains(t.GetTableName()!))
+            .OrderBy(t => t.GetTableName(), StringComparer.Ordinal).ToList();
         var tables = new List<CopyTable>();
         while (left.Count > 0)
         {

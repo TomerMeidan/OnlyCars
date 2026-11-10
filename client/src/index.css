@@ -755,3 +755,7 @@ main:has(> .filters input[type='search']) { max-width: 60rem; } /* six columns n
   .results tr.group > th { display: flex; align-items: center; position: static; padding-inline: 0; }
   .results tr.group .group-head { flex: 1; min-inline-size: 0; }
 }
+
+/* OBD-1: Settings, Connected devices. */
+.devices { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.5rem; }
+.devices > li { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 0.25rem 1rem; }
