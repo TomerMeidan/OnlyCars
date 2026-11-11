@@ -5,7 +5,6 @@ using OnlyCars.Application.Devices.Dtos;
 using OnlyCars.Application.Odometer;
 using OnlyCars.Application.Odometer.Dtos;
 using OnlyCars.Application.Vehicles;
-using OnlyCars.Domain;
 
 namespace OnlyCars.Api.Controllers;
 
@@ -25,8 +24,11 @@ public class DeviceController(VehicleService vehicleService, OdometerService odo
         return Ok(vehicles.Select(v => new DeviceVehicleDto(v.Id, v.Nickname, v.Make, v.Model, v.Year, v.Plate, v.CurrentOdometerKm)).ToList());
     }
 
-    /// <summary>Same rules as a typed reading (date order, the cap, a repeated clientRequestId), stored with source Obd.</summary>
+    /// <summary>
+    /// Same rules as a typed reading (date order, the cap, a repeated clientRequestId), stored with source Obd. A device can't
+    /// confirm a correction, so it can never put a lower reading after a higher one, and it can't add to an archived car.
+    /// </summary>
     [HttpPost("vehicles/{vehicleId:guid}/odometer")]
     public async Task<ActionResult<OdometerReadingDto>> AddReading(Guid vehicleId, AddOdometerReadingRequest request, CancellationToken ct) =>
-        Ok(await odometerService.AddAsync(User.GetUserId(), vehicleId, request, ct, OdometerSource.Obd));
+        Ok(await odometerService.AddFromDeviceAsync(User.GetUserId(), vehicleId, request with { ConfirmCorrection = false }, ct));
 }
