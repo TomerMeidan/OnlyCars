@@ -79,6 +79,36 @@ public class OdometerService(IAppDbContext db, VehicleService vehicleService)
         return ToDto(reading);
     }
 
+    /// <summary>Readings a device may add to one car in 24 hours (OBD-1): the adapter app uploads once per drive.</summary>
+    public const int MaxDeviceReadingsPerDay = 20;
+
+    /// <summary>
+    /// A reading from a device token (OBD-1). Not on an archived car (the device's car list hides those), and at most
+    /// <see cref="MaxDeviceReadingsPerDay"/> per car per 24 hours, so a leaked token can't fill the car's 5,000-reading cap,
+    /// which service records and checklist runs need too. A resend of a saved reading is answered before either check.
+    /// </summary>
+    public async Task<OdometerReadingDto> AddFromDeviceAsync(Guid userId, Guid vehicleId, AddOdometerReadingRequest request, CancellationToken ct = default)
+    {
+        var vehicle = await vehicleService.FindOwnedAsync(userId, vehicleId, ct);
+        if (vehicle.IsArchived)
+        {
+            throw new NotFoundException(nameof(Vehicle), vehicleId);
+        }
+
+        if (request.ClientRequestId is not { } requestId || await FindByRequestIdAsync(vehicle.Id, requestId, ct) is null)
+        {
+            var since = DateTimeOffset.UtcNow.AddDays(-1);
+            var recent = await db.OdometerReadings.CountAsync(r => r.VehicleId == vehicle.Id && r.Source == OdometerSource.Obd && r.CreatedAt > since, ct);
+            if (recent >= MaxDeviceReadingsPerDay)
+            {
+                throw new TooManyRequestsException("odometer.deviceTooMany",
+                    $"A device can add up to {MaxDeviceReadingsPerDay} readings to a car in 24 hours.", 3600);
+            }
+        }
+
+        return await AddAsync(userId, vehicleId, request, ct, OdometerSource.Obd);
+    }
+
     private Task<OdometerReading?> FindByRequestIdAsync(Guid vehicleId, Guid requestId, CancellationToken ct) =>
         db.OdometerReadings.AsNoTracking().FirstOrDefaultAsync(r => r.VehicleId == vehicleId && r.ClientRequestId == requestId, ct);
 
