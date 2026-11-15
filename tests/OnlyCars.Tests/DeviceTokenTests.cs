@@ -1,3 +1,4 @@
+using Microsoft.EntityFrameworkCore;
 using System.Reflection;
 using System.Security.Claims;
 using System.Text.Encodings.Web;
@@ -267,8 +268,58 @@ public class DeviceTokenTests
 
         var resent = Value(await Device().AddReading(carId, new AddOdometerReadingRequest(1001, Today, ClientRequestId: first), default));
         Assert.Equal(1001, resent.ValueKm);
-        // Typed readings aren't counted.
-        await odometer.AddAsync(userId, carId, new AddOdometerReadingRequest(2100, Today));
+    }
+
+    [Fact]
+    public async Task TypedReadings_DontCountTowardTheDeviceCap()
+    {
+        var carId = await CreateCarAsync(1000);
+        for (var i = 1; i <= OdometerService.MaxDeviceReadingsPerDay; i++)
+        {
+            await odometer.AddAsync(userId, carId, new AddOdometerReadingRequest(1000 + i, Today));
+        }
+
+        for (var i = 1; i <= OdometerService.MaxDeviceReadingsPerDay; i++)
+        {
+            Value(await Device().AddReading(carId, new AddOdometerReadingRequest(1100 + i, Today), default));
+        }
+    }
+
+    [Fact]
+    public async Task DeviceReading_TooFarAboveThePreviousOne_IsRefused()
+    {
+        var carId = await CreateCarAsync(1000);
+
+        var ex = await Assert.ThrowsAsync<ValidationFailedException>(() =>
+            Device().AddReading(carId, new AddOdometerReadingRequest(10_000_000, Today), default));
+
+        Assert.Equal("odometer.deviceImplausible", ex.Code);
+        Assert.Equal(1000, (await vehicles.GetAsync(userId, carId)).CurrentOdometerKm);
+    }
+
+    [Fact]
+    public async Task DeviceReading_AllowanceGrowsWithTheDaysSinceThePreviousReading()
+    {
+        var carId = (await vehicles.CreateAsync(userId, new CreateVehicleRequest("Car", null, null, null, null, null, null, null, null, null, null))).Id;
+        await odometer.AddAsync(userId, carId, new AddOdometerReadingRequest(1000, Today.AddDays(-4)));
+        var allowed = 1000 + 5 * OdometerService.MaxDeviceKmPerDay; // day -4 to today, counting both
+
+        await Assert.ThrowsAsync<ValidationFailedException>(() =>
+            Device().AddReading(carId, new AddOdometerReadingRequest(allowed + 1, Today), default));
+        Assert.Equal(allowed, Value(await Device().AddReading(carId, new AddOdometerReadingRequest(allowed, Today), default)).ValueKm);
+    }
+
+    [Fact]
+    public async Task DeviceResend_AfterTheCarWasArchived_StillReturnsTheSavedReading()
+    {
+        var carId = await CreateCarAsync(1000);
+        var id = Guid.NewGuid();
+        var saved = Value(await Device().AddReading(carId, new AddOdometerReadingRequest(1200, Today, ClientRequestId: id), default));
+        await vehicles.ArchiveAsync(userId, carId, true);
+
+        var resent = Value(await Device().AddReading(carId, new AddOdometerReadingRequest(1200, Today, ClientRequestId: id), default));
+
+        Assert.Equal(saved.Id, resent.Id);
     }
 
     [Fact]
@@ -340,5 +391,64 @@ public class DeviceTokenTests
         var created = await CreateAsync();
         await tokens.RevokeAsync(userId, created.Id);
         Assert.False((await AuthenticateAsync("Bearer " + created.Token)).Succeeded);
+    }
+}
+
+/// <summary>OBD-1 on Postgres: the device cap holds when a device's posts arrive at the same time.</summary>
+public class DeviceReadingSqlTests : IAsyncLifetime
+{
+    private readonly string connection = TestDbContextFactory.NewPostgresConnection();
+    private readonly Guid userId = Guid.NewGuid();
+
+    private AppDbContext NewContext() => new(TestDbContextFactory.PostgresOptions(connection).Options);
+
+    public async Task InitializeAsync()
+    {
+        await using var db = NewContext();
+        await db.Database.MigrateAsync();
+        db.Users.Add(new OnlyCars.Domain.Entities.User { Id = userId, Email = "device@onlycars.test", PasswordHash = "x" });
+        await db.SaveChangesAsync();
+    }
+
+    public async Task DisposeAsync()
+    {
+        await using var db = NewContext();
+        await db.Database.EnsureDeletedAsync();
+    }
+
+    [Fact]
+    public async Task ParallelDevicePosts_CantGoPastTheDailyCap()
+    {
+        Guid carId;
+        await using (var db = NewContext())
+        {
+            carId = (await new VehicleService(db).CreateAsync(userId,
+                new CreateVehicleRequest("Car", null, null, null, null, null, null, null, null, null, 1000))).Id;
+        }
+
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var posts = Enumerable.Range(1, OdometerService.MaxDeviceReadingsPerDay + 10).Select(async i =>
+        {
+            await using var db = NewContext();
+            var service = new OdometerService(db, new VehicleService(db));
+            try
+            {
+                await service.AddFromDeviceAsync(userId, carId, new AddOdometerReadingRequest(1000 + i, today, ClientRequestId: Guid.NewGuid()));
+                return true;
+            }
+            catch (TooManyRequestsException)
+            {
+                return false;
+            }
+            catch (ValidationFailedException)
+            {
+                return false; // a lower value arriving after a higher one: fine, it's refused
+            }
+        });
+        await Task.WhenAll(posts);
+
+        await using var check = NewContext();
+        var saved = await check.OdometerReadings.CountAsync(r => r.VehicleId == carId && r.Source == OdometerSource.Obd);
+        Assert.InRange(saved, 1, OdometerService.MaxDeviceReadingsPerDay);
     }
 }

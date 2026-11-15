@@ -2433,6 +2433,33 @@ for (const s of setups) {
     await page.keyboard.press('Escape')
     if (!(await page.evaluate(() => window.noReload))) throw new Error('the page reloaded')
   })
+  // OBD-1: Connected devices. A token is shown once, listed without it, works on the device API only, and stops on Remove.
+  await step('settings-devices', async () => {
+    await openSettings()
+    const sec = page.locator('section[aria-labelledby=devices]')
+    await sec.locator('h2', { hasText: he ? 'מכשירים מחוברים' : 'Connected devices' }).waitFor()
+    const created = page.waitForResponse((r) => pathOf(r) === '/api/me/device-tokens' && r.request().method() === 'POST')
+    await sec.locator('input[name=deviceName]').fill('Smoke phone')
+    await sec.locator('form button').click()
+    const res = await created
+    if (res.status() !== 200 || (await res.headers())['cache-control'] !== 'no-store') throw new Error(`create ${res.status()}`)
+    const token = await sec.locator('input[readonly]').inputValue()
+    if (!/^ocd_[A-Za-z0-9_-]{43}$/.test(token)) throw new Error(`token "${token.slice(0, 6)}…"`)
+    await noOverflow('settings with a new device token')
+    if (!(await sec.locator('ul.devices li').first().textContent()).includes('Smoke phone')) throw new Error('device not listed')
+    const auth = { headers: { Authorization: `Bearer ${token}` } }
+    if ((await page.request.get(`${BASE}/api/device/vehicles`, auth)).status() !== 200) throw new Error('token refused by the device API')
+    if ((await page.request.get(`${BASE}/api/me`, auth)).status() !== 401) throw new Error('token accepted outside the device API')
+    // Done hides the token for good: the list never carries it.
+    await sec.locator('.inline-form .actions button.link').click()
+    if (await sec.locator('input[readonly]').count()) throw new Error('token still shown after Done')
+    if ((await sec.textContent()).includes(token)) throw new Error('token in the list')
+    page.once('dialog', (d) => d.accept())
+    const removed = page.waitForResponse((r) => pathOf(r).startsWith('/api/me/device-tokens/') && r.request().method() === 'DELETE')
+    await sec.locator('ul.devices li', { hasText: 'Smoke phone' }).locator('button').click()
+    if ((await removed).status() !== 204) throw new Error('remove failed')
+    if ((await page.request.get(`${BASE}/api/device/vehicles`, auth)).status() !== 401) throw new Error('removed token still works')
+  })
   await step('settings-save-fails', async () => {
     await openSettings()
     const fail = (r) => r.fulfill({ status: 500, contentType: 'application/json', body: '{}' })

@@ -82,31 +82,65 @@ public class OdometerService(IAppDbContext db, VehicleService vehicleService)
     /// <summary>Readings a device may add to one car in 24 hours (OBD-1): the adapter app uploads once per drive.</summary>
     public const int MaxDeviceReadingsPerDay = 20;
 
+    /// <summary>The most a device reading may add per day since the reading before it (OBD-1). No car is driven further.</summary>
+    public const int MaxDeviceKmPerDay = 2000;
+
     /// <summary>
-    /// A reading from a device token (OBD-1). Not on an archived car (the device's car list hides those), and at most
-    /// <see cref="MaxDeviceReadingsPerDay"/> per car per 24 hours, so a leaked token can't fill the car's 5,000-reading cap,
-    /// which service records and checklist runs need too. A resend of a saved reading is answered before either check.
+    /// A reading from a device token (OBD-1). A resend of a saved reading is answered first, as in <see cref="AddAsync"/>.
+    /// Then: not on an archived car (the device's car list hides those); at most <see cref="MaxDeviceReadingsPerDay"/> per
+    /// car per 24 hours, so a leaked token can't fill the car's 5,000-reading cap, which service records and checklist runs
+    /// need too; and no more than <see cref="MaxDeviceKmPerDay"/> per day above the reading before it, so a leaked token
+    /// can't push the odometer to any value. The car's row is locked meanwhile, so parallel posts can't all pass the count.
     /// </summary>
     public async Task<OdometerReadingDto> AddFromDeviceAsync(Guid userId, Guid vehicleId, AddOdometerReadingRequest request, CancellationToken ct = default)
     {
         var vehicle = await vehicleService.FindOwnedAsync(userId, vehicleId, ct);
+        if (request.ClientRequestId is { } requestId && await FindByRequestIdAsync(vehicle.Id, requestId, ct) is { } sent)
+        {
+            return ToDto(sent);
+        }
+
         if (vehicle.IsArchived)
         {
             throw new NotFoundException(nameof(Vehicle), vehicleId);
         }
 
-        if (request.ClientRequestId is not { } requestId || await FindByRequestIdAsync(vehicle.Id, requestId, ct) is null)
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
+        if (db is DbContext { Database: var database } && database.IsRelational())
         {
-            var since = DateTimeOffset.UtcNow.AddDays(-1);
-            var recent = await db.OdometerReadings.CountAsync(r => r.VehicleId == vehicle.Id && r.Source == OdometerSource.Obd && r.CreatedAt > since, ct);
-            if (recent >= MaxDeviceReadingsPerDay)
+            // The InMemory provider used by most tests has no locks; the Postgres test covers this.
+            await db.Database.ExecuteSqlAsync($"""SELECT 1 FROM onlycars."Vehicles" WHERE "Id" = {vehicle.Id} FOR UPDATE""", ct);
+        }
+
+        var since = DateTimeOffset.UtcNow.AddDays(-1);
+        var recent = await db.OdometerReadings.CountAsync(r => r.VehicleId == vehicle.Id && r.Source == OdometerSource.Obd && r.CreatedAt > since, ct);
+        if (recent >= MaxDeviceReadingsPerDay)
+        {
+            throw new TooManyRequestsException("odometer.deviceTooMany",
+                $"A device can add up to {MaxDeviceReadingsPerDay} readings to a car in 24 hours.", 3600);
+        }
+
+        var date = request.ReadingDate ?? DateOnly.FromDateTime(DateTime.UtcNow);
+        var previous = await db.OdometerReadings.AsNoTracking()
+            .Where(r => r.VehicleId == vehicle.Id && r.ReadingDate <= date)
+            .OrderByDescending(r => r.ReadingDate).ThenByDescending(r => r.CreatedAt)
+            .FirstOrDefaultAsync(ct);
+        if (previous is not null)
+        {
+            var allowed = (decimal)MaxDeviceKmPerDay * (date.DayNumber - previous.ReadingDate.DayNumber + 1);
+            if (request.ValueKm - previous.ValueKm > allowed)
             {
-                throw new TooManyRequestsException("odometer.deviceTooMany",
-                    $"A device can add up to {MaxDeviceReadingsPerDay} readings to a car in 24 hours.", 3600);
+                throw new ValidationFailedException("odometer.deviceImplausible",
+                    $"New reading ({request.ValueKm} km) is more than {allowed} km above the reading before it ({Trim(previous.ValueKm)} km).")
+                {
+                    Extensions = { ["previousKm"] = Trim(previous.ValueKm), ["max"] = MaxDeviceKmPerDay }
+                };
             }
         }
 
-        return await AddAsync(userId, vehicleId, request, ct, OdometerSource.Obd);
+        var reading = await AddAsync(userId, vehicleId, request, ct, OdometerSource.Obd);
+        await transaction.CommitAsync(ct);
+        return reading;
     }
 
     private Task<OdometerReading?> FindByRequestIdAsync(Guid vehicleId, Guid requestId, CancellationToken ct) =>
