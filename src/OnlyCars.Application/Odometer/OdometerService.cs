@@ -82,14 +82,14 @@ public class OdometerService(IAppDbContext db, VehicleService vehicleService)
     /// <summary>Readings a device may add to one car in 24 hours (OBD-1): the adapter app uploads once per drive.</summary>
     public const int MaxDeviceReadingsPerDay = 20;
 
-    /// <summary>The most a device reading may add per day since the reading before it (OBD-1). No car is driven further.</summary>
+    /// <summary>The most device readings may add per day since the last reading of an earlier day (OBD-1). No car is driven further.</summary>
     public const int MaxDeviceKmPerDay = 2000;
 
     /// <summary>
     /// A reading from a device token (OBD-1). A resend of a saved reading is answered first, as in <see cref="AddAsync"/>.
     /// Then: not on an archived car (the device's car list hides those); at most <see cref="MaxDeviceReadingsPerDay"/> per
     /// car per 24 hours, so a leaked token can't fill the car's 5,000-reading cap, which service records and checklist runs
-    /// need too; and no more than <see cref="MaxDeviceKmPerDay"/> per day above the reading before it, so a leaked token
+    /// need too; and no more than <see cref="MaxDeviceKmPerDay"/> per day since the last reading of an earlier day, so a leaked token
     /// can't push the odometer to any value. The car's row is locked meanwhile, so parallel posts can't all pass the count.
     /// </summary>
     public async Task<OdometerReadingDto> AddFromDeviceAsync(Guid userId, Guid vehicleId, AddOdometerReadingRequest request, CancellationToken ct = default)
@@ -120,20 +120,27 @@ public class OdometerService(IAppDbContext db, VehicleService vehicleService)
                 $"A device can add up to {MaxDeviceReadingsPerDay} readings to a car in 24 hours.", 3600);
         }
 
+        // Measured from the last reading of an earlier day, so several posts on one day share that day's allowance
+        // instead of each adding its own. With no earlier reading, from the day's first one.
         var date = request.ReadingDate ?? DateOnly.FromDateTime(DateTime.UtcNow);
-        var previous = await db.OdometerReadings.AsNoTracking()
-            .Where(r => r.VehicleId == vehicle.Id && r.ReadingDate <= date)
+        var earlier = await db.OdometerReadings.AsNoTracking()
+            .Where(r => r.VehicleId == vehicle.Id && r.ReadingDate < date)
             .OrderByDescending(r => r.ReadingDate).ThenByDescending(r => r.CreatedAt)
             .FirstOrDefaultAsync(ct);
-        if (previous is not null)
+        var from = earlier ?? await db.OdometerReadings.AsNoTracking()
+            .Where(r => r.VehicleId == vehicle.Id && r.ReadingDate == date)
+            .OrderBy(r => r.CreatedAt)
+            .FirstOrDefaultAsync(ct);
+        if (from is not null)
         {
-            var allowed = (decimal)MaxDeviceKmPerDay * (date.DayNumber - previous.ReadingDate.DayNumber + 1);
-            if (request.ValueKm - previous.ValueKm > allowed)
+            var days = Math.Max(date.DayNumber - from.ReadingDate.DayNumber, 1);
+            var allowed = (decimal)MaxDeviceKmPerDay * days;
+            if (request.ValueKm - from.ValueKm > allowed)
             {
                 throw new ValidationFailedException("odometer.deviceImplausible",
-                    $"New reading ({request.ValueKm} km) is more than {allowed} km above the reading before it ({Trim(previous.ValueKm)} km).")
+                    $"New reading ({request.ValueKm} km) is more than {allowed} km above the reading of {from.ReadingDate:yyyy-MM-dd} ({Trim(from.ValueKm)} km).")
                 {
-                    Extensions = { ["previousKm"] = Trim(previous.ValueKm), ["max"] = MaxDeviceKmPerDay }
+                    Extensions = { ["previousKm"] = Trim(from.ValueKm), ["max"] = MaxDeviceKmPerDay }
                 };
             }
         }

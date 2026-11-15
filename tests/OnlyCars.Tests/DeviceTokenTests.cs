@@ -302,11 +302,36 @@ public class DeviceTokenTests
     {
         var carId = (await vehicles.CreateAsync(userId, new CreateVehicleRequest("Car", null, null, null, null, null, null, null, null, null, null))).Id;
         await odometer.AddAsync(userId, carId, new AddOdometerReadingRequest(1000, Today.AddDays(-4)));
-        var allowed = 1000 + 5 * OdometerService.MaxDeviceKmPerDay; // day -4 to today, counting both
+        var allowed = 1000 + 4 * OdometerService.MaxDeviceKmPerDay; // four days since day -4
 
         await Assert.ThrowsAsync<ValidationFailedException>(() =>
             Device().AddReading(carId, new AddOdometerReadingRequest(allowed + 1, Today), default));
         Assert.Equal(allowed, Value(await Device().AddReading(carId, new AddOdometerReadingRequest(allowed, Today), default)).ValueKm);
+    }
+
+    [Fact]
+    public async Task ManyDevicePostsOnOneDay_ShareThatDaysAllowance()
+    {
+        var carId = (await vehicles.CreateAsync(userId, new CreateVehicleRequest("Car", null, null, null, null, null, null, null, null, null, null))).Id;
+        await odometer.AddAsync(userId, carId, new AddOdometerReadingRequest(1000, Today.AddDays(-1)));
+        var limit = OdometerService.MaxDeviceKmPerDay;
+
+        // Each post tries to climb a full day's allowance above the one before it.
+        var accepted = 0;
+        for (var i = 1; i <= OdometerService.MaxDeviceReadingsPerDay; i++)
+        {
+            try
+            {
+                await Device().AddReading(carId, new AddOdometerReadingRequest(1000 + i * limit, Today), default);
+                accepted++;
+            }
+            catch (ValidationFailedException ex) when (ex.Code == "odometer.deviceImplausible")
+            {
+            }
+        }
+
+        Assert.Equal(1, accepted);
+        Assert.Equal(1000 + limit, (await vehicles.GetAsync(userId, carId)).CurrentOdometerKm);
     }
 
     [Fact]
