@@ -13,12 +13,11 @@
 - **Tests:**
   - On Linux, 1,026 passed.
   - `BehaviourParityTests.Criterion1_Search` fails, and it fails on the old `main` too.
-  - The 88 `DbCopyTests` have **not been run yet**. They were merged without running, at the owner's choice. They only cover the database copy tool, which the live app doesn't use.
+  - The 88 `DbCopyTests` passed on the owner's Windows PC on 2026-11-24 (88 of 88, 0 failed). They only cover the database copy tool, which the live app doesn't use.
 
 ## Open items
-1. **Run `DbCopyTests` on the Windows PC.** The first try failed in setup: "Docker is either not running". These tests start Postgres in Docker (Testcontainers) and also need LocalDB. Start Docker Desktop, then run:
-   `dotnet test tests/OnlyCars.Tests --filter "FullyQualifiedName~DbCopyTests"`
-   If any test fails, fix it on a new branch.
+1. ~~Run `DbCopyTests` on the Windows PC.~~ Done 2026-11-24: 88 passed, 0 failed.
+
 2. **Render auto-deploy doesn't fire on pushes to `main`.** The service settings, read through the Render API on 2026-11-24, are correct:
    - `autoDeploy: yes`, trigger `commit`, branch `main`;
    - repo `https://github.com/TomerMeidan/OnlyCars`;
@@ -28,7 +27,6 @@
 3. **`BehaviourParityTests.Criterion1_Search` fails on `main`.** The cause hasn't been looked into.
 4. **Owner items** in `docs/CHECKLIST.md`, under "Waiting on the owner":
    - rotate the Supabase app password;
-   - create the R2 bucket for the nightly backup and add its 4 GitHub secrets;
    - add the Sentry DSNs in Render;
    - back up, then delete, the Azure SQL server.
 
