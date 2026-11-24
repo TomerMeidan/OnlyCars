@@ -675,7 +675,8 @@ public class DbCopyTests : IAsyncLifetime
         Assert.Equal(22, tables.Count);
         Assert.All(tables, t => Assert.Equal(typeof(Guid), t.Columns[t.IdIndex].Clr));
         using var db = CopyPlan.NewContext();
-        foreach (var type in db.Model.GetEntityTypes())
+        // Only the copied tables: CopyPlan skips the ones made after the move (DeviceTokens).
+        foreach (var type in db.Model.GetEntityTypes().Where(t => order.Contains(t.GetTableName()!)))
         {
             foreach (var key in type.GetForeignKeys())
             {
